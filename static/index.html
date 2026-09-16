@@ -2,21 +2,21 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cucina &amp; Spesa</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header>
   <h1>🍳 Cucina &amp; Spesa</h1>
-  <nav id="tabs">
-    <button data-tab="plan" class="active">📅 Piano</button>
-    <button data-tab="recipes">📖 Ricette</button>
-    <button data-tab="pantry">🧺 Dispensa</button>
-    <button data-tab="shopping">🛒 Spesa</button>
-    <button data-tab="profile">⚠️ Profilo</button>
-  </nav>
 </header>
+<nav id="tabs">
+  <button data-tab="plan" class="active">📅 Piano</button>
+  <button data-tab="recipes">📖 Ricette</button>
+  <button data-tab="pantry">🧺 Dispensa</button>
+  <button data-tab="shopping">🛒 Spesa</button>
+  <button data-tab="profile">⚠️ Profilo</button>
+</nav>
 
 <main>
   <!-- PIANO -->
@@ -46,8 +46,8 @@
   <section id="tab-pantry" class="tab">
     <div class="toolbar">
       <input id="pantry-name" placeholder="Ingrediente" list="ingredient-list">
-      <input id="pantry-qty" type="number" step="0.1" value="1" style="width:90px">
-      <input id="pantry-unit" list="unit-list" value="pz" style="width:110px">
+      <input id="pantry-qty" class="qty-input" type="number" step="0.1" value="1">
+      <input id="pantry-unit" class="unit-input" list="unit-list" value="pz">
       <button id="pantry-add" class="primary">Aggiungi</button>
       <span class="spacer"></span>
       <input id="pantry-search" type="search" placeholder="Filtra...">
@@ -64,8 +64,8 @@
   <section id="tab-shopping" class="tab">
     <div class="toolbar">
       <input id="shop-name" placeholder="Prodotto" list="ingredient-list">
-      <input id="shop-qty" type="number" step="0.1" value="1" style="width:90px">
-      <input id="shop-unit" list="unit-list" value="pz" style="width:110px">
+      <input id="shop-qty" class="qty-input" type="number" step="0.1" value="1">
+      <input id="shop-unit" class="unit-input" list="unit-list" value="pz">
       <select id="shop-cat"></select>
       <button id="shop-add" class="primary">Aggiungi</button>
       <span class="spacer"></span>

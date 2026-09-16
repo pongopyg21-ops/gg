@@ -20,6 +20,7 @@ body {
   color: var(--ink);
   font-size: 15px;
   line-height: 1.45;
+  padding-top: env(safe-area-inset-top);
 }
 
 header {
@@ -30,7 +31,12 @@ header {
 
 h1 { margin: 0 0 16px; font-size: 24px; letter-spacing: -.02em; }
 
-nav { display: flex; gap: 4px; border-bottom: 2px solid var(--line); flex-wrap: wrap; }
+/* La barra resta agganciata in alto: su telefono si cambia scheda senza risalire. */
+nav {
+  display: flex; gap: 4px; border-bottom: 2px solid var(--line); flex-wrap: wrap;
+  max-width: 1180px; margin: 0 auto; padding: 0 24px;
+  position: sticky; top: env(safe-area-inset-top); z-index: 20; background: var(--bg);
+}
 
 nav button {
   background: none; border: none; border-bottom: 3px solid transparent;
@@ -60,6 +66,11 @@ button.primary:hover { background: #a9481f; }
 button.icon { border: none; background: none; font-size: 18px; padding: 4px 8px; color: var(--muted); }
 input, select, textarea { background: var(--surface); }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+/* larghezze di comodo per i campi numerici delle barre strumenti */
+.qty-input { width: 90px; }
+.unit-input { width: 110px; }
+.qty-cell { width: 90px; }
 
 /* ---------- piano settimanale ---------- */
 .plan-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
@@ -190,7 +201,79 @@ tr:last-child td { border-bottom: none; }
 @media (max-width: 900px) {
   .plan-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- telefono ---------- */
 @media (max-width: 560px) {
   .plan-grid { grid-template-columns: 1fr; }
-  main, header { padding-left: 14px; padding-right: 14px; }
+  .day { min-height: auto; }
+  main, header, nav { padding-left: max(14px, env(safe-area-inset-left));
+                      padding-right: max(14px, env(safe-area-inset-right)); }
+
+  /* Sotto i 16px iOS ingrandisce la pagina appena si tocca un campo, e non torna
+     più indietro: è il fastidio più evidente dell'app sul telefono. */
+  input, select, textarea { font-size: 16px; }
+
+  /* bersagli comodi per il dito */
+  button, input:not([type=checkbox]), select, textarea { min-height: 42px; }
+  button.icon { min-width: 42px; }
+  .chip { min-height: 36px; padding: 6px 13px; }
+  .shop-item input[type=checkbox] { width: 22px; height: 22px; }
+
+  /* la barra strumenti va a capo senza spaziatori e i campi riempiono la riga */
+  .toolbar { gap: 6px; margin-bottom: 14px; }
+  .toolbar .spacer { display: none; }
+  .toolbar input:not([type=checkbox]), .toolbar select { flex: 1 1 130px; min-width: 0; }
+  .toolbar .qty-input { flex: 0 1 84px; }
+  .toolbar .unit-input { flex: 1 1 90px; }
+  .toolbar button { flex: 1 1 auto; }
+  .toolbar button.primary { flex: 1 1 100%; }
+
+  /* la dispensa passa da tabella a schede: quattro colonne non stanno nello schermo */
+  #pantry-table { border: none; background: none; overflow: visible; }
+  #pantry-table thead { display: none; }
+  #pantry-table, #pantry-table tbody, #pantry-table tr, #pantry-table td { display: block; width: 100%; }
+  #pantry-table tr {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; margin-bottom: 8px; box-shadow: var(--shadow);
+  }
+  #pantry-table td { border: none; padding: 3px 0; }
+  #pantry-table td::before {
+    content: attr(data-label); display: inline-block; width: 88px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  }
+  #pantry-table td:first-child { font-weight: 600; }
+  #pantry-table td:first-child::before, #pantry-table td[colspan]::before { display: none; }
+  #pantry-table td[colspan] { text-align: center; color: var(--muted); }
+  #pantry-table td:last-child { text-align: right; padding-top: 4px; }
+
+  /* il modale sale dal basso e sfrutta tutta l'altezza disponibile */
+  .modal { padding: 0; align-items: flex-end; }
+  .modal-box {
+    width: 100%; max-height: 92vh; max-height: 92dvh;
+    border-radius: 16px 16px 0 0;
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-head { position: sticky; top: -16px; background: var(--surface); padding: 4px 0 12px; }
+
+  /* nell'editor ingredienti il nome prende una riga, quantità e unità la successiva */
+  .ing-row { flex-wrap: wrap; }
+  .ing-row input { min-width: 0; }
+  .ing-row input:first-child { flex: 1 1 100%; }
+  .ing-row input:nth-child(2), .ing-row input:nth-child(3) { flex: 1 1 0; max-width: none; }
+
+  /* l'onboarding è lungo: stretto un po' i blocchi per far entrare il pulsante finale */
+  .modal-box .field { margin-bottom: 9px; }
+  .modal-box .banner { padding: 9px 12px; margin-bottom: 12px; }
+  .modal-box .banner p { font-size: 12.5px; }
+  .modal-box .banner strong { font-size: 13.5px; }
+  .modal-box .chips { gap: 5px; margin-bottom: 8px; }
+  .modal-head { margin-bottom: 10px; }
+
+  /* nome e valore dell'ingrediente su righe separate invece che affiancati */
+  .report-row { flex-direction: column; gap: 1px; }
+  .report-row .ing { min-width: 0; }
+
+  .qty-input, .unit-input { width: auto; }
+  .shop-item .qty { white-space: nowrap; }
+  .toast { bottom: max(24px, env(safe-area-inset-bottom)); width: max-content; max-width: calc(100% - 28px); }
 }

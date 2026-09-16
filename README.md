@@ -1,24 +1,24 @@
-# 🍳 Cucina & Spesa
+# рџЌі Cucina & Spesa
 
 Web app per gestire ricette, dispensa, piano pasti settimanale e lista della spesa.
 
-## Funzionalità
+## FunzionalitГ 
 
-- **Piano settimanale** — assegna una ricetta a pranzo e cena per ogni giorno, con porzioni personalizzabili. I pasti sono definiti in `MEALS` (`app.py`) e l'interfaccia li legge da `/api/meta`, quindi aggiungerne o toglierne uno si fa in un punto solo.
-- **Ricette** — nome, porzioni, tempo, difficoltà, ingredienti con quantità e unità, preparazione.
-- **Dispensa** — ciò che hai già in casa, con quantità aggiornabili.
-- **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati. Ogni voce indica quanto ne è già in dispensa.
-- **Generazione automatica** — dal piano settimanale crea la lista della spesa: somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
-- **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
-- **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
+- **Piano settimanale** вЂ” assegna una ricetta a pranzo e cena per ogni giorno, con porzioni personalizzabili. I pasti sono definiti in `MEALS` (`app.py`) e l'interfaccia li legge da `/api/meta`, quindi aggiungerne o toglierne uno si fa in un punto solo.
+- **Ricette** вЂ” nome, porzioni, tempo, difficoltГ , ingredienti con quantitГ  e unitГ , preparazione.
+- **Dispensa** вЂ” ciГІ che hai giГ  in casa, con quantitГ  aggiornabili.
+- **Spesa** вЂ” lista raggruppata per categoria merceologica, con spunta degli articoli acquistati. Ogni voce indica quanto ne ГЁ giГ  in dispensa.
+- **Generazione automatica** вЂ” dal piano settimanale crea la lista della spesa: somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che ГЁ giГ  in dispensa.
+- **Conversione automatica delle unitГ ** вЂ” le unitГ  compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
+- **Allergie e intolleranze** вЂ” alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 
 ## Allergie e intolleranze
 
-Alla prima apertura un onboarding chiede di dichiarare ciò che riguarda l'utente; la scelta è modificabile in ogni momento dalla scheda **Profilo**.
+Alla prima apertura un onboarding chiede di dichiarare ciГІ che riguarda l'utente; la scelta ГЁ modificabile in ogni momento dalla scheda **Profilo**.
 
 Si possono selezionare i 14 allergeni dell'allegato II del Regolamento UE 1169/2011 (quelli che per legge vanno evidenziati in etichetta) oppure aggiungere termini liberi come `nichel` o `fruttosio`.
 
-Il riconoscimento (`allergens.py`) lavora sul nome dell'ingrediente, per parola intera, ignorando maiuscole e accenti. Include alcune eccezioni per evitare falsi positivi: `noce moscata` non è frutta a guscio, `latte di cocco` non è latte, `noodles di riso` non contengono glutine. Al contrario, `salsa di soia` viene marcata sia soia sia glutine, perché contiene grano.
+Il riconoscimento (`allergens.py`) lavora sul nome dell'ingrediente, per parola intera, ignorando maiuscole e accenti. Include alcune eccezioni per evitare falsi positivi: `noce moscata` non ГЁ frutta a guscio, `latte di cocco` non ГЁ latte, `noodles di riso` non contengono glutine. Al contrario, `salsa di soia` viene marcata sia soia sia glutine, perchГ© contiene grano.
 
 L'app mostra:
 
@@ -28,43 +28,43 @@ L'app mostra:
 - un avviso nel piano pasti se un pasto pianificato contiene una restrizione;
 - un riepilogo di tutti gli ingredienti in uso, con gli allergeni e l'evidenza di quelli che riguardano l'utente.
 
-> **Attenzione** — è un controllo indicativo basato sui nomi: un allergene nascosto in un prodotto lavorato (dado, salsa, pasta sfoglia, surgelati) può sfuggire. Non sostituisce la lettura dell'etichetta né il parere del medico.
+> **Attenzione** вЂ” ГЁ un controllo indicativo basato sui nomi: un allergene nascosto in un prodotto lavorato (dado, salsa, pasta sfoglia, surgelati) puГІ sfuggire. Non sostituisce la lettura dell'etichetta nГ© il parere del medico.
 
-## Unità di misura
+## UnitГ  di misura
 
-Le unità sono raggruppate in dimensioni convertibili fra loro:
+Le unitГ  sono raggruppate in dimensioni convertibili fra loro:
 
-| Dimensione | Unità | Unità base |
+| Dimensione | UnitГ  | UnitГ  base |
 | --- | --- | --- |
 | Massa | `g`, `kg` | `g` |
 | Volume | `ml`, `l`, `cucchiaino` (5 ml), `cucchiaio` (15 ml) | `ml` |
 
-Unità come `pz`, `fetta` o `confezione` non hanno un fattore fisso e restano indipendenti: 3 uova e 1 confezione di uova vengono tenute separate, perché non si può sapere quante uova contenga la confezione.
+UnitГ  come `pz`, `fetta` o `confezione` non hanno un fattore fisso e restano indipendenti: 3 uova e 1 confezione di uova vengono tenute separate, perchГ© non si puГІ sapere quante uova contenga la confezione.
 
 Cosa comporta in pratica:
 
 - Una ricetta con 400 g di pasta e una dispensa con 0,1 kg della stessa pasta si scalano correttamente (restano 300 g da comprare).
 - Se due ricette usano lo stesso ingrediente, una in `g` e una in `kg`, la lista della spesa mostra una sola voce con il totale.
-- La lista usa sempre l'unità più leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai si mantengono solo per quantità piccole (`1 cucchiaino` di sale, `2 cucchiai` d'olio), oltre i 250 ml si passa automaticamente a ml o l.
-- I nomi delle unità vengono normalizzati in ingresso: `Grammi`, `GR` e `g.` finiscono tutti in `g`.
+- La lista usa sempre l'unitГ  piГ№ leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai si mantengono solo per quantitГ  piccole (`1 cucchiaino` di sale, `2 cucchiai` d'olio), oltre i 250 ml si passa automaticamente a ml o l.
+- I nomi delle unitГ  vengono normalizzati in ingresso: `Grammi`, `GR` e `g.` finiscono tutti in `g`.
 
 ## Dispensa nella lista della spesa
 
-Ogni voce della lista riporta quanto dell'ingrediente è già in dispensa, convertito nell'unità della voce: con 0,2 kg di farina in casa, una voce da 300 g mostra `in dispensa: 200 g`. Se le unità non sono confrontabili (dispensa in pezzi contro una voce in grammi) la giacenza viene mostrata nella sua unità, senza tentare conversioni.
+Ogni voce della lista riporta quanto dell'ingrediente ГЁ giГ  in dispensa, convertito nell'unitГ  della voce: con 0,2 kg di farina in casa, una voce da 300 g mostra `in dispensa: 200 g`. Se le unitГ  non sono confrontabili (dispensa in pezzi contro una voce in grammi) la giacenza viene mostrata nella sua unitГ , senza tentare conversioni.
 
-La giacenza è calcolata a ogni lettura della lista, non congelata quando si genera: aggiungendo qualcosa in dispensa il dato si aggiorna subito, senza rigenerare la spesa.
+La giacenza ГЁ calcolata a ogni lettura della lista, non congelata quando si genera: aggiungendo qualcosa in dispensa il dato si aggiorna subito, senza rigenerare la spesa.
 
-> **Nota** — la quantità da comprare è già al netto della dispensa, quindi l'indicazione serve a ricordare cosa c'è in casa, non a suggerire di saltare l'acquisto. Se la dispensa copre l'intero fabbisogno la voce non compare affatto in lista.
+> **Nota** вЂ” la quantitГ  da comprare ГЁ giГ  al netto della dispensa, quindi l'indicazione serve a ricordare cosa c'ГЁ in casa, non a suggerire di saltare l'acquisto. Se la dispensa copre l'intero fabbisogno la voce non compare affatto in lista.
 
 ## Ricettario di partenza
 
-`seed.py` inserisce 25 ricette (primi, secondi, contorni e piatti unici, inclusi alcuni etnici) con ingredienti completi e categorie merceologiche già assegnate. È idempotente: le ricette già presenti vengono saltate, mentre quelle elencate in `REMOVED` vengono rimosse dal database.
+`seed.py` inserisce 25 ricette (primi, secondi, contorni e piatti unici, inclusi alcuni etnici) con ingredienti completi e categorie merceologiche giГ  assegnate. Г€ idempotente: le ricette giГ  presenti vengono saltate, mentre quelle elencate in `REMOVED` vengono rimosse dal database.
 
 ```bash
 python3 seed.py
 ```
 
-Viene usato per avere subito contenuti da selezionare nel piano pasti. Il database (`cucina.db`) non è versionato: va creato al primo avvio o popolato con `seed.py`.
+Viene usato per avere subito contenuti da selezionare nel piano pasti. Il database (`cucina.db`) non ГЁ versionato: va creato al primo avvio o popolato con `seed.py`.
 
 ## Test
 
@@ -73,8 +73,12 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Quarantuno test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni), filtro delle ricette e giacenza in dispensa nella lista.
+Quarantuno test coprono conversione, normalizzazione, fusione di unitГ  compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni), filtro delle ricette e giacenza in dispensa nella lista.
 
+
+## Interfaccia
+
+L'app ГЁ pensata per funzionare anche da telefono, dove sta in una sola colonna: la barra delle schede resta agganciata in alto, i campi di input usano 16px (sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro), i pulsanti hanno un'altezza minima di 42px e la tabella della dispensa diventa un elenco di schede, perchГ© quattro colonne non entrerebbero nello schermo.
 
 ## Avvio
 
@@ -86,16 +90,28 @@ PORT=12000 python app.py
 
 Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Per usare un file diverso: `CUCINA_DB=/percorso/mio.db`.
 
+### Dal telefono
+
+Il server ascolta su `0.0.0.0`, quindi risponde anche agli altri dispositivi della stessa rete. Apri sul telefono:
+
+```
+http://<ip-del-computer>:12000
+```
+
+Per trovare l'indirizzo: `hostname -I | awk '{print $1}'` (Linux/macOS) oppure `ipconfig` (Windows). Se non si apre, quasi sempre è il firewall che blocca la porta.
+
+Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:localhost:12000 nokey@localhost.run` oppure `cloudflared tunnel --url http://localhost:12000`: stampano un indirizzo pubblico `https://...` da aprire sul telefono, valido finché il comando resta in esecuzione.
+
 ## API
 
 | Metodo | Endpoint | Descrizione |
 | --- | --- | --- |
-| GET | `/api/meta` | Pasti, unità di misura, categorie, allergeni |
+| GET | `/api/meta` | Pasti, unitГ  di misura, categorie, allergeni |
 | GET/PUT | `/api/profile` | Profilo: nome e restrizioni dichiarate |
 | GET | `/api/profile/allergens` | Allergeni riconosciuti per ogni ingrediente in uso |
 | GET/POST | `/api/ingredients` | Elenco / creazione ingredienti |
 | GET/POST | `/api/pantry` | Dispensa |
-| PATCH/DELETE | `/api/pantry/<id>` | Modifica quantità o rimozione |
+| PATCH/DELETE | `/api/pantry/<id>` | Modifica quantitГ  o rimozione |
 | GET/POST | `/api/recipes` | Ricette (`?full=1` include ingredienti, allergeni e conflitti; `?safe=1` esclude quelle in conflitto) |
 | GET/PUT/DELETE | `/api/recipes/<id>` | Dettaglio, modifica, eliminazione |
 | GET/POST | `/api/plan` | Piano pasti (`?start=&end=`) |
@@ -109,7 +125,7 @@ Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Pe
 
 ```
 app.py              # backend Flask + API REST + logica di generazione
-units.py            # conversione e normalizzazione delle unità di misura
+units.py            # conversione e normalizzazione delle unitГ  di misura
 allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
 schema.sql          # schema SQLite

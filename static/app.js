@@ -241,9 +241,9 @@ async function renderPantry() {
   const list = items.filter((i) => i.name.toLowerCase().includes(q));
   $('#pantry-table tbody').innerHTML = list.map((i) => `
     <tr>
-      <td>${esc(i.name)}</td>
-      <td>${esc(i.category)}</td>
-      <td><input type="number" step="0.1" value="${i.quantity}" data-qty="${i.id}" style="width:90px"> ${esc(i.unit)}</td>
+      <td data-label="Ingrediente">${esc(i.name)}</td>
+      <td data-label="Categoria">${esc(i.category)}</td>
+      <td data-label="Quantità"><input type="number" step="0.1" value="${i.quantity}" data-qty="${i.id}" class="qty-cell"> ${esc(i.unit)}</td>
       <td><button data-del="${i.id}">🗑</button></td>
     </tr>`).join('') || '<tr><td colspan="4">Dispensa vuota</td></tr>';
 }

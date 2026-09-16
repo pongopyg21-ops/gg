@@ -27,3 +27,19 @@ processo dalla shell, altrimenti viene terminato alla fine del comando.
   Non toccano `cucina.db`.
 - `cucina.db` non è versionato: per provare l'app va creato con `seed.py`.
 - `seed.py` è idempotente e rimuove le ricette elencate in `REMOVED`.
+
+## Interfaccia mobile
+
+Il layout sotto i 560px è una sola colonna. Tre vincoli da non rompere quando si tocca il CSS:
+
+- Gli input del telefono usano `font-size: 16px`: sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro.
+- La dispensa è una tabella che diventa elenco di schede. Le etichette di colonna arrivano da `data-label` sulle celle, generato in `renderPantry`, e sono mostrate via `::before`: aggiungendo una colonna va aggiunto anche il `data-label`.
+- I bersagli toccabili hanno `min-height: 42px`.
+
+Per verificare il layout senza indovinare si può usare Chromium headless, già presente:
+
+```bash
+chromium --headless=new --no-sandbox --window-size=390,844 --screenshot=/tmp/prova.png http://localhost:12000/
+```
+
+Playwright con `executable_path="/usr/bin/chromium"` permette di controllare overflow orizzontale e misure delle aree toccabili su viewport diversi.
