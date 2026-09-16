@@ -1,73 +1,157 @@
+/* Font ospitati localmente: l'app non dipende da una CDN esterna.
+   Fraunces (serif, per i titoli) e Hanken Grotesk (sans, per l'interfaccia). */
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/hanken-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* ============================================================
+   Cucina & Spesa — stile editoriale, carta e inchiostro
+   Titoli in Fraunces (serif), interfaccia in Hanken Grotesk.
+   L'eleganza sta in tipografia, spaziatura e linee sottili:
+   niente ombre pesanti, niente decorazioni superflue.
+   ============================================================ */
+
 :root {
-  --bg: #faf7f2;
+  --paper: #fbf9f5;
   --surface: #ffffff;
-  --ink: #2b2622;
-  --muted: #7d736a;
-  --line: #e6ded4;
-  --accent: #c1562f;
-  --accent-soft: #f6e3da;
-  --green: #4f7d52;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgba(43, 38, 34, .06), 0 8px 24px -12px rgba(43, 38, 34, .18);
+  --ink: #26221e;
+  --muted: #6b6157;
+  --line: #ece5db;
+  --line-strong: #ddd3c5;
+
+  --accent: #a8452b;
+  --accent-deep: #8a3821;
+  --accent-soft: #f8eae3;
+
+  --green: #4a6b4a;
+  --green-soft: #eef2eb;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(38, 34, 30, .04), 0 10px 28px -18px rgba(38, 34, 30, .22);
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Hanken Grotesk', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  background: var(--bg);
+  font-family: var(--font-ui);
+  background: var(--paper);
   color: var(--ink);
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
   padding-top: env(safe-area-inset-top);
+  -webkit-font-smoothing: antialiased;
 }
 
+::selection { background: var(--accent-soft); }
+
+/* ---------- testata e schede ---------- */
 header {
-  padding: 20px 24px 0;
-  max-width: 1180px;
+  padding: 30px 28px 0;
+  max-width: 1140px;
   margin: 0 auto;
 }
 
-h1 { margin: 0 0 16px; font-size: 24px; letter-spacing: -.02em; }
+h1 {
+  margin: 0 0 20px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 500;
+  font-variation-settings: 'opsz' 120;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+}
 
 /* La barra resta agganciata in alto: su telefono si cambia scheda senza risalire. */
 nav {
-  display: flex; gap: 4px; border-bottom: 2px solid var(--line); flex-wrap: wrap;
-  max-width: 1180px; margin: 0 auto; padding: 0 24px;
-  position: sticky; top: env(safe-area-inset-top); z-index: 20; background: var(--bg);
+  display: flex; gap: 2px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  max-width: 1140px; margin: 0 auto; padding: 0 28px;
+  position: sticky; top: env(safe-area-inset-top); z-index: 20;
+  background: var(--paper);
 }
 
 nav button {
-  background: none; border: none; border-bottom: 3px solid transparent;
-  padding: 10px 14px; margin-bottom: -2px; cursor: pointer;
-  font: inherit; font-weight: 600; color: var(--muted);
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 13px; margin-bottom: -1px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  letter-spacing: .005em; color: var(--muted);
+  transition: color .16s ease, border-color .16s ease;
 }
 nav button:hover { color: var(--ink); }
-nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
 
-main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+main { max-width: 1140px; margin: 0 auto; padding: 28px; }
 
 .tab { display: none; }
 .tab.active { display: block; }
 
-.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
 .spacer { flex: 1; }
 
+/* ---------- controlli ---------- */
 button, input, select, textarea {
-  font: inherit; color: inherit;
-  border: 1px solid var(--line); border-radius: 9px;
+  font-family: inherit; font-size: inherit; color: inherit;
+  border: 1px solid var(--line-strong); border-radius: 8px;
   background: var(--surface); padding: 8px 11px;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
-button { cursor: pointer; background: var(--surface); font-weight: 600; }
+button { cursor: pointer; font-weight: 500; }
 button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover { background: #a9481f; }
-button.icon { border: none; background: none; font-size: 18px; padding: 4px 8px; color: var(--muted); }
-input, select, textarea { background: var(--surface); }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+button.icon {
+  border: none; background: none; font-size: 17px; padding: 4px 8px;
+  color: var(--muted); box-shadow: none;
+}
+button.icon:hover { color: var(--accent); background: none; }
 
-/* larghezze di comodo per i campi numerici delle barre strumenti */
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+}
+
+/* cifre incolonnate: le quantita' non ballano fra una riga e l'altra */
+.qty-input, .unit-input, .qty-cell, .shop-item .qty, .slot .rname {
+  font-variant-numeric: tabular-nums;
+}
 .qty-input { width: 90px; }
 .unit-input { width: 110px; }
 .qty-cell { width: 90px; }
@@ -77,73 +161,107 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 
 .day {
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 10px; min-height: 190px;
+  border-radius: var(--radius); padding: 12px; min-height: 190px;
   box-shadow: var(--shadow);
 }
 .day.today { border-color: var(--accent); }
-.day h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.day.today h3 { color: var(--accent); }
+.day h3 {
+  margin: 0 0 10px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+}
 
 .slot {
-  border: 1px dashed var(--line); border-radius: 8px;
-  padding: 6px 8px; margin-bottom: 6px; font-size: 13px; cursor: pointer;
+  border: 1px dashed var(--line-strong); border-radius: 8px;
+  padding: 7px 9px; margin-bottom: 6px; font-size: 13px; cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
 }
 .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
-.slot .meal { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: block; }
-.slot .rname { font-weight: 600; }
-.slot.filled { border-style: solid; border-color: var(--green); background: #f2f7f2; }
+.slot .meal {
+  display: block; font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted);
+}
+.slot .rname { font-weight: 500; font-family: var(--font-display); font-size: 13.5px; }
+.slot.filled { border-style: solid; border-color: var(--green); background: var(--green-soft); }
+.slot.filled .meal { color: var(--green); }
 
-/* ---------- cards ricette ---------- */
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+/* ---------- schede ricette ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px;
+  padding: 16px; display: flex; flex-direction: column; gap: 7px;
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
-.card h3 { margin: 0; font-size: 16px; }
-.card .meta { font-size: 12px; color: var(--muted); }
+.card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.card h3 {
+  margin: 0; font-family: var(--font-display);
+  font-size: 17px; font-weight: 500; letter-spacing: -.005em; line-height: 1.25;
+}
+.card .meta { font-size: 12px; color: var(--muted); letter-spacing: .01em; }
 .card .ings { font-size: 12.5px; color: var(--muted); }
-.card .actions { display: flex; gap: 6px; margin-top: auto; padding-top: 8px; }
-.card .actions button { font-size: 12px; padding: 5px 9px; }
+.card .actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; }
+.card .actions button { font-size: 12px; padding: 5px 10px; }
 
 /* ---------- tabelle ---------- */
-table { width: 100%; border-collapse: collapse; background: var(--surface);
-        border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
-th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: #fdfbf8; }
+table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+}
+th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--line); }
+th {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); background: #fcfaf7;
+}
+tbody tr:hover td { background: #fdfbf8; }
 tr:last-child td { border-bottom: none; }
 
-/* ---------- lista spesa ---------- */
-.shop-list { display: flex; flex-direction: column; gap: 14px; }
-.shop-group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+/* ---------- lista della spesa ---------- */
+.shop-list { display: flex; flex-direction: column; gap: 16px; }
+.shop-group h3 {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); margin: 0 0 7px;
+}
 .shop-item {
-  display: flex; align-items: center; gap: 10px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; margin-bottom: 6px;
-  box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 11px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 13px; margin-bottom: 6px;
+  transition: border-color .16s ease;
 }
-.shop-item.done { opacity: .5; }
+.shop-item:hover { border-color: var(--line-strong); }
+.shop-item.done { opacity: .48; }
 .shop-item.done .name { text-decoration: line-through; }
-.shop-item .name { font-weight: 600; flex: 1; }
-.pantry-note {
-  display: block; font-weight: 400; font-size: 12px; color: var(--muted);
-  margin-top: 2px;
-}
+.shop-item .name { font-weight: 500; flex: 1; }
+.pantry-note { display: block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px; }
 .shop-item.done .pantry-note { text-decoration: none; }
 .shop-item .qty { color: var(--muted); font-size: 13px; }
-.shop-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--green); }
+.shop-item input[type=checkbox] {
+  width: 18px; height: 18px; accent-color: var(--green); cursor: pointer;
+}
 
-/* ---------- modale ---------- */
+/* ---------- finestra modale ---------- */
 .modal {
-  position: fixed; inset: 0; background: rgba(43, 38, 34, .45);
+  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
 }
 .modal.hidden, .toast.hidden, .hidden { display: none !important; }
 .modal-box {
-  background: var(--surface); border-radius: 16px; width: min(640px, 100%);
-  max-height: 88vh; overflow: auto; padding: 20px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.4);
+  background: var(--surface); border-radius: 14px; width: min(620px, 100%);
+  max-height: 88vh; overflow: auto; padding: 24px;
+  box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .45);
 }
-.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.modal-head h2 { margin: 0; font-size: 19px; }
-.field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
-.field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
+  border-bottom: 1px solid var(--line); padding-bottom: 14px;
+}
+.modal-head h2 {
+  margin: 0; font-family: var(--font-display);
+  font-size: 21px; font-weight: 500; letter-spacing: -.01em;
+}
+.field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 5px; }
+.field label {
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .09em;
+}
 .field textarea { min-height: 90px; resize: vertical; }
 .row { display: flex; gap: 8px; align-items: center; }
 .row > input, .row > select { flex: 1; min-width: 0; }
@@ -152,75 +270,118 @@ tr:last-child td { border-bottom: none; }
 .ing-row input:nth-child(2) { flex: 1; max-width: 90px; }
 .ing-row input:nth-child(3) { flex: 1; max-width: 120px; }
 
+/* riga del pulsante di conferma in fondo al modale */
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
-  font-size: 14px; z-index: 100; box-shadow: 0 10px 30px -10px rgba(0,0,0,.5);
+  font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(38, 34, 30, .5);
 }
 
 /* ---------- allergie e intolleranze ---------- */
 .banner {
-  background: #fdf3e7; border: 1px solid #f0d9bd; border-left: 4px solid var(--accent);
-  border-radius: var(--radius); padding: 12px 16px; margin-bottom: 18px;
+  background: var(--accent-soft); border: 1px solid #efd7cc;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: 13px 17px; margin-bottom: 20px;
 }
-.banner strong { display: block; margin-bottom: 4px; }
-.banner p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.banner strong { display: block; margin-bottom: 5px; font-weight: 600; letter-spacing: .005em; }
+.banner p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 18px; box-shadow: var(--shadow); max-width: 640px;
+  padding: 20px; max-width: 640px;
 }
 .hint { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
-.toggle { display: flex; align-items: center; gap: 7px; font-size: 13.5px; }
-.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 24px 0 10px; }
+.toggle { display: flex; align-items: center; gap: 7px; font-size: 13.5px; cursor: pointer; }
+.section-title {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); margin: 28px 0 12px;
+}
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
 .chip {
-  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
-  border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 5px 13px; font-family: inherit; font-size: 13px;
+  font-weight: 500; cursor: pointer;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
 }
 .chip:hover { border-color: var(--accent); color: var(--ink); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
 /* etichette di allerta su ricette e piano */
-.card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
-.card.unsafe { border-color: #e0b4a4; }
-.slot.unsafe { border-color: #d98d70; background: #fdf0ea; }
+.card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 7px; }
+.card.unsafe { border-color: #e6c3b8; }
+.slot.unsafe { border-color: #d99b85; background: #fdf1ec; }
 .badge {
-  display: inline-block; background: #fdecec; color: #a5341d; border: 1px solid #eec4b8;
-  border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; margin: 3px 3px 0 0;
+  display: inline-block; background: #fbeae6; color: var(--accent-deep);
+  border: 1px solid #eecdc2; border-radius: 999px;
+  padding: 1px 9px; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .02em; margin: 4px 4px 0 0;
 }
 .warn-icon { font-size: 12px; margin-left: 4px; }
 
-.report-row { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.report-row {
+  display: flex; gap: 12px; align-items: baseline; padding: 7px 0;
+  border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
 .report-row:last-child { border-bottom: none; }
-.report-row .ing { font-weight: 600; min-width: 170px; }
-.report-row.unsafe .ing { color: #a5341d; }
+.report-row .ing { font-weight: 500; min-width: 170px; }
+.report-row.unsafe .ing { color: var(--accent-deep); }
 .report-row .tags { color: var(--muted); }
+
+/* ---------- comparse morbide ---------- */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.tab.active .card, .tab.active .day, .tab.active .shop-group { animation: rise .3s ease-out both; }
+.tab.active .card:nth-child(2), .tab.active .day:nth-child(2) { animation-delay: .03s; }
+.tab.active .card:nth-child(3), .tab.active .day:nth-child(3) { animation-delay: .06s; }
+.tab.active .card:nth-child(4), .tab.active .day:nth-child(4) { animation-delay: .09s; }
+.tab.active .card:nth-child(5), .tab.active .day:nth-child(5) { animation-delay: .12s; }
+.tab.active .card:nth-child(n+6), .tab.active .day:nth-child(n+6) { animation-delay: .15s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important; transition: none !important;
+  }
+}
 
 @media (max-width: 900px) {
   .plan-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ---------- telefono ---------- */
+/* ============================================================
+   Telefono — una colonna sola
+   ============================================================ */
 @media (max-width: 560px) {
   .plan-grid { grid-template-columns: 1fr; }
   .day { min-height: auto; }
-  main, header, nav { padding-left: max(14px, env(safe-area-inset-left));
-                      padding-right: max(14px, env(safe-area-inset-right)); }
+  main, header, nav {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  header { padding-top: 22px; }
+  h1 { font-size: 25px; margin-bottom: 16px; }
+  main { padding-top: 20px; }
 
   /* Sotto i 16px iOS ingrandisce la pagina appena si tocca un campo, e non torna
-     più indietro: è il fastidio più evidente dell'app sul telefono. */
+     piu' indietro: e' il fastidio piu' evidente dell'app sul telefono. */
   input, select, textarea { font-size: 16px; }
 
   /* bersagli comodi per il dito */
-  button, input:not([type=checkbox]), select, textarea { min-height: 42px; }
-  button.icon { min-width: 42px; }
-  .chip { min-height: 36px; padding: 6px 13px; }
+  button, input:not([type=checkbox]), select, textarea { min-height: 44px; }
+  button.icon { min-width: 44px; }
+  .chip { min-height: 42px; padding: 8px 15px; }
   .shop-item input[type=checkbox] { width: 22px; height: 22px; }
+  .shop-item { padding: 12px 13px; }
 
   /* la barra strumenti va a capo senza spaziatori e i campi riempiono la riga */
-  .toolbar { gap: 6px; margin-bottom: 14px; }
+  .toolbar { gap: 7px; margin-bottom: 16px; }
   .toolbar .spacer { display: none; }
   .toolbar input:not([type=checkbox]), .toolbar select { flex: 1 1 130px; min-width: 0; }
   .toolbar .qty-input { flex: 0 1 84px; }
@@ -234,40 +395,50 @@ tr:last-child td { border-bottom: none; }
   #pantry-table, #pantry-table tbody, #pantry-table tr, #pantry-table td { display: block; width: 100%; }
   #pantry-table tr {
     background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
-    padding: 10px 12px; margin-bottom: 8px; box-shadow: var(--shadow);
+    padding: 11px 13px; margin-bottom: 8px;
   }
   #pantry-table td { border: none; padding: 3px 0; }
   #pantry-table td::before {
     content: attr(data-label); display: inline-block; width: 88px;
-    font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--muted);
   }
-  #pantry-table td:first-child { font-weight: 600; }
+  #pantry-table tbody tr:hover td { background: none; }
+  #pantry-table td:first-child { font-family: var(--font-display); font-size: 16px; font-weight: 500; }
   #pantry-table td:first-child::before, #pantry-table td[colspan]::before { display: none; }
   #pantry-table td[colspan] { text-align: center; color: var(--muted); }
-  #pantry-table td:last-child { text-align: right; padding-top: 4px; }
+  #pantry-table td:last-child { text-align: right; padding-top: 5px; }
 
   /* il modale sale dal basso e sfrutta tutta l'altezza disponibile */
   .modal { padding: 0; align-items: flex-end; }
   .modal-box {
     width: 100%; max-height: 92vh; max-height: 92dvh;
-    border-radius: 16px 16px 0 0;
-    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0; padding: 18px 16px max(16px, env(safe-area-inset-bottom));
   }
-  .modal-head { position: sticky; top: -16px; background: var(--surface); padding: 4px 0 12px; }
+  .modal-head {
+    position: sticky; top: -18px; background: var(--surface);
+    padding: 15px 0 12px; margin-bottom: 12px;
+  }
+  /* il pulsante di conferma resta visibile anche se il modulo e' lungo */
+  .modal-foot {
+    position: sticky; bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+    background: var(--surface); border-top: 1px solid var(--line);
+    margin: 18px -16px 0; padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-foot button { flex: 1; }
 
-  /* nell'editor ingredienti il nome prende una riga, quantità e unità la successiva */
+  /* nell'editor ingredienti il nome prende una riga, quantita' e unita' la successiva */
   .ing-row { flex-wrap: wrap; }
   .ing-row input { min-width: 0; }
   .ing-row input:first-child { flex: 1 1 100%; }
   .ing-row input:nth-child(2), .ing-row input:nth-child(3) { flex: 1 1 0; max-width: none; }
 
-  /* l'onboarding è lungo: stretto un po' i blocchi per far entrare il pulsante finale */
+  /* l'onboarding e' lungo: stretto un po' i blocchi per far entrare il pulsante finale */
   .modal-box .field { margin-bottom: 9px; }
   .modal-box .banner { padding: 9px 12px; margin-bottom: 12px; }
   .modal-box .banner p { font-size: 12.5px; }
   .modal-box .banner strong { font-size: 13.5px; }
   .modal-box .chips { gap: 5px; margin-bottom: 8px; }
-  .modal-head { margin-bottom: 10px; }
 
   /* nome e valore dell'ingrediente su righe separate invece che affiancati */
   .report-row { flex-direction: column; gap: 1px; }

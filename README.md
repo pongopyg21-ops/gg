@@ -78,7 +78,13 @@ Quarantuno test coprono conversione, normalizzazione, fusione di unitГ  compat
 
 ## Interfaccia
 
-L'app ГЁ pensata per funzionare anche da telefono, dove sta in una sola colonna: la barra delle schede resta agganciata in alto, i campi di input usano 16px (sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro), i pulsanti hanno un'altezza minima di 42px e la tabella della dispensa diventa un elenco di schede, perchГ© quattro colonne non entrerebbero nello schermo.
+Lo stile è editoriale, da ricettario: fondo carta calda, inchiostro scuro e un solo accento terracotta. I titoli sono in **Fraunces** (serif variabile), l'interfaccia in **Hanken Grotesk**. Entrambi i font sono ospitati in `static/fonts/`, quindi l'app funziona anche senza connessione e non dipende da CDN esterne.
+
+L'eleganza sta in tipografia, spaziature e linee sottili: niente ombre marcate o decorazioni. Le quantità usano cifre incolonnate (`tabular-nums`), così i numeri non ballano fra una riga e l'altra.
+
+Per la scelta dei colori vale il contrasto WCAG AA: ogni testo resta sopra 4.5:1 sul proprio fondo, anche il grigio secondario, che sui fondi colorati tende a scendere sotto soglia.
+
+L'app funziona anche da telefono, dove sta in una sola colonna: la barra delle schede resta agganciata in alto, i campi di input usano 16px (sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro), i bersagli toccabili sono alti almeno 42px e la tabella della dispensa diventa un elenco di schede, perché quattro colonne non entrerebbero nello schermo.
 
 ## Avvio
 

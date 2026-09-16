@@ -194,7 +194,7 @@ function recipeForm(recipe) {
     <div class="field"><label>Ingredienti</label><div id="ing-rows"></div>
       <button id="ing-add">+ ingrediente</button></div>
     <div class="field"><label>Preparazione</label><textarea id="r-instr">${esc(r.instructions)}</textarea></div>
-    <button class="primary" id="r-save">Salva</button>
+    <div class="modal-foot"><button class="primary" id="r-save">Salva</button></div>
   `);
 
   const rowsBox = $('#ing-rows');
@@ -434,7 +434,7 @@ async function openOnboarding() {
     <div class="banner"><strong>⚠️ Controlli indicativi</strong>
       <p>Le allerte derivano dal nome degli ingredienti e non sostituiscono la lettura
       dell'etichetta né il parere del medico.</p></div>
-    <button class="primary" id="ob-save">Salva e inizia</button>
+    <div class="modal-foot"><button class="primary" id="ob-save">Salva e inizia</button></div>
   `);
 
   let selected = [];
