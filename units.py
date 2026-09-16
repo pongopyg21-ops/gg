@@ -21,6 +21,10 @@ _LADDER = {
     VOLUME: ["ml", "l"],
 }
 
+_SPOONS = {"cucchiaio", "cucchiaino"}
+# oltre questa soglia i cucchiai non sono più leggibili ("24 cucchiai" -> "360 ml")
+_SPOON_LIMIT = 250.0
+
 _ALIASES = {
     "grammi": "g", "grammo": "g", "gr": "g",
     "chili": "kg", "chilo": "kg", "chilogrammi": "kg", "chilogrammo": "kg",
@@ -82,13 +86,20 @@ def display_unit(base_quantity, dim, preferred=None):
     """Unità più leggibile in cui la quantità vale almeno 1.
 
     Con 2500 ml sceglie 'l' (2.5), con 400 ml resta 'ml', con 1500 g sceglie
-    'kg'. Unità non convertibili restano invariate.
+    'kg'. Le unità a cucchiaio sono mantenute solo per piccole quantità, dove
+    sono più comode dei millilitri; oltre la soglia si passa a ml/l. Unità non
+    convertibili restano invariate.
     """
     if dim is None:
         return normalize(preferred)
+    pref = normalize(preferred)
+
+    # i cucchiai restano se la quantità è piccola e l'utente li ha usati
+    if pref in _SPOONS and base_quantity <= _SPOON_LIMIT:
+        return pref
+
     table = _DIMENSIONS[dim][1]
     ladder = _LADDER[dim]
-    pref = normalize(preferred)
     chosen = pref if pref in ladder else ladder[0]
     for unit in ladder:  # unità base -> multiplo
         if base_quantity / table[unit] >= 1:

@@ -57,8 +57,14 @@ def test_display_unit_picks_readable():
     assert units.display_unit(1, units.MASSA, "g") == "g"
     assert units.display_unit(400, units.VOLUME, "ml") == "ml"
     assert units.display_unit(2500, units.VOLUME, "ml") == "l"
-    # i cucchiai non fanno parte della scala di visualizzazione
-    assert units.display_unit(30, units.VOLUME, "cucchiaio") == "ml"
+
+
+def test_cucchiai_mantenuti_solo_per_piccole_quantita():
+    """5 ml di sale si leggono come 1 cucchiaino, 360 ml no."""
+    assert units.display_unit(5, units.VOLUME, "cucchiaino") == "cucchiaino"
+    assert units.display_unit(45, units.VOLUME, "cucchiaio") == "cucchiaio"
+    assert units.display_unit(360, units.VOLUME, "cucchiaio") == "ml"
+    assert units.display_unit(1500, units.VOLUME, "cucchiaio") == "l"
 
 
 def test_display_unit_keeps_unconvertible():
@@ -124,7 +130,7 @@ def test_due_ricette_con_unita_diverse_si_fondono(client):
 def test_porzioni_scalate_e_convertite(client):
     """Ricetta base 2 porzioni (200 ml), mangiata in 4: 400 ml."""
     rid = ricetta(client, "Latte", 2, [{"name": "Latte", "quantity": 200, "unit": "ml"}])
-    client.post("/api/plan", json={"date": "2026-09-16", "meal": "colazione", "recipe_id": rid, "servings": 4})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "pranzo", "recipe_id": rid, "servings": 4})
 
     client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
     items = client.get("/api/shopping").get_json()
@@ -183,7 +189,14 @@ def test_nessun_pasto_pianificato(client):
 def test_meta_endpoint(client):
     meta = client.get("/api/meta").get_json()
     assert "kg" in meta["units"]
-    assert "cena" in meta["meals"]
+    assert meta["meals"] == ["pranzo", "cena"]
+
+
+def test_pasto_fuori_piano_rifiutato(client):
+    rid = ricetta(client, "X", 2, [{"name": "X", "quantity": 1, "unit": "pz"}])
+    r = client.post("/api/plan", json={"date": "2026-09-16", "meal": "colazione", "recipe_id": rid})
+    assert r.status_code == 400
+    assert "Pasto non valido" in r.get_json()["error"]
 
 
 def test_format_quantity_no_trailing_zeros():

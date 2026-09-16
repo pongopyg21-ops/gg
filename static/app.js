@@ -29,8 +29,9 @@ const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate(
 const fmtDay = (d) => d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
-const MEALS = ['colazione', 'pranzo', 'cena', 'spuntino'];
-let meta = { units: [], categories: [] };
+// i pasti arrivano da /api/meta: unica fonte di verità col backend
+let MEALS = [];
+let meta = { units: [], categories: [], meals: [] };
 let recipesCache = [];
 let weekStart = startOfWeek(new Date());
 
@@ -312,6 +313,7 @@ async function loadIngredientsDatalist() {
 /* ---------- init ---------- */
 (async function init() {
   meta = await api('/api/meta');
+  MEALS = meta.meals;
   $('#unit-list').innerHTML = meta.units.map((u) => `<option value="${u}">`).join('');
   $('#shop-cat').innerHTML = meta.categories.map((c) => `<option>${esc(c)}</option>`).join('');
   await loadIngredientsDatalist();

@@ -12,7 +12,7 @@ SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
-MEALS = ["colazione", "pranzo", "cena", "spuntino"]
+MEALS = ["pranzo", "cena"]
 
 
 def get_db():

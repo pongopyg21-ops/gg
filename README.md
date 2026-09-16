@@ -4,7 +4,7 @@ Web app per gestire ricette, dispensa, piano pasti settimanale e lista della spe
 
 ## Funzionalità
 
-- **Piano settimanale** — assegna una ricetta a colazione/pranzo/cena/spuntino per ogni giorno, con porzioni personalizzabili.
+- **Piano settimanale** — assegna una ricetta a pranzo e cena per ogni giorno, con porzioni personalizzabili. I pasti sono definiti in `MEALS` (`app.py`) e l'interfaccia li legge da `/api/meta`, quindi aggiungerne o toglierne uno si fa in un punto solo.
 - **Ricette** — nome, porzioni, tempo, difficoltà, ingredienti con quantità e unità, preparazione.
 - **Dispensa** — ciò che hai già in casa, con quantità aggiornabili.
 - **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati.
@@ -26,8 +26,18 @@ Cosa comporta in pratica:
 
 - Una ricetta con 400 g di pasta e una dispensa con 0,1 kg della stessa pasta si scalano correttamente (restano 300 g da comprare).
 - Se due ricette usano lo stesso ingrediente, una in `g` e una in `kg`, la lista della spesa mostra una sola voce con il totale.
-- La lista usa sempre l'unità più leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai non entrano in questa scelta automatica, altrimenti 400 ml diventerebbero "26,67 cucchiai".
+- La lista usa sempre l'unità più leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai si mantengono solo per quantità piccole (`1 cucchiaino` di sale, `2 cucchiai` d'olio), oltre i 250 ml si passa automaticamente a ml o l.
 - I nomi delle unità vengono normalizzati in ingresso: `Grammi`, `GR` e `g.` finiscono tutti in `g`.
+
+## Ricettario di partenza
+
+`seed.py` inserisce 14 ricette italiane (primi, secondi, contorni e un dolce) con ingredienti completi e categorie merceologiche già assegnate. È idempotente: le ricette già presenti vengono saltate.
+
+```bash
+python3 seed.py
+```
+
+Viene usato per avere subito contenuti da selezionare nel piano pasti. Il database (`cucina.db`) non è versionato: va creato al primo avvio o popolato con `seed.py`.
 
 ## Test
 
@@ -36,7 +46,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Venti test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni e casi limite.
+Ventidue test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni e casi limite.
 
 
 ## Avvio
@@ -71,6 +81,7 @@ Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Pe
 ```
 app.py              # backend Flask + API REST + logica di generazione
 units.py            # conversione e normalizzazione delle unità di misura
+seed.py             # ricettario di partenza
 schema.sql          # schema SQLite
 test_cucina.py      # test
 static/index.html   # interfaccia
