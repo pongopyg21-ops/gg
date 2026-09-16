@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cucina &amp; Spesa</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>🍳 Cucina &amp; Spesa</h1>
+  <nav id="tabs">
+    <button data-tab="plan" class="active">📅 Piano</button>
+    <button data-tab="recipes">📖 Ricette</button>
+    <button data-tab="pantry">🧺 Dispensa</button>
+    <button data-tab="shopping">🛒 Spesa</button>
+  </nav>
+</header>
+
+<main>
+  <!-- PIANO -->
+  <section id="tab-plan" class="tab active">
+    <div class="toolbar">
+      <button id="week-prev">‹ Settimana</button>
+      <strong id="week-label"></strong>
+      <button id="week-next">Settimana ›</button>
+      <button id="week-today">Oggi</button>
+      <span class="spacer"></span>
+      <button id="gen-week" class="primary">Genera lista della spesa</button>
+    </div>
+    <div id="plan-grid" class="plan-grid"></div>
+  </section>
+
+  <!-- RICETTE -->
+  <section id="tab-recipes" class="tab">
+    <div class="toolbar">
+      <input id="recipe-search" type="search" placeholder="Cerca ricetta...">
+      <span class="spacer"></span>
+      <button id="new-recipe" class="primary">+ Nuova ricetta</button>
+    </div>
+    <div id="recipe-list" class="cards"></div>
+  </section>
+
+  <!-- DISPENSA -->
+  <section id="tab-pantry" class="tab">
+    <div class="toolbar">
+      <input id="pantry-name" placeholder="Ingrediente" list="ingredient-list">
+      <input id="pantry-qty" type="number" step="0.1" value="1" style="width:90px">
+      <input id="pantry-unit" list="unit-list" value="pz" style="width:110px">
+      <button id="pantry-add" class="primary">Aggiungi</button>
+      <span class="spacer"></span>
+      <input id="pantry-search" type="search" placeholder="Filtra...">
+    </div>
+    <datalist id="unit-list"></datalist>
+    <datalist id="ingredient-list"></datalist>
+    <table id="pantry-table">
+      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- SPESA -->
+  <section id="tab-shopping" class="tab">
+    <div class="toolbar">
+      <input id="shop-name" placeholder="Prodotto" list="ingredient-list">
+      <input id="shop-qty" type="number" step="0.1" value="1" style="width:90px">
+      <input id="shop-unit" list="unit-list" value="pz" style="width:110px">
+      <select id="shop-cat"></select>
+      <button id="shop-add" class="primary">Aggiungi</button>
+      <span class="spacer"></span>
+      <button id="shop-clear">Rimuovi spuntati</button>
+    </div>
+    <div id="shop-list" class="shop-list"></div>
+  </section>
+</main>
+
+<!-- Modale ricetta / pasto -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="modal-title">Ricetta</h2>
+      <button id="modal-close" class="icon">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
