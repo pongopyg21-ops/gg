@@ -8,7 +8,7 @@ App Flask + SQLite + SPA in JS puro. Backend in `app.py`, conversione unità in
 ```bash
 pip install -r requirements.txt          # flask>=3.0, non è preinstallato
 python3 seed.py                          # popola il ricettario (idempotente)
-python3 -m pytest test_cucina.py -q      # 34 test
+python3 -m pytest test_cucina.py -q      # 41 test
 PORT=12000 setsid nohup python3 app.py > /tmp/server.log 2>&1 < /dev/null &
 ```
 

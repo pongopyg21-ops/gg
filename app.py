@@ -375,6 +375,37 @@ def plan_delete(pid):
 
 
 # ---------------------------------------------------------------- shopping
+def pantry_available(pantry_rows, unit):
+    """Giacenza di un ingrediente da mostrare accanto a una voce di spesa.
+
+    `pantry_rows` sono le giacenze dell'ingrediente (quantità e unità). Se le unità
+    sono convertibili le somma e riporta il totale nell'unità della voce. Quando la
+    conversione non è possibile (es. dispensa in pezzi contro una voce in grammi)
+    riporta la giacenza nella sua unità, sommando solo quelle uguali.
+
+    Non esprime giudizi: la quantità in lista è già al netto della dispensa, quindi
+    un confronto fra i due numeri sarebbe fuorviante.
+    """
+    if not pantry_rows:
+        return None
+
+    total = 0.0
+    convertible = 0
+    for row in pantry_rows:
+        converted = units.convert(row["quantity"], row["unit"], unit)
+        if converted is not None:
+            total += converted
+            convertible += 1
+
+    if convertible:
+        unit = units.normalize(unit)
+    else:
+        unit = units.normalize(pantry_rows[0]["unit"])
+        total = sum(r["quantity"] for r in pantry_rows if units.normalize(r["unit"]) == unit)
+
+    return {"quantity": units.format_quantity(total), "unit": unit}
+
+
 @app.route("/api/shopping", methods=["GET", "POST"])
 def shopping():
     db = get_db()
@@ -391,8 +422,24 @@ def shopping():
         )
         db.commit()
         return jsonify({"ok": True}), 201
-    cur = db.execute("SELECT * FROM shopping_items ORDER BY checked, category, name")
-    return jsonify(rows(cur))
+
+    items = rows(db.execute("SELECT * FROM shopping_items ORDER BY checked, category, name"))
+
+    # giacenze di tutti gli ingredienti in lista, in una sola query
+    ids = sorted({i["ingredient_id"] for i in items if i["ingredient_id"]})
+    if ids:
+        marks = ",".join("?" * len(ids))
+        stock = {}
+        for p in db.execute(
+            f"SELECT ingredient_id, quantity, unit FROM pantry WHERE ingredient_id IN ({marks})", ids
+        ):
+            stock.setdefault(p["ingredient_id"], []).append(p)
+    else:
+        stock = {}
+
+    for item in items:
+        item["pantry"] = pantry_available(stock.get(item["ingredient_id"], []), item["unit"])
+    return jsonify(items)
 
 
 @app.route("/api/shopping/<int:sid>", methods=["PATCH", "DELETE"])

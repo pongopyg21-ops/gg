@@ -7,7 +7,7 @@ Web app per gestire ricette, dispensa, piano pasti settimanale e lista della spe
 - **Piano settimanale** — assegna una ricetta a pranzo e cena per ogni giorno, con porzioni personalizzabili. I pasti sono definiti in `MEALS` (`app.py`) e l'interfaccia li legge da `/api/meta`, quindi aggiungerne o toglierne uno si fa in un punto solo.
 - **Ricette** — nome, porzioni, tempo, difficoltà, ingredienti con quantità e unità, preparazione.
 - **Dispensa** — ciò che hai già in casa, con quantità aggiornabili.
-- **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati.
+- **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati. Ogni voce indica quanto ne è già in dispensa.
 - **Generazione automatica** — dal piano settimanale crea la lista della spesa: somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
@@ -48,6 +48,14 @@ Cosa comporta in pratica:
 - La lista usa sempre l'unità più leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai si mantengono solo per quantità piccole (`1 cucchiaino` di sale, `2 cucchiai` d'olio), oltre i 250 ml si passa automaticamente a ml o l.
 - I nomi delle unità vengono normalizzati in ingresso: `Grammi`, `GR` e `g.` finiscono tutti in `g`.
 
+## Dispensa nella lista della spesa
+
+Ogni voce della lista riporta quanto dell'ingrediente è già in dispensa, convertito nell'unità della voce: con 0,2 kg di farina in casa, una voce da 300 g mostra `in dispensa: 200 g`. Se le unità non sono confrontabili (dispensa in pezzi contro una voce in grammi) la giacenza viene mostrata nella sua unità, senza tentare conversioni.
+
+La giacenza è calcolata a ogni lettura della lista, non congelata quando si genera: aggiungendo qualcosa in dispensa il dato si aggiorna subito, senza rigenerare la spesa.
+
+> **Nota** — la quantità da comprare è già al netto della dispensa, quindi l'indicazione serve a ricordare cosa c'è in casa, non a suggerire di saltare l'acquisto. Se la dispensa copre l'intero fabbisogno la voce non compare affatto in lista.
+
 ## Ricettario di partenza
 
 `seed.py` inserisce 25 ricette (primi, secondi, contorni e piatti unici, inclusi alcuni etnici) con ingredienti completi e categorie merceologiche già assegnate. È idempotente: le ricette già presenti vengono saltate, mentre quelle elencate in `REMOVED` vengono rimosse dal database.
@@ -65,7 +73,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Trentaquattro test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni) e filtro delle ricette.
+Quarantuno test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni), filtro delle ricette e giacenza in dispensa nella lista.
 
 
 ## Avvio
@@ -92,7 +100,7 @@ Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Pe
 | GET/PUT/DELETE | `/api/recipes/<id>` | Dettaglio, modifica, eliminazione |
 | GET/POST | `/api/plan` | Piano pasti (`?start=&end=`) |
 | DELETE | `/api/plan/<id>` | Rimozione pasto |
-| GET/POST | `/api/shopping` | Lista della spesa |
+| GET/POST | `/api/shopping` | Lista della spesa; ogni voce include `pantry` con la giacenza in dispensa |
 | PATCH/DELETE | `/api/shopping/<id>` | Spunta o rimozione voce |
 | POST | `/api/shopping/clear-checked` | Rimuove le voci spuntate |
 | POST | `/api/shopping/generate` | Genera la lista da un intervallo `{start, end}` |

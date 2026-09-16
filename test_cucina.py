@@ -341,3 +341,79 @@ def test_verdure_e_condimenti_non_danno_falsi_positivi():
     for nome in ["Peperoni", "Peperoncino", "Pepe nero", "Patate", "Basilico",
                  "Rosmarino", "Prezzemolo", "Aglio", "Cipolla", "Carota"]:
         assert allergens.allergens_for(nome) == set(), nome
+
+
+# ------------------------------------------------------------ dispensa in lista
+def voce_spesa(client, nome):
+    """Voce della lista della spesa con il dato di dispensa allegato dall'API."""
+    for i in client.get("/api/shopping").get_json():
+        if i["name"] == nome:
+            return i
+    raise AssertionError(f"voce {nome!r} assente dalla lista")
+
+
+def test_voce_spesa_mostra_giacenza_in_dispensa(client):
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 100, "unit": "g"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    v = voce_spesa(client, "Pasta")
+    assert v["pantry"] == {"quantity": 100, "unit": "g"}
+    assert v["quantity"] == pytest.approx(300)  # già al netto della dispensa
+
+
+def test_voce_spesa_converte_la_giacenza_nell_unita_della_lista(client):
+    """Dispensa in kg, lista in g: la giacenza va riportata in grammi."""
+    rid = ricetta(client, "Farina", 2, [{"name": "Farina", "quantity": 500, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Farina", "quantity": 0.2, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    v = voce_spesa(client, "Farina")
+    assert v["pantry"] == {"quantity": 200, "unit": "g"}
+    assert v["quantity"] == pytest.approx(300)
+
+
+def test_dispensa_che_copre_tutto_non_entra_in_lista(client):
+    """Se la dispensa basta, non c'è nulla da comprare e la voce non compare."""
+    rid = ricetta(client, "Farina", 2, [{"name": "Farina", "quantity": 500, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Farina", "quantity": 2, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    assert client.get("/api/shopping").get_json() == []
+
+
+def test_voce_spesa_somma_piu_giacenze_convertibili(client):
+    rid = ricetta(client, "Riso", 2, [{"name": "Riso", "quantity": 400, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Riso", "quantity": 100, "unit": "g"})
+    client.post("/api/pantry", json={"name": "Riso", "quantity": 0.2, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    assert voce_spesa(client, "Riso")["pantry"] == {"quantity": 300, "unit": "g"}
+
+
+def test_voce_spesa_manuale_senza_dispensa(client):
+    client.post("/api/shopping", json={"name": "Detersivo", "quantity": 1, "unit": "pz"})
+    assert voce_spesa(client, "Detersivo")["pantry"] is None
+
+
+def test_voce_spesa_con_unita_non_confrontabili(client):
+    """Dispensa in pezzi, lista in grammi: si mostra la giacenza nella sua unità."""
+    client.post("/api/pantry", json={"name": "Uova", "quantity": 6, "unit": "pz"})
+    client.post("/api/shopping", json={"name": "Uova", "quantity": 200, "unit": "g"})
+
+    assert voce_spesa(client, "Uova")["pantry"] == {"quantity": 6, "unit": "pz"}
+
+
+def test_voce_spesa_dispensa_aggiunta_dopo_la_generazione(client):
+    """La giacenza è calcolata a ogni lettura, non congelata alla generazione."""
+    client.post("/api/shopping", json={"name": "Burro", "quantity": 250, "unit": "g"})
+    assert voce_spesa(client, "Burro")["pantry"] is None
+
+    client.post("/api/pantry", json={"name": "Burro", "quantity": 250, "unit": "g"})
+    assert voce_spesa(client, "Burro")["pantry"] == {"quantity": 250, "unit": "g"}
+
+

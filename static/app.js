@@ -273,6 +273,18 @@ $('#pantry-add').addEventListener('click', async () => {
 });
 
 /* ---------- SPESA ---------- */
+/**
+ * Giacenza in dispensa per una voce di lista, o '' se non c'è.
+ * La quantità in lista è già al netto della dispensa: qui si dichiara solo
+ * quanto c'è in casa, senza suggerire di saltare l'acquisto.
+ */
+function pantryNote(pantry) {
+  if (!pantry) return '';
+  const qty = `${pantry.quantity} ${esc(pantry.unit)}`;
+  return `<span class="pantry-note" title="Sottratta dalla quantità da comprare">` +
+         `in dispensa: ${qty}</span>`;
+}
+
 async function renderShopping() {
   const items = await api('/api/shopping');
   const groups = {};
@@ -283,7 +295,7 @@ async function renderShopping() {
       ${list.map((i) => `
         <div class="shop-item ${i.checked ? 'done' : ''}">
           <input type="checkbox" data-check="${i.id}" ${i.checked ? 'checked' : ''}>
-          <span class="name">${esc(i.name)}</span>
+          <span class="name">${esc(i.name)}${pantryNote(i.pantry)}</span>
           <span class="qty">${i.quantity} ${esc(i.unit)}</span>
           <button data-del="${i.id}">🗑</button>
         </div>`).join('')}
