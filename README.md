@@ -9,6 +9,35 @@ Web app per gestire ricette, dispensa, piano pasti settimanale e lista della spe
 - **Dispensa** — ciò che hai già in casa, con quantità aggiornabili.
 - **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati.
 - **Generazione automatica** — dal piano settimanale crea la lista della spesa: somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
+- **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
+
+## Unità di misura
+
+Le unità sono raggruppate in dimensioni convertibili fra loro:
+
+| Dimensione | Unità | Unità base |
+| --- | --- | --- |
+| Massa | `g`, `kg` | `g` |
+| Volume | `ml`, `l`, `cucchiaino` (5 ml), `cucchiaio` (15 ml) | `ml` |
+
+Unità come `pz`, `fetta` o `confezione` non hanno un fattore fisso e restano indipendenti: 3 uova e 1 confezione di uova vengono tenute separate, perché non si può sapere quante uova contenga la confezione.
+
+Cosa comporta in pratica:
+
+- Una ricetta con 400 g di pasta e una dispensa con 0,1 kg della stessa pasta si scalano correttamente (restano 300 g da comprare).
+- Se due ricette usano lo stesso ingrediente, una in `g` e una in `kg`, la lista della spesa mostra una sola voce con il totale.
+- La lista usa sempre l'unità più leggibile: 1500 g diventano 1,5 kg, mentre 400 ml restano ml. I cucchiai non entrano in questa scelta automatica, altrimenti 400 ml diventerebbero "26,67 cucchiai".
+- I nomi delle unità vengono normalizzati in ingresso: `Grammi`, `GR` e `g.` finiscono tutti in `g`.
+
+## Test
+
+```bash
+pip install pytest
+python -m pytest test_cucina.py -q
+```
+
+Venti test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni e casi limite.
+
 
 ## Avvio
 
@@ -41,12 +70,10 @@ Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Pe
 
 ```
 app.py              # backend Flask + API REST + logica di generazione
+units.py            # conversione e normalizzazione delle unità di misura
 schema.sql          # schema SQLite
+test_cucina.py      # test
 static/index.html   # interfaccia
 static/style.css
 static/app.js
 ```
-
-## Note
-
-La generazione della spesa confronta le quantità solo a parità di unità: se una ricetta usa `kg` e la dispensa ha `g`, non vengono scalate. Conviene usare unità coerenti per lo stesso ingrediente.

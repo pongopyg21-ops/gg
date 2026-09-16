@@ -4,6 +4,8 @@ from contextlib import closing
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
+import units
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("CUCINA_DB", os.path.join(BASE_DIR, "cucina.db"))
 SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
@@ -92,7 +94,7 @@ def ingredients():
         name = (data.get("name") or "").strip()
         if not name:
             return bad_request("Il nome è obbligatorio")
-        iid = get_or_create_ingredient(db, name, data.get("unit") or "pz", data.get("category") or "Altro")
+        iid = get_or_create_ingredient(db, name, units.normalize(data.get("unit")), data.get("category") or "Altro")
         db.commit()
         return jsonify({"id": iid}), 201
     cur = db.execute("SELECT * FROM ingredients WHERE name LIKE ? ORDER BY name", (f"%{request.args.get('q', '')}%",))
@@ -119,15 +121,25 @@ def pantry_add():
     name = (data.get("name") or "").strip()
     if not name:
         return bad_request("Il nome è obbligatorio")
-    unit = data.get("unit") or "pz"
+    unit = units.normalize(data.get("unit"))
     iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
     qty = parse_float(data.get("quantity"), 0)
-    existing = one(db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)))
-    if existing:
-        db.execute("UPDATE pantry SET quantity = quantity + ?, unit = ?, updated_at = datetime('now') WHERE id = ?",
-                   (qty, unit, existing["id"]))
-    else:
+    existing = one(db.execute(
+        "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
+    if not existing:
+        # nessuna riga nella stessa unità: si prova ad accodarsi a una compatibile
+        for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
+            converted = units.convert(qty, unit, cand["unit"])
+            if converted is not None:
+                db.execute(
+                    "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                    (converted, cand["id"]))
+                db.commit()
+                return jsonify({"ok": True}), 201
         db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
+    else:
+        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                   (qty, existing["id"]))
     db.commit()
     return jsonify({"ok": True}), 201
 
@@ -178,9 +190,9 @@ def recipes():
             iname = (it.get("name") or "").strip()
             if not iname:
                 continue
-            iid = get_or_create_ingredient(db, iname, it.get("unit") or "pz", it.get("category") or "Altro")
+            iid = get_or_create_ingredient(db, iname, units.normalize(it.get("unit")), it.get("category") or "Altro")
             db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
-                       (rid, iid, parse_float(it.get("quantity"), 0), it.get("unit") or "pz"))
+                       (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
         db.commit()
         return jsonify(recipe_full(db, rid)), 201
 
@@ -216,9 +228,9 @@ def recipe_detail(rid):
             iname = (it.get("name") or "").strip()
             if not iname:
                 continue
-            iid = get_or_create_ingredient(db, iname, it.get("unit") or "pz", it.get("category") or "Altro")
+            iid = get_or_create_ingredient(db, iname, units.normalize(it.get("unit")), it.get("category") or "Altro")
             db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
-                       (rid, iid, parse_float(it.get("quantity"), 0), it.get("unit") or "pz"))
+                       (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
         db.commit()
         return jsonify(recipe_full(db, rid))
 
@@ -275,7 +287,7 @@ def shopping():
         name = (data.get("name") or "").strip()
         if not name:
             return bad_request("Il nome è obbligatorio")
-        unit = data.get("unit") or "pz"
+        unit = units.normalize(data.get("unit"))
         iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
         db.execute(
             "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
@@ -312,9 +324,12 @@ def shopping_clear_checked():
 
 
 def net_quantity(db, ingredient_id, unit, needed):
-    """Quantità da comprare: fabbisogno meno dispensa (stessa unità)."""
-    p = one(db.execute("SELECT quantity, unit FROM pantry WHERE ingredient_id = ?", (ingredient_id,)))
-    have = p["quantity"] if p and p["unit"] == unit else 0.0
+    """Quantità da comprare: fabbisogno meno dispensa, convertendo le unità compatibili."""
+    have = 0.0
+    for p in db.execute("SELECT quantity, unit FROM pantry WHERE ingredient_id = ?", (ingredient_id,)):
+        converted = units.convert(p["quantity"], p["unit"], unit)
+        if converted is not None:
+            have += converted
     return max(needed - have, 0.0)
 
 
@@ -328,7 +343,7 @@ def shopping_generate():
         return bad_request("start e end sono obbligatori")
 
     plan = rows(db.execute(
-        """SELECT mp.recipe_id, mp.servings AS plan_servings, r.servings AS base_servings
+        """SELECT mp.recipe_id, mp.servings AS plan_servings
            FROM meal_plan mp JOIN recipes r ON r.id = mp.recipe_id
            WHERE mp.date BETWEEN ? AND ?""",
         (start, end),
@@ -336,44 +351,68 @@ def shopping_generate():
     if not plan:
         return bad_request("Nessun pasto pianificato nel periodo indicato", 404)
 
+    # Ricette coinvolte, con le porzioni della ricetta base per scalare le quantità
+    recipe_base = {r["id"]: (r["servings"] or 1) for r in db.execute(
+        """SELECT DISTINCT r.id, r.servings FROM recipes r
+           JOIN meal_plan mp ON mp.recipe_id = r.id
+           WHERE mp.date BETWEEN ? AND ?""",
+        (start, end),
+    )}
+
+    # Il fabbisogno si accumula nell'unità base della dimensione: così 'g' e 'kg'
+    # dello stesso ingrediente confluiscono in un'unica voce.
     needed = {}
-    recipe_ids = {p["recipe_id"] for p in plan}
-    for rid in recipe_ids:
+    for p in plan:
+        factor = p["plan_servings"] / recipe_base[p["recipe_id"]]
         for it in db.execute(
             """SELECT ri.quantity, ri.unit, i.id AS ingredient_id, i.name, i.category
                FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
                WHERE ri.recipe_id = ?""",
-            (rid,),
+            (p["recipe_id"],),
         ):
-            needed.setdefault((it["ingredient_id"], it["unit"]), {
-                "name": it["name"], "unit": it["unit"], "category": it["category"], "qty": 0.0, "factor": 0.0,
-            })
-
-    for p in plan:
-        factor = (p["plan_servings"] / p["base_servings"]) if p["base_servings"] else 1
-        for it in db.execute(
-            "SELECT ingredient_id, quantity, unit FROM recipe_items WHERE recipe_id = ?", (p["recipe_id"],)
-        ):
-            key = (it["ingredient_id"], it["unit"])
+            key = (it["ingredient_id"], units.group_key(it["unit"]))
             entry = needed.setdefault(key, {
-                "name": str(it["ingredient_id"]), "unit": it["unit"], "category": "Altro",
-                "qty": 0.0, "factor": 0.0,
+                "name": it["name"], "category": it["category"],
+                "dim": units.dimension(it["unit"]), "preferred": it["unit"], "base_qty": 0.0,
             })
-            entry["qty"] += it["quantity"] * factor
+            qty, _base = units.to_base(it["quantity"] * factor, it["unit"])
+            entry["base_qty"] += qty
 
     added = 0
-    for (iid, unit), entry in needed.items():
-        to_buy = net_quantity(db, iid, unit, entry["qty"])
-        if to_buy <= 0:
+
+    for (iid, _group), entry in needed.items():
+        dim = entry["dim"]
+        base_qty = entry["base_qty"]
+        # si confronta con la dispensa nell'unità base: la conversione rende
+        # sommabili anche unità diverse dello stesso ingrediente
+        check_unit = units.base_unit(dim) if dim else entry["preferred"]
+        to_buy_base = net_quantity(db, iid, check_unit, base_qty)
+        if to_buy_base <= 0:
             continue
+        buy_unit = units.display_unit(to_buy_base, dim, entry["preferred"])
+        to_buy = units.convert(to_buy_base, check_unit, buy_unit)
+        if to_buy is None:
+            to_buy = to_buy_base
         row = one(db.execute(
-            "SELECT * FROM shopping_items WHERE ingredient_id = ? AND unit = ? AND checked = 0", (iid, unit)))
+            "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0 AND unit = ?",
+            (iid, buy_unit)))
+        if not row:
+            # voce aperta in un'altra unità compatibile: ci si accoda convertendo
+            for cand in db.execute(
+                "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0", (iid,)
+            ):
+                converted = units.convert(to_buy, buy_unit, cand["unit"])
+                if converted is not None:
+                    row = cand
+                    to_buy = converted
+                    break
         if row:
-            db.execute("UPDATE shopping_items SET quantity = quantity + ? WHERE id = ?", (to_buy, row["id"]))
+            db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?",
+                       (units.format_quantity(row["quantity"] + to_buy), row["id"]))
         else:
             db.execute(
                 "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
-                (entry["name"], to_buy, unit, entry["category"], iid),
+                (entry["name"], units.format_quantity(to_buy), buy_unit, entry["category"], iid),
             )
         added += 1
     db.commit()
