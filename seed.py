@@ -390,6 +390,62 @@ RECIPES = [
 # restino selezionabili nel piano pasti.
 REMOVED = ["Pasta e fagioli", "Gnocchi al pesto", "Tiramisù"]
 
+# Foto delle ricette: file in static/recipes/ con autore, licenza e provenienza.
+# Sono immagini da Wikimedia Commons; dove l'abbinamento e' approssimativo il
+# credito lo dichiara esplicitamente.
+PHOTOS = {
+    'Pasta al pomodoro': ('1-pasta-al-pomodoro-2.jpg',
+        '10Rosso — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Pasta_al_pomodoro_2.jpg'),
+    'Cotoletta alla milanese': ('10-cotoletta-alla-milanese.jpg',
+        'pier — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Cotoletta_alla_milanese.jpg'),
+    'Orata al forno': ('11-orata-al-forno-con-patate.jpg',
+        'DinaBenedettoFerrandina — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Orata_al_Forno_con_Patate.jpg'),
+    'Nigiri di salmone': ('12-salmon-sushi-in-singapore.jpg',
+        'puffballruns — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Salmon_Sushi_in_Singapore.jpg'),
+    'Gnocchi al ragù': ('13-beef-ragu-with-gnocchi-lower-house-federation-square.jpg',
+        'Alpha — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Beef_Ragu_with_Gnocchi_-_Lower_House,_Federation_Square.jpg'),
+    'Croque madame': ('14-croque-madame-at-cafe-kocsi.jpg',
+        'Kykk wiki — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Croque-madame_at_cafe_kocsi.jpg'),
+    'Pad thai': ('15-pad-thai-at-good-catch-thai-urban-bistro-new-orleans.jpg',
+        'pelican — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Pad_Thai_at_Good_Catch_Thai_Urban_Bistro,_New_Orleans.jpg'),
+    'Spaghetti alle vongole': ('16-spaghetti-alle-vongole.jpg',
+        'Flickr user: [2], retouched by AM — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Spaghetti_alle_vongole.jpg'),
+    'Fish & chips al forno': ('17-fish-and-chips-bath-uk.jpg',
+        'Gvjekoslav — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Fish_and_Chips_Bath,_UK.jpg'),
+    'Seppia impanata al forno': ('18-fried-calamari-ring.jpg',
+        'Banej — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Fried_calamari_ring.jpg (immagine indicativa: calamari impanati, non seppia)'),
+    'Calamarata': ('19-calamarata-al-rag-di-cernia-7097131809.jpg',
+        'Diego from Roma, Italy — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Calamarata_al_rag%C3%B9_di_Cernia_(7097131809).jpg'),
+    'Spaghetti alla carbonara': ('2-spaghetti-alla-carbonara-3.jpg',
+        'Lasagnolo9 at Italian Wikipedia (= formerly Ramagliolo9 at Italian Wikipedia) — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Spaghetti_alla_Carbonara_3.jpg'),
+    'Gnocchi alla sorrentina': ('20-gnocchi-alla-sorrentina.jpg',
+        'Davide Zambelli — CC BY 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Gnocchi_alla_sorrentina.jpg'),
+    'Spaghetti aglio olio e peperoncino': ('21-spaghetti-aglio-olio-e-peperoncino-by-matsuyuki-retouched.jpg',
+        'matsuyuki — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Spaghetti_aglio_olio_e_peperoncino_by_matsuyuki_retouched.jpg'),
+    'Tagliatelle al ragù bianco': ('23-tagliatelle-al-rag.jpg',
+        'Catia Giaccherini — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Tagliatelle_al_rag%C3%B9.jpg (immagine indicativa: ragù rosso, non bianco)'),
+    'Pasta con crema di peperoni': ('24-pici-with-fried-onion-on-peppers-cream-32625760205.jpg',
+        'Luca Nebuloni — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Pici_with_fried_onion_on_peppers_cream_(32625760205).jpg (immagine indicativa: crema di peperoni)'),
+    'Pasta e patate e provola': ('25-pasta-patate-e-provola.jpg',
+        'Mojmir Churavy — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Pasta_Patate_e_Provola.jpg'),
+    'Frittata di spaghetti': ('22-frittata-di-spaghetti.jpg',
+        'Albertomos — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Frittata-di-spaghetti.jpg'),
+    'Risotto alla milanese': ('3-risotto-alla-milanese.jpg',
+        'Tamorlan — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Risotto_alla_milanese.JPG'),
+    'Lasagne alla bolognese': ('4-lasagna-bolognese.jpg',
+        'Sambawamba — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Lasagna_bolognese.jpg'),
+    'Parmigiana di melanzane': ('5-parmigiana-di-melanzane.jpg',
+        'Schellenberg — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Parmigiana_di_melanzane.jpg'),
+    'Minestrone di verdure': ('6-minestrone-soup.jpg',
+        'Katrin Morenz from Aachen, Deutschland — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Minestrone_soup.jpg'),
+    'Pollo al limone': ('7-chicken-piccata.jpg',
+        'Parkerman & Christie from San Diego, USA — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Chicken_piccata.jpg (immagine indicativa: piatto analogo)'),
+    'Insalata di riso': ('8-insalata-di-riso.jpg',
+        'The original uploader was Auryg at Italian Wikipedia. — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Insalata_di_riso.jpg'),
+    'Frittata di zucchine': ('9-omelette-aux-courgettes-ao-t-2020.jpg',
+        'Benoît Prieur — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Omelette_aux_courgettes_(ao%C3%BBt_2020).jpg (immagine indicativa: frittata di zucchine)'),
+}
+
 
 def main():
     app_module.init_db()
@@ -410,12 +466,31 @@ def main():
         if recipe["name"] in esistenti:
             print(f"  saltata (già presente): {recipe['name']}")
             continue
+        photo = PHOTOS.get(recipe["name"])
+        if photo:
+            recipe = dict(recipe, image=photo[0], image_credit=photo[1])
         response = client.post("/api/recipes", json=recipe)
         if response.status_code != 201:
             print(f"  ERRORE su {recipe['name']}: {response.get_json()}", file=sys.stderr)
             continue
         aggiunte += 1
         print(f"  aggiunta: {recipe['name']}")
+
+    # collega le foto anche alle ricette gia' presenti, senza toccare il resto
+    aggiornate = 0
+    for recipe in client.get("/api/recipes").get_json():
+        photo = PHOTOS.get(recipe["name"])
+        if not photo:
+            continue
+        dettaglio = client.get(f"/api/recipes/{recipe['id']}").get_json()
+        if dettaglio.get("image") == photo[0] and dettaglio.get("image_credit") == photo[1]:
+            continue
+        dettaglio["image"] = photo[0]
+        dettaglio["image_credit"] = photo[1]
+        client.put(f"/api/recipes/{recipe['id']}", json=dettaglio)
+        aggiornate += 1
+    if aggiornate:
+        print(f"\n{aggiornate} foto collegate alle ricette esistenti.")
 
     totali = client.get("/api/recipes").get_json()
     print(f"\n{aggiunte} aggiunte, {rimosse} rimosse, {len(totali)} in totale.")

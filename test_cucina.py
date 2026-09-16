@@ -417,3 +417,77 @@ def test_voce_spesa_dispensa_aggiunta_dopo_la_generazione(client):
     assert voce_spesa(client, "Burro")["pantry"] == {"quantity": 250, "unit": "g"}
 
 
+
+
+# ------------------------------------------------------------ foto ricette
+def crea_ricetta(client, **extra):
+    body = {"name": "Piatto di prova", "servings": 2, "items": [
+        {"name": "Pasta", "quantity": 180, "unit": "g", "category": "Pane e Cereali"}]}
+    body.update(extra)
+    return client.post("/api/recipes", json=body).get_json()
+
+
+def test_foto_salvata_e_restituita(client):
+    ric = crea_ricetta(client, image="1-pasta-al-pomodoro-2.jpg",
+                       image_credit="Autore — CC BY 2.0 — Wikimedia Commons")
+    assert ric["image"] == "1-pasta-al-pomodoro-2.jpg"
+    assert ric["image_credit"] == "Autore — CC BY 2.0 — Wikimedia Commons"
+
+    letto = client.get(f"/api/recipes/{ric['id']}").get_json()
+    assert letto["image"] == "1-pasta-al-pomodoro-2.jpg"
+
+
+def test_foto_rifiuta_percorsi_e_traversal(client):
+    """Solo un nome di file semplice: niente percorsi, niente risalita di cartelle."""
+    for tentativo in ["../../etc/passwd", "../segreto.jpg", "static/recipes/x.jpg",
+                      "/etc/passwd", "sottocartella/foto.jpg"]:
+        ric = crea_ricetta(client, image=tentativo)
+        assert ric["image"] == "", f"accettato pericoloso: {tentativo}"
+
+
+def test_foto_rifiuta_estensioni_non_immagine(client):
+    for tentativo in ["script.js", "file.svg", "pagina.html", "dati.json"]:
+        ric = crea_ricetta(client, image=tentativo)
+        assert ric["image"] == "", f"accettata estensione non immagine: {tentativo}"
+
+
+def test_foto_senza_immagine_non_tiene_il_credito(client):
+    ric = crea_ricetta(client, image="", image_credit="credito orfano")
+    assert ric["image"] == ""
+    assert ric["image_credit"] == ""
+
+
+def test_credito_rimosso_quando_si_toglie_la_foto(client):
+    ric = crea_ricetta(client, image="1-pasta-al-pomodoro-2.jpg", image_credit="Autore X")
+    risposta = client.put(f"/api/recipes/{ric['id']}", json={
+        "name": ric["name"], "servings": 2, "instructions": "", "items": ric["items"],
+        "image": "", "image_credit": "Autore X"})
+    assert risposta.get_json()["image"] == ""
+    assert risposta.get_json()["image_credit"] == ""
+
+
+def test_salvataggio_senza_campo_foto_non_la_cancella(client):
+    """Un salvataggio parziale non deve far sparire la foto."""
+    ric = crea_ricetta(client, image="1-pasta-al-pomodoro-2.jpg", image_credit="Autore Y")
+    risposta = client.put(f"/api/recipes/{ric['id']}", json={
+        "name": "Nome cambiato", "servings": 3, "instructions": "Nuova", "items": ric["items"]})
+    corpo = risposta.get_json()
+    assert corpo["name"] == "Nome cambiato"
+    assert corpo["image"] == "1-pasta-al-pomodoro-2.jpg"
+    assert corpo["image_credit"] == "Autore Y"
+
+
+def test_elenco_immagini_disponibili(client):
+    nomi = client.get("/api/recipe-images").get_json()
+    assert isinstance(nomi, list)
+    # nel repository le foto delle ricette ci sono e hanno nomi coerenti
+    assert nomi, "nessuna immagine trovata in static/recipes/"
+    assert all(n.lower().endswith((".jpg", ".jpeg", ".png", ".webp")) for n in nomi)
+
+
+def test_pagina_ricette_espone_la_foto(client):
+    ric = crea_ricetta(client, image="1-pasta-al-pomodoro-2.jpg", image_credit="Autore Z")
+    elenco = client.get("/api/recipes?full=1").get_json()
+    voce = next(r for r in elenco if r["id"] == ric["id"])
+    assert voce["image"] == "1-pasta-al-pomodoro-2.jpg"
+    assert "Autore Z" in voce["image_credit"]

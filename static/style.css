@@ -202,6 +202,35 @@ button:focus-visible {
 .card .actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; }
 .card .actions button { font-size: 12px; padding: 5px 10px; }
 
+/* Foto: piena larghezza della scheda, proporzione fissa 3:2 e ritaglio
+   centrato, cosi' le schede restano allineate anche con foto diverse. */
+.card-photo {
+  margin: -16px -16px 3px; overflow: hidden;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  background: var(--accent-soft); aspect-ratio: 3 / 2;
+}
+.card-photo img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform .35s ease;
+}
+.card:hover .card-photo img { transform: scale(1.025); }
+
+/* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */
+.photo-field { display: flex; gap: 12px; align-items: flex-start; }
+.photo-field img {
+  width: 132px; aspect-ratio: 3 / 2; object-fit: cover; flex: none;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--accent-soft);
+}
+.photo-field img[hidden] { display: none; }
+.photo-controls { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.photo-controls select, .photo-controls input { width: 100%; }
+.photo-controls button { align-self: flex-start; font-size: 12px; padding: 5px 10px; }
+
+@media (max-width: 560px) {
+  .photo-field { flex-direction: column; }
+  .photo-field img { width: 100%; }
+}
+
 /* ---------- tabelle ---------- */
 table {
   width: 100%; border-collapse: collapse; background: var(--surface);

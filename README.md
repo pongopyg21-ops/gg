@@ -73,7 +73,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Quarantuno test coprono conversione, normalizzazione, fusione di unitГ  compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni), filtro delle ricette e giacenza in dispensa nella lista.
+Quarantanove test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni), filtro delle ricette, giacenza in dispensa nella lista e gestione della foto di una ricetta (validazione del nome file inclusa).
 
 
 ## Interfaccia
@@ -85,6 +85,16 @@ L'eleganza sta in tipografia, spaziature e linee sottili: niente ombre marcate o
 Per la scelta dei colori vale il contrasto WCAG AA: ogni testo resta sopra 4.5:1 sul proprio fondo, anche il grigio secondario, che sui fondi colorati tende a scendere sotto soglia.
 
 L'app funziona anche da telefono, dove sta in una sola colonna: la barra delle schede resta agganciata in alto, i campi di input usano 16px (sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro), i bersagli toccabili sono alti almeno 42px e la tabella della dispensa diventa un elenco di schede, perché quattro colonne non entrerebbero nello schermo.
+
+## Foto delle ricette
+
+Ogni ricetta può avere una foto, che compare in cima alla scheda in **Ricette** per invogliare a cucinarla. Le immagini stanno in `static/recipes/`, ritagliate a 3:2 e larghe 800px: circa 80 KB l'una, caricate in differita (`loading="lazy"`) così la pagina si apre subito.
+
+Provengono da **Wikimedia Commons**, scelte con licenze libere (CC0, CC BY, CC BY-SA). Il credito con autore, licenza e link alla pagina originale è salvato nel database (`image_credit`), mostrato al passaggio del mouse sulla foto e modificabile dal form della ricetta. Le licenze CC BY e CC BY-SA richiedono l'attribuzione: se sostituisci un'immagine, aggiorna anche il credito.
+
+Cinque foto sono **indicative**, e il credito lo dichiara: quella di un piatto simile quando non ne esisteva una adatta su Commons.
+
+La foto si imposta dal form della ricetta (menu a tendina fra i file presenti, con anteprima) e si può togliere con un pulsante. Il campo è facoltativo: una ricetta senza foto mostra solo testo. Il nome del file è validato lato server — solo nome semplice e estensione di immagine — per evitare percorsi o traversal.
 
 ## Avvio
 
@@ -120,6 +130,7 @@ Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:loc
 | PATCH/DELETE | `/api/pantry/<id>` | Modifica quantitГ  o rimozione |
 | GET/POST | `/api/recipes` | Ricette (`?full=1` include ingredienti, allergeni e conflitti; `?safe=1` esclude quelle in conflitto) |
 | GET/PUT/DELETE | `/api/recipes/<id>` | Dettaglio, modifica, eliminazione |
+| GET | `/api/recipe-images` | Nomi dei file foto disponibili in `static/recipes/` |
 | GET/POST | `/api/plan` | Piano pasti (`?start=&end=`) |
 | DELETE | `/api/plan/<id>` | Rimozione pasto |
 | GET/POST | `/api/shopping` | Lista della spesa; ogni voce include `pantry` con la giacenza in dispensa |
@@ -139,4 +150,6 @@ test_cucina.py      # test
 static/index.html   # interfaccia
 static/style.css
 static/app.js
+static/recipes/     # foto delle ricette (Wikimedia Commons, licenze libere)
+static/fonts/       # Fraunces e Hanken Grotesk, ospitati in locale
 ```

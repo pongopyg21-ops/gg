@@ -32,10 +32,27 @@ def close_db(_exc=None):
         db.close()
 
 
+def migrate(db):
+    """Aggiunge le colonne mancanti ai database creati da versioni precedenti.
+
+    `CREATE TABLE IF NOT EXISTS` non tocca le tabelle esistenti: senza questo
+    passaggio un database gia' in uso resterebbe senza le colonne nuove.
+    """
+    have = {r["name"] for r in db.execute("PRAGMA table_info(recipes)")}
+    for col, ddl in (
+        ("image", "ALTER TABLE recipes ADD COLUMN image TEXT NOT NULL DEFAULT ''"),
+        ("image_credit", "ALTER TABLE recipes ADD COLUMN image_credit TEXT NOT NULL DEFAULT ''"),
+    ):
+        if col not in have:
+            db.execute(ddl)
+
+
 def init_db():
     with closing(sqlite3.connect(DB_PATH)) as db:
+        db.row_factory = sqlite3.Row
         with open(SCHEMA_PATH, encoding="utf-8") as fh:
             db.executescript(fh.read())
+        migrate(db)
         db.commit()
 
 
@@ -253,6 +270,30 @@ def recipe_full(db, rid):
     return rec
 
 
+def clean_image(value):
+    """Accetta solo un nome di file semplice, senza percorsi ne' traversal."""
+    nome = os.path.basename((value or "").strip())
+    if not nome or nome != (value or "").strip():
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+\.(jpg|jpeg|png|webp)", nome, re.IGNORECASE):
+        return ""
+    return nome
+
+
+IMAGE_DIR = os.path.join(BASE_DIR, "static", "recipes")
+
+
+@app.route("/api/recipe-images")
+def recipe_images():
+    """Nomi dei file immagine disponibili, per il campo foto del form."""
+    try:
+        nomi = sorted(f for f in os.listdir(IMAGE_DIR)
+                      if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp")))
+    except OSError:
+        nomi = []
+    return jsonify(nomi)
+
+
 @app.route("/api/recipes", methods=["GET", "POST"])
 def recipes():
     db = get_db()
@@ -261,10 +302,13 @@ def recipes():
         name = (data.get("name") or "").strip()
         if not name:
             return bad_request("Il nome è obbligatorio")
+        image = clean_image(data.get("image"))
         cur = db.execute(
-            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions, image, image_credit)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (name, int(parse_float(data.get("servings"), 2)), data.get("time_minutes") or None,
-             data.get("difficulty") or "facile", data.get("instructions") or ""),
+             data.get("difficulty") or "facile", data.get("instructions") or "",
+             image, (data.get("image_credit") or "").strip() if image else ""),
         )
         rid = cur.lastrowid
         for it in data.get("items") or []:
@@ -307,12 +351,21 @@ def recipe_detail(rid):
 
     if request.method == "PUT":
         data = request.get_json(force=True) or {}
+        attuale = one(db.execute("SELECT image, image_credit FROM recipes WHERE id = ?", (rid,)))
+        # la foto si tocca solo se il campo e' presente: un salvataggio parziale
+        # (es. solo gli ingredienti) non deve cancellarla
+        if "image" in data:
+            image = clean_image(data.get("image"))
+            credito = (data.get("image_credit") or "").strip() if image else ""
+        else:
+            image = attuale["image"]
+            credito = attuale["image_credit"]
         db.execute(
-            """UPDATE recipes SET name = ?, servings = ?, time_minutes = ?, difficulty = ?, instructions = ?
-               WHERE id = ?""",
+            """UPDATE recipes SET name = ?, servings = ?, time_minutes = ?, difficulty = ?,
+               instructions = ?, image = ?, image_credit = ? WHERE id = ?""",
             ((data.get("name") or "").strip(), int(parse_float(data.get("servings"), 2)),
              data.get("time_minutes") or None, data.get("difficulty") or "facile",
-             data.get("instructions") or "", rid),
+             data.get("instructions") or "", image, credito, rid),
         )
         db.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (rid,))
         for it in data.get("items") or []:

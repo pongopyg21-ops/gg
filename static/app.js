@@ -153,8 +153,14 @@ async function renderRecipes() {
     const allerg = r.allergens && r.allergens.length
       ? `<div class="allergens">Allergeni: ${r.allergens.map(esc).join(', ')}</div>` : '';
     const warn = bad ? `<div>${r.conflicts.map((c) => `<span class="badge">⚠️ ${esc(c)}</span>`).join('')}</div>` : '';
+    const foto = r.image
+      ? `<figure class="card-photo" title="${esc(r.image_credit || '')}">
+           <img src="/static/recipes/${encodeURIComponent(r.image)}" alt="${esc(r.name)}"
+                loading="lazy" decoding="async" width="800" height="533">
+         </figure>` : '';
     return `
     <div class="card ${bad ? 'unsafe' : ''}">
+      ${foto}
       <h3>${esc(r.name)}</h3>
       <div class="meta">${r.servings} porzioni${r.time_minutes ? ` · ${r.time_minutes} min` : ''} · ${esc(r.difficulty)}</div>
       <div class="ings">${r.items.map((i) => `${esc(i.name)} ${i.quantity}${esc(i.unit)}`).join(' · ') || 'Nessun ingrediente'}</div>
@@ -182,6 +188,20 @@ $('#recipe-list').addEventListener('click', async (e) => {
   }
 });
 
+/* Foto disponibili in static/recipes/, caricate all'avvio. */
+let photoFiles = [];
+function photoOptions(selezionata) {
+  const opts = ['<option value="">Nessuna foto</option>'];
+  for (const f of photoFiles) {
+    opts.push(`<option value="${esc(f)}" ${f === selezionata ? 'selected' : ''}>${esc(f)}</option>`);
+  }
+  // la foto della ricetta puo' non essere piu' sul disco: va comunque mostrata
+  if (selezionata && !photoFiles.includes(selezionata)) {
+    opts.push(`<option value="${esc(selezionata)}" selected>${esc(selezionata)}</option>`);
+  }
+  return opts.join('');
+}
+
 function recipeForm(recipe) {
   const r = recipe || { name: '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: [] };
   showModal(recipe ? 'Modifica ricetta' : 'Nuova ricetta', `
@@ -194,6 +214,18 @@ function recipeForm(recipe) {
     <div class="field"><label>Ingredienti</label><div id="ing-rows"></div>
       <button id="ing-add">+ ingrediente</button></div>
     <div class="field"><label>Preparazione</label><textarea id="r-instr">${esc(r.instructions)}</textarea></div>
+    <div class="field">
+      <label>Foto (facoltativa)</label>
+      <div class="photo-field">
+        <img id="r-photo-preview" alt="" ${r.image ? `src="/static/recipes/${encodeURIComponent(r.image)}"` : 'hidden'}>
+        <div class="photo-controls">
+          <select id="r-photo">${photoOptions(r.image)}</select>
+          <input id="r-photo-credit" placeholder="Credito (autore, licenza, fonte)"
+                 value="${esc(r.image_credit || '')}">
+          <button id="r-photo-clear" ${r.image ? '' : 'hidden'}>Togli la foto</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-foot"><button class="primary" id="r-save">Salva</button></div>
   `);
 
@@ -209,6 +241,29 @@ function recipeForm(recipe) {
   (r.items.length ? r.items : [{}]).forEach(addRow);
   $('#ing-add').addEventListener('click', () => addRow());
 
+  // anteprima della foto: si aggiorna scegliendo dal menu o togliendola
+  const preview = $('#r-photo-preview');
+  const creditBox = $('#r-photo-credit');
+  const clearBtn = $('#r-photo-clear');
+  const aggiornaFoto = () => {
+    const scelta = $('#r-photo').value;
+    if (scelta) {
+      preview.src = `/static/recipes/${encodeURIComponent(scelta)}`;
+      preview.hidden = false;
+      clearBtn.hidden = false;
+    } else {
+      preview.removeAttribute('src');
+      preview.hidden = true;
+      clearBtn.hidden = true;
+    }
+  };
+  $('#r-photo').addEventListener('change', aggiornaFoto);
+  clearBtn.addEventListener('click', () => {
+    $('#r-photo').value = '';
+    creditBox.value = '';
+    aggiornaFoto();
+  });
+
   $('#r-save').addEventListener('click', async () => {
     const items = $$('.ing-row', rowsBox).map((row) => {
       const [n, q, u] = $$('input', row);
@@ -220,6 +275,8 @@ function recipeForm(recipe) {
       time_minutes: $('#r-time').value ? Number($('#r-time').value) : null,
       difficulty: $('#r-diff').value,
       instructions: $('#r-instr').value,
+      image: $('#r-photo').value,
+      image_credit: $('#r-photo-credit').value.trim(),
       items,
     };
     if (!body.name) return toast('Il nome è obbligatorio');
@@ -503,6 +560,7 @@ async function loadIngredientsDatalist() {
   $('#unit-list').innerHTML = meta.units.map((u) => `<option value="${u}">`).join('');
   $('#shop-cat').innerHTML = meta.categories.map((c) => `<option>${esc(c)}</option>`).join('');
   await loadIngredientsDatalist();
+  photoFiles = await api('/api/recipe-images');
   profile = await api('/api/profile');
   await renderPlan();
   // prima apertura: si chiede la dichiarazione di allergie e intolleranze

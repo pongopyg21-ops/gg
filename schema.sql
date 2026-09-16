@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     time_minutes INTEGER,
     difficulty   TEXT NOT NULL DEFAULT 'facile',
     instructions TEXT NOT NULL DEFAULT '',
+    image        TEXT NOT NULL DEFAULT '',   -- nome file in static/recipes/
+    image_credit TEXT NOT NULL DEFAULT '',   -- autore, licenza e provenienza
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
