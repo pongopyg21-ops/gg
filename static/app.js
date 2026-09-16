@@ -31,8 +31,11 @@ const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); r
 
 // i pasti arrivano da /api/meta: unica fonte di verità col backend
 let MEALS = [];
-let meta = { units: [], categories: [], meals: [] };
+let meta = { units: [], categories: [], meals: [], allergens: [] };
 let recipesCache = [];
+let profile = null;
+// etichette italiane delle chiavi allergene, per mostrare i nomi per esteso
+let allergenLabels = {};
 let weekStart = startOfWeek(new Date());
 
 function startOfWeek(d) {
@@ -51,6 +54,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'recipes') renderRecipes();
   if (btn.dataset.tab === 'pantry') renderPantry();
   if (btn.dataset.tab === 'shopping') renderShopping();
+  if (btn.dataset.tab === 'profile') renderProfile();
 }));
 
 /* ---------- PIANO ---------- */
@@ -64,12 +68,14 @@ async function renderPlan() {
     const key = iso(d);
     const cells = MEALS.map((m) => {
       const entry = plan.find((p) => p.date === key && p.meal === m);
-      return entry
-        ? `<div class="slot filled" data-id="${entry.id}" title="Clicca per rimuovere">
-             <span class="meal">${m} · ${entry.servings}p</span>
-             <span class="rname">${esc(entry.recipe_name)}</span></div>`
-        : `<div class="slot" data-date="${key}" data-meal="${m}">
+      if (!entry) {
+        return `<div class="slot" data-date="${key}" data-meal="${m}">
              <span class="meal">${m}</span><span class="rname">+ aggiungi</span></div>`;
+      }
+      const bad = entry.conflicts && entry.conflicts.length;
+      return `<div class="slot filled ${bad ? 'unsafe' : ''}" data-id="${entry.id}" title="${bad ? `Attenzione: ${esc(entry.conflicts.join(', '))}` : 'Clicca per rimuovere'}">
+             <span class="meal">${m} · ${entry.servings}p</span>
+             <span class="rname">${esc(entry.recipe_name)}${bad ? ' <span class="warn-icon">⚠️</span>' : ''}</span></div>`;
     }).join('');
     return `<div class="day ${key === today ? 'today' : ''}"><h3>${fmtDay(d)}</h3>${cells}</div>`;
   }).join('');
@@ -89,15 +95,27 @@ $('#plan-grid').addEventListener('click', async (e) => {
 });
 
 async function openMealPicker(date, meal) {
-  if (!recipesCache.length) recipesCache = await api('/api/recipes');
-  if (!recipesCache.length) return toast('Crea prima una ricetta');
+  const list = await api('/api/recipes?full=1');
+  recipesCache = list;
+  if (!list.length) return toast('Crea prima una ricetta');
   showModal(`Aggiungi ${meal}`, `
     <div class="field"><label>Ricetta</label>
-      <select id="pick-recipe">${recipesCache.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+      <select id="pick-recipe">${list.map((r) => `<option value="${r.id}">${esc(r.name)}${r.conflicts.length ? ' ⚠️' : ''}</option>`).join('')}</select>
     </div>
+    <div id="pick-warn"></div>
     <div class="field"><label>Porzioni</label><input id="pick-serv" type="number" min="1" value="2"></div>
     <button class="primary" id="pick-ok">Aggiungi al piano</button>
   `);
+  const warn = $('#pick-warn');
+  const showWarn = () => {
+    const r = list.find((x) => x.id === Number($('#pick-recipe').value));
+    warn.innerHTML = r && r.conflicts.length
+      ? `<div class="banner"><strong>⚠️ Contiene: ${r.conflicts.map(esc).join(', ')}</strong>
+           <p>Hai dichiarato queste restrizioni nel profilo. Puoi comunque aggiungerla.</p></div>`
+      : '';
+  };
+  $('#pick-recipe').addEventListener('change', showWarn);
+  showWarn();
   $('#pick-ok').addEventListener('click', async () => {
     await api('/api/plan', {
       method: 'POST',
@@ -126,19 +144,27 @@ $('#gen-week').addEventListener('click', async () => {
 
 /* ---------- RICETTE ---------- */
 async function renderRecipes() {
-  recipesCache = await api('/api/recipes?full=1');
+  const hideUnsafe = $('#pf-filter') && $('#pf-filter').checked;
+  recipesCache = await api(hideUnsafe ? '/api/recipes?full=1&safe=1' : '/api/recipes?full=1');
   const q = $('#recipe-search').value.toLowerCase();
   const list = recipesCache.filter((r) => r.name.toLowerCase().includes(q));
-  $('#recipe-list').innerHTML = list.map((r) => `
-    <div class="card">
+  $('#recipe-list').innerHTML = list.map((r) => {
+    const bad = r.conflicts && r.conflicts.length;
+    const allerg = r.allergens && r.allergens.length
+      ? `<div class="allergens">Allergeni: ${r.allergens.map(esc).join(', ')}</div>` : '';
+    const warn = bad ? `<div>${r.conflicts.map((c) => `<span class="badge">⚠️ ${esc(c)}</span>`).join('')}</div>` : '';
+    return `
+    <div class="card ${bad ? 'unsafe' : ''}">
       <h3>${esc(r.name)}</h3>
       <div class="meta">${r.servings} porzioni${r.time_minutes ? ` · ${r.time_minutes} min` : ''} · ${esc(r.difficulty)}</div>
       <div class="ings">${r.items.map((i) => `${esc(i.name)} ${i.quantity}${esc(i.unit)}`).join(' · ') || 'Nessun ingrediente'}</div>
+      ${allerg}${warn}
       <div class="actions">
         <button data-edit="${r.id}">Modifica</button>
         <button data-del="${r.id}">Elimina</button>
       </div>
-    </div>`).join('') || '<p>Nessuna ricetta. Creane una!</p>';
+    </div>`;
+  }).join('') || '<p>Nessuna ricetta. Creane una!</p>';
 }
 
 $('#recipe-search').addEventListener('input', renderRecipes);
@@ -293,6 +319,153 @@ $('#shop-add').addEventListener('click', async () => {
   loadIngredientsDatalist();
 });
 
+/* ---------- PROFILO ---------- */
+function labelOf(key) { return allergenLabels[key] || key; }
+
+async function renderProfile() {
+  profile = await api('/api/profile');
+  const declared = profile.restriction_list || [];
+  const declaredKeys = new Set(declared.map((t) => t.toLowerCase()));
+  const known = meta.allergens;
+
+  $('#pf-name').value = profile.full_name || '';
+  $('#pf-allergens').innerHTML = known.map((a) => {
+    const on = declaredKeys.has(a.key.toLowerCase()) || declaredKeys.has(a.label.toLowerCase());
+    return `<button class="chip ${on ? 'on' : ''}" data-allergen="${a.key}">${esc(a.label)}</button>`;
+  }).join('');
+
+  const custom = declared.filter((t) => !known.some((a) =>
+    a.key.toLowerCase() === t.toLowerCase() || a.label.toLowerCase() === t.toLowerCase()));
+  $('#pf-custom').innerHTML = custom
+    .map((t) => `<button class="chip on" data-term="${esc(t)}">${esc(t)} ✕</button>`).join('');
+
+  await renderReport(declared);
+}
+
+// riepilogo: quali ingredienti in uso contengono un allergene riconosciuto
+async function renderReport(declared) {
+  const map = await api('/api/profile/allergens');
+  const rows = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0], 'it'));
+  $('#pf-report').innerHTML = rows.map(([name, tags]) => {
+    const hit = tags.length && declared.some((t) => {
+      const key = meta.allergens.find((a) =>
+        a.key.toLowerCase() === t.toLowerCase() || a.label.toLowerCase() === t.toLowerCase());
+      return key ? tags.includes(key.key) : false;
+    });
+    const labels = tags.map((t) => labelOf(t)).join(', ');
+    return `<div class="report-row ${hit ? 'unsafe' : ''}">
+      <span class="ing">${hit ? '⚠️ ' : ''}${esc(name)}</span>
+      <span class="tags">${labels ? esc(labels) : '—'}</span></div>`;
+  }).join('') || '<p>Nessun ingrediente in uso.</p>';
+}
+
+$('#pf-allergens').addEventListener('click', async (e) => {
+  const key = e.target.dataset.allergen;
+  if (!key) return;
+  const label = labelOf(key);
+  const cur = profile.restriction_list || [];
+  const has = cur.some((t) => t.toLowerCase() === key.toLowerCase() || t.toLowerCase() === label.toLowerCase());
+  const next = has
+    ? cur.filter((t) => t.toLowerCase() !== key.toLowerCase() && t.toLowerCase() !== label.toLowerCase())
+    : [...cur, label];
+  profile = await api('/api/profile', { method: 'PUT', body: { restrictions: next } });
+  await renderProfile();
+});
+
+$('#pf-term-add').addEventListener('click', async () => {
+  const term = $('#pf-term').value.trim();
+  if (!term) return;
+  const next = [...(profile.restriction_list || []), term];
+  profile = await api('/api/profile', { method: 'PUT', body: { restrictions: next } });
+  $('#pf-term').value = '';
+  await renderProfile();
+});
+
+$('#pf-custom').addEventListener('click', async (e) => {
+  const term = e.target.dataset.term;
+  if (!term) return;
+  const next = (profile.restriction_list || []).filter((t) => t !== term);
+  profile = await api('/api/profile', { method: 'PUT', body: { restrictions: next } });
+  await renderProfile();
+});
+
+$('#pf-save').addEventListener('click', async () => {
+  profile = await api('/api/profile', {
+    method: 'PUT',
+    body: { full_name: $('#pf-name').value.trim(), onboarded: true },
+  });
+  toast('Profilo salvato');
+  renderRecipes();
+});
+
+$('#pf-filter').addEventListener('change', () => {
+  renderRecipes();
+});
+
+/* onboarding: alla prima apertura si chiede la dichiarazione */
+async function openOnboarding() {
+  const known = meta.allergens;
+  showModal('Benvenuto in Cucina & Spesa', `
+    <p style="margin-top:0;color:var(--muted);font-size:14px">
+      Prima di iniziare, dichiara allergie e intolleranze: le ricette che le contengono
+      verranno segnalate. Puoi modificare tutto in seguito dalla scheda <strong>Profilo</strong>.
+    </p>
+    <div class="field"><label>Nome (facoltativo)</label><input id="ob-name" placeholder="Come ti chiami?"></div>
+    <div class="field"><label>Seleziona ciò che ti riguarda</label>
+      <div id="ob-allergens" class="chips"></div>
+      <div class="row">
+        <input id="ob-term" placeholder="Altro termine (es. nichel, fruttosio)">
+        <button id="ob-term-add">Aggiungi</button>
+      </div>
+      <div id="ob-custom" class="chips"></div>
+    </div>
+    <div class="banner"><strong>⚠️ Controlli indicativi</strong>
+      <p>Le allerte derivano dal nome degli ingredienti e non sostituiscono la lettura
+      dell'etichetta né il parere del medico.</p></div>
+    <button class="primary" id="ob-save">Salva e inizia</button>
+  `);
+
+  let selected = [];
+  const chipsBox = $('#ob-allergens');
+  const drawChips = () => {
+    chipsBox.innerHTML = known.map((a) =>
+      `<button class="chip ${selected.includes(a.key) ? 'on' : ''}" data-key="${a.key}">${esc(a.label)}</button>`).join('');
+  };
+  drawChips();
+  let customTerms = [];
+  const drawCustom = () => {
+    $('#ob-custom').innerHTML = customTerms.map((t) => `<button class="chip on" data-rm="${esc(t)}">${esc(t)} ✕</button>`).join('');
+  };
+  chipsBox.addEventListener('click', (e) => {
+    const k = e.target.dataset.key;
+    if (!k) return;
+    selected = selected.includes(k) ? selected.filter((x) => x !== k) : [...selected, k];
+    drawChips();
+  });
+  $('#ob-term-add').addEventListener('click', () => {
+    const t = $('#ob-term').value.trim();
+    if (!t || customTerms.includes(t)) return;
+    customTerms.push(t);
+    $('#ob-term').value = '';
+    drawCustom();
+  });
+  $('#ob-custom').addEventListener('click', (e) => {
+    const t = e.target.dataset.rm;
+    if (t) { customTerms = customTerms.filter((x) => x !== t); drawCustom(); }
+  });
+
+  $('#ob-save').addEventListener('click', async () => {
+    const terms = [...selected.map((k) => labelOf(k)), ...customTerms];
+    await api('/api/profile', {
+      method: 'PUT',
+      body: { full_name: $('#ob-name').value.trim(), restrictions: terms, onboarded: true },
+    });
+    hideModal();
+    toast(terms.length ? 'Profilo salvato: le ricette in conflitto verranno segnalate' : 'Profilo salvato');
+    renderPlan();
+  });
+}
+
 /* ---------- modale ---------- */
 function showModal(title, html) {
   $('#modal-title').textContent = title;
@@ -314,8 +487,12 @@ async function loadIngredientsDatalist() {
 (async function init() {
   meta = await api('/api/meta');
   MEALS = meta.meals;
+  allergenLabels = Object.fromEntries(meta.allergens.map((a) => [a.key, a.label]));
   $('#unit-list').innerHTML = meta.units.map((u) => `<option value="${u}">`).join('');
   $('#shop-cat').innerHTML = meta.categories.map((c) => `<option>${esc(c)}</option>`).join('');
   await loadIngredientsDatalist();
+  profile = await api('/api/profile');
   await renderPlan();
+  // prima apertura: si chiede la dichiarazione di allergie e intolleranze
+  if (!profile.onboarded) openOnboarding();
 })();

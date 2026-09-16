@@ -9,6 +9,7 @@ DB = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CUCINA_DB"] = DB
 
 import app as app_module  # noqa: E402
+import allergens  # noqa: E402
 import units  # noqa: E402
 
 
@@ -222,3 +223,107 @@ def test_eliminazione_ricetta_rimuove_dal_piano(client):
     client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
     client.delete(f"/api/recipes/{rid}")
     assert client.get("/api/plan").get_json() == []
+
+
+# ------------------------------------------------------------ allergeni
+def test_riconosce_allergeni_dal_nome():
+    assert allergens.allergens_for("Parmigiano") == {"latte"}
+    assert allergens.allergens_for("Farina") == {"glutine"}
+    assert allergens.allergens_for("Vongole") == {"molluschi"}
+    assert allergens.allergens_for("Gamberi") == {"crostacei"}
+    assert allergens.allergens_for("Merluzzo") == {"pesce"}
+    assert allergens.allergens_for("Pinoli") == {"frutta_guscio"}
+    assert allergens.allergens_for("Uova") == {"uova"}
+    assert allergens.allergens_for("Brodo") == set()
+
+
+def test_eccezioni_evitano_falsi_positivi():
+    """Nomi che contengono la parola di un allergene senza esserlo."""
+    assert allergens.allergens_for("Noce moscata") == set()
+    assert allergens.allergens_for("Burro di cacao") == set()
+    assert allergens.allergens_for("Latte di cocco") == set()
+    assert allergens.allergens_for("Noodles di riso") == set()
+    # questi invece l'allergene ce l'hanno davvero
+    assert allergens.allergens_for("Burro di arachidi") == {"arachidi"}
+    assert allergens.allergens_for("Latte di soia") == {"soia"}
+    assert allergens.allergens_for("Salsa di soia") == {"glutine", "soia"}
+
+
+def test_accento_e_maiuscole_non_contano():
+    assert allergens.allergens_for("CAFFÈ") == set()
+    assert allergens.allergens_for("Parmigiano") == allergens.allergens_for("PARMIGIANO")
+
+
+def test_riepilogo_unione_di_piu_ingredienti():
+    tags = allergens.tags_for(["Farina", "Uova", "Parmigiano", "Tonno"])
+    assert tags == {"glutine", "uova", "latte", "pesce"}
+
+
+def test_matching_accetta_chiave_etichetta_e_termine_libero():
+    names = ["Pasta", "Parmigiano"]
+    tags = allergens.tags_for(names)
+    # chiave tecnica
+    assert allergens.matching_terms(["latte"], tags, names) == ["latte"]
+    # etichetta italiana mostrata nell'interfaccia
+    assert allergens.matching_terms(["Latte e lattosio"], tags, names) == ["Latte e lattosio"]
+    # termine libero cercato nel nome dell'ingrediente
+    assert allergens.matching_terms(["nichel"], tags, ["Farina al nichel"]) == ["nichel"]
+    assert allergens.matching_terms(["glutine"], tags, names) == ["glutine"]
+
+
+def test_profilo_dichiarazione_restrizioni(client):
+    p = client.get("/api/profile").get_json()
+    assert p["onboarded"] == 0 and p["restriction_list"] == []
+
+    p = client.put("/api/profile", json={"full_name": "Marco",
+                                         "restrictions": "latte, glutine\nnichel",
+                                         "onboarded": True}).get_json()
+    assert p["restriction_list"] == ["latte", "glutine", "nichel"]
+    assert p["onboarded"] == 1
+    # i termini duplicati non vengono ripetuti
+    p = client.put("/api/profile", json={"restrictions": ["Uova", "uova", "Uova"]}).get_json()
+    assert p["restriction_list"] == ["Uova"]
+
+
+def test_filtro_ricette_per_allergia(client):
+    buona = ricetta(client, "Verdure", 2, [{"name": "Zucchine", "quantity": 300, "unit": "g"}])
+    cattiva = ricetta(client, "Carbonara", 2, [
+        {"name": "Spaghetti", "quantity": 180, "unit": "g"},
+        {"name": "Parmigiano", "quantity": 50, "unit": "g"},
+    ])
+
+    full = client.get("/api/recipes?full=1").get_json()
+    assert {r["id"] for r in full} == {buona, cattiva}
+    # senza restrizioni dichiarate nessuna ricetta è in conflitto
+    assert all(r["conflicts"] == [] for r in full)
+
+    client.put("/api/profile", json={"restrictions": ["latte"], "onboarded": True})
+    full = {r["id"]: r for r in client.get("/api/recipes?full=1").get_json()}
+    assert full[cattiva]["conflicts"] == ["latte"]
+    assert full[buona]["conflicts"] == []
+
+    safe = client.get("/api/recipes?full=1&safe=1").get_json()
+    assert [r["id"] for r in safe] == [buona]
+
+
+def test_piano_segnala_i_conflitti(client):
+    rid = ricetta(client, "Carbonara", 2, [{"name": "Parmigiano", "quantity": 50, "unit": "g"}])
+    client.put("/api/profile", json={"restrictions": ["Latte e lattosio"], "onboarded": True})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    plan = client.get("/api/plan").get_json()
+    assert plan[0]["conflicts"] == ["Latte e lattosio"]
+
+
+def test_riepilogo_ingredienti_per_allergene(client):
+    ricetta(client, "X", 2, [{"name": "Parmigiano", "quantity": 1, "unit": "pz"},
+                             {"name": "Zucchine", "quantity": 1, "unit": "pz"}])
+    m = client.get("/api/profile/allergens").get_json()
+    assert m["Parmigiano"] == ["latte"]
+    assert m["Zucchine"] == []
+
+
+def test_aceto_non_e_solfitato():
+    """L'aceto non è di per sé un solfito: era un falso positivo."""
+    assert allergens.allergens_for("Aceto di riso") == set()
+    assert allergens.allergens_for("Aceto balsamico") == set()
+    assert allergens.allergens_for("Vino bianco") == {"solfiti"}

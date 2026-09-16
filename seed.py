@@ -157,34 +157,6 @@ RECIPES = [
         ],
     },
     {
-        "name": "Pasta e fagioli", "servings": 4, "time_minutes": 45, "difficulty": "facile",
-        "instructions": "Soffriggi cipolla, carota e sedano con il rosmarino. Aggiungi i fagioli "
-                        "e la passata, cuoci 20 minuti e poi lessа la pasta nel condimento.",
-        "items": [
-            {"name": "Pasta corta", "quantity": 250, "unit": "g", "category": CEREALI},
-            {"name": "Fagioli", "quantity": 400, "unit": "g", "category": DISPENSA},
-            {"name": "Passata di pomodoro", "quantity": 300, "unit": "g", "category": DISPENSA},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Carota", "quantity": 100, "unit": "g", "category": FRUTTA},
-            {"name": "Sedano", "quantity": 60, "unit": "g", "category": FRUTTA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-            {"name": "Rosmarino", "quantity": 1, "unit": "pz", "category": FRUTTA},
-        ],
-    },
-    {
-        "name": "Gnocchi al pesto", "servings": 2, "time_minutes": 20, "difficulty": "facile",
-        "instructions": "Frulla basilico, pinoli, aglio, parmigiano e olio. "
-                        "Lessa gli gnocchi e condiscili con il pesto.",
-        "items": [
-            {"name": "Gnocchi", "quantity": 500, "unit": "g", "category": CEREALI},
-            {"name": "Basilico", "quantity": 30, "unit": "g", "category": FRUTTA},
-            {"name": "Pinoli", "quantity": 20, "unit": "g", "category": DISPENSA},
-            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
-            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
         "name": "Orata al forno", "servings": 2, "time_minutes": 35, "difficulty": "facile",
         "instructions": "Disponi le patate a fette in teglia, adagia l'orata e condisci con "
                         "olio, limone e prezzemolo. Inforna a 200°C per 25 minuti.",
@@ -197,29 +169,138 @@ RECIPES = [
         ],
     },
     {
-        "name": "Tiramisù", "servings": 6, "time_minutes": 30, "difficulty": "media",
-        "instructions": "Monta tuorli e zucchero, unisci il mascarpone. Inzuppa i savoiardi "
-                        "nel caffè e alterna strati di biscotti e crema. Spolvera di cacao.",
+        "name": "Nigiri di salmone", "servings": 2, "time_minutes": 40, "difficulty": "media",
+        "instructions": "Lava il riso finché l'acqua è limpida e lessalo, poi condiscilo con "
+                        "aceto di riso, zucchero e sale. Taglia il salmone a fette sottili, "
+                        "forma le palline di riso e appoggia il pesce sopra ogni boccone.",
         "items": [
-            {"name": "Savoiardi", "quantity": 300, "unit": "g", "category": DOLCI},
-            {"name": "Mascarpone", "quantity": 500, "unit": "g", "category": LATTICINI},
-            {"name": "Uova", "quantity": 4, "unit": "pz", "category": LATTICINI},
-            {"name": "Zucchero", "quantity": 100, "unit": "g", "category": DISPENSA},
-            {"name": "Caffè", "quantity": 200, "unit": "ml", "category": BEVANDE},
-            {"name": "Cacao amaro", "quantity": 30, "unit": "g", "category": DISPENSA},
+            {"name": "Riso", "quantity": 200, "unit": "g", "category": CEREALI},
+            {"name": "Salmone", "quantity": 200, "unit": "g", "category": CARNE},
+            {"name": "Aceto di riso", "quantity": 30, "unit": "ml", "category": DISPENSA},
+            {"name": "Zucchero", "quantity": 10, "unit": "g", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Wasabi", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Salsa di soia", "quantity": 30, "unit": "ml", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Gnocchi al ragù", "servings": 4, "time_minutes": 60, "difficulty": "media",
+        "instructions": "Prepara il ragù soffriggendo cipolla, carota e sedano con il macinato, "
+                        "poi aggiungi la passata e cuoci 40 minuti. Lessa gli gnocchi e condiscili "
+                        "con il ragù e il parmigiano.",
+        "items": [
+            {"name": "Gnocchi", "quantity": 800, "unit": "g", "category": CEREALI},
+            {"name": "Macinato", "quantity": 400, "unit": "g", "category": CARNE},
+            {"name": "Passata di pomodoro", "quantity": 600, "unit": "g", "category": DISPENSA},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Carota", "quantity": 100, "unit": "g", "category": FRUTTA},
+            {"name": "Sedano", "quantity": 60, "unit": "g", "category": FRUTTA},
+            {"name": "Parmigiano", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Croque madame", "servings": 2, "time_minutes": 30, "difficulty": "facile",
+        "instructions": "Prepara una besciamella e unisci la noce moscata. Componi i sandwich "
+                        "con pane, prosciutto e formaggio, coprili di besciamella e inforna a "
+                        "200°C per 15 minuti. Adagia sopra un uovo al tegamino e servi.",
+        "items": [
+            {"name": "Pane in cassetta", "quantity": 4, "unit": "fetta", "category": CEREALI},
+            {"name": "Prosciutto cotto", "quantity": 120, "unit": "g", "category": CARNE},
+            {"name": "Gruyere", "quantity": 120, "unit": "g", "category": LATTICINI},
+            {"name": "Latte", "quantity": 250, "unit": "ml", "category": LATTICINI},
+            {"name": "Burro", "quantity": 30, "unit": "g", "category": LATTICINI},
+            {"name": "Farina", "quantity": 30, "unit": "g", "category": DISPENSA},
+            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
+            {"name": "Noce moscata", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Pad thai", "servings": 2, "time_minutes": 35, "difficulty": "media",
+        "instructions": "Ammolla i noodles in acqua calda. Salta aglio e gamberi nel wok, "
+                        "aggiungi i noodles, la salsa di soia, il lime e le uova sbattute. "
+                        "Completa con germogli di soia, arachidi e peperoncino.",
+        "items": [
+            {"name": "Noodles di riso", "quantity": 200, "unit": "g", "category": CEREALI},
+            {"name": "Gamberi", "quantity": 200, "unit": "g", "category": CARNE},
+            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
+            {"name": "Germogli di soia", "quantity": 100, "unit": "g", "category": FRUTTA},
+            {"name": "Salsa di soia", "quantity": 30, "unit": "ml", "category": DISPENSA},
+            {"name": "Arachidi", "quantity": 40, "unit": "g", "category": DISPENSA},
+            {"name": "Lime", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Spaghetti alle vongole", "servings": 2, "time_minutes": 30, "difficulty": "media",
+        "instructions": "Fai aprire le vongole coperte in padella con aglio, olio e vino bianco. "
+                        "Lessa gli spaghetti, ripassali nel condimento con il prezzemolo.",
+        "items": [
+            {"name": "Spaghetti", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Vongole", "quantity": 600, "unit": "g", "category": CARNE},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Prezzemolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Vino bianco", "quantity": 100, "unit": "ml", "category": BEVANDE},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Fish & chips al forno", "servings": 2, "time_minutes": 45, "difficulty": "facile",
+        "instructions": "Taglia le patate a bastoncini e condiscile con olio, poi inforna a 220°C. "
+                        "Passa i filetti di merluzzo nella farina, nell'uovo e nel pangrattato, "
+                        "e cuocili in forno finché sono dorati.",
+        "items": [
+            {"name": "Merluzzo", "quantity": 400, "unit": "g", "category": CARNE},
+            {"name": "Patate", "quantity": 500, "unit": "g", "category": FRUTTA},
+            {"name": "Farina", "quantity": 50, "unit": "g", "category": DISPENSA},
+            {"name": "Pangrattato", "quantity": 80, "unit": "g", "category": CEREALI},
+            {"name": "Uova", "quantity": 1, "unit": "pz", "category": LATTICINI},
+            {"name": "Limone", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Seppia impanata al forno", "servings": 2, "time_minutes": 40, "difficulty": "facile",
+        "instructions": "Pulisci le seppie e tagliale ad anelli o a falde. Passale nell'uovo e "
+                        "nel pangrattato con il prezzemolo, poi cuocile su teglia oliata in forno "
+                        "a 200°C per 20 minuti, girandole a metà cottura.",
+        "items": [
+            {"name": "Seppia", "quantity": 500, "unit": "g", "category": CARNE},
+            {"name": "Pangrattato", "quantity": 120, "unit": "g", "category": CEREALI},
+            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
+            {"name": "Farina", "quantity": 40, "unit": "g", "category": DISPENSA},
+            {"name": "Prezzemolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Limone", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
         ],
     },
 ]
+
+# Ricette non più in elenco: vengono rimosse dal database per evitare che
+# restino selezionabili nel piano pasti.
+REMOVED = ["Pasta e fagioli", "Gnocchi al pesto", "Tiramisù"]
 
 
 def main():
     app_module.init_db()
     client = app_module.app.test_client()
-    existing = {r["name"] for r in client.get("/api/recipes").get_json()}
+    esistenti = {r["name"]: r["id"] for r in client.get("/api/recipes").get_json()}
+
+    rimosse = 0
+    for nome in REMOVED:
+        rid = esistenti.get(nome)
+        if rid is None:
+            continue
+        client.delete(f"/api/recipes/{rid}")
+        rimosse += 1
+        print(f"  rimossa: {nome}")
 
     aggiunte = 0
     for recipe in RECIPES:
-        if recipe["name"] in existing:
+        if recipe["name"] in esistenti:
             print(f"  saltata (già presente): {recipe['name']}")
             continue
         response = client.post("/api/recipes", json=recipe)
@@ -230,7 +311,7 @@ def main():
         print(f"  aggiunta: {recipe['name']}")
 
     totali = client.get("/api/recipes").get_json()
-    print(f"\n{aggiunte} ricette aggiunte, {len(totali)} in totale nel database.")
+    print(f"\n{aggiunte} aggiunte, {rimosse} rimosse, {len(totali)} in totale.")
     print(f"Database: {os.environ['CUCINA_DB']}")
 
 

@@ -1,9 +1,11 @@
 import os
+import re
 import sqlite3
 from contextlib import closing
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
+import allergens
 import units
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +74,66 @@ def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
     return cur.lastrowid
 
 
+def parse_terms(raw):
+    """Da testo libero a elenco di termini: separatori riga, virgola e punto e virgola."""
+    if isinstance(raw, (list, tuple)):
+        parts = [str(p) for p in raw]
+    else:
+        parts = re.split(r"[,;\n]+", str(raw or ""))
+    seen, terms = set(), []
+    for part in parts:
+        term = part.strip()
+        key = term.lower()
+        if term and key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms
+
+
+def get_profile(db):
+    """Profilo utente; la riga viene creata al primo accesso."""
+    cur = db.execute("SELECT * FROM profile WHERE id = 1")
+    profile = one(cur)
+    if profile is None:
+        db.execute("INSERT INTO profile (id) VALUES (1)")
+        db.commit()
+        profile = one(db.execute("SELECT * FROM profile WHERE id = 1"))
+    profile["restriction_list"] = parse_terms(profile["restrictions"])
+    return profile
+
+
+PROFILE_FIELDS = {"full_name", "restrictions", "onboarded"}
+
+
+def save_profile(db, data):
+    # la riga singola deve esistere prima dell'UPDATE, altrimenti non aggiorna nulla
+    get_profile(db)
+    values = {k: data[k] for k in PROFILE_FIELDS if k in data}
+    if "restrictions" in values:
+        values["restrictions"] = ", ".join(parse_terms(values["restrictions"]))
+    if "onboarded" in values:
+        values["onboarded"] = 1 if values["onboarded"] else 0
+    if values:
+        assignments = ", ".join(f"{k} = ?" for k in values)
+        db.execute(
+            f"UPDATE profile SET {assignments}, updated_at = datetime('now') WHERE id = 1",
+            list(values.values()),
+        )
+        db.commit()
+    return get_profile(db)
+
+
+def recipe_safety(db, rid, restriction_list):
+    """Allergeni riconosciuti negli ingredienti e termini dichiarati che combaciano."""
+    names = [r["name"] for r in db.execute(
+        """SELECT i.name FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
+           WHERE ri.recipe_id = ?""",
+        (rid,),
+    )]
+    tags = allergens.tags_for(names)
+    return tags, allergens.matching_terms(restriction_list, tags, names)
+
+
 # ---------------------------------------------------------------- index
 @app.route("/")
 def index():
@@ -80,9 +142,28 @@ def index():
 
 @app.route("/api/meta")
 def meta():
-    return jsonify({"meals": MEALS, "units": ["pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino", "confezione"],
+    return jsonify({"meals": MEALS, "units": ["pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino", "confezione", "fetta"],
                     "categories": ["Frutta e Verdura", "Carne e Pesce", "Latticini", "Dispensa",
-                                   "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"]})
+                                   "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"],
+                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()]})
+
+
+# ---------------------------------------------------------------- profilo
+@app.route("/api/profile", methods=["GET", "PUT"])
+def profile():
+    db = get_db()
+    if request.method == "PUT":
+        data = request.get_json(force=True) or {}
+        return jsonify(save_profile(db, data))
+    return jsonify(get_profile(db))
+
+
+@app.route("/api/profile/allergens", methods=["GET"])
+def profile_allergens():
+    """Quali allergeni sono riconosciuti in ciascun ingrediente in uso."""
+    db = get_db()
+    cur = db.execute("SELECT DISTINCT name FROM ingredients ORDER BY name")
+    return jsonify({r["name"]: sorted(allergens.allergens_for(r["name"])) for r in cur})
 
 
 # ---------------------------------------------------------------- ingredients
@@ -196,9 +277,19 @@ def recipes():
         db.commit()
         return jsonify(recipe_full(db, rid)), 201
 
-    if request.args.get("full") == "1":
+    if request.args.get("full") == "1" or request.args.get("safe") == "1":
         ids = [r["id"] for r in db.execute("SELECT id FROM recipes ORDER BY name")]
-        return jsonify([recipe_full(db, i) for i in ids])
+        restriction_list = get_profile(db)["restriction_list"]
+        out = []
+        for i in ids:
+            rec = recipe_full(db, i)
+            tags, hits = recipe_safety(db, i, restriction_list)
+            rec["allergens"] = sorted(allergens.label_for(t) for t in tags)
+            rec["conflicts"] = hits
+            if request.args.get("safe") == "1" and hits:
+                continue
+            out.append(rec)
+        return jsonify(out)
     cur = db.execute("SELECT * FROM recipes ORDER BY name")
     return jsonify(rows(cur))
 
@@ -250,7 +341,12 @@ def plan_list():
         sql += " WHERE mp.date BETWEEN ? AND ?"
         params = [start, end]
     sql += " ORDER BY mp.date, mp.meal"
-    return jsonify(rows(db.execute(sql, params)))
+    out = rows(db.execute(sql, params))
+    restriction_list = get_profile(db)["restriction_list"]
+    for entry in out:
+        _, hits = recipe_safety(db, entry["recipe_id"], restriction_list)
+        entry["conflicts"] = hits
+    return jsonify(out)
 
 
 @app.route("/api/plan", methods=["POST"])

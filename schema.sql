@@ -57,3 +57,13 @@ CREATE TABLE IF NOT EXISTS shopping_items (
 
 CREATE INDEX IF NOT EXISTS idx_plan_date ON meal_plan(date);
 CREATE INDEX IF NOT EXISTS idx_items_recipe ON recipe_items(recipe_id);
+
+-- Dichiarazione di allergie e intolleranze. Riga singola (id = 1): le preferenze
+-- sono di un solo utente locale.
+CREATE TABLE IF NOT EXISTS profile (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    full_name  TEXT NOT NULL DEFAULT '',
+    restrictions TEXT NOT NULL DEFAULT '',   -- testo libero, una voce per riga o separata da virgole
+    onboarded  INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
