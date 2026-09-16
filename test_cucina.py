@@ -327,3 +327,17 @@ def test_aceto_non_e_solfitato():
     assert allergens.allergens_for("Aceto di riso") == set()
     assert allergens.allergens_for("Aceto balsamico") == set()
     assert allergens.allergens_for("Vino bianco") == {"solfiti"}
+
+
+def test_formati_di_pasta_sono_glutine():
+    """Ogni formato di pasta di semola è glutine: un celiaco non deve poterlo ignorare."""
+    for nome in ["Calamarata", "Bucatini", "Farfalle", "Orecchiette", "Maccheroni",
+                 "Conchiglie", "Ditalini", "Trofie", "Vermicelli", "Capellini",
+                 "Pappardelle", "Tagliatelle", "Penne", "Fusilli", "Rigatoni"]:
+        assert allergens.allergens_for(nome) == {"glutine"}, nome
+
+
+def test_verdure_e_condimenti_non_danno_falsi_positivi():
+    for nome in ["Peperoni", "Peperoncino", "Pepe nero", "Patate", "Basilico",
+                 "Rosmarino", "Prezzemolo", "Aglio", "Cipolla", "Carota"]:
+        assert allergens.allergens_for(nome) == set(), nome

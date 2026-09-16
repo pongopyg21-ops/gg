@@ -277,6 +277,113 @@ RECIPES = [
             {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
         ],
     },
+    {
+        "name": "Calamarata", "servings": 4, "time_minutes": 40, "difficulty": "media",
+        "instructions": "Soffriggi aglio e peperoncino nell'olio, sfuma con il vino bianco e "
+                        "unisci i calamari a rondelle. Aggiungi la passata e cuoci 20 minuti. "
+                        "Lessa la calamarata, condiscila con il sugo e completa col prezzemolo.",
+        "items": [
+            {"name": "Calamarata", "quantity": 400, "unit": "g", "category": CEREALI},
+            {"name": "Calamari", "quantity": 500, "unit": "g", "category": CARNE},
+            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Vino bianco", "quantity": 100, "unit": "ml", "category": BEVANDE},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Prezzemolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Gnocchi alla sorrentina", "servings": 4, "time_minutes": 40, "difficulty": "facile",
+        "instructions": "Prepara un sugo con aglio, olio e passata, e cuocilo 15 minuti. "
+                        "Lessa gli gnocchi, condiscili con il sugo e il basilico, trasferiscili "
+                        "in teglia con la mozzarella a cubetti e il parmigiano, e gratina in forno.",
+        "items": [
+            {"name": "Gnocchi", "quantity": 800, "unit": "g", "category": CEREALI},
+            {"name": "Passata di pomodoro", "quantity": 500, "unit": "g", "category": DISPENSA},
+            {"name": "Mozzarella", "quantity": 300, "unit": "g", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Spaghetti aglio olio e peperoncino", "servings": 2, "time_minutes": 15, "difficulty": "facile",
+        "instructions": "Scalda l'olio con l'aglio in camicia e il peperoncino a fiamma bassa, "
+                        "senza bruciarli. Lessa gli spaghetti e ripassali in padella con un po' "
+                        "d'acqua di cottura e il prezzemolo.",
+        "items": [
+            {"name": "Spaghetti", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Aglio", "quantity": 3, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 4, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Prezzemolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Frittata di spaghetti", "servings": 4, "time_minutes": 25, "difficulty": "facile",
+        "instructions": "Lessa gli spaghetti e condiscili con le uova sbattute, il parmigiano "
+                        "e il pepe. Versa tutto in padella con l'olio caldo, schiaccia bene e "
+                        "cuoci a fiamma dolce, girando la frittata a metà cottura.",
+        "items": [
+            {"name": "Spaghetti", "quantity": 250, "unit": "g", "category": CEREALI},
+            {"name": "Uova", "quantity": 6, "unit": "pz", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Pepe nero", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Tagliatelle al ragù bianco", "servings": 4, "time_minutes": 60, "difficulty": "media",
+        "instructions": "Soffriggi cipolla, carota e sedano con il rosmarino, aggiungi il "
+                        "macinato e lascialo dorare. Sfuma col vino bianco, unisci il brodo e "
+                        "cuoci 40 minuti. Condisci le tagliatelle con il ragù e il parmigiano.",
+        "items": [
+            {"name": "Tagliatelle", "quantity": 320, "unit": "g", "category": CEREALI},
+            {"name": "Macinato", "quantity": 400, "unit": "g", "category": CARNE},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Carota", "quantity": 100, "unit": "g", "category": FRUTTA},
+            {"name": "Sedano", "quantity": 60, "unit": "g", "category": FRUTTA},
+            {"name": "Vino bianco", "quantity": 150, "unit": "ml", "category": BEVANDE},
+            {"name": "Brodo", "quantity": 200, "unit": "ml", "category": DISPENSA},
+            {"name": "Rosmarino", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Parmigiano", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Pasta con crema di peperoni", "servings": 2, "time_minutes": 30, "difficulty": "facile",
+        "instructions": "Arrostisci i peperoni, pelali e frullali con la panna e un filo d'olio. "
+                        "Soffriggi l'aglio, versa la crema di peperoni e scalda. Lessa la pasta e "
+                        "condiscila con la crema, il parmigiano e il basilico.",
+        "items": [
+            {"name": "Pasta", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Peperoni", "quantity": 400, "unit": "g", "category": FRUTTA},
+            {"name": "Panna", "quantity": 100, "unit": "ml", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 40, "unit": "g", "category": LATTICINI},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Pasta e patate e provola", "servings": 4, "time_minutes": 45, "difficulty": "facile",
+        "instructions": "Soffriggi la cipolla nell'olio, aggiungi le patate a cubetti e copri "
+                        "d'acqua. Quando le patate sono tenere, lessa la pasta nel brodo, "
+                        "mantecala con la provola e il parmigiano fuori dal fuoco.",
+        "items": [
+            {"name": "Pasta corta", "quantity": 320, "unit": "g", "category": CEREALI},
+            {"name": "Patate", "quantity": 500, "unit": "g", "category": FRUTTA},
+            {"name": "Provola", "quantity": 200, "unit": "g", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
 ]
 
 # Ricette non più in elenco: vengono rimosse dal database per evitare che

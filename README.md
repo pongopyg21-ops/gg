@@ -50,7 +50,7 @@ Cosa comporta in pratica:
 
 ## Ricettario di partenza
 
-`seed.py` inserisce 18 ricette (primi, secondi, contorni e piatti unici, inclusi alcuni etnici) con ingredienti completi e categorie merceologiche già assegnate. È idempotente: le ricette già presenti vengono saltate, mentre quelle elencate in `REMOVED` vengono rimosse dal database.
+`seed.py` inserisce 25 ricette (primi, secondi, contorni e piatti unici, inclusi alcuni etnici) con ingredienti completi e categorie merceologiche già assegnate. È idempotente: le ricette già presenti vengono saltate, mentre quelle elencate in `REMOVED` vengono rimosse dal database.
 
 ```bash
 python3 seed.py
@@ -65,7 +65,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Trentadue test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni) e filtro delle ricette.
+Trentaquattro test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni) e filtro delle ricette.
 
 
 ## Avvio
