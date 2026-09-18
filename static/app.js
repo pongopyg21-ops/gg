@@ -115,6 +115,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'pantry') renderPantry();
   if (btn.dataset.tab === 'shopping') renderShopping();
   if (btn.dataset.tab === 'profile') renderProfile();
+  if (btn.dataset.tab === 'igiene') renderIgiene();
 }));
 
 /* ---------- PIANO ---------- */
@@ -608,6 +609,367 @@ $('#shop-add').addEventListener('click', async () => {
   renderShopping();
   loadIngredientsDatalist();
 });
+
+/* ---------- IGIENE ----------
+   Il metodo e' quello del calendario mensile delle pulizie: tre blocchi per
+   frequenza (ogni giorno, ogni settimana, ogni mese) piu' un calendario annuale
+   con un focus per mese. La pagina apre su cosa c'e' da fare adesso.
+
+   Le attivita' con una scadenza vera (settimanali, mensili, annuali) hanno un
+   pulsante per il tempo; le quotidiane no, sono da pochi minuti e cronometrarle
+   sarebbe piu' lavoro della pulizia. */
+
+let chDati = null;       // { oggi, attivita, piano, attive }
+let chMeta = null;       // { frequencies, areas, days, months, chore_day }
+let chSummary = null;
+
+// il tempo si formatta in minuti finche' e' poco, poi in ore: "2 h 10 min" si
+// legge subito, "130 min" no
+function durata(minuti) {
+  const m = Math.max(0, Math.round(minuti || 0));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto ? `${h} h ${resto} min` : `${h} h`;
+}
+
+// quando e' stata fatta l'ultima volta, in parole: piu' utile di una data secca
+function quandoDetto(voce) {
+  // fatto oggi viene prima di tutto: per una quotidiana `giorni` vale 1 (domani
+  // tocca di nuovo) e senza questo controllo la riga direbbe "rifare fra 1
+  // giorno" appena spuntata, che suona come se non fosse stata registrata
+  if (voce.fatto_oggi) return 'fatta oggi';
+  if (voce.mai_fatta) return 'mai fatta';
+  if (voce.giorni === null) return `ultima volta il ${voce.ultima}`;
+  if (voce.giorni > 0) return `rifare fra ${voce.giorni} ${voce.giorni === 1 ? 'giorno' : 'giorni'}`;
+  const r = -voce.giorni;
+  return `in ritardo di ${r} ${r === 1 ? 'giorno' : 'giorni'}`;
+}
+
+async function renderIgiene() {
+  if (!chMeta) chMeta = await api('/api/chores/meta');
+  chDati = await api('/api/chores');
+  chSummary = await api('/api/chores/summary');
+  riempiGiorno();
+  renderOggi();
+  renderRoutine();
+  renderAnno();
+  renderChoreList();
+}
+
+function riempiGiorno() {
+  const sel = $('#ch-day');
+  if (sel.options.length) { sel.value = String(chMeta.chore_day); return; }
+  sel.innerHTML = chMeta.days.map((d) =>
+    `<option value="${d.key}">${esc(d.label)}</option>`).join('');
+  sel.value = String(chMeta.chore_day);
+}
+
+/* --- cosa c'e' da fare adesso --- */
+function renderOggi() {
+  const p = chDati.piano;
+  const fatto = p.fatto_oggi;
+  const totale = p.da_fare + fatto;
+
+  const testa = `
+    <div class="ch-hero">
+      <div>
+        <div class="ch-hero-day">${esc(p.giorno)} ${esc(p.data)}</div>
+        <div class="ch-hero-num">
+          ${p.da_fare === 0
+            ? '<strong>Fatto tutto</strong><span>per oggi non resta niente</span>'
+            : `<strong>${p.da_fare}</strong><span>${p.da_fare === 1 ? 'attività da fare' : 'attività da fare'}</span>`}
+        </div>
+      </div>
+      <div class="ch-hero-time">
+        ${p.da_fare === 0 ? '' : `<span class="ch-hero-min">${durata(p.minuti_previsti)}</span>
+        <span class="ch-hero-min-lab">tempo stimato</span>`}
+        ${fatto ? `<span class="ch-hero-done">${fatto}/${totale} già fatte</span>` : ''}
+      </div>
+    </div>
+    ${p.giorno_pulizie ? '<p class="ch-pill">Oggi è il giorno delle pulizie</p>' : ''}`;
+
+  const blocco = (nome, elenco) => {
+    if (!elenco.length) return '';
+    return `<h4 class="ch-sub">${esc(nome)}</h4>
+      <ul class="ch-todo">${elenco.map(choreRiga).join('')}</ul>`;
+  };
+
+  $('#ch-oggi').innerHTML = testa
+    + blocco('Ogni giorno', p.gruppi.quotidiane)
+    + blocco('Ogni settimana', p.gruppi.settimanali);
+
+  const m = p.mese;
+  if (m.mensili.length || m.stagionali.length) {
+    const html = `
+      <div class="ch-month">
+        <div class="ch-month-head">
+          <h4 class="ch-sub">${esc(m.nome)}${m.titolo ? ` · ${esc(m.titolo)}` : ''}</h4>
+          <span class="ch-month-lab">nel mese: ${p.mese_da_fare} attività · ${durata(p.mese_minuti)}</span>
+        </div>
+        ${m.focus ? `<p class="ch-focus">${esc(m.focus)}</p>` : ''}
+        <ul class="ch-todo">
+          ${[...m.mensili, ...m.stagionali].map((v) => choreRiga(v)).join('')}
+        </ul>
+      </div>`;
+    $('#ch-oggi').insertAdjacentHTML('beforeend', html);
+  }
+}
+
+/* Una riga di attività da spuntare. `timer` abilita il pulsante del tempo:
+   ha senso solo dove la scadenza conta. */
+function choreRiga(v, timer = true) {
+  return `
+    <li class="ch-row${v.fatto_oggi ? ' done' : ''}" data-chore="${v.id}">
+      <button class="ch-check" data-done="${v.id}" title="${v.fatto_oggi ? 'Fatta oggi, clicca per annullare' : 'Segna come fatta'}">
+        ${v.fatto_oggi ? '✓' : '○'}
+      </button>
+      <span class="ch-name">${esc(v.name)}</span>
+      <span class="ch-area">${esc(v.area)}</span>
+      <span class="ch-when">${esc(quandoDetto(v))}</span>
+      <span class="ch-min">${durata(v.minutes)}</span>
+      ${timer && !v.fatto_oggi
+        ? `<button class="ch-clock" data-timer="${v.id}" title="Cronometra">⏱</button>` : ''}
+    </li>`;
+}
+
+/* --- routine: il catalogo di quotidiane e settimanali --- */
+function renderRoutine() {
+  const di = (f) => chDati.attivita.filter((v) => v.active && v.frequency === f);
+  const sezione = (titolo, elenco, nota) => `
+    <div class="ch-block">
+      <h4 class="ch-sub">${esc(titolo)} <span class="ch-hint">${esc(nota)}</span></h4>
+      <ul class="ch-todo">${elenco.map((v) => choreRiga(v, v.frequency === 'settimanale')).join('')}</ul>
+    </div>`;
+  $('#ch-routine').innerHTML =
+    sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine') +
+    sezione('Ogni settimana', di('settimanale'), 'il livello costante di igiene');
+}
+
+/* --- calendario dell'anno: un mese per riga, con il suo focus ---
+   Il mese corrente e' evidenziato ma chiuso: le sue attivita' sono gia' elencate
+   per intero nel blocco qui sopra, e ripeterle due volte nella stessa schermata
+   confonde invece di aiutare. */
+function renderAnno() {
+  const anno = chDati.piano.data.slice(0, 4);
+  const meseCorrente = Number(chDati.piano.data.slice(5, 7));
+
+  $('#ch-year').innerHTML = chMeta.months.map((m) => {
+    const voci = chDati.attivita
+      .filter((v) => v.active && v.frequency === 'stagionale' && v.month === m.mese);
+    const fatte = voci.filter((v) => v.ultima && v.ultima.slice(0, 4) === anno).length;
+    const cls = m.mese === meseCorrente ? ' current' : '';
+    return `
+      <details class="ch-month-card${cls}">
+        <summary>
+          <span class="ch-month-name">${esc(m.nome)}</span>
+          <span class="ch-month-title">${esc(m.titolo)}</span>
+          <span class="ch-month-count">${fatte}/${voci.length}</span>
+        </summary>
+        <p class="ch-focus">${esc(m.focus)}</p>
+        <ul class="ch-todo">${voci.map((v) => choreRiga(v)).join('')}</ul>
+      </details>`;
+  }).join('');
+}
+
+/* --- catalogo completo, per modificare e disattivare --- */
+function renderChoreList() {
+  const label = (k) => (chMeta.frequencies.find((f) => f.key === k) || {}).label || k;
+  const gruppi = {};
+  chDati.attivita.forEach((v) => (gruppi[v.frequency] = gruppi[v.frequency] || []).push(v));
+  const ordine = ['giornaliera', 'settimanale', 'mensile', 'stagionale'];
+
+  $('#ch-count').textContent = `${chDati.attive} attività attive su ${chDati.attivita.length}`;
+  $('#ch-list').innerHTML = ordine.filter((k) => gruppi[k]).map((k) => `
+    <h4 class="ch-sub">${esc(label(k))}</h4>
+    <ul class="ch-catalog">${gruppi[k].map((v) => `
+      <li class="ch-cat-row${v.active ? '' : ' off'}">
+        <span class="ch-name">${esc(v.name)}</span>
+        <span class="ch-area">${esc(v.area)}</span>
+        ${v.month ? `<span class="ch-month-tag">${esc(chMeta.months[v.month - 1].nome)}</span>` : ''}
+        <span class="ch-min">${durata(v.minutes)}</span>
+        <button class="ghost ch-edit" data-edit="${v.id}">Modifica</button>
+        <button class="ghost ch-toggle" data-toggle="${v.id}">${v.active ? 'Disattiva' : 'Riattiva'}</button>
+      </li>`).join('')}</ul>`).join('');
+}
+
+/* --- timer ---
+   Il tempo parte da un timestamp salvato, non da un contatore in memoria: cosi'
+   il cronometro continua anche se la pagina viene ricaricata o il telefono si
+   blocca, che e' esattamente quello che succede mentre si pulisce.
+
+   `fine` esiste solo per la regola dei 15 minuti: li' il tempo e' un limite, non
+   una misura, quindi si mostra quanto manca e si avvisa quando e' scaduto. */
+const CH_TIMER_KEY = 'choreTimer';
+
+function timerAvviato() {
+  try { return JSON.parse(localStorage.getItem(CH_TIMER_KEY)); } catch { return null; }
+}
+
+function avviaTimer(id, nome, minuti) {
+  const inizio = Date.now();
+  const t = { id, nome, inizio };
+  if (minuti) t.fine = inizio + minuti * 60000;
+  localStorage.setItem(CH_TIMER_KEY, JSON.stringify(t));
+  mostraTimer();
+  toast(minuti ? `${minuti} minuti su ${nome}` : `Timer avviato: ${nome}`);
+}
+
+function mostraTimer() {
+  const t = timerAvviato();
+  $('#ch-timer').classList.toggle('hidden', !t);
+  if (!t) { clearInterval(mostraTimer._i); return; }
+  $('#ch-timer-what').textContent = t.nome;
+  const orologio = $('#ch-timer-clock');
+
+  const tick = () => {
+    const ora = Date.now();
+    if (t.fine) {
+      const resta = Math.round((t.fine - ora) / 1000);
+      if (resta <= 0) {
+        orologio.textContent = 'tempo scaduto';
+        $('#ch-timer').classList.add('scaduto');
+        return;
+      }
+      $('#ch-timer').classList.remove('scaduto');
+      const m = Math.floor(resta / 60);
+      orologio.textContent = `${m}:${String(resta % 60).padStart(2, '0')}`;
+      return;
+    }
+    const sec = Math.floor((ora - t.inizio) / 1000);
+    orologio.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  };
+  tick();
+  clearInterval(mostraTimer._i);
+  mostraTimer._i = setInterval(tick, 1000);
+}
+
+function fermaTimer() {
+  localStorage.removeItem(CH_TIMER_KEY);
+  clearInterval(mostraTimer._i);
+  $('#ch-timer').classList.add('hidden');
+  $('#ch-timer').classList.remove('scaduto');
+}
+
+$('#ch-timer-cancel').addEventListener('click', fermaTimer);
+
+$('#ch-timer-done').addEventListener('click', async () => {
+  const t = timerAvviato();
+  if (!t) return;
+  // nella regola dei 15 minuti il tempo e' un tetto: si registra quello usato
+  // davvero, che puo' essere meno, e non i 15 minuti interi
+  const passati = (Date.now() - t.inizio) / 60000;
+  const minuti = Math.max(1, Math.round(t.fine ? Math.min(passati, (t.fine - t.inizio) / 60000) : passati));
+  await api(`/api/chores/${t.id}/done`, { method: 'POST', body: { minutes: minuti } });
+  fermaTimer();
+  toast(`Fatto in ${durata(minuti)}`);
+  renderIgiene();
+});
+
+/* La regola dei 15 minuti: quando non c'e' tempo per la giornata intera si
+   sceglie una zona sola e le si dedicano quindici minuti. Si prende la prima
+   attivita' ancora da fare, cosi' il pulsante fa qualcosa di sensato senza
+   chiedere nient'altro. */
+$('#ch-blitz').addEventListener('click', () => {
+  const prime = chDati.piano.gruppi.quotidiane
+    .concat(chDati.piano.gruppi.settimanali, chDati.piano.mese.mensili, chDati.piano.mese.stagionali)
+    .filter((v) => !v.fatto_oggi);
+  if (!prime.length) return toast('Non resta niente da fare');
+  avviaTimer(prime[0].id, prime[0].name, 15);
+  switchTab('igiene');
+});
+
+/* --- azioni sulle attività --- */
+$('#ch-oggi').addEventListener('click', choreClick);
+$('#ch-routine').addEventListener('click', choreClick);
+$('#ch-year').addEventListener('click', choreClick);
+
+async function choreClick(e) {
+  const t = e.target.closest('[data-timer]');
+  if (t) {
+    const v = chDati.attivita.find((x) => x.id === Number(t.dataset.timer));
+    avviaTimer(v.id, v.name);
+    return;
+  }
+  const d = e.target.closest('[data-done]');
+  if (!d) return;
+  const id = Number(d.dataset.done);
+  const v = chDati.attivita.find((x) => x.id === id);
+  const fatto = chDati.piano.gruppi.quotidiane.concat(chDati.piano.gruppi.settimanali,
+    chDati.piano.mese.mensili, chDati.piano.mese.stagionali).find((x) => x.id === id);
+  if (fatto && fatto.fatto_oggi) await api(`/api/chores/${id}/done`, { method: 'DELETE' });
+  else await api(`/api/chores/${id}/done`, { method: 'POST', body: {} });
+  toast(v && fatto && fatto.fatto_oggi ? 'Completamento annullato' : 'Segnata come fatta');
+  renderIgiene();
+}
+
+$('#ch-list').addEventListener('click', async (e) => {
+  const ed = e.target.closest('[data-edit]');
+  if (ed) return apriChoreForm(chDati.attivita.find((x) => x.id === Number(ed.dataset.edit)));
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) {
+    const v = chDati.attivita.find((x) => x.id === Number(tg.dataset.toggle));
+    await api(`/api/chores/${v.id}`, { method: 'PUT', body: { active: v.active ? 0 : 1 } });
+    toast(v.active ? 'Attività disattivata' : 'Attività riattivata');
+    renderIgiene();
+  }
+});
+
+$('#ch-day').addEventListener('change', async (e) => {
+  await api('/api/profile', { method: 'PUT', body: { chore_day: Number(e.target.value) } });
+  chMeta.chore_day = Number(e.target.value);
+  toast(`Giorno delle pulizie: ${chMeta.days[chMeta.chore_day].label}`);
+  renderIgiene();
+});
+
+/* --- nuova attività / modifica --- */
+function apriChoreForm(v) {
+  const freq = (v && v.frequency) || 'settimanale';
+  showModal(v ? 'Modifica attività' : 'Nuova attività', `
+    <div class="field"><label>Nome</label>
+      <input id="chf-name" value="${esc(v ? v.name : '')}" placeholder="Es. Pulire il microonde"></div>
+    <div class="field"><label>Ambiente</label>
+      <select id="chf-area" class="plain">${chMeta.areas.map((a) =>
+        `<option${v && v.area === a ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></div>
+    <div class="field"><label>Ogni quanto</label>
+      <select id="chf-freq" class="plain">${chMeta.frequencies.map((f) =>
+        `<option value="${f.key}"${freq === f.key ? ' selected' : ''}>${esc(f.label)}</option>`).join('')}</select></div>
+    <div class="field" id="chf-month-row"><label>Mese</label>
+      <select id="chf-month" class="plain">${chMeta.months.map((m) =>
+        `<option value="${m.mese}"${v && v.month === m.mese ? ' selected' : ''}>${esc(m.nome)}</option>`).join('')}</select></div>
+    <div class="field"><label>Minuti stimati</label>
+      <input id="chf-min" type="number" min="0" step="5" value="${v ? v.minutes : 15}"></div>
+    <div class="modal-foot">
+      <button id="chf-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
+      <button id="chf-cancel">Annulla</button>
+    </div>`);
+
+  const aggiornaMese = () => {
+    $('#chf-month-row').classList.toggle('hidden', $('#chf-freq').value !== 'stagionale');
+  };
+  aggiornaMese();
+  $('#chf-freq').addEventListener('change', aggiornaMese);
+  $('#chf-cancel').addEventListener('click', hideModal);
+
+  $('#chf-save').addEventListener('click', async () => {
+    const nome = $('#chf-name').value.trim();
+    if (!nome) return toast('Inserisci un nome');
+    const corpo = {
+      name: nome, area: $('#chf-area').value, frequency: $('#chf-freq').value,
+      minutes: Number($('#chf-min').value) || 0,
+    };
+    if (corpo.frequency === 'stagionale') corpo.month = Number($('#chf-month').value);
+    try {
+      if (v) await api(`/api/chores/${v.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/chores', { method: 'POST', body: corpo });
+      hideModal();
+      toast(v ? 'Attività salvata' : 'Attività aggiunta');
+      renderIgiene();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+$('#ch-new').addEventListener('click', () => apriChoreForm(null));
 
 /* ---------- PROFILO ---------- */
 function labelOf(key) { return allergenLabels[key] || key; }
@@ -1292,6 +1654,9 @@ async function loadIngredientsDatalist() {
   caricaVoci();
   if (window.speechSynthesis) speechSynthesis.addEventListener?.('voiceschanged', caricaVoci);
   await renderPlan();
+  // il timer delle pulizie continua a contare anche dopo un ricaricamento: se
+  // era attivo, la barra va rimessa subito
+  mostraTimer();
   // La prima schermata resta la home: le domande iniziali (pasti, allergie,
   // preferite) riguardano la cucina, quindi si aprono entrando in Cucina e non
   // addosso a chi sta andando in Igiene o Progetti.

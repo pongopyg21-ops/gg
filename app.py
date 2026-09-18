@@ -2,10 +2,12 @@ import os
 import re
 import sqlite3
 from contextlib import closing
+import datetime
 
 from flask import Flask, g, jsonify, request, send_from_directory
 
 import allergens
+import igiene
 import units
 import voice
 
@@ -76,6 +78,33 @@ def migrate(db):
     # i profili nati prima della scelta dei pasti restano a due, il valore storico
     if have and "meals_per_day" not in have:
         db.execute("ALTER TABLE profile ADD COLUMN meals_per_day INTEGER NOT NULL DEFAULT 2")
+    # il giorno fisso delle pulizie: sabato, come suggerisce l'articolo
+    if have and "chore_day" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN chore_day INTEGER NOT NULL DEFAULT 5")
+
+    # Il catalogo delle pulizie si semina qui, non in seed.py: la sezione Igiene
+    # deve funzionare anche su un database creato prima che esistesse, senza
+    # obbligare a rilanciare il seed a mano. L'inserimento e' idempotente e non
+    # tocca le righe gia' presenti, cosi' le modifiche dell'utente restano.
+    _semina_pulizie(db)
+
+
+def _semina_pulizie(db):
+    # `migrate` viene chiamata anche su database vecchi a cui manca del tutto la
+    # tabella: senza questo controllo il seme fallirebbe su un DB legittimo
+    tabelle = {r["name"] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "chores" not in tabelle:
+        return
+    esistenti = {r["name"] for r in db.execute("SELECT name FROM chores")}
+    nuove = [v for v in igiene.catalogo() if v["name"] not in esistenti]
+    if not nuove:
+        return
+    db.executemany(
+        """INSERT INTO chores (name, area, frequency, minutes, month)
+           VALUES (:name, :area, :frequency, :minutes, :month)""",
+        nuove,
+    )
 
 
 def init_db():
@@ -184,7 +213,8 @@ def get_profile(db):
     return profile
 
 
-PROFILE_FIELDS = {"full_name", "restrictions", "onboarded", "fav_prompted", "meals_per_day"}
+PROFILE_FIELDS = {"full_name", "restrictions", "onboarded", "fav_prompted",
+                  "meals_per_day", "chore_day"}
 
 
 def save_profile(db, data):
@@ -204,10 +234,18 @@ def save_profile(db, data):
         try:
             scelti = int(values["meals_per_day"])
         except (TypeError, ValueError):
-            raise ValueError("meals_per_day non valido")
+            raise ValueError("Numero di pasti non valido (da 1 a 5)")
         if scelti not in MEAL_SETS:
-            raise ValueError("meals_per_day non valido")
+            raise ValueError("Numero di pasti non valido (da 1 a 5)")
         values["meals_per_day"] = scelti
+    if "chore_day" in values:
+        try:
+            giorno = int(values["chore_day"])
+        except (TypeError, ValueError):
+            raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
+        if not 0 <= giorno <= 6:
+            raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
+        values["chore_day"] = giorno
     if values:
         assignments = ", ".join(f"{k} = ?" for k in values)
         db.execute(
@@ -254,8 +292,8 @@ def profile():
         data = request.get_json(force=True) or {}
         try:
             return jsonify(save_profile(db, data))
-        except ValueError:
-            return bad_request("Numero di pasti non valido (da 1 a 5)")
+        except ValueError as err:
+            return bad_request(str(err) or "Valore non valido")
     return jsonify(get_profile(db))
 
 
@@ -900,6 +938,224 @@ def add_to_shopping(db, iid, name, qty, unit, category):
         db.execute(
             "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
             (name, qty, unit, category, iid))
+
+
+# ------------------------------------------------------------------ igiene
+# Le attivita' di pulizia e quando vanno rifatte. Il catalogo sta in `chores`,
+# la cronologia in `chore_log`; le scadenze si calcolano a ogni lettura da
+# `igiene.scadenza`, non si salvano.
+
+def _oggi(db):
+    """La data di oggi, in un unico posto.
+
+    Si puo' forzare con ?date= (aaaa-mm-gg): serve al calendario per mostrare un
+    giorno scelto e ai test per non dipendere dalla data reale.
+    """
+    richiesta = (request.args.get("date") or "").strip()
+    if richiesta:
+        try:
+            return datetime.date.fromisoformat(richiesta).isoformat()
+        except ValueError:
+            pass
+    return datetime.date.today().isoformat()
+
+
+def _ultime(db):
+    """L'ultima volta che ogni attivita' e' stata fatta: {chore_id: 'aaaa-mm-gg'}."""
+    cur = db.execute("SELECT chore_id, MAX(date) AS ultima FROM chore_log GROUP BY chore_id")
+    return {r["chore_id"]: r["ultima"] for r in cur}
+
+
+def _chore_o_404(db, cid):
+    row = one(db.execute("SELECT * FROM chores WHERE id = ?", (cid,)))
+    if row is None:
+        return None, bad_request("Attività non trovata", 404)
+    return row, None
+
+
+@app.route("/api/chores/meta")
+def chores_meta():
+    """Le scelte fisse della sezione: frequenze, ambienti, mesi, giorni."""
+    db = get_db()
+    return jsonify({
+        "frequencies": igiene.FREQUENZE,
+        "areas": igiene.AMBIENTI,
+        "days": [{"key": i, "label": g} for i, g in enumerate(igiene.GIORNI_SETTIMANA)],
+        "months": igiene.mesi(),
+        "chore_day": get_profile(db).get("chore_day") or 0,
+    })
+
+
+@app.route("/api/chores", methods=["GET"])
+def chores_list():
+    """Il catalogo con lo stato di scadenza, e cosa c'e' da fare oggi."""
+    db = get_db()
+    oggi = _oggi(db)
+    ultime = _ultime(db)
+    attivita = rows(db.execute("SELECT * FROM chores ORDER BY frequency, area, name"))
+
+    for voce in attivita:
+        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi, voce["month"]))
+
+    giorno = get_profile(db).get("chore_day") or 0
+    piano = igiene.piano(attivita, ultime, oggi, giorno)
+    return jsonify({"oggi": oggi, "attivita": attivita, "piano": piano,
+                    "attive": sum(1 for v in attivita if v["active"])})
+
+
+@app.route("/api/chores", methods=["POST"])
+def chores_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return bad_request("Il nome è obbligatorio")
+    freq = data.get("frequency") or "settimanale"
+    if freq not in igiene.CADENZE and freq != "stagionale":
+        return bad_request("Frequenza non valida")
+    month = data.get("month")
+    if freq == "stagionale":
+        if not isinstance(month, int) or not 1 <= month <= 12:
+            return bad_request("Un'attività annuale richiede un mese da 1 a 12")
+    else:
+        month = None
+    try:
+        cur = db.execute(
+            """INSERT INTO chores (name, area, frequency, minutes, month)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, data.get("area") or "Tutta la casa", freq,
+             max(0, int(data.get("minutes") or 15)), month))
+    except sqlite3.IntegrityError:
+        return bad_request("Esiste già un'attività con questo nome")
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM chores WHERE id = ?", (cur.lastrowid,)))), 201
+
+
+@app.route("/api/chores/<int:cid>", methods=["PUT", "DELETE"])
+def chores_modify(cid):
+    db = get_db()
+    row, errore = _chore_o_404(db, cid)
+    if errore:
+        return errore
+    if request.method == "DELETE":
+        db.execute("DELETE FROM chores WHERE id = ?", (cid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    campi = {}
+    if "name" in data:
+        nome = (data.get("name") or "").strip()
+        if not nome:
+            return bad_request("Il nome è obbligatorio")
+        campi["name"] = nome
+    if "area" in data:
+        campi["area"] = data["area"] or "Tutta la casa"
+    if "minutes" in data:
+        try:
+            campi["minutes"] = max(0, int(data["minutes"]))
+        except (TypeError, ValueError):
+            return bad_request("Minuti non validi")
+    if "active" in data:
+        campi["active"] = 1 if data["active"] else 0
+    if "frequency" in data:
+        if data["frequency"] not in igiene.CADENZE and data["frequency"] != "stagionale":
+            return bad_request("Frequenza non valida")
+        campi["frequency"] = data["frequency"]
+    # il mese segue la frequenza: si azzera quando l'attivita' non e' annuale,
+    # altrimenti resterebbe un mese su una voce che non lo usa
+    freq_finale = campi.get("frequency", row["frequency"])
+    if freq_finale == "stagionale":
+        mese = data.get("month", row["month"])
+        if not isinstance(mese, int) or not 1 <= mese <= 12:
+            return bad_request("Un'attività annuale richiede un mese da 1 a 12")
+        campi["month"] = mese
+    else:
+        campi["month"] = None
+
+    try:
+        assignments = ", ".join(f"{k} = ?" for k in campi)
+        db.execute(f"UPDATE chores SET {assignments} WHERE id = ?", [*campi.values(), cid])
+    except sqlite3.IntegrityError:
+        return bad_request("Esiste già un'attività con questo nome")
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM chores WHERE id = ?", (cid,))))
+
+
+@app.route("/api/chores/<int:cid>/done", methods=["POST", "DELETE"])
+def chores_done(cid):
+    """Segna un'attivita' come fatta oggi, o annulla l'ultima volta.
+
+    I minuti sono il tempo impiegato davvero, se misurato: 0 significa "fatto,
+    ma non cronometrato" e non va confuso con un'attivita' da zero minuti.
+    """
+    db = get_db()
+    _row, errore = _chore_o_404(db, cid)
+    if errore:
+        return errore
+
+    if request.method == "DELETE":
+        ultima = one(db.execute(
+            "SELECT * FROM chore_log WHERE chore_id = ? ORDER BY date DESC, id DESC LIMIT 1", (cid,)))
+        if ultima is None:
+            return bad_request("Nessun completamento da annullare", 404)
+        db.execute("DELETE FROM chore_log WHERE id = ?", (ultima["id"],))
+        db.commit()
+        return jsonify({"ok": True, "annullata": ultima["date"]})
+
+    data = request.get_json(silent=True) or {}
+    try:
+        minuti = max(0, int(data.get("minutes") or 0))
+    except (TypeError, ValueError):
+        return bad_request("Minuti non validi")
+    giorno = (data.get("date") or _oggi(db))
+    try:
+        giorno = datetime.date.fromisoformat(str(giorno)[:10]).isoformat()
+    except ValueError:
+        return bad_request("Data non valida")
+
+    db.execute("INSERT INTO chore_log (chore_id, date, minutes) VALUES (?, ?, ?)",
+               (cid, giorno, minuti))
+    db.commit()
+    return jsonify({"ok": True, "date": giorno, "minutes": minuti})
+
+
+@app.route("/api/chores/history")
+def chores_history():
+    """Le ultime pulizie fatte, con il tempo impiegato quando e' stato misurato."""
+    db = get_db()
+    limite = request.args.get("limit", type=int) or 30
+    cur = db.execute(
+        """SELECT l.id, l.chore_id, l.date, l.minutes, c.name, c.area, c.frequency
+           FROM chore_log l JOIN chores c ON c.id = l.chore_id
+           ORDER BY l.date DESC, l.id DESC LIMIT ?""",
+        (max(1, min(limite, 200)),))
+    return jsonify(rows(cur))
+
+
+@app.route("/api/chores/summary")
+def chores_summary():
+    """Quanto tempo e' andato nelle pulizie: oggi, questa settimana, questo mese.
+
+    Si contano solo i completamenti cronometrati: le attivita' spuntate senza
+    timer non hanno un tempo, e contarle come zero abbasserebbe la media.
+    """
+    db = get_db()
+    oggi = datetime.date.fromisoformat(_oggi(db))
+    lunedi = oggi - datetime.timedelta(days=oggi.weekday())
+    inizio_mese = oggi.replace(day=1)
+
+    def totale(da):
+        row = one(db.execute(
+            "SELECT COUNT(*) AS volte, COALESCE(SUM(minutes), 0) AS minuti FROM chore_log WHERE date >= ?",
+            (da.isoformat(),)))
+        return {"volte": row["volte"], "minuti": row["minuti"]}
+
+    return jsonify({
+        "oggi": totale(oggi),
+        "settimana": {**totale(lunedi), "dal": lunedi.isoformat()},
+        "mese": {**totale(inizio_mese), "dal": inizio_mese.isoformat()},
+    })
 
 
 if __name__ == "__main__":

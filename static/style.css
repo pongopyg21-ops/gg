@@ -616,6 +616,189 @@ tr:last-child td { border-bottom: none; }
 .tab.active .card:nth-child(5), .tab.active .day:nth-child(5) { animation-delay: .12s; }
 .tab.active .card:nth-child(n+6), .tab.active .day:nth-child(n+6) { animation-delay: .15s; }
 
+/* ---------- pulizie e igiene ----------
+   Il metodo: tre blocchi per frequenza piu' il calendario annuale. La gerarchia
+   visiva segue l'ordine d'uso — prima cosa c'e' da fare adesso (grande, con il
+   tempo stimato), poi la routine, poi l'anno. Le righe sono liste, non tabelle:
+   si spuntano con un tocco e su telefono restano leggibili. */
+
+.ch-hero {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;
+  flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px 24px; box-shadow: var(--shadow);
+}
+.ch-hero-day {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+}
+.ch-hero-num { display: flex; align-items: baseline; gap: 10px; }
+.ch-hero-num strong {
+  font-family: var(--font-display); font-size: 40px; font-weight: 500;
+  font-variation-settings: 'opsz' 144; line-height: 1; letter-spacing: -.02em;
+}
+.ch-hero-num span { color: var(--muted); font-size: 14px; }
+.ch-hero-time { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.ch-hero-min {
+  font-family: var(--font-display); font-size: 22px; font-weight: 500;
+  color: var(--accent); line-height: 1.1;
+}
+.ch-hero-min-lab { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.ch-hero-done { font-size: 12px; color: var(--green); margin-top: 4px; }
+.ch-pill {
+  display: inline-block; margin: 12px 0 0; padding: 4px 12px;
+  background: var(--accent-soft); color: var(--accent-deep);
+  border-radius: 999px; font-size: 12px; font-weight: 600;
+}
+
+.ch-sub {
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+  margin: 22px 0 8px; color: var(--ink);
+}
+.ch-hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+.ch-count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+.ch-day { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+.ch-todo { list-style: none; margin: 0; padding: 0; }
+.ch-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 10px;
+  padding: 9px 4px; border-bottom: 1px solid var(--line);
+}
+.ch-row:last-child { border-bottom: none; }
+/* una voce spuntata resta leggibile ma si ritira: si vede che e' fatta senza
+   sparire, altrimenti sembra che il tocco non abbia funzionato */
+.ch-row.done .ch-name, .ch-row.done .ch-when { color: var(--muted); }
+.ch-row.done .ch-name { text-decoration: line-through; text-decoration-color: var(--line-strong); }
+
+.ch-check {
+  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px; line-height: 1;
+}
+.ch-row.done .ch-check {
+  background: var(--green); border-color: var(--green); color: #fff; font-weight: 700;
+}
+.ch-name { min-width: 0; }
+.ch-area {
+  font-size: 11px; color: var(--muted); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px;
+  white-space: nowrap;
+}
+.ch-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ch-min { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ch-clock {
+  width: 28px; height: 28px; padding: 0; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; color: var(--muted);
+}
+.ch-clock:hover { color: var(--accent); border-color: var(--accent); }
+
+/* il blocco del mese: mensili e annuali stanno insieme, con il focus che dice
+   perche' si fanno proprio adesso */
+.ch-month {
+  margin-top: 26px; padding: 18px 20px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.ch-month-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; flex-wrap: wrap;
+}
+.ch-month-head .ch-sub { margin: 0; font-size: 13.5px; }
+.ch-month-lab { font-size: 12px; color: var(--muted); }
+.ch-focus {
+  margin: 6px 0 4px; font-size: 13px; color: var(--muted); font-style: italic;
+}
+
+.ch-block { margin-bottom: 8px; }
+
+/* regola dei 15 minuti: un'uscita di sicurezza per le giornate piene, non un
+   comando principale — discreta, ma a un tocco di distanza */
+.ch-blitz-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px;
+}
+.ch-blitz-row button { font-size: 13px; white-space: nowrap; }
+.ch-blitz-hint { font-size: 12px; color: var(--muted); }
+
+/* calendario annuale: un mese per riga, si apre quello corrente */
+.ch-year { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.ch-month-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.ch-month-card[open] { grid-column: 1 / -1; }
+.ch-month-card.current { border-color: var(--accent); }
+.ch-month-card summary {
+  cursor: pointer; display: flex; align-items: baseline; gap: 9px;
+  list-style: none; flex-wrap: wrap;
+}
+.ch-month-card summary::-webkit-details-marker { display: none; }
+.ch-month-name {
+  font-family: var(--font-display); font-size: 16px; font-weight: 500; min-width: 92px;
+}
+.ch-month-title { font-size: 12.5px; color: var(--muted); flex: 1; }
+.ch-month-count {
+  font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  background: var(--paper); border-radius: 999px; padding: 1px 9px;
+}
+.ch-month-card .ch-todo { margin-top: 10px; }
+
+/* catalogo: righe piu' fitte, con i comandi in coda */
+.ch-catalog { list-style: none; margin: 0 0 6px; padding: 0; }
+.ch-cat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+  align-items: center; gap: 8px;
+  padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.ch-cat-row:last-child { border-bottom: none; }
+/* disattivata: resta in elenco perche' si puo' riattivare, ma si vede che e' fuori */
+.ch-cat-row.off { opacity: .48; }
+.ch-cat-row.off .ch-name { text-decoration: line-through; }
+.ch-cat-row button { font-size: 12px; padding: 4px 10px; }
+.ch-month-tag {
+  font-size: 11px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 8px;
+}
+
+/* --- timer ---
+   Barra fissa in basso: si avvia e si va a pulire, quindi deve restare visibile.
+   Sta sopra il microfono (z 40) e sotto il toast (z 100). */
+.ch-timer {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: max(16px, env(safe-area-inset-bottom)); z-index: 60;
+  display: flex; align-items: center; gap: 18px;
+  background: var(--ink); color: #fff;
+  border-radius: 999px; padding: 10px 12px 10px 22px;
+  box-shadow: 0 16px 40px -14px rgba(38, 34, 30, .6);
+  font-size: 13.5px;
+}
+.ch-timer-info { display: flex; align-items: baseline; gap: 12px; }
+.ch-timer-what { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-timer-clock {
+  font-variant-numeric: tabular-nums; font-weight: 600; font-size: 16px;
+  font-family: var(--font-display);
+}
+.ch-timer-actions { display: flex; gap: 6px; }
+.ch-timer button { font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
+.ch-timer button.primary { background: var(--accent); border-color: var(--accent); }
+.ch-timer button:not(.primary) {
+  background: none; border-color: rgba(255, 255, 255, .3); color: #fff;
+}
+.ch-timer button:not(.primary):hover { border-color: #fff; }
+/* tempo scaduto nella regola dei 15 minuti: si vede, non suona — un allarme
+   sonoro mentre si pulisce sarebbe solo fastidioso */
+.ch-timer.scaduto { background: var(--accent-deep); }
+.ch-timer.scaduto .ch-timer-clock { font-size: 15px; }
+
+/* azione secondaria: stesso ingombro del pulsante normale, meno peso visivo */
+.ghost {
+  background: none; border-color: transparent; color: var(--muted);
+}
+.ghost:hover { border-color: var(--line-strong); color: var(--ink); background: var(--surface); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important; transition: none !important;
@@ -732,5 +915,36 @@ tr:last-child td { border-bottom: none; }
   .voice-box {
     width: 100%; border-radius: 16px 16px 0 0;
     padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* pulizie: le righe passano a due fasce — cosa fare a sinistra, stato e
+     comandi a destra — invece di cinque colonne che non stanno nello schermo */
+  .ch-hero { padding: 18px 16px; }
+  .ch-hero-num strong { font-size: 34px; }
+  .ch-hero-time { text-align: left; }
+  .ch-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    row-gap: 3px; padding: 11px 2px;
+  }
+  /* nome e ambiente sulla prima riga, stato e tempo sulla seconda */
+  .ch-row .ch-name { grid-column: 2; }
+  .ch-row .ch-area { grid-column: 3; }
+  .ch-row .ch-when { grid-column: 2; font-size: 11.5px; }
+  .ch-row .ch-min { grid-column: 3; justify-self: end; }
+  .ch-row .ch-clock { grid-column: 3; grid-row: 1; justify-self: end; }
+  .ch-row .ch-check { grid-row: 1 / span 2; align-self: center; }
+  .ch-year { grid-template-columns: 1fr; }
+  .ch-cat-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 6px; padding: 10px 2px;
+  }
+  .ch-cat-row .ch-name { grid-column: 1 / -1; }
+  .ch-cat-row button { min-height: 36px; }
+  /* il timer va sopra il microfono: in basso a destra c'e' gia' lui */
+  .ch-timer { bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); max-width: calc(100% - 28px); }
+  .ch-timer-what { max-width: 30vw; }
+  /* e il toast sale ancora, per non coprire il timer quando e' attivo */
+  .ch-timer:not(.hidden) ~ .voice, body:has(.ch-timer:not(.hidden)) .toast {
+    bottom: max(150px, calc(env(safe-area-inset-bottom) + 150px));
   }
 }

@@ -162,16 +162,34 @@
     <div id="pf-report"></div>
   </section>
 
-  <!-- IGIENE — pulizie di casa e della cucina. Sezione nuova: per ora e' una
-       pagina dedicata con lo spazio pronto, senza dati inventati. -->
+  <!-- IGIENE — pulizie di casa e della cucina. Il metodo e' quello del calendario
+       mensile: tre blocchi per frequenza (ogni giorno, ogni settimana, ogni mese)
+       piu' un calendario annuale con un focus per mese. La pagina apre su cosa
+       c'e' da fare adesso, perche' e' quello che serve davvero. -->
   <section id="tab-igiene" class="tab">
-    <div class="empty-state">
-      <span class="empty-emoji">🧽</span>
-      <h2>Pulizie e igiene</h2>
-      <p>Qui vivranno le pulizie di casa e della cucina: cosa va fatto, ogni quanto,
-        e quando l'hai fatto l'ultima volta. La sezione è pronta per accogliere
-        le sue funzioni.</p>
+    <div id="ch-oggi"></div>
+    <div class="ch-blitz-row">
+      <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
+      <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
     </div>
+
+    <h3 class="section-title">Routine</h3>
+    <div class="toolbar">
+      <label class="ch-day">Giorno delle pulizie
+        <select id="ch-day"></select>
+      </label>
+    </div>
+    <div id="ch-routine"></div>
+
+    <h3 class="section-title">Calendario dell'anno</h3>
+    <div id="ch-year" class="ch-year"></div>
+
+    <h3 class="section-title">Attività</h3>
+    <div class="toolbar">
+      <button id="ch-new" class="ghost">+ Nuova attività</button>
+      <span id="ch-count" class="ch-count"></span>
+    </div>
+    <div id="ch-list"></div>
   </section>
 
   <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->
@@ -198,6 +216,20 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
+
+<!-- Timer delle pulizie: barra fissa in basso, non un modale. Si avvia il timer
+     e si va a pulire, quindi deve restare visibile mentre si gira per l'app.
+     Il caso d'uso e' la regola dei 15 minuti: timer su una zona sola. -->
+<div id="ch-timer" class="ch-timer hidden" role="status" aria-live="polite">
+  <div class="ch-timer-info">
+    <span class="ch-timer-what" id="ch-timer-what">Pulizia</span>
+    <span class="ch-timer-clock" id="ch-timer-clock">0:00</span>
+  </div>
+  <div class="ch-timer-actions">
+    <button id="ch-timer-done" class="primary">Fatto</button>
+    <button id="ch-timer-cancel" class="ghost">Annulla</button>
+  </div>
+</div>
 
 <!-- Comandi vocali: il pulsante resta raggiungibile da ogni scheda, perché serve
      proprio quando non si possono usare le mani (es. mentre si cucina). -->

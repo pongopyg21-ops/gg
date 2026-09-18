@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS profile (
     -- 0 finche' il passo di scelta delle preferite non e' stato mostrato:
     -- serve a riproporlo a chi si era profilato prima che esistesse
     fav_prompted INTEGER NOT NULL DEFAULT 0,
+    -- giorno fisso della settimana per le pulizie (0 = lunedi' ... 6 = domenica):
+    -- la routine crea costanza, dice l'articolo, e il giorno lo sceglie l'utente
+    chore_day INTEGER NOT NULL DEFAULT 5,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -83,3 +86,33 @@ CREATE TABLE IF NOT EXISTS favorites (
     recipe_id  INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ---------------------------------------------------------------- igiene
+-- Attivita' di pulizia. Il catalogo di partenza (igiene.py) viene seminato qui
+-- come le ricette: si puo' modificare, disattivare o aggiungere senza toccare
+-- il codice. `frequency` divide i tre blocchi del metodo (quotidiane,
+-- settimanali, mensili) piu' le stagionali, che si fanno nel loro `month`.
+CREATE TABLE IF NOT EXISTS chores (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL UNIQUE,
+    area      TEXT NOT NULL DEFAULT 'Tutta la casa',
+    frequency TEXT NOT NULL DEFAULT 'settimanale',
+    minutes   INTEGER NOT NULL DEFAULT 15,
+    month     INTEGER,                        -- 1-12, solo per le stagionali
+    active    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Quando un'attivita' e' stata fatta. Le scadenze NON si salvano: si ricavano
+-- dall'ultima riga, come i giorni della spesa dal piano. Una tabella di appoggio
+-- si disallineerebbe appena si registra un completamento.
+CREATE TABLE IF NOT EXISTS chore_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chore_id   INTEGER NOT NULL REFERENCES chores(id) ON DELETE CASCADE,
+    date       TEXT NOT NULL,
+    minutes    INTEGER NOT NULL DEFAULT 0,    -- tempo impiegato davvero, 0 se non misurato
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chore_log_chore ON chore_log(chore_id, date);
+CREATE INDEX IF NOT EXISTS idx_chores_freq ON chores(frequency, month);

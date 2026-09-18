@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 from contextlib import closing
+from datetime import date
 
 import pytest
 
@@ -12,6 +13,7 @@ os.environ["CUCINA_DB"] = DB
 
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
+import igiene  # noqa: E402
 import units  # noqa: E402
 import voice  # noqa: E402
 
@@ -1093,3 +1095,295 @@ def test_migrazione_aggiunge_il_numero_di_pasti(client):
         riga = c.execute("SELECT * FROM profile WHERE id = 1").fetchone()
     assert riga["meals_per_day"] == 2, "il profilo vecchio resta a due pasti"
     assert riga["full_name"] == "Vecchio", "i dati esistenti non si perdono"
+
+
+# ------------------------------------------------------------ igiene
+def test_catalogo_pulizie_senza_duplicati():
+    """Il catalogo deve restare ordinato: nomi ripetuti confondono il conteggio."""
+    voci = igiene.catalogo()
+    nomi = [v["name"] for v in voci]
+    assert len(nomi) == len(set(nomi))
+    assert all(v["name"].strip() for v in voci)
+    assert all(v["frequency"] in {f["key"] for f in igiene.FREQUENZE} for v in voci)
+
+
+def test_catalogo_copre_tutte_le_frequenze():
+    """Ogni frequenza deve avere voce: senza, un blocco della pagina resta vuoto."""
+    voci = igiene.catalogo()
+    for chiave in ("giornaliera", "settimanale", "mensile", "stagionale"):
+        assert any(v["frequency"] == chiave for v in voci), chiave
+
+
+def test_catalogo_ogni_mese_dell_anno_ha_una_voce():
+    """Il calendario annuale ha dodici mesi: un mese vuoto sarebbe un buco visibile."""
+    mesi_con_voce = {v["month"] for v in igiene.catalogo() if v["frequency"] == "stagionale"}
+    assert mesi_con_voce == set(range(1, 13))
+
+
+def test_scadenza_giornaliera_sempre_da_fare():
+    """Le quotidiane non hanno scadenza: si fanno ogni giorno.
+
+    Fatta oggi risulta "prossima domani" (un giorno di distanza): e' corretto e
+    non le toglie dal piano, perche' `piano` include comunque le quotidiane.
+    """
+    oggi = date(2026, 9, 18)
+    mai = igiene.scadenza("giornaliera", None, oggi)
+    assert mai["in_scadenza"] is True
+    fatta = igiene.scadenza("giornaliera", "2026-09-18", oggi)
+    assert fatta["giorni"] == 1, "torna domani, non oggi stesso"
+
+
+def test_scadenza_settimanale_prima_della_scadenza():
+    """Fatta tre giorni fa non e' ancora da rifare: la cadenza e' di sette giorni."""
+    stato = igiene.scadenza("settimanale", "2026-09-15", date(2026, 9, 18))
+    assert stato["in_scadenza"] is False
+    assert stato["giorni"] == 4
+    assert stato["prossima"] == "2026-09-22"
+
+
+def test_scadenza_settimanale_alla_scadenza_esatta():
+    """Il settimo giorno la voce rientra: il confine non deve slittare di un giorno."""
+    stato = igiene.scadenza("settimanale", "2026-09-11", date(2026, 9, 18))
+    assert stato["in_scadenza"] is True
+    assert stato["giorni"] == 0
+
+
+def test_scadenza_settimanale_in_ritardo():
+    """Saltare una settimana non deve far sparire la voce: i giorni vanno negativi."""
+    stato = igiene.scadenza("settimanale", "2026-09-01", date(2026, 9, 18))
+    assert stato["in_scadenza"] is True
+    assert stato["giorni"] < 0
+
+
+def test_scadenza_mensile_e_annuale():
+    """Mensile a trenta giorni, annuale solo nel suo mese."""
+    oggi = date(2026, 9, 18)
+    assert igiene.scadenza("mensile", "2026-08-01", oggi)["in_scadenza"] is True
+    assert igiene.scadenza("mensile", "2026-09-10", oggi)["in_scadenza"] is False
+    # una voce di giugno non e' in scadenza a settembre
+    assert igiene.scadenza("stagionale", None, oggi, 6)["in_scadenza"] is False
+    assert igiene.scadenza("stagionale", None, oggi, 9)["in_scadenza"] is True
+
+
+def test_scadenza_stagionale_fatta_quest_anno_non_rientra():
+    """La voce annuale fatta a settembre non deve riproporsi a settembre."""
+    stato = igiene.scadenza("stagionale", "2026-09-02", date(2026, 9, 18), 9)
+    assert stato["in_scadenza"] is False
+    # ma torna l'anno dopo, nello stesso mese
+    assert igiene.scadenza("stagionale", "2026-09-02", date(2027, 9, 18), 9)["in_scadenza"] is True
+
+
+def test_scadenza_mai_fatta_e_segnalata():
+    """Chi apre l'app per la prima volta deve vedere gli stati vuoti, non date inventate."""
+    stato = igiene.scadenza("settimanale", None, date(2026, 9, 18))
+    assert stato["mai_fatta"] is True
+    assert stato["ultima"] is None
+
+
+def test_data_ultima_volta_illeggibile_non_rompe_il_calcolo():
+    """Un valore sporco nel DB non deve far fallire l'intera pagina."""
+    stato = igiene.scadenza("settimanale", "non-una-data", date(2026, 9, 18))
+    assert "in_scadenza" in stato
+
+
+def test_piano_separa_oggi_dal_mese():
+    """Il piano di oggi non deve contenere mensili e annuali.
+
+    E' il punto del metodo: mensili e stagionali si distribuiscono nel mese. Se
+    finissero tutte nel piano di oggi la giornata diventerebbe impraticabile e il
+    piano verrebbe abbandonato.
+    """
+    voci = [
+        {"id": 1, "name": "Quotidiana", "frequency": "giornaliera", "minutes": 5, "area": "Cucina", "active": 1, "month": None},
+        {"id": 2, "name": "Settimanale", "frequency": "settimanale", "minutes": 10, "area": "Bagno", "active": 1, "month": None},
+        {"id": 3, "name": "Mensile", "frequency": "mensile", "minutes": 40, "area": "Cucina", "active": 1, "month": None},
+        {"id": 4, "name": "Annuale", "frequency": "stagionale", "minutes": 60, "area": "Camere", "active": 1, "month": 9},
+    ]
+    today = date(2026, 9, 18)  # venerdi
+    piano = igiene.piano(voci, {}, today, giorno_pulizie=5)
+
+    oggi_ids = {v["id"] for elenco in piano["gruppi"].values() for v in elenco}
+    assert oggi_ids == {1, 2}, "oggi solo quotidiane e settimanali"
+    mese_ids = {v["id"] for elenco in (piano["mese"]["mensili"], piano["mese"]["stagionali"]) for v in elenco}
+    assert mese_ids == {3, 4}, "mensili e annuali stanno nel mese"
+
+
+def test_piano_minuti_previsti_contano_solo_oggi():
+    """Il tempo stimato di oggi non deve includere il mese: sarebbe una cifra falsa."""
+    voci = [
+        {"id": 1, "name": "Quotidiana", "frequency": "giornaliera", "minutes": 5, "area": "Cucina", "active": 1, "month": None},
+        {"id": 3, "name": "Mensile", "frequency": "mensile", "minutes": 40, "area": "Cucina", "active": 1, "month": None},
+    ]
+    piano = igiene.piano(voci, {}, date(2026, 9, 18), giorno_pulizie=5)
+    assert piano["minuti_previsti"] == 5
+    assert piano["mese_minuti"] == 40
+
+
+def test_piano_il_giorno_fisso_tira_dentro_le_settimanali():
+    """Il giorno fisso serve proprio a questo: raccogliere le settimanali in un giorno."""
+    voci = [{"id": 2, "name": "Settimanale", "frequency": "settimanale", "minutes": 10,
+             "area": "Bagno", "active": 1, "month": None}]
+    # fatta ieri: senza giorno fisso non rientrerebbe
+    ultime = {2: "2026-09-17"}
+    senza = igiene.piano(voci, ultime, date(2026, 9, 18), giorno_pulizie=0)
+    con = igiene.piano(voci, ultime, date(2026, 9, 18), giorno_pulizie=4)  # venerdi
+    assert senza["da_fare"] == 0
+    assert con["da_fare"] == 1
+
+
+def test_piano_attivita_disattivate_restano_fuori():
+    """Disattivare una voce deve toglierla dal piano, non solo dal catalogo."""
+    voci = [{"id": 1, "name": "Spenta", "frequency": "giornaliera", "minutes": 5,
+             "area": "Cucina", "active": 0, "month": None}]
+    piano = igiene.piano(voci, {}, date(2026, 9, 18), giorno_pulizie=5)
+    assert piano["da_fare"] == 0
+
+
+def test_piano_una_voce_fatta_oggi_non_conta_piu():
+    """Spuntata la voce, il conteggio e i minuti devono scendere subito."""
+    voci = [{"id": 1, "name": "Fatta", "frequency": "giornaliera", "minutes": 5,
+             "area": "Cucina", "active": 1, "month": None}]
+    piano = igiene.piano(voci, {1: "2026-09-18"}, date(2026, 9, 18), giorno_pulizie=5)
+    assert piano["da_fare"] == 0
+    assert piano["minuti_previsti"] == 0
+    assert piano["fatto_oggi"] == 1, "resta visibile come fatta"
+
+
+def test_piano_include_il_focus_del_mese():
+    """Il focus del mese e' il senso del blocco annuale: senza, le voci non si capiscono."""
+    piano = igiene.piano([], {}, date(2026, 9, 18), giorno_pulizie=5)
+    assert piano["mese"]["nome"] == "Settembre"
+    assert piano["mese"]["focus"]
+    assert piano["mese"]["titolo"]
+
+
+def test_piano_data_non_valida_ricade_su_oggi():
+    """Una data storta non deve far esplodere la pagina."""
+    piano = igiene.piano([], {}, "non-una-data", giorno_pulizie=5)
+    assert piano["data"] == date.today().isoformat()
+
+
+# ------------------------------------------------------------ igiene: API
+def test_api_pulizie_meta(client):
+    """La pagina ha bisogno di frequenze, ambienti, giorni e mesi per costruirsi."""
+    m = client.get("/api/chores/meta").get_json()
+    assert len(m["months"]) == 12
+    assert len(m["days"]) == 7
+    assert len(m["frequencies"]) == 4
+    assert m["areas"]
+    assert 0 <= m["chore_day"] <= 6
+
+
+def test_api_pulizie_seminata_al_primo_avvio(client):
+    """Un database nuovo deve uscire con il catalogo delle pulizie gia' pronto."""
+    r = client.get("/api/chores").get_json()
+    assert r["attivita"], "il catalogo non e' vuoto"
+    assert r["attive"] == len([v for v in r["attivita"] if v["active"]])
+    assert set(r["piano"]["gruppi"]) == {"quotidiane", "settimanali"}
+    assert set(r["piano"]["mese"]) >= {"mensili", "stagionali"}
+
+
+def test_api_pulizie_data_forzata(client):
+    """La data si puo' fissare: serve per verificare scadenze e giorno fisso."""
+    r = client.get("/api/chores?date=2026-09-19").get_json()  # sabato
+    assert r["oggi"] == "2026-09-19"
+    assert r["piano"]["giorno"] == "sabato"
+    # il blocco del mese deve seguire la data richiesta, non quella di sistema
+    assert r["piano"]["mese"]["nome"] == "Settembre"
+
+
+def test_api_pulizie_errori(client):
+    """Gli ingressi sbagliati si rifiutano con un messaggio, non con un 500."""
+    assert client.post("/api/chores", json={"name": "  "}).status_code == 400
+    assert client.post("/api/chores", json={"name": "X", "frequency": "oraria"}).status_code == 400
+    assert client.post("/api/chores", json={"name": "X", "frequency": "stagionale"}).status_code == 400
+    assert client.post("/api/chores", json={"name": "X", "frequency": "stagionale", "month": 13}).status_code == 400
+    assert client.put("/api/chores/99999", json={"name": "Z"}).status_code == 404
+    assert client.post("/api/chores/99999/done").status_code == 404
+
+
+def test_api_pulizie_ciclo_completo(client):
+    """Creare, modificare, disattivare: le tre operazioni del catalogo."""
+    creato = client.post("/api/chores", json={
+        "name": "Pulire il microonde", "frequency": "mensile", "minutes": 12, "area": "Cucina"})
+    assert creato.status_code == 201
+    cid = creato.get_json()["id"]
+
+    # niente doppioni nello stesso ambiente
+    assert client.post("/api/chores", json={
+        "name": "Pulire il microonde", "frequency": "mensile"}).status_code == 400
+
+    assert client.put(f"/api/chores/{cid}", json={"minutes": 20}).get_json()["minutes"] == 20
+    assert client.put(f"/api/chores/{cid}", json={"active": 0}).get_json()["active"] == 0
+
+    # disattivata: fuori dal piano ma ancora nel catalogo
+    voci = client.get("/api/chores").get_json()["attivita"]
+    voce = next(v for v in voci if v["id"] == cid)
+    assert voce["active"] == 0
+    assert client.delete(f"/api/chores/{cid}").status_code in (200, 204)
+
+
+def test_api_pulizie_segno_fatto_e_annullo(client):
+    """Spuntare registra il completamento; spuntare di nuovo lo annulla."""
+    cid = client.get("/api/chores").get_json()["attivita"][0]["id"]
+
+    assert client.post(f"/api/chores/{cid}/done", json={}).status_code == 200
+    cronologia = client.get("/api/chores/history").get_json()
+    assert any(h["chore_id"] == cid for h in cronologia)
+
+    assert client.delete(f"/api/chores/{cid}/done").status_code == 200
+    assert not any(h["chore_id"] == cid for h in client.get("/api/chores/history").get_json())
+    # annullare due volte non deve far esplodere niente
+    assert client.delete(f"/api/chores/{cid}/done").status_code == 404
+
+
+def test_api_pulizie_tempo_registrato(client):
+    """Il tempo cronometrato si conserva e finisce nel riepilogo."""
+    cid = client.get("/api/chores").get_json()["attivita"][0]["id"]
+    client.post(f"/api/chores/{cid}/done", json={"minutes": 17})
+
+    riga = next(h for h in client.get("/api/chores/history").get_json() if h["chore_id"] == cid)
+    assert riga["minutes"] == 17
+
+    riepilogo = client.get("/api/chores/summary").get_json()
+    assert riepilogo["oggi"]["minuti"] == 17
+    assert riepilogo["oggi"]["volte"] == 1
+    assert riepilogo["mese"]["minuti"] == 17
+    assert riepilogo["settimana"]["minuti"] == 17
+
+
+def test_api_pulizie_tempo_negativo_o_assurdo_non_trapela(client):
+    """Un tempo assurdo non deve inquinare il riepilogo."""
+    cid = client.get("/api/chores").get_json()["attivita"][0]["id"]
+    client.post(f"/api/chores/{cid}/done", json={"minutes": -5})
+    riga = next(h for h in client.get("/api/chores/history").get_json() if h["chore_id"] == cid)
+    assert riga["minutes"] >= 0
+
+
+def test_api_giorno_pulizie_si_salva(client):
+    """Il giorno fisso e' una scelta dell'utente e deve restare."""
+    assert client.put("/api/profile", json={"chore_day": 3}).status_code == 200
+    assert client.get("/api/profile").get_json()["chore_day"] == 3
+    assert client.put("/api/profile", json={"chore_day": 9}).status_code == 400
+
+
+def test_api_giorno_pulizie_raccoglie_le_settimanali(client):
+    """Scegliendo oggi come giorno fisso, le settimanali entrano nel piano di oggi."""
+    import datetime as _dt
+    oggi = _dt.date.today()
+    client.put("/api/profile", json={"chore_day": oggi.weekday()})
+    r = client.get(f"/api/chores?date={oggi.isoformat()}").get_json()
+    assert r["piano"]["giorno_pulizie"] is True
+    assert len(r["piano"]["gruppi"]["settimanali"]) == 5
+    assert r["piano"]["da_fare"] > 5, "quotidiane piu' settimanali"
+
+
+def test_api_pulizie_il_mese_non_invade_il_piano_di_oggi(client):
+    """Mensili e stagionali non gonfiano la giornata: e' il punto del metodo."""
+    r = client.get("/api/chores").get_json()
+    oggi = r["piano"]["gruppi"]["quotidiane"] + r["piano"]["gruppi"]["settimanali"]
+    assert all(v["frequency"] in ("giornaliera", "settimanale") for v in oggi)
+    mensili = r["piano"]["mese"]["mensili"] + r["piano"]["mese"]["stagionali"]
+    assert all(v["frequency"] in ("mensile", "stagionale") for v in mensili)
+    # e il tempo stimato di oggi non deve includere quello del mese
+    assert r["piano"]["minuti_previsti"] <= 24 * 60
