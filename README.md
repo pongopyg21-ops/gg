@@ -186,12 +186,29 @@ Dal **Piano** la finestra ha in più il pulsante *Rimuovi dal piano*, perché cl
 ## Avvio
 
 ```bash
+./avvia.sh
+```
+
+Lo script prepara l'ambiente e avvia il server, verificando che risponda davvero: installa Flask se manca, crea il database con `seed.py` se non esiste, avvia il processo staccato dalla shell e attende la risposta di `/api/meta`. Se qualcosa non va, lo dice e mostra le ultime righe del log invece di lasciare un link muto.
+
+```bash
+./avvia.sh            # avvia (o riavvia se già attivo)
+./avvia.sh restart    # ferma e riavvia
+./avvia.sh stop       # ferma
+./avvia.sh status     # attivo? su quale porta?
+./avvia.sh log        # ultime righe del log
+```
+
+La porta è 12000 per impostazione predefinita; `PORT=8000 ./avvia.sh` ne usa un'altra.
+
+Avviare a mano resta possibile:
+
+```bash
 pip install -r requirements.txt
-python app.py           # http://localhost:8000
 PORT=12000 python app.py
 ```
 
-Il database SQLite (`cucina.db`) viene creato automaticamente al primo avvio. Per usare un file diverso: `CUCINA_DB=/percorso/mio.db`.
+Il database SQLite (`cucina.db`) viene creato al primo avvio e popolato con il ricettario di partenza. Per usarne un altro: `CUCINA_DB=/percorso/mio.db ./avvia.sh`.
 
 ### Dal telefono
 
@@ -236,6 +253,7 @@ allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
 schema.sql          # schema SQLite
 test_cucina.py      # test
+avvia.sh            # avvio dell'app (dipendenze, seed, server)
 static/index.html   # interfaccia
 static/style.css
 static/app.js

@@ -12,19 +12,34 @@ pagina dedicata ma ancora senza funzioni.
 ## Comandi
 
 ```bash
-pip install -r requirements.txt          # flask>=3.0, non è preinstallato
-python3 seed.py                          # popola il ricettario (idempotente)
+./avvia.sh                               # avvia e verifica il server
+./avvia.sh restart                       # ferma e riavvia
+./avvia.sh status                        # attivo? su quale porta?
+./avvia.sh log                           # ultime righe del log
 python3 -m pytest test_cucina.py -q      # 95 test
-PORT=12000 setsid nohup python3 app.py > /tmp/server.log 2>&1 < /dev/null &
 ```
+
+`avvia.sh` fa quello che serve per rimettere in piedi l'app: installa Flask se
+manca, crea `cucina.db` con `seed.py` se non c'è, avvia il server staccato dalla
+shell e **aspetta che risponda davvero** su `/api/meta` invece di dare per scontato
+che sia partito. È il modo normale di avviare l'app: evita di ripetere a mano i
+passi qui sotto.
 
 L'ambiente può essere azzerato fra una sessione e l'altra: `cucina.db` sopravvive,
 ma i pacchetti installati no. Se `import flask` fallisce, reinstalla da
 `requirements.txt` prima di avviare il server.
 
-L'host pubblico inoltra sulla **porta 12000**: senza `PORT=12000` il server si
-avvia su 8000 e il link esterno restituisce errore. Usa `setsid` per staccare il
-processo dalla shell, altrimenti viene terminato alla fine del comando.
+L'host pubblico inoltra sulla **porta 12000** (predefinita nello script): senza
+`PORT=12000` il server si avvia su 8000 e il link esterno restituisce errore. Il
+processo va staccato con `setsid`, altrimenti viene terminato alla fine del comando.
+
+Due dettagli che riguardano solo chi modifica `avvia.sh`: un processo terminato in
+questo ambiente può restare **zombie** (`ps` lo mostra in stato `Zs`), e `kill -0`
+riesce comunque su uno zombie. Il controllo `vivo()` guarda lo stato reale, e la
+prima lettera basta perché lo stato è `Z`, `Zs`, `Z+`… Senza questo, lo `stop`
+aspetta cinque secondi e poi "forza" un processo già morto. Il riconoscimento del
+processo verifica anche che giri da questa cartella (`/proc/<pid>/cwd`): `app.py` è
+un nome comune e si rischierebbe di fermare quello di un altro progetto.
 
 ## Convenzioni
 

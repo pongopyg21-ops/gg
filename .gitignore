@@ -3,3 +3,4 @@ __pycache__/
 *.db
 server.log
 .venv/
+.avvia.pid
