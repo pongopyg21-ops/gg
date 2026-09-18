@@ -116,3 +116,24 @@ CREATE TABLE IF NOT EXISTS chore_log (
 
 CREATE INDEX IF NOT EXISTS idx_chore_log_chore ON chore_log(chore_id, date);
 CREATE INDEX IF NOT EXISTS idx_chores_freq ON chores(frequency, month);
+
+-- ---------------------------------------------------------------- faq
+-- Informazioni utili: Wi-Fi, indirizzi, contatti, codici. Le categorie stanno in
+-- `faq.py`, non qui: sono la struttura della sezione, non un contenuto
+-- dell'utente. `question` e' l'etichetta (breve) e `answer` il valore (puo'
+-- essere lungo: un indirizzo completo, gli orari di un ambulatorio).
+--
+-- `secret` fa nascondere il valore finche' non lo si tocca. NON e' una
+-- protezione: il valore viaggia comunque nella risposta dell'API. Serve a non
+-- tenere una password sullo schermo quando qualcuno passa dietro la scrivania.
+CREATE TABLE IF NOT EXISTS faq (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    category   TEXT NOT NULL DEFAULT 'generale',
+    question   TEXT NOT NULL,
+    answer     TEXT NOT NULL DEFAULT '',
+    secret     INTEGER NOT NULL DEFAULT 0,
+    pinned     INTEGER NOT NULL DEFAULT 0,   -- in cima all'elenco
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);

@@ -7,6 +7,7 @@ import datetime
 from flask import Flask, g, jsonify, request, send_from_directory
 
 import allergens
+import faq
 import igiene
 import units
 import voice
@@ -1156,6 +1157,111 @@ def chores_summary():
         "settimana": {**totale(lunedi), "dal": lunedi.isoformat()},
         "mese": {**totale(inizio_mese), "dal": inizio_mese.isoformat()},
     })
+
+
+# ---------------------------------------------------------------------- faq
+# Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le
+# categorie stanno in `faq.py`, le voci nella tabella `faq`.
+#
+# La ricerca e' lato client, come per le ricette: l'elenco e' piccolo e filtrare
+# in locale e' immediato, senza una richiesta a ogni lettera digitata.
+
+
+def _faq_o_404(db, fid):
+    row = one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,)))
+    if row is None:
+        return None, bad_request("Voce non trovata", 404)
+    return row, None
+
+
+def _faq_campi(data, row=None):
+    """I campi validati per un inserimento o una modifica.
+
+    Restituisce (campi, errore). In modifica si toccano solo i campi presenti,
+    come per il profilo: un salvataggio parziale non deve azzerare il resto.
+    """
+    campi = {}
+    if row is None or "question" in data:
+        domanda = (data.get("question") or "").strip()
+        if not domanda:
+            return None, bad_request("Il titolo è obbligatorio")
+        campi["question"] = domanda
+    if row is None or "answer" in data:
+        campi["answer"] = (data.get("answer") or "").strip()
+    if "category" in data:
+        campi["category"] = faq.categoria_valida(data.get("category"))
+    for chiave in ("secret", "pinned"):
+        if chiave in data:
+            campi[chiave] = 1 if data[chiave] else 0
+    return campi, None
+
+
+@app.route("/api/faq/meta")
+def faq_meta():
+    """Le scelte fisse della sezione: le categorie, con quante voci hanno."""
+    db = get_db()
+    conteggi = {r["category"]: r["n"] for r in db.execute(
+        "SELECT category, COUNT(*) AS n FROM faq GROUP BY category")}
+    return jsonify({
+        "categories": [{**c, "count": conteggi.get(c["key"], 0)} for c in faq.categorie()],
+        "default_category": faq.CATEGORIA_DEFAULT,
+    })
+
+
+@app.route("/api/faq", methods=["GET"])
+def faq_list():
+    """Tutte le voci, ordinate: in evidenza, poi per categoria, poi per titolo."""
+    db = get_db()
+    voci = rows(db.execute("SELECT * FROM faq"))
+    for v in voci:
+        # l'etichetta della categoria arriva dal server: il frontend non deve
+        # avere una seconda copia della mappa, che si disallineerebbe
+        v["category_label"] = faq.etichetta(v["category"])
+    return jsonify({
+        "voci": faq.ordina(voci),
+        "totale": len(voci),
+        "riservate": sum(1 for v in voci if v["secret"]),
+    })
+
+
+@app.route("/api/faq", methods=["POST"])
+def faq_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    campi, errore = _faq_campi(data)
+    if errore:
+        return errore
+    cur = db.execute(
+        """INSERT INTO faq (category, question, answer, secret, pinned)
+           VALUES (?, ?, ?, ?, ?)""",
+        (campi.get("category", faq.CATEGORIA_DEFAULT), campi["question"],
+         campi.get("answer", ""), campi.get("secret", 0), campi.get("pinned", 0)))
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (cur.lastrowid,)))), 201
+
+
+@app.route("/api/faq/<int:fid>", methods=["PUT", "DELETE"])
+def faq_modify(fid):
+    db = get_db()
+    _row, errore = _faq_o_404(db, fid)
+    if errore:
+        return errore
+    if request.method == "DELETE":
+        db.execute("DELETE FROM faq WHERE id = ?", (fid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    campi, errore = _faq_campi(data, row=_row)
+    if errore:
+        return errore
+    if not campi:
+        return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
+
+    assignments = ", ".join(f"{k} = ?" for k in campi)
+    db.execute(f"UPDATE faq SET {assignments} WHERE id = ?", [*campi.values(), fid])
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
 
 
 if __name__ == "__main__":

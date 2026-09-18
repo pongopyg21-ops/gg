@@ -64,14 +64,14 @@ async function applicaPasti(n) {
 }
 
 /* ---------- sezioni ----------
-   La pagina iniziale smista verso tre aree. Le schede della barra appartengono
+   La pagina iniziale smista verso quattro aree. Le schede della barra appartengono
    a un'area (`data-section`): aprendo un'area si mostrano solo le sue, così
-   cucina, igiene e progetti restano separati invece di mischiarsi in un'unica
-   barra piena di voci. */
+   le aree restano separate invece di mischiarsi in un'unica barra piena di voci. */
 const SEZIONI = {
   cucina:   { titolo: '\u{1F373} Cucina',   prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
+  faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
 };
 
 function apriSezione(nome) {
@@ -116,6 +116,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'shopping') renderShopping();
   if (btn.dataset.tab === 'profile') renderProfile();
   if (btn.dataset.tab === 'igiene') renderIgiene();
+  if (btn.dataset.tab === 'faq') renderFaq();
 }));
 
 /* ---------- PIANO ---------- */
@@ -970,6 +971,203 @@ function apriChoreForm(v) {
 }
 
 $('#ch-new').addEventListener('click', () => apriChoreForm(null));
+
+/* ---------- FAQ ----------
+   Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le voci
+   si raggruppano per categoria e si cercano in locale: l'elenco e' piccolo e
+   filtrare senza passare dal server e' immediato a ogni lettera. */
+let faqDati = { voci: [], totale: 0, riservate: 0 };
+let faqMeta = { categories: [], default_category: 'generale' };
+
+// quali valori riservati sono stati mostrati: vivono in memoria, non salvati,
+// così tornando sulla pagina una password e' di nuovo nascosta
+const faqSvelate = new Set();
+
+/* Il valore di una voce: un numero di telefono o un accesso si copiano, un
+   indirizzo si legge. `tel:` e `mailto:` sono il modo per renderli toccabili
+   sul telefono, dove questa sezione si usa di piu'. */
+function faqValore(v) {
+  const t = (v.answer || '').trim();
+  if (!t) return '<span class="faq-empty">— nessun valore —</span>';
+  // solo se il valore *e'* un contatto, non se lo contiene: un testo lungo si
+  // mostra come testo, un numero da chiamare diventa un link
+  const unaRiga = !t.includes('\n');
+  if (unaRiga && /^[+\d][\d\s.\-/()]{4,}$/.test(t)) {
+    const pulito = t.replace(/[^\d+]/g, '');
+    return `<a class="faq-link" href="tel:${esc(pulito)}">${esc(t)}</a>`;
+  }
+  if (unaRiga && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t)) {
+    return `<a class="faq-link" href="mailto:${esc(t)}">${esc(t)}</a>`;
+  }
+  return esc(t).replace(/\n/g, '<br>');
+}
+
+function faqRiga(v) {
+  const nascosta = v.secret && !faqSvelate.has(v.id);
+  return `
+    <div class="faq-item${nascosta ? ' hidden-value' : ''}" data-faq="${v.id}">
+      <div class="faq-item-head">
+        <span class="faq-q">${v.pinned ? '<span class="faq-pin" title="In evidenza">★</span>' : ''}${esc(v.question)}</span>
+        <span class="faq-cat">${esc(v.category_label || '')}</span>
+      </div>
+      <div class="faq-a">${nascosta
+        ? `<span class="faq-secret">••••••••</span>
+           <button class="faq-reveal ghost" data-reveal="${v.id}">Mostra</button>`
+        : faqValore(v)}</div>
+      <div class="faq-tools">
+        ${!nascosta && v.answer ? `<button class="ghost" data-copy="${v.id}">Copia</button>` : ''}
+        <button class="ghost" data-faq-pin="${v.id}">${v.pinned ? 'Togli da evidenza' : 'In evidenza'}</button>
+        <button class="ghost" data-faq-edit="${v.id}">Modifica</button>
+        <button class="ghost" data-faq-del="${v.id}">Elimina</button>
+      </div>
+    </div>`;
+}
+
+async function renderFaq() {
+  [faqMeta, faqDati] = await Promise.all([api('/api/faq/meta'), api('/api/faq')]);
+  // il filtro per categoria si costruisce una volta sola, con i conteggi
+  const sel = $('#faq-filter');
+  if (!sel.options.length) {
+    sel.innerHTML = '<option value="">Tutte le categorie</option>'
+      + faqMeta.categories.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
+  }
+  disegnaFaq();
+}
+
+function disegnaFaq() {
+  const q = ($('#faq-search').value || '').trim().toLowerCase();
+  const cat = $('#faq-filter').value || '';
+  const visibili = faqDati.voci.filter((v) => {
+    if (cat && v.category !== cat) return false;
+    if (!q) return true;
+    // anche il nome della categoria entra nella ricerca: chi cerca "idraulico"
+    // non sa in quale categoria sta, e non deve indovinarlo
+    return `${v.question} ${v.answer} ${v.category_label || ''}`.toLowerCase().includes(q);
+  });
+
+  $('#faq-count').textContent = visibili.length === faqDati.totale
+    ? `${faqDati.totale} ${faqDati.totale === 1 ? 'voce' : 'voci'}`
+    : `${visibili.length} di ${faqDati.totale}`;
+
+  if (!faqDati.totale) {
+    $('#faq-list').innerHTML = `
+      <div class="empty-state">
+        <span class="empty-emoji">📌</span>
+        <h2>Ancora nessuna voce</h2>
+        <p>Aggiungi le informazioni che non ricordi mai: la password del Wi-Fi,
+          gli indirizzi che cerchi spesso, i numeri utili, i codici d'accesso.</p>
+      </div>`;
+    return;
+  }
+  if (!visibili.length) {
+    $('#faq-list').innerHTML = '<p class="faq-none">Nessuna voce corrisponde alla ricerca.</p>';
+    return;
+  }
+
+  // raggruppate per categoria, nell'ordine deciso da /api/faq: le voci arrivano
+  // gia' ordinate, quindi basta spezzare l'elenco quando cambia la categoria
+  let html = '';
+  let corrente = null;
+  for (const v of visibili) {
+    if (v.category !== corrente) {
+      corrente = v.category;
+      const n = visibili.filter((x) => x.category === corrente).length;
+      html += `<h3 class="section-title">${esc(v.category_label || '')}
+        <span class="faq-n">${n}</span></h3>`;
+    }
+    html += faqRiga(v);
+  }
+  $('#faq-list').innerHTML = html;
+}
+
+$('#faq-search').addEventListener('input', disegnaFaq);
+$('#faq-filter').addEventListener('change', disegnaFaq);
+
+$('#faq-list').addEventListener('click', async (e) => {
+  const svela = e.target.closest('[data-reveal]');
+  if (svela) {
+    faqSvelate.add(Number(svela.dataset.reveal));
+    return disegnaFaq();
+  }
+  const copia = e.target.closest('[data-copy]');
+  if (copia) {
+    const v = faqDati.voci.find((x) => x.id === Number(copia.dataset.copy));
+    try {
+      await navigator.clipboard.writeText(v.answer || '');
+      toast('Copiato');
+    } catch {
+      // la Clipboard API richiede HTTPS o localhost: se il browser la nega, il
+      // valore resta comunque leggibile sullo schermo
+      toast('Copia non riuscita: seleziona il testo a mano');
+    }
+    return;
+  }
+  const pin = e.target.closest('[data-faq-pin]');
+  if (pin) {
+    const v = faqDati.voci.find((x) => x.id === Number(pin.dataset.faqPin));
+    await api(`/api/faq/${v.id}`, { method: 'PUT', body: { pinned: v.pinned ? 0 : 1 } });
+    toast(v.pinned ? 'Tolta dall\'evidenza' : 'Messa in evidenza');
+    return renderFaq();
+  }
+  const mod = e.target.closest('[data-faq-edit]');
+  if (mod) {
+    return apriFaqForm(faqDati.voci.find((x) => x.id === Number(mod.dataset.faqEdit)));
+  }
+  const del = e.target.closest('[data-faq-del]');
+  if (del) {
+    const v = faqDati.voci.find((x) => x.id === Number(del.dataset.faqDel));
+    if (!confirm(`Eliminare "${v.question}"?`)) return;
+    await api(`/api/faq/${v.id}`, { method: 'DELETE' });
+    toast('Voce eliminata');
+    return renderFaq();
+  }
+});
+
+function apriFaqForm(v) {
+  const cat = (v && v.category) || faqMeta.default_category;
+  showModal(v ? 'Modifica voce' : 'Nuova voce', `
+    <div class="field"><label>Informazione</label>
+      <input id="fq-q" value="${esc(v ? v.question : '')}" placeholder="Es. Wi-Fi di casa, Idraulico, Cancello"></div>
+    <div class="field"><label>Categoria</label>
+      <select id="fq-cat">${faqMeta.categories.map((c) =>
+        `<option value="${c.key}"${cat === c.key ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
+    <div class="field"><label>Valore</label>
+      <textarea id="fq-a" placeholder="Es. Rete: CasaRossi&#10;Password: ...">${esc(v ? v.answer : '')}</textarea></div>
+    <label class="toggle"><input type="checkbox" id="fq-secret"${v && v.secret ? ' checked' : ''}>
+      Nascondi il valore finché non lo apro</label>
+    <p class="faq-note">Serve a non tenere una password sullo schermo, ma non è una
+      protezione: chi consulta questa pagina può comunque vederla.</p>
+    <label class="toggle"><input type="checkbox" id="fq-pin"${v && v.pinned ? ' checked' : ''}>
+      In evidenza in cima alla categoria</label>
+    <div class="modal-foot">
+      <button id="fq-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
+      <button id="fq-cancel">Annulla</button>
+    </div>`);
+
+  $('#fq-cancel').addEventListener('click', hideModal);
+  $('#fq-q').focus();
+  $('#fq-save').addEventListener('click', async () => {
+    const corpo = {
+      question: $('#fq-q').value.trim(),
+      answer: $('#fq-a').value,
+      category: $('#fq-cat').value,
+      secret: $('#fq-secret').checked,
+      pinned: $('#fq-pin').checked,
+    };
+    if (!corpo.question) return toast('Inserisci il titolo');
+    try {
+      if (v) await api(`/api/faq/${v.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/faq', { method: 'POST', body: corpo });
+      hideModal();
+      toast(v ? 'Voce salvata' : 'Voce aggiunta');
+      // una voce nuova non deve nascere gia' svelata per via di un id riusato
+      if (!v) faqSvelate.clear();
+      renderFaq();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+$('#faq-new').addEventListener('click', () => apriFaqForm(null));
 
 /* ---------- PROFILO ---------- */
 function labelOf(key) { return allergenLabels[key] || key; }

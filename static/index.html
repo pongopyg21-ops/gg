@@ -39,6 +39,13 @@
         in un posto solo.</span>
       <span class="home-go">Apri →</span>
     </button>
+    <button class="home-card" data-section="faq">
+      <span class="home-emoji">📌</span>
+      <span class="home-name">FAQ</span>
+      <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
+        contatti e codici, senza doverli cercare ogni volta.</span>
+      <span class="home-go">Apri →</span>
+    </button>
   </div>
 </section>
 
@@ -57,6 +64,7 @@
   <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
   <button data-tab="igiene" data-section="igiene">🧽 Pulizie</button>
   <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
+  <button data-tab="faq" data-section="faq">📌 FAQ</button>
 </nav>
 
 <main>
@@ -200,6 +208,20 @@
       <p>Qui vivranno i lavori in corso e le idee da portare avanti, con il loro
         stato. Anche questa sezione è pronta per le sue funzioni.</p>
     </div>
+  </section>
+
+  <!-- FAQ — informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici.
+       Non e' un manuale ma un promemoria: la ricerca sta in cima perche' si apre
+       questa pagina per trovare una cosa precisa, non per leggerla tutta. -->
+  <section id="tab-faq" class="tab">
+    <div class="toolbar">
+      <input id="faq-search" type="search" placeholder="Cerca: wifi, idraulico, cancello...">
+      <select id="faq-filter"></select>
+      <span class="spacer"></span>
+      <button id="faq-new" class="primary">+ Nuova voce</button>
+    </div>
+    <div id="faq-count" class="faq-count"></div>
+    <div id="faq-list"></div>
   </section>
 </main>
 </div>

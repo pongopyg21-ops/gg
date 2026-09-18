@@ -2,12 +2,14 @@
 
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, conversione unità in
 `units.py`, riconoscimento allergeni in `allergens.py`, comandi vocali in
-`voice.py`, dati iniziali in `seed.py`, pulizie in `igiene.py`.
+`voice.py`, dati iniziali in `seed.py`, pulizie in `igiene.py`, informazioni utili
+in `faq.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso tre sezioni: **Cucina**,
-**Igiene**, **Progetti**. Piano, ricette, dispensa, spesa, profilo e comandi
-vocali stanno in **Cucina**; le pulizie stanno in **Igiene**; Progetti ha una
-pagina dedicata ma ancora senza funzioni.
+L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
+**Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa, spesa,
+profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in **Igiene**;
+Progetti ha una pagina dedicata ma ancora senza funzioni; **FAQ** raccoglie le
+informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici).
 
 ## Comandi
 
@@ -16,7 +18,7 @@ pagina dedicata ma ancora senza funzioni.
 ./avvia.sh restart                       # ferma e riavvia
 ./avvia.sh status                        # attivo? su quale porta?
 ./avvia.sh log                           # ultime righe del log
-python3 -m pytest test_cucina.py -q      # 124 test
+python3 -m pytest test_cucina.py -q      # 134 test
 ```
 
 `avvia.sh` fa quello che serve per rimettere in piedi l'app: installa Flask se
@@ -129,10 +131,29 @@ un nome comune e si rischierebbe di fermare quello di un altro progetto.
   `meal_clause(db)` sono l'unico modo per sapere quali pasti contano: riducendo i
   pasti restano righe vecchie in `meal_plan`, e senza quel filtro continuerebbero a
   pesare sulla lista della spesa pur non essendo più visibili.
+- **FAQ**: le voci stanno nella tabella `faq` e si gestiscono dall'interfaccia,
+  non in `seed.py` — sono informazioni dell'utente (la sua password, i suoi
+  contatti), non un catalogo di partenza. Le **categorie** invece stanno in
+  `faq.py`: sono la struttura della sezione, come gli ambienti per le pulizie.
+  `categoria_valida()` fa ricadere una chiave ignota sulla predefinita invece di
+  rifiutare la voce: un'etichetta sbagliata non deve far perdere un numero di
+  telefono. L'ordine è **categoria → evidenza → titolo**: le voci in evidenza
+  risalgono dentro la propria categoria, non in cima all'elenco, perché
+  raggruppate per categoria saltare il gruppo le staccherebbe dalle voci affini.
+  `secret` fa nascondere il valore finché non lo si apre, ma **non è una
+  protezione**: il valore viaggia comunque in `/api/faq` e chi apre gli strumenti
+  del browser lo vede. Serve a non tenere una password sullo schermo, e dirla
+  chiara è l'unico modo perché non faccia abbassare la guardia; la nota nel form
+  lo ripete all'utente. Il testo di `answer` può essere lungo (un indirizzo con
+  citofono e scale), quindi nel form è un'area di testo e a schermo i ritorni a
+  capo diventano `<br>`. I valori che **sono** un telefono o un'email diventano
+  `tel:`/`mailto:` — solo se sono quello e non se lo contengono: un testo lungo
+  con un numero dentro resta testo. La ricerca è lato client e guarda anche il
+  nome della categoria, così non serve indovinare dove sta una voce.
 - Nelle sezioni la barra mostra solo le schede dell'area aperta (`data-section`
-  sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci di
-  cucina, igiene e progetti non vanno mescolate in un'unica barra. Il pulsante
-  vocale è una funzione della cucina e resta nascosto altrove.
+  sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
+  aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione
+  della cucina e resta nascosto altrove.
 - L'onboarding ha tre passi (`passoPasti` dentro `openOnboarding` e
   `openFavoritesStep`): prima quanti pasti, poi allergie, poi preferite.
   `fav_prompted` distingue chi non ha mai visto la scelta delle preferite, così il
