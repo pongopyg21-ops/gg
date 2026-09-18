@@ -2,11 +2,11 @@
 
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, conversione unità in
 `units.py`, riconoscimento allergeni in `allergens.py`, comandi vocali in
-`voice.py`, dati iniziali in `seed.py`.
+`voice.py`, dati iniziali in `seed.py`, pulizie in `igiene.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso tre sezioni: **Cucina**,
-**Igiene**, **Progetti**. Tutte le funzioni attuali (piano, ricette, dispensa,
-spesa, profilo, comandi vocali) stanno in **Cucina**; Igiene e Progetti hanno una
+**Igiene**, **Progetti**. Piano, ricette, dispensa, spesa, profilo e comandi
+vocali stanno in **Cucina**; le pulizie stanno in **Igiene**; Progetti ha una
 pagina dedicata ma ancora senza funzioni.
 
 ## Comandi
@@ -16,7 +16,7 @@ pagina dedicata ma ancora senza funzioni.
 ./avvia.sh restart                       # ferma e riavvia
 ./avvia.sh status                        # attivo? su quale porta?
 ./avvia.sh log                           # ultime righe del log
-python3 -m pytest test_cucina.py -q      # 95 test
+python3 -m pytest test_cucina.py -q      # 124 test
 ```
 
 `avvia.sh` fa quello che serve per rimettere in piedi l'app: installa Flask se
@@ -65,7 +65,41 @@ un nome comune e si rischierebbe di fermare quello di un altro progetto.
   (`favorite_ids`, `full_name`, …), così i salvataggi parziali non azzerano il resto.
 - `migrate()` in `app.py` è l'unico posto dove aggiungere colonne: `CREATE TABLE IF
   NOT EXISTS` non tocca le tabelle esistenti, quindi ogni colonna nuova va aggiunta
-  sia in `schema.sql` sia in `migrate()` (vedi `fav_prompted`).
+  sia in `schema.sql` sia in `migrate()` (vedi `fav_prompted` e `chore_day`).
+  Attenzione anche alle tabelle **nuove**: `_semina_pulizie` deve controllare
+  `sqlite_master` prima di leggere `chores`, altrimenti la migrazione di un DB
+  vecchio fallisce con "no such table: chores".
+- **Igiene**: il catalogo di partenza sta in `igiene.py` e viene seminato in
+  `chores`, come le ricette. La cadenza (`giornaliera`, `settimanale`, `mensile`,
+  `stagionale`) decide quando una voce rientra; le stagionali solo nel loro `month`
+  e una volta l'anno. `piano()` in `igiene.py` è il cuore del metodo: **quotidiane
+  e settimanali stanno nel piano di oggi, mensili e stagionali nel blocco del
+  mese**. Se finissero tutte nel piano di oggi la giornata diventerebbe
+  impraticabile e il piano verrebbe abbandonato: è il motivo per cui il test
+  `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti` conta solo oggi,
+  `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in entrambi i casi.
+- Le scadenze delle pulizie **non si salvano**: si ricavano dall'ultima riga di
+  `chore_log`, come i giorni della spesa dal piano. Una tabella di appoggio si
+  disallineerebbe appena si registra un completamento. `scadenza()` restituisce
+  anche `giorni`: **negativo se in ritardo**, 0 il giorno esatto, positivo se non
+  ancora da fare.
+- Una quotidiana fatta oggi ha `giorni == 1` (torna domani) e `in_scadenza == False`:
+  è corretto, e non la toglie dal piano perché `piano()` include comunque le
+  quotidiane. Nell'interfaccia `quandoDetto()` controlla `fatto_oggi` **prima** di
+  `giorni`, altrimenti una voce appena spuntata direbbe "rifare fra 1 giorno", che
+  sembra una spunta non registrata.
+- `chore_day` in `profile` è il giorno fisso delle settimanali (0 = lunedì). È una
+  scelta dell'utente e serve a dare costanza: nel giorno scelto le settimanali
+  rientrano anche se non è ancora passata una settimana.
+- Nel frontend il timer usa un **timestamp in `localStorage`** (`choreTimer`), non
+  un contatore in memoria: il cronometro deve continuare se la pagina si ricarica o
+  il telefono si blocca, che è esattamente ciò che succede mentre si pulisce. Il
+  campo `fine` esiste solo per la regola dei 15 minuti, dove il tempo è un tetto e
+  non una misura: in quel caso si registra il tempo **reale** usato, non i 15 minuti
+  interi.
+- Nel calendario annuale il mese corrente è evidenziato ma **chiuso**: le sue voci
+  sono già elencate per intero nel blocco del mese qui sopra, e ripeterle due volte
+  nella stessa schermata confonde invece di aiutare.
 - I comandi vocali stanno in `voice.py` e non nel frontend: il browser si limita a
   dettare testo con la Web Speech API e a mandarlo a `POST /api/voice`, così la
   comprensione è testabile senza microfono. `parse()` riconosce gli intenti
@@ -133,3 +167,10 @@ chromium --headless=new --no-sandbox --window-size=390,844 --screenshot=/tmp/pro
 ```
 
 Playwright con `executable_path="/usr/bin/chromium"` permette di controllare overflow orizzontale, aree toccabili, caricamento dei font e contrasto su viewport diversi.
+
+Attenzione quando si controlla una pagina con l'estrattore di testo: comprime gli
+spazi e incolla tra loro elementi adiacenti (`IgienePulizie di casa`). Un blocco
+popolato può sembrare vuoto, e `<details>` chiusi non mostrano il contenuto — che è
+esattamente il comportamento voluto, non un errore. Prima di concludere che qualcosa
+non è renderizzato, conviene guardare gli elementi interattivi (`browser_get_state`)
+o i dati delle API: se i dati ci sono e i nodi ci sono, il problema è nell'estrattore.
