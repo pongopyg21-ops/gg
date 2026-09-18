@@ -61,6 +61,8 @@ _RULES = [
     ("ditalini", ("glutine",), False), ("trofie", ("glutine",), False),
     ("vermicelli", ("glutine",), False), ("capellini", ("glutine",), False),
     ("pappardelle", ("glutine",), False), ("tortelloni", ("glutine",), False),
+    ("casoncelli", ("glutine",), False), ("malloreddus", ("glutine",), False),
+    ("tagliolini", ("glutine",), False),
     ("pangrattato", ("glutine",), False), ("savoiardi", ("glutine",), False),
     ("biscotti", ("glutine",), False), ("cracker", ("glutine",), False),
     ("pizza", ("glutine",), False), ("focaccia", ("glutine",), False),

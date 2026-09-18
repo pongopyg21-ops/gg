@@ -79,6 +79,113 @@ body {
 
 ::selection { background: var(--accent-soft); }
 
+/* ---------- pagina iniziale ----------
+   Le tre sezioni sono la prima cosa che si vede: schede grandi, una per
+   ambito, con lo stesso linguaggio visivo del resto (carta, inchiostro,
+   un solo accento) invece di un menu di voci uguali. */
+.home {
+  max-width: 960px; margin: 0 auto;
+  padding: 56px 28px 72px;
+  min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+}
+.home-hero { margin-bottom: 34px; }
+.home-kicker {
+  margin: 0 0 10px; font-size: 12px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+}
+.home-hero h1 {
+  margin: 0 0 14px; font-family: var(--font-display);
+  font-size: clamp(34px, 7vw, 52px); font-weight: 500;
+  font-variation-settings: 'opsz' 144;
+  letter-spacing: -.025em; line-height: 1.05;
+}
+.home-lead {
+  margin: 0; max-width: 54ch; font-size: 16px; color: var(--muted); line-height: 1.55;
+}
+
+.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+
+/* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
+.home-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  text-align: left; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 20px; cursor: pointer; font-weight: 400;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.home-card:hover {
+  border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-2px);
+}
+.home-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.home-emoji { font-size: 30px; line-height: 1; }
+.home-name {
+  font-family: var(--font-display); font-size: 21px; font-weight: 500;
+  letter-spacing: -.01em;
+}
+.home-desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.home-go {
+  margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent-deep);
+  letter-spacing: .01em;
+}
+
+/* Profilo da completare: si segnala sulla scheda della sezione interessata. */
+.home-todo {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent-deep); background: var(--accent-soft);
+  padding: 3px 8px; border-radius: 999px;
+}
+
+/* Scelta dei pasti al giorno: una scheda per numero, con i nomi dei pasti.
+   Toccare tutta la scheda e' piu' comodo che centrare un radio su telefono. */
+.meal-choice {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px; margin: 4px 0 2px;
+}
+.meal-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 8px; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 12px;
+  cursor: pointer; font-weight: 400; line-height: 1.3;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.meal-opt:hover { border-color: var(--accent); }
+.meal-opt.on {
+  border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.meal-opt.on .meal-num { color: var(--accent-deep); }
+.meal-num {
+  font-family: var(--font-display); font-size: 24px; font-weight: 600;
+  letter-spacing: -.02em; color: var(--ink);
+}
+.meal-names {
+  font-size: 11.5px; color: var(--muted); text-align: center;
+  letter-spacing: .005em;
+}
+
+/* Sezione aperta ma ancora senza funzioni: si dice cosa ci sara', senza
+   inventare dati che non esistono. */
+.empty-state {
+  max-width: 52ch; margin: 40px auto; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.empty-emoji { font-size: 40px; line-height: 1; }
+.empty-state h2 {
+  margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 500;
+  letter-spacing: -.01em;
+}
+.empty-state p { margin: 0; color: var(--muted); line-height: 1.6; }
+
+/* Ritorno alle sezioni: nella testata, sopra il titolo dell'area aperta. */
+.back-home {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0 0 10px;
+  color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer;
+  letter-spacing: .01em;
+}
+.back-home:hover { color: var(--accent-deep); }
+
 /* ---------- testata e schede ---------- */
 header {
   padding: 30px 28px 0;
@@ -116,7 +223,7 @@ nav button {
 nav button:hover { color: var(--ink); }
 nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
 
-main { max-width: 1140px; margin: 0 auto; padding: 28px; }
+main { max-width: 1140px; margin: 0 auto; padding: 28px; padding-bottom: 100px; }
 
 .tab { display: none; }
 .tab.active { display: block; }
@@ -193,6 +300,7 @@ button:focus-visible {
   transition: border-color .18s ease, box-shadow .18s ease;
 }
 .card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.card[data-recipe] { cursor: pointer; }
 .card h3 {
   margin: 0; font-family: var(--font-display);
   font-size: 17px; font-weight: 500; letter-spacing: -.005em; line-height: 1.25;
@@ -266,6 +374,25 @@ tr:last-child td { border-bottom: none; }
   width: 18px; height: 18px; accent-color: var(--green); cursor: pointer;
 }
 
+/* filtro per giorno: si compra ciò che serve, quando serve */
+.day-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.day-filter button {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: 12.5px;
+}
+.day-filter button:hover { border-color: var(--line-strong); color: var(--ink); }
+.day-filter button.active {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep);
+  font-weight: 600;
+}
+.day-note {
+  display: block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px;
+}
+.perish-hint {
+  margin: 0 0 14px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px;
+  background: var(--green-soft); color: var(--green); border: 1px solid transparent;
+}
+
 /* ---------- finestra modale ---------- */
 .modal {
   position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
@@ -305,11 +432,112 @@ tr:last-child td { border-bottom: none; }
   margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
 }
 
+/* --- preparazione di una ricetta --- */
+.detail-photo {
+  margin: -24px -24px 16px; overflow: hidden;
+  border-radius: 13px 13px 0 0; background: var(--accent-soft); aspect-ratio: 3 / 2;
+}
+.detail-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.detail-meta { margin-bottom: 16px; }
+.detail-sub {
+  margin: 18px 0 8px; font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted);
+}
+.detail-ings {
+  margin: 0; padding: 0; list-style: none;
+  border-top: 1px solid var(--line);
+}
+.detail-ings li {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.detail-ings .qty { color: var(--muted); white-space: nowrap; }
+.steps { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.6; }
+.steps li { margin-bottom: 9px; padding-left: 3px; }
+.steps li::marker { color: var(--accent); font-weight: 600; }
+.detail-unsafe {
+  margin: 16px 0 0; padding: 9px 12px; border-radius: 8px;
+  background: #fbeae6; border: 1px solid #eecdc2;
+  color: var(--accent-deep); font-size: 12.5px;
+}
+.muted { color: var(--muted); }
+
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
   font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(38, 34, 30, .5);
 }
+
+/* ---------- comandi vocali ----------
+   Il pulsante è un cerchio in basso a destra: resta sotto il pollice su telefono
+   e non copre i contenuti. Durante l'ascolto pulsa, così si vede che è attivo. */
+.mic {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  width: 58px; height: 58px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--accent); font-size: 24px; line-height: 1;
+  box-shadow: 0 10px 26px -12px rgba(38, 34, 30, .4);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
+.mic.on { background: var(--accent); color: #fff; border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
+.mic-icon { pointer-events: none; }
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 69, 43, .45); }
+  50% { box-shadow: 0 0 0 12px rgba(168, 69, 43, 0); }
+}
+
+.voice {
+  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center;
+  padding: 20px; z-index: 70;
+}
+.voice-box {
+  background: var(--surface); border-radius: 16px; width: min(560px, 100%);
+  padding: 20px; box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .5);
+  /* su schermi bassi (telefono piccolo, tastiera aperta) il pannello scorre
+     dentro di sé invece di spingere il pulsante di chiusura fuori dallo schermo */
+  max-height: 100%; overflow-y: auto;
+}
+.voice-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.voice-head strong {
+  font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: -.01em;
+}
+.voice-head strong[data-tipo="ok"] { color: var(--green); }
+.voice-head strong[data-tipo="err"] { color: var(--accent-deep); }
+.voice-heard {
+  margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--muted);
+  min-height: 44px; padding: 11px 13px; border-radius: 10px;
+  background: var(--paper); border: 1px solid var(--line);
+}
+.voice-examples { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.voice-ex {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: 12px;
+}
+.voice-ex:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+.voice-result {
+  margin: 0 0 14px; padding: 10px 13px; border-radius: 8px; font-size: 13.5px;
+}
+.voice-result.ok { background: var(--green-soft); color: var(--green); }
+.voice-result.err { background: #fbeae6; color: var(--accent-deep); }
+.voice-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  padding-top: 14px; border-top: 1px solid var(--line);
+}
+.voice-foot + .voice-foot { margin-top: 4px; padding-top: 4px; border-top: none; }
+/* il selettore del timbro: sobrio, ma toccabile e con il testo ben leggibile */
+#voice-pick {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 9px; min-height: 34px;
+}
+#voice-pick:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ---------- allergie e intolleranze ---------- */
 .banner {
@@ -340,6 +568,20 @@ tr:last-child td { border-bottom: none; }
 }
 .chip:hover { border-color: var(--accent); color: var(--ink); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+/* --- ricette preferite --- */
+/* la stella accanto al nome resta discreta: e' un promemoria, non un'allerta */
+.fav-star { color: #d4a24c; font-size: 15px; margin-left: 6px; }
+/* il pulsante preferita sta a sinistra, separato dalle azioni sulla ricetta */
+.card .actions .fav-toggle { margin-right: auto; color: var(--muted); }
+.card .actions .fav-toggle.on { color: var(--accent); font-weight: 600; }
+
+/* testo introduttivo dei passi di onboarding */
+.lead { margin: 0 0 16px; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+/* il selettore delle preferite sta anche nei modali stretti: la ricerca occupa
+   tutta la larghezza disponibile */
+.fav-search { width: 100%; margin-bottom: 4px; }
 
 /* etichette di allerta su ricette e piano */
 .card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 7px; }
@@ -448,6 +690,9 @@ tr:last-child td { border-bottom: none; }
     position: sticky; top: -18px; background: var(--surface);
     padding: 15px 0 12px; margin-bottom: 12px;
   }
+  /* la foto del dettaglio deve combaciare con la spaziatura ridotta del modale */
+  .detail-photo { margin: -18px -16px 14px; border-radius: 15px 15px 0 0; }
+  .card .actions { flex-wrap: wrap; }
   /* il pulsante di conferma resta visibile anche se il modulo e' lungo */
   .modal-foot {
     position: sticky; bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
@@ -475,5 +720,17 @@ tr:last-child td { border-bottom: none; }
 
   .qty-input, .unit-input { width: auto; }
   .shop-item .qty { white-space: nowrap; }
-  .toast { bottom: max(24px, env(safe-area-inset-bottom)); width: max-content; max-width: calc(100% - 28px); }
+  /* il toast sta sopra il pulsante vocale, altrimenti lo coprirebbe */
+  .toast { bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)); width: max-content; max-width: calc(100% - 28px); }
+
+  /* il microfono resta sotto il pollice, staccato dal bordo */
+  .mic { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
+  /* spazio in fondo, altrimenti il pulsante copre l'ultima voce delle liste */
+  main { padding-bottom: 88px; }
+  /* il pannello vocale sale dal basso come il modale */
+  .voice { padding: 0; }
+  .voice-box {
+    width: 100%; border-radius: 16px 16px 0 0;
+    padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+  }
 }

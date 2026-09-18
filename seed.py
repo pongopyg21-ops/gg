@@ -17,6 +17,7 @@ DISPENSA = "Dispensa"
 CEREALI = "Pane e Cereali"
 BEVANDE = "Bevande"
 DOLCI = "Dolci"
+SURGELATI = "Surgelati"
 
 RECIPES = [
     {
@@ -382,6 +383,311 @@ RECIPES = [
             {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
             {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
             {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+
+    # Scelte fra i piatti piu' cercati e amati degli ultimi anni: la classifica
+    # dei primi piu' popolari per hashtag e ricerche (BonusFinder/Pasta Day 2024)
+    # e le ricerche su Google del 2024-2025 (CiboToday, La Cucina Italiana).
+    {
+        "name": "Pasta alla Norma", "servings": 2, "time_minutes": 40, "difficulty": "media",
+        "instructions": "Friggi le melanzane a cubetti nell'olio e mettile da parte. "
+                        "Prepara la salsa con pomodoro e aglio, lessa la pasta e condiscila "
+                        "con la salsa, le melanzane, la ricotta salata e il basilico.",
+        "items": [
+            {"name": "Penne", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Melanzane", "quantity": 400, "unit": "g", "category": FRUTTA},
+            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
+            {"name": "Ricotta salata", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 4, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Spaghetti all'assassina", "servings": 2, "time_minutes": 35, "difficulty": "media",
+        "instructions": "Tosta gli spaghetti crudi in padella con l'olio e il peperoncino. "
+                        "Aggiungi la passata e un mestolo di brodo per volta, lasciando che "
+                        "si asciughi fra un'aggiunta e l'altra, finche' la pasta e' bruciacchiata.",
+        "items": [
+            {"name": "Spaghetti", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
+            {"name": "Brodo", "quantity": 500, "unit": "ml", "category": DISPENSA},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": DISPENSA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Trofie al pesto", "servings": 2, "time_minutes": 25, "difficulty": "facile",
+        "instructions": "Frulla basilico, pinoli, aglio e parmigiano con l'olio a filo. "
+                        "Lessa le trofie, condiscile con il pesto e allunga con un po' "
+                        "di acqua di cottura per farlo aderire.",
+        "items": [
+            {"name": "Trofie", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Basilico", "quantity": 40, "unit": "g", "category": FRUTTA},
+            {"name": "Pinoli", "quantity": 30, "unit": "g", "category": DISPENSA},
+            {"name": "Parmigiano", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 6, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Cacio e pepe", "servings": 2, "time_minutes": 20, "difficulty": "media",
+        "instructions": "Tosta il pepe in padella. Lessa gli spaghetti tenendoli al dente, "
+                        "poi mantecali fuori dal fuoco con pecorino e acqua di cottura "
+                        "fino a ottenere una crema liscia.",
+        "items": [
+            {"name": "Spaghetti", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Pecorino romano", "quantity": 80, "unit": "g", "category": LATTICINI},
+            {"name": "Pepe nero", "quantity": 2, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Bucatini all'amatriciana", "servings": 2, "time_minutes": 30, "difficulty": "media",
+        "instructions": "Rosola il guanciale, sfuma con il vino e aggiungi il pomodoro. "
+                        "Lessa i bucatini, condiscili con la salsa e completa con "
+                        "pecorino romano e peperoncino.",
+        "items": [
+            {"name": "Bucatini", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Guanciale", "quantity": 100, "unit": "g", "category": CARNE},
+            {"name": "Pomodoro", "quantity": 400, "unit": "g", "category": FRUTTA},
+            {"name": "Pecorino romano", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Vino bianco", "quantity": 50, "unit": "ml", "category": BEVANDE},
+            {"name": "Peperoncino", "quantity": 1, "unit": "pz", "category": DISPENSA},
+            {"name": "Olio", "quantity": 1, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Penne all'arrabbiata", "servings": 2, "time_minutes": 25, "difficulty": "facile",
+        "instructions": "Scalda olio, aglio e peperoncino. Unisci la passata e cuoci 15 minuti. "
+                        "Lessa le penne, condiscile con la salsa e cospargi di prezzemolo.",
+        "items": [
+            {"name": "Penne", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Peperoncino", "quantity": 2, "unit": "pz", "category": DISPENSA},
+            {"name": "Prezzemolo", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Pasta fredda alla mediterranea", "servings": 4, "time_minutes": 25, "difficulty": "facile",
+        "instructions": "Lessa la pasta, scolala e raffreddala sotto l'acqua. "
+                        "Condiscila con pomodorini, mozzarella a cubetti, olive, cetriolo "
+                        "e basilico, poi lasciala riposare in frigorifero.",
+        "items": [
+            {"name": "Pasta corta", "quantity": 320, "unit": "g", "category": CEREALI},
+            {"name": "Pomodorini", "quantity": 300, "unit": "g", "category": FRUTTA},
+            {"name": "Mozzarella", "quantity": 200, "unit": "g", "category": LATTICINI},
+            {"name": "Olive", "quantity": 100, "unit": "g", "category": DISPENSA},
+            {"name": "Cetriolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 4, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Casoncelli alla bergamasca", "servings": 4, "time_minutes": 50, "difficulty": "difficile",
+        "instructions": "Lessa i casoncelli. Sciogli il burro con la salvia e la pancetta, "
+                        "poi saltaci la pasta. Completa con grana grattugiato.",
+        "items": [
+            {"name": "Casoncelli", "quantity": 400, "unit": "g", "category": CEREALI},
+            {"name": "Burro", "quantity": 80, "unit": "g", "category": LATTICINI},
+            {"name": "Pancetta", "quantity": 80, "unit": "g", "category": CARNE},
+            {"name": "Grana", "quantity": 60, "unit": "g", "category": LATTICINI},
+            {"name": "Salvia", "quantity": 10, "unit": "g", "category": FRUTTA},
+        ],
+    },
+    {
+        "name": "Malloreddus alla campidanese", "servings": 4, "time_minutes": 45, "difficulty": "media",
+        "instructions": "Sbriciola la salsiccia e rosolala con la cipolla. Aggiungi la passata "
+                        "e lo zafferano. Lessa i malloreddus e condiscili con il ragù "
+                        "e una spolverata di pecorino.",
+        "items": [
+            {"name": "Malloreddus", "quantity": 320, "unit": "g", "category": CEREALI},
+            {"name": "Salsiccia", "quantity": 250, "unit": "g", "category": CARNE},
+            {"name": "Passata di pomodoro", "quantity": 500, "unit": "g", "category": DISPENSA},
+            {"name": "Zafferano", "quantity": 1, "unit": "pz", "category": DISPENSA},
+            {"name": "Pecorino romano", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Tagliolini al tartufo", "servings": 2, "time_minutes": 20, "difficulty": "facile",
+        "instructions": "Sciogli il burro con un mestolo di acqua di cottura. Lessa i tagliolini "
+                        "e saltali nel burro, poi completa con tartufo affettato e parmigiano.",
+        "items": [
+            {"name": "Tagliolini", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Tartufo", "quantity": 20, "unit": "g", "category": DISPENSA},
+            {"name": "Burro", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 40, "unit": "g", "category": LATTICINI},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Marry me chicken", "servings": 2, "time_minutes": 30, "difficulty": "facile",
+        "instructions": "Rosola i petti di pollo e mettili da parte. Nella stessa padella "
+                        "scalda panna, aglio, pomodori secchi e parmigiano, rimetti il pollo "
+                        "e cuoci finche' la salsa si addensa.",
+        "items": [
+            {"name": "Pollo", "quantity": 400, "unit": "g", "category": CARNE},
+            {"name": "Panna", "quantity": 200, "unit": "ml", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Pomodori secchi", "quantity": 60, "unit": "g", "category": DISPENSA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Lasagna soup", "servings": 4, "time_minutes": 45, "difficulty": "facile",
+        "instructions": "Rosola il macinato con cipolla e aglio. Aggiungi passata e brodo, "
+                        "poi rompi le sfoglie di lasagne nella zuppa e cuoci. "
+                        "Servi con ricotta e parmigiano.",
+        "items": [
+            {"name": "Lasagne", "quantity": 250, "unit": "g", "category": CEREALI},
+            {"name": "Macinato", "quantity": 400, "unit": "g", "category": CARNE},
+            {"name": "Passata di pomodoro", "quantity": 700, "unit": "g", "category": DISPENSA},
+            {"name": "Brodo", "quantity": 1, "unit": "l", "category": DISPENSA},
+            {"name": "Ricotta", "quantity": 150, "unit": "g", "category": LATTICINI},
+            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Poke bowl", "servings": 2, "time_minutes": 30, "difficulty": "facile",
+        "instructions": "Cuoci il riso e lascialo intiepidire. Taglia il salmone a cubetti "
+                        "e marinatelo con salsa di soia, sesamo e lime. "
+                        "Componi la ciotola con riso, salmone, avocado, cetriolo ed edamame.",
+        "items": [
+            {"name": "Riso", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Salmone", "quantity": 300, "unit": "g", "category": CARNE},
+            {"name": "Avocado", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Cetriolo", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Edamame", "quantity": 100, "unit": "g", "category": FRUTTA},
+            {"name": "Salsa di soia", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Sesamo", "quantity": 10, "unit": "g", "category": DISPENSA},
+            {"name": "Lime", "quantity": 1, "unit": "pz", "category": FRUTTA},
+        ],
+    },
+    {
+        "name": "Riso alla cantonese", "servings": 2, "time_minutes": 25, "difficulty": "facile",
+        "instructions": "Sbatti le uova e strapazzale in padella. Salta cipolla, piselli "
+                        "e prosciutto, aggiungi il riso lessato e la salsa di soia, "
+                        "poi unisci le uova e salta tutto insieme.",
+        "items": [
+            {"name": "Riso", "quantity": 180, "unit": "g", "category": CEREALI},
+            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
+            {"name": "Prosciutto", "quantity": 100, "unit": "g", "category": CARNE},
+            {"name": "Piselli", "quantity": 100, "unit": "g", "category": SURGELATI},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Salsa di soia", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Gulasch", "servings": 4, "time_minutes": 90, "difficulty": "media",
+        "instructions": "Rosola la carne con la cipolla, sfuma con un po' di brodo e aggiungi "
+                        "la paprica. Cuoci a fuoco lento per un'ora, poi unisci le patate "
+                        "e prosegui finche' sono tenere.",
+        "items": [
+            {"name": "Carne di manzo", "quantity": 600, "unit": "g", "category": CARNE},
+            {"name": "Cipolla", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Patate", "quantity": 600, "unit": "g", "category": FRUTTA},
+            {"name": "Paprica", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Passata di pomodoro", "quantity": 200, "unit": "g", "category": DISPENSA},
+            {"name": "Brodo", "quantity": 700, "unit": "ml", "category": DISPENSA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Pizza napoletana", "servings": 2, "time_minutes": 60, "difficulty": "difficile",
+        "instructions": "Impasta farina, acqua, lievito e sale e lascia lievitare. "
+                        "Stendi i panetti, condisci con passata, mozzarella e basilico "
+                        "e cuoci alla massima temperatura per 6-8 minuti.",
+        "items": [
+            {"name": "Farina", "quantity": 400, "unit": "g", "category": CEREALI},
+            {"name": "Lievito", "quantity": 1, "unit": "pz", "category": DISPENSA},
+            {"name": "Passata di pomodoro", "quantity": 300, "unit": "g", "category": DISPENSA},
+            {"name": "Mozzarella", "quantity": 200, "unit": "g", "category": LATTICINI},
+            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Paella", "servings": 4, "time_minutes": 60, "difficulty": "media",
+        "instructions": "Rosola il pollo, poi aggiungi peperoni, pomodoro e riso. "
+                        "Copri con il brodo e lo zafferano e non mescolare piu'. "
+                        "A meta' cottura aggiungi gamberi, cozze e piselli.",
+        "items": [
+            {"name": "Riso", "quantity": 320, "unit": "g", "category": CEREALI},
+            {"name": "Gamberi", "quantity": 200, "unit": "g", "category": CARNE},
+            {"name": "Cozze", "quantity": 300, "unit": "g", "category": CARNE},
+            {"name": "Pollo", "quantity": 300, "unit": "g", "category": CARNE},
+            {"name": "Peperoni", "quantity": 200, "unit": "g", "category": FRUTTA},
+            {"name": "Piselli", "quantity": 100, "unit": "g", "category": SURGELATI},
+            {"name": "Zafferano", "quantity": 1, "unit": "pz", "category": DISPENSA},
+            {"name": "Brodo", "quantity": 900, "unit": "ml", "category": DISPENSA},
+            {"name": "Pomodoro", "quantity": 200, "unit": "g", "category": FRUTTA},
+            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Ramen", "servings": 2, "time_minutes": 45, "difficulty": "media",
+        "instructions": "Scalda il brodo con miso, salsa di soia, zenzero e cipolla. "
+                        "Cuoci i noodles a parte e lessa le uova. Componi la ciotola "
+                        "con brodo, noodles, maiale, uova e alga nori.",
+        "items": [
+            {"name": "Noodles", "quantity": 200, "unit": "g", "category": CEREALI},
+            {"name": "Brodo", "quantity": 1, "unit": "l", "category": DISPENSA},
+            {"name": "Miso", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Carne di maiale", "quantity": 250, "unit": "g", "category": CARNE},
+            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
+            {"name": "Salsa di soia", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Zenzero", "quantity": 20, "unit": "g", "category": FRUTTA},
+            {"name": "Alga nori", "quantity": 2, "unit": "pz", "category": DISPENSA},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+        ],
+    },
+    {
+        "name": "Chicken tikka masala", "servings": 4, "time_minutes": 50, "difficulty": "media",
+        "instructions": "Marina il pollo nello yogurt con curry e garam masala. "
+                        "Rosola cipolla, aglio e zenzero, aggiungi passata e panna, "
+                        "poi unisci il pollo e cuoci 20 minuti.",
+        "items": [
+            {"name": "Pollo", "quantity": 600, "unit": "g", "category": CARNE},
+            {"name": "Yogurt", "quantity": 200, "unit": "g", "category": LATTICINI},
+            {"name": "Panna", "quantity": 200, "unit": "ml", "category": LATTICINI},
+            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Zenzero", "quantity": 20, "unit": "g", "category": FRUTTA},
+            {"name": "Curry", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Garam masala", "quantity": 1, "unit": "cucchiaio", "category": DISPENSA},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
+        ],
+    },
+    {
+        "name": "Shakshuka", "servings": 2, "time_minutes": 30, "difficulty": "facile",
+        "instructions": "Scalda olio, cipolla, peperoni, aglio e spezie. Aggiungi la passata "
+                        "e cuoci 10 minuti, poi apri le uova nel sugo, copri e prosegui "
+                        "finche' l'albume e' rappreso. Servi con il pane.",
+        "items": [
+            {"name": "Uova", "quantity": 4, "unit": "pz", "category": LATTICINI},
+            {"name": "Passata di pomodoro", "quantity": 500, "unit": "g", "category": DISPENSA},
+            {"name": "Peperoni", "quantity": 200, "unit": "g", "category": FRUTTA},
+            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
+            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
+            {"name": "Cumino", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Paprica", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
+            {"name": "Pane", "quantity": 4, "unit": "fetta", "category": CEREALI},
+            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
         ],
     },
 ]

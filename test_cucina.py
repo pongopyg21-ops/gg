@@ -1,7 +1,9 @@
 """Verifica conversione unità e generazione lista della spesa. Crea un DB temporaneo."""
 import json
 import os
+import sqlite3
 import tempfile
+from contextlib import closing
 
 import pytest
 
@@ -11,6 +13,7 @@ os.environ["CUCINA_DB"] = DB
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
 import units  # noqa: E402
+import voice  # noqa: E402
 
 
 @pytest.fixture()
@@ -225,6 +228,30 @@ def test_eliminazione_ricetta_rimuove_dal_piano(client):
     assert client.get("/api/plan").get_json() == []
 
 
+def test_dettaglio_ricetta_espone_la_preparazione(client):
+    """La finestra della preparazione legge istruzioni, ingredienti e tempi."""
+    rid = ricetta(client, "Frittata", 2, [{"name": "Uova", "quantity": 3, "unit": "pz"}])
+    client.put(f"/api/recipes/{rid}", json={
+        "name": "Frittata", "servings": 2, "instructions": "Sbatti le uova. Cuoci in padella.",
+        "time_minutes": 15, "difficulty": "facile",
+        "items": [{"name": "Uova", "quantity": 3, "unit": "pz"}],
+    })
+
+    r = client.get(f"/api/recipes/{rid}").get_json()
+    assert r["instructions"] == "Sbatti le uova. Cuoci in padella."
+    assert r["time_minutes"] == 15
+    assert r["difficulty"] == "facile"
+    assert [i["name"] for i in r["items"]] == ["Uova"]
+
+
+def test_dettaglio_ricetta_senza_preparazione(client):
+    """Una ricetta senza istruzioni resta leggibile: il campo e' vuoto, non assente."""
+    rid = ricetta(client, "Semplice", 2, [{"name": "Pane", "quantity": 100, "unit": "g"}])
+    r = client.get(f"/api/recipes/{rid}").get_json()
+    assert r["instructions"] == ""
+    assert r["items"][0]["name"] == "Pane"
+
+
 # ------------------------------------------------------------ allergeni
 def test_riconosce_allergeni_dal_nome():
     assert allergens.allergens_for("Parmigiano") == {"latte"}
@@ -252,6 +279,17 @@ def test_eccezioni_evitano_falsi_positivi():
 def test_accento_e_maiuscole_non_contano():
     assert allergens.allergens_for("CAFFÈ") == set()
     assert allergens.allergens_for("Parmigiano") == allergens.allergens_for("PARMIGIANO")
+
+
+def test_riconosce_le_forme_di_pasta_del_ricettario():
+    """Ogni formato di pasta usato nelle ricette deve risultare glutinato."""
+    import seed
+    forme = {"Pasta", "Pasta corta", "Penne", "Spaghetti", "Bucatini", "Trofie",
+             "Tagliolini", "Malloreddus", "Casoncelli", "Lasagne", "Noodles"}
+    usati = {i["name"] for r in seed.RECIPES for i in r["items"]}
+    for forma in forme:
+        assert forma in usati, f"{forma} non compare in nessuna ricetta"
+        assert allergens.allergens_for(forma) == {"glutine"}, forma
 
 
 def test_riepilogo_unione_di_piu_ingredienti():
@@ -283,6 +321,116 @@ def test_profilo_dichiarazione_restrizioni(client):
     # i termini duplicati non vengono ripetuti
     p = client.put("/api/profile", json={"restrictions": ["Uova", "uova", "Uova"]}).get_json()
     assert p["restriction_list"] == ["Uova"]
+
+
+# ------------------------------------------------------------ preferite
+def test_preferite_si_salvano_e_si_rileggono(client):
+    a = ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    b = ricetta(client, "Insalata", 2, [{"name": "Lattuga", "quantity": 1, "unit": "pz"}])
+
+    assert client.get("/api/profile").get_json()["favorite_ids"] == []
+
+    p = client.put("/api/profile", json={"favorite_ids": [b, a]}).get_json()
+    # l'elenco torna in ordine di nome ("Insalata" prima di "Pasta al pomodoro"),
+    # non nell'ordine in cui e' stato scelto
+    assert p["favorite_ids"] == [b, a]
+    assert client.get("/api/profile").get_json()["favorite_ids"] == [b, a]
+
+    # un salvataggio successivo sostituisce l'insieme, non lo somma
+    p = client.put("/api/profile", json={"favorite_ids": [a]}).get_json()
+    assert p["favorite_ids"] == [a]
+    p = client.put("/api/profile", json={"favorite_ids": []}).get_json()
+    assert p["favorite_ids"] == []
+
+
+def test_flag_preferita_nelle_ricette(client):
+    a = ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    b = ricetta(client, "Insalata", 2, [{"name": "Lattuga", "quantity": 1, "unit": "pz"}])
+    client.put("/api/profile", json={"favorite_ids": [a]})
+
+    full = {r["id"]: r for r in client.get("/api/recipes?full=1").get_json()}
+    assert full[a]["favorite"] is True
+    assert full[b]["favorite"] is False
+    assert client.get(f"/api/recipes/{a}").get_json()["favorite"] is True
+
+
+def test_eliminare_una_ricetta_la_toglie_dalle_preferite(client):
+    """La chiave esterna con CASCADE evita preferite che puntano a ricette sparite."""
+    a = ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    b = ricetta(client, "Insalata", 2, [{"name": "Lattuga", "quantity": 1, "unit": "pz"}])
+    client.put("/api/profile", json={"favorite_ids": [a, b]})
+
+    client.delete(f"/api/recipes/{a}")
+    assert client.get("/api/profile").get_json()["favorite_ids"] == [b]
+
+
+def test_preferite_ignorano_id_inesistenti(client):
+    a = ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    p = client.put("/api/profile", json={"favorite_ids": [a, 9999, "x", None]}).get_json()
+    assert p["favorite_ids"] == [a]
+
+
+def test_salvataggio_parziale_non_azzera_le_preferite(client):
+    """Il nome si salva dalla scheda Profilo: non deve cancellare le preferite."""
+    a = ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    client.put("/api/profile", json={"favorite_ids": [a]})
+
+    p = client.put("/api/profile", json={"full_name": "Marco"}).get_json()
+    assert p["favorite_ids"] == [a]
+    assert p["full_name"] == "Marco"
+
+
+def test_onboarding_a_meta_non_chiude_il_percorso(client):
+    """Il passo 1 salva le restrizioni senza marcare onboarded: chi si ferma li'
+    non perde la dichiarazione e si vede riproporre il passo 2."""
+    ricetta(client, "Pasta al pomodoro", 2, [{"name": "Pasta", "quantity": 180, "unit": "g"}])
+    p = client.put("/api/profile", json={"restrictions": ["latte"]}).get_json()
+    assert p["restriction_list"] == ["latte"]
+    assert p["onboarded"] == 0
+
+    p = client.put("/api/profile", json={"onboarded": True}).get_json()
+    assert p["onboarded"] == 1
+    assert p["restriction_list"] == ["latte"]
+
+
+def test_fav_prompted_separa_i_due_passi(client):
+    """Chi si era profilato prima che la scelta esistesse non deve rivedere il
+    passo delle allergie, ma solo quello delle preferite."""
+    assert client.get("/api/profile").get_json()["fav_prompted"] == 0
+
+    # profilo completo ma preferite mai chieste
+    p = client.put("/api/profile", json={"onboarded": True, "restrictions": ["latte"]}).get_json()
+    assert p["onboarded"] == 1 and p["fav_prompted"] == 0
+
+    p = client.put("/api/profile", json={"fav_prompted": True}).get_json()
+    assert p["fav_prompted"] == 1
+    assert p["onboarded"] == 1 and p["restriction_list"] == ["latte"]
+
+
+def test_migrazione_aggiunge_fav_prompted_a_un_db_esistente():
+    """`CREATE TABLE IF NOT EXISTS` non tocca `profile`: la colonna va aggiunta a mano."""
+    path = os.path.join(tempfile.mkdtemp(), "vecchio.db")
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row  # come fa init_db
+        db.executescript("""
+            CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+            CREATE TABLE profile (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                full_name TEXT NOT NULL DEFAULT '',
+                restrictions TEXT NOT NULL DEFAULT '',
+                onboarded INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO profile (id, full_name, onboarded) VALUES (1, 'Gianluca', 1);
+        """)
+        app_module.migrate(db)
+        cols = {r[1] for r in db.execute("PRAGMA table_info(profile)")}
+        assert "fav_prompted" in cols
+        row = db.execute("SELECT full_name, onboarded, fav_prompted FROM profile").fetchone()
+        # i dati gia' presenti restano e la colonna nuova parte da 0
+        assert tuple(row) == ("Gianluca", 1, 0)
+        # rieseguire la migrazione non deve fallire
+        app_module.migrate(db)
 
 
 def test_filtro_ricette_per_allergia(client):
@@ -417,6 +565,157 @@ def test_voce_spesa_dispensa_aggiunta_dopo_la_generazione(client):
     assert voce_spesa(client, "Burro")["pantry"] == {"quantity": 250, "unit": "g"}
 
 
+# ------------------------------------------------- spesa filtrata per giorno
+def test_ogni_voce_riporta_i_giorni_in_cui_serve(client):
+    """Un ingrediente usato in due giorni compare in entrambi con la sua quota."""
+    a = ricetta(client, "A", 2, [{"name": "Pomodori", "quantity": 200, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Pomodori", "quantity": 300, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-17", "meal": "cena", "recipe_id": b, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-20"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["name"] == "Pomodori"
+    assert [d["date"] for d in voce["days"]] == ["2026-09-14", "2026-09-17"]
+    assert [d["quantity"] for d in voce["days"]] == [200, 300]
+
+
+def test_la_somma_dei_giorni_uguale_il_totale(client):
+    """Invariante: la somma delle quote giornaliere è il totale da comprare.
+
+    Se divergessero, la vista per giorno contraddirebbe quella completa.
+    """
+    a = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 300, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-18", "meal": "cena", "recipe_id": b, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-20"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(500)
+    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(voce["quantity"])
+
+
+def test_dispensa_scalata_dai_giorni_piu_vicini(client):
+    """La dispensa copre i primi pasti: i giorni lontani restano da comprare.
+
+    Serve a rispondere proprio alla perplessità: il lunedì non si compra per la
+    domenica se in casa c'è già abbastanza per i primi giorni.
+    """
+    a = ricetta(client, "A", 2, [{"name": "Riso", "quantity": 400, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Riso", "quantity": 400, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-20", "meal": "cena", "recipe_id": b, "servings": 2})
+    client.post("/api/pantry", json={"name": "Riso", "quantity": 400, "unit": "g"})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-20"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(400)  # 800 g - 400 g in casa
+    giorni = {d["date"]: d["quantity"] for d in voce["days"]}
+    assert "2026-09-14" not in giorni          # coperto dalla dispensa
+    assert giorni["2026-09-20"] == pytest.approx(400)
+
+
+def test_dispensa_che_copre_un_giorno_solo(client):
+    """Con dispensa parziale il giorno vicino si riduce, quello lontano no."""
+    a = ricetta(client, "A", 2, [{"name": "Pasta", "quantity": 300, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Pasta", "quantity": 300, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": b, "servings": 2})
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 100, "unit": "g"})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-16"})
+    [voce] = client.get("/api/shopping").get_json()
+    giorni = {d["date"]: d["quantity"] for d in voce["days"]}
+    assert giorni["2026-09-14"] == pytest.approx(200)  # 300 - 100 in casa
+    assert giorni["2026-09-16"] == pytest.approx(300)  # intatto
+    assert sum(giorni.values()) == pytest.approx(voce["quantity"])
+
+
+def test_generazione_ripetuta_riflette_le_quote_giornaliere(client):
+    """Rigenerare raddoppia il totale e anche le quote giornaliere."""
+    rid = ricetta(client, "A", 2, [{"name": "Zucchine", "quantity": 250, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+    client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(500)
+    assert voce["days"][0]["quantity"] == pytest.approx(500)
+
+
+def test_voce_manuale_non_ha_giorni(client):
+    client.post("/api/shopping", json={"name": "Carta da cucina", "quantity": 1, "unit": "pz"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["days"] == []
+
+
+def test_voci_deperibili_segnalate(client):
+    """Frutta e verdura, carne e pesce e latticini sono segnalati come deperibili."""
+    a = ricetta(client, "A", 2, [{"name": "Spinaci", "quantity": 200, "unit": "g",
+                                  "category": "Frutta e Verdura"}])
+    b = ricetta(client, "B", 2, [{"name": "Farina", "quantity": 200, "unit": "g",
+                                  "category": "Dispensa"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": b, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-15"})
+    voci = {v["name"]: v for v in client.get("/api/shopping").get_json()}
+    assert voci["Spinaci"]["perishable"] is True
+    assert voci["Farina"]["perishable"] is False
+
+
+def test_unita_convertita_anche_nei_giorni(client):
+    """Ricetta in kg, voce mostrata in g: le quote giornaliere seguono l'unità."""
+    rid = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 1, "unit": "kg"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": rid, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-14"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["unit"] == "kg"
+    assert voce["days"][0]["unit"] == "kg"
+    assert voce["days"][0]["quantity"] == pytest.approx(1)
+
+
+def test_lista_completa_serve_tutti_i_giorni(client):
+    """Regressione: il filtro non deve dipendere dal giorno richiesto."""
+    a = ricetta(client, "A", 2, [{"name": "Patate", "quantity": 500, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-14"})
+
+    items = client.get("/api/shopping").get_json()
+    assert len(items) == 1
+    assert items[0]["days"][0]["date"] == "2026-09-14"
+
+
+def test_voce_preesistente_senza_giorni_non_contraddice_il_totale(client):
+    """Una voce nata senza ripartizione resta coerente col totale.
+
+    E' il caso della lista già in uso: il totale c'è, i giorni no. Al momento
+    della lettura la ripartizione viene riscalata sul totale effettivo.
+    """
+    # voce creata a mano con quantità, poi rigenerata dal piano
+    client.post("/api/shopping", json={"name": "Farina", "quantity": 100, "unit": "g"})
+    rid = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(300)  # 100 manuale + 200 dal piano
+    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(300)
+
+
+def test_generazione_ripetuta_non_amplifica_le_quote(client):
+    """Rigenerare più volte non deve gonfiare le quote oltre il totale."""
+    rid = ricetta(client, "A", 2, [{"name": "Olio", "quantity": 50, "unit": "ml"}])
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
+    for _ in range(3):
+        client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(150)
+    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(150)
+
 
 
 # ------------------------------------------------------------ foto ricette
@@ -491,3 +790,306 @@ def test_pagina_ricette_espone_la_foto(client):
     voce = next(r for r in elenco if r["id"] == ric["id"])
     assert voce["image"] == "1-pasta-al-pomodoro-2.jpg"
     assert "Autore Z" in voce["image_credit"]
+
+
+# ------------------------------------------------------------ comandi vocali
+def test_voce_riconosce_quantita_a_parole_e_in_cifre():
+    cmd = voice.parse("aggiungi due chili di farina in dispensa")
+    assert cmd["intent"] == "pantry_add"
+    assert (cmd["name"], cmd["quantity"], cmd["unit"]) == ("farina", 2.0, "kg")
+
+    cmd = voice.parse("aggiungi 500 grammi di pasta alla spesa")
+    assert (cmd["name"], cmd["quantity"], cmd["unit"]) == ("pasta", 500.0, "g")
+
+
+def test_voce_converte_gli_etti_in_grammi():
+    """L'etto non esiste come unità dell'app: 2 etti devono diventare 200 g."""
+    for frase in ("due etti di prosciutto in dispensa", "aggiungi 3 etti di ricotta"):
+        cmd = voice.parse(frase)
+        assert cmd["quantity"] == (200.0 if "due" in frase else 300.0)
+        assert cmd["unit"] == "g"
+
+
+def test_voce_riconosce_le_frazioni():
+    assert voice.parse("mezzo litro di latte in dispensa")["quantity"] == 0.5
+    assert voice.parse("un chilo e mezzo di patate in dispensa")["quantity"] == 1.5
+    assert voice.parse("un quarto di burro in dispensa")["quantity"] == 0.25
+    # "un quarto" non deve essere letto come "un" + unità
+    assert voice.parse("un quarto di burro in dispensa")["unit"] is None
+    assert voice.parse("due litri e un quarto di acqua")["quantity"] == 2.25
+
+
+def test_voce_numeri_a_parole_composti():
+    assert voice.parse("venticinque grammi di lievito")["quantity"] == 25.0
+    assert voice.parse("centoventi grammi di ricotta")["quantity"] == 120.0
+    assert voice.parse("duecento grammi di zucchero")["quantity"] == 200.0
+    assert voice.parse("mille grammi di farina")["quantity"] == 1000.0
+
+
+def test_voce_destinazione_predefinita_e_lista_della_spesa():
+    assert voice.parse("metti il latte nella spesa")["intent"] == "shopping_add"
+    # senza indicazioni si finisce in lista, non in dispensa
+    assert voice.parse("aggiungi il pane")["intent"] == "shopping_add"
+    assert voice.parse("metti il burro in dispensa")["intent"] == "pantry_add"
+
+
+def test_voce_ripulisce_il_nome_dell_ingrediente():
+    casi = {
+        "aggiungi due chili di farina alla dispensa": "farina",
+        "metti il latte nella spesa": "latte",
+        "ci vorrebbero due litri di acqua": "acqua",
+        "tre confezioni di passata di pomodoro in dispensa": "passata di pomodoro",
+        "aggiungi l'acqua alla spesa": "acqua",
+    }
+    for frase, atteso in casi.items():
+        assert voice.parse(frase)["name"] == atteso, frase
+
+
+def test_voce_registra_allergie_e_intolleranze():
+    cmd = voice.parse("sono allergico al nichel")
+    assert cmd["intent"] == "term_add"
+    assert cmd["terms"] == ["nichel"]
+
+    # più termini separati da "e", con l'articolo da togliere
+    cmd = voice.parse("sono intollerante al lattosio e al fruttosio")
+    assert cmd["terms"] == ["lattosio", "fruttosio"]
+
+    # "frutta a guscio" è un'etichetta unica e non va spezzata
+    cmd = voice.parse("sono allergico alla frutta a guscio")
+    assert cmd["terms"] == ["frutta a guscio"]
+
+
+def test_voce_ricerca_ricette():
+    cmd = voice.parse("cerca la carbonara")
+    assert cmd["intent"] == "recipe_search"
+    assert cmd["query"] == "carbonara"
+    assert voice.parse("cercami ricette con le melanzane")["query"] == "melanzane"
+
+
+def test_voce_frase_non_compresa():
+    assert voice.parse("")["intent"] == "unknown"
+    assert voice.parse("   ")["intent"] == "unknown"
+    # rumore di fondo o fraintendimento: non deve finire in lista come prodotto
+    for frase in ("bla bla", "ehm", "oggi piove forte", "ciao come stai"):
+        assert voice.parse(frase)["intent"] == "unknown", frase
+    # senza verbo ma con quantità o destinazione resta un comando valido
+    assert voice.parse("due chili di farina")["intent"] == "shopping_add"
+    assert voice.parse("il latte in dispensa")["intent"] == "pantry_add"
+
+
+def test_voce_endpoint_aggiunge_in_dispensa(client):
+    r = client.post("/api/voice", json={"text": "aggiungi due chili di farina in dispensa"})
+    assert r.status_code == 200
+    assert "farina" in r.get_json()["message"]
+
+    righe = client.get("/api/pantry").get_json()
+    assert len(righe) == 1
+    assert righe[0]["name"] == "farina"
+    assert righe[0]["quantity"] == 2 and righe[0]["unit"] == "kg"
+
+
+def test_voce_endpoint_aggiunge_alla_spesa(client):
+    r = client.post("/api/voice", json={"text": "metti mezzo litro di latte nella spesa"})
+    assert r.status_code == 200
+    voci = client.get("/api/shopping").get_json()
+    assert [v["name"] for v in voci] == ["latte"]
+    assert voci[0]["quantity"] == 0.5 and voci[0]["unit"] == "l"
+
+    # una seconda dettatura si somma, come la generazione della lista
+    client.post("/api/voice", json={"text": "aggiungi 500 millilitri di latte alla spesa"})
+    voci = client.get("/api/shopping").get_json()
+    assert len(voci) == 1
+    assert voci[0]["quantity"] == 1 and voci[0]["unit"] == "l"
+
+
+def test_voce_endpoint_aggiunge_al_profilo(client):
+    r = client.post("/api/voice", json={"text": "sono allergico al nichel e al fruttosio"})
+    assert r.status_code == 200
+    assert "nichel" in r.get_json()["message"]
+
+    profilo = client.get("/api/profile").get_json()
+    assert profilo["restriction_list"] == ["nichel", "fruttosio"]
+
+    # ripetere lo stesso termine non lo duplica
+    client.post("/api/voice", json={"text": "sono allergico al nichel"})
+    assert client.get("/api/profile").get_json()["restriction_list"] == ["nichel", "fruttosio"]
+
+
+def test_voce_endpoint_ricerca_ricette(client):
+    r = client.post("/api/voice", json={"text": "cerca la carbonara"})
+    assert r.status_code == 200
+    assert r.get_json()["query"] == "carbonara"
+
+
+def test_voce_endpoint_frase_non_compresa(client):
+    r = client.post("/api/voice", json={"text": ""})
+    assert r.status_code == 422
+    assert "capito" in r.get_json()["message"]
+
+
+# ------------------------------------------------------------ ricettario
+def test_ricettario_di_partenza_e_coerente():
+    """Le ricette del seed devono essere caricabili così come sono scritte."""
+    import seed
+    categorie_note = {"Frutta e Verdura", "Carne e Pesce", "Latticini", "Dispensa",
+                      "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"}
+    nomi = [r["name"] for r in seed.RECIPES]
+    assert len(nomi) == len(set(nomi)), "nomi duplicati nel ricettario"
+    for r in seed.RECIPES:
+        assert r["servings"] > 0
+        assert r["time_minutes"] > 0
+        assert r["difficulty"] in {"facile", "media", "difficile"}
+        assert r["instructions"].strip()
+        assert r["items"], f"{r['name']} senza ingredienti"
+        for i in r["items"]:
+            assert i["quantity"] > 0, f"{r['name']}: {i['name']} con quantità non valida"
+            assert i["unit"] in {"pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino",
+                                 "confezione", "fetta"}, f"{r['name']}: unità {i['unit']}"
+            assert i["category"] in categorie_note, f"{r['name']}: categoria {i['category']}"
+
+
+def test_ricettario_copre_primi_e_piatti_unici_recenti(client):
+    """I piatti entrati in voga negli ultimi anni esistono e sono pianificabili.
+
+    Il database di test nasce vuoto, quindi le ricette vengono caricate davvero
+    via API: il test verifica sia la presenza nel ricettario sia che il formato
+    del seed sia accettato dall'endpoint di creazione.
+    """
+    import seed
+    attesi = {"Pasta alla Norma", "Spaghetti all'assassina", "Cacio e pepe",
+              "Trofie al pesto", "Bucatini all'amatriciana", "Penne all'arrabbiata",
+              "Pasta fredda alla mediterranea", "Casoncelli alla bergamasca",
+              "Malloreddus alla campidanese", "Tagliolini al tartufo",
+              "Marry me chicken", "Lasagna soup", "Poke bowl", "Riso alla cantonese",
+              "Gulasch", "Pizza napoletana", "Paella", "Ramen",
+              "Chicken tikka masala", "Shakshuka"}
+    assert attesi <= {r["name"] for r in seed.RECIPES}
+
+    for r in seed.RECIPES:
+        assert client.post("/api/recipes", json=r).status_code == 201, r["name"]
+
+    elenco = client.get("/api/recipes").get_json()
+    assert attesi <= {r["name"] for r in elenco}
+    # una new entry si pianifica e finisce nella lista della spesa
+    norma = next(r for r in elenco if r["name"] == "Pasta alla Norma")
+    r = client.post("/api/plan", json={"date": "2026-09-21", "meal": "pranzo",
+                                       "recipe_id": norma["id"], "servings": 2})
+    assert r.status_code == 201
+    r = client.post("/api/shopping/generate", json={"start": "2026-09-21", "end": "2026-09-21"})
+    assert r.status_code == 200
+    nomi = {v["name"] for v in client.get("/api/shopping").get_json()}
+    assert {"Melanzane", "Penne", "Ricotta salata"} <= nomi
+
+
+# ------------------------------------------------------------ pasti al giorno
+def test_meta_espone_numero_e_insiemi_di_pasti(client):
+    meta = client.get("/api/meta").get_json()
+    assert meta["meals"] == ["pranzo", "cena"]
+    assert meta["meals_per_day"] == 2
+    assert meta["meal_sets"]["3"] == ["colazione", "pranzo", "cena"]
+    assert meta["meal_sets"]["1"] == ["cena"]
+
+
+def test_cambiare_pasti_aggiorna_meta_e_profilo(client):
+    r = client.put("/api/profile", json={"meals_per_day": 4})
+    assert r.status_code == 200
+    assert r.get_json()["meals_per_day"] == 4
+    meta = client.get("/api/meta").get_json()
+    assert meta["meals"] == ["colazione", "pranzo", "merenda", "cena"]
+
+
+def test_numero_pasti_non_valido_rifiutato(client):
+    for cattivo in (0, 6, -1, "tre", None):
+        r = client.put("/api/profile", json={"meals_per_day": cattivo})
+        assert r.status_code == 400, cattivo
+        assert "Numero di pasti" in r.get_json()["error"]
+    assert client.get("/api/profile").get_json()["meals_per_day"] == 2
+
+
+def test_pasti_scelti_decidono_quali_sono_validi(client):
+    rid = ricetta(client, "Zuppa", 2, [{"name": "Z", "quantity": 1, "unit": "pz"}])
+    r = client.post("/api/plan", json={"date": "2026-09-16", "meal": "colazione", "recipe_id": rid})
+    assert r.status_code == 400
+    client.put("/api/profile", json={"meals_per_day": 3})
+    r = client.post("/api/plan", json={"date": "2026-09-16", "meal": "colazione", "recipe_id": rid})
+    assert r.status_code == 201
+
+
+def test_salvataggio_parziale_non_tocca_il_numero_di_pasti(client):
+    client.put("/api/profile", json={"meals_per_day": 5})
+    client.put("/api/profile", json={"full_name": "Gianluca"})
+    p = client.get("/api/profile").get_json()
+    assert p["meals_per_day"] == 5
+    assert p["full_name"] == "Gianluca"
+
+
+def test_riducendo_i_pasti_la_spesa_ignora_i_pasti_nascosti(client):
+    """I pasti tolti non devono pesare sulla spesa.
+
+    Ridurre i pasti lascia le righe vecchie in `meal_plan`: se non fossero
+    filtrate continuerebbero a contare pur non essendo piu' visibili.
+    """
+    cena = ricetta(client, "Cena", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    pranzo = ricetta(client, "Pranzo", 2, [{"name": "Riso", "quantity": 300, "unit": "g"}])
+    client.put("/api/profile", json={"meals_per_day": 2})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "pranzo", "recipe_id": pranzo})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": cena})
+
+    r = client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+    assert r.status_code == 200
+    nomi = {v["name"] for v in client.get("/api/shopping").get_json()}
+    assert {"Farina", "Riso"} <= nomi
+
+    client.put("/api/profile", json={"meals_per_day": 1})
+    for v in client.get("/api/shopping").get_json():
+        client.delete(f"/api/shopping/{v['id']}")
+    r = client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+    assert r.status_code == 200
+    nomi = {v["name"] for v in client.get("/api/shopping").get_json()}
+    assert "Farina" in nomi
+    assert "Riso" not in nomi, "il pranzo non e' piu' gestito: non deve finire in lista"
+
+
+def test_riducendo_i_pasti_il_fabbisogno_per_giorno_ignora_i_nascosti(client):
+    """Anche la ripartizione per giorno deve ignorare i pasti non piu' gestiti."""
+    cena = ricetta(client, "Cena", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    pranzo = ricetta(client, "Pranzo", 2, [{"name": "Farina", "quantity": 300, "unit": "g"}])
+    client.put("/api/profile", json={"meals_per_day": 2})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "pranzo", "recipe_id": pranzo})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": cena})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    client.put("/api/profile", json={"meals_per_day": 1})
+    for v in client.get("/api/shopping").get_json():
+        client.delete(f"/api/shopping/{v['id']}")
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+    voce = next(v for v in client.get("/api/shopping").get_json() if v["name"] == "Farina")
+    assert float(voce["quantity"]) == 200, voce
+    giorni = voce.get("days") or []
+    assert not giorni or float(giorni[0]["quantity"]) == 200, giorni
+
+
+def test_migrazione_aggiunge_il_numero_di_pasti(client):
+    """Un DB creato prima della scelta pasti riceve la colonna a 2."""
+    with sqlite3.connect(DB) as c:
+        c.execute("ALTER TABLE profile RENAME TO profile_vecchio")
+        c.execute("""CREATE TABLE profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            full_name TEXT NOT NULL DEFAULT '',
+            restrictions TEXT NOT NULL DEFAULT '',
+            onboarded INTEGER NOT NULL DEFAULT 0,
+            fav_prompted INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        c.execute("INSERT INTO profile (id, full_name) VALUES (1, 'Vecchio')")
+        c.execute("DROP TABLE profile_vecchio")
+        c.commit()
+    with closing(sqlite3.connect(DB)) as conn:
+        conn.row_factory = sqlite3.Row  # come fa init_db
+        app_module.migrate(conn)
+        colonne = {r["name"] for r in conn.execute("PRAGMA table_info(profile)")}
+    assert "meals_per_day" in colonne
+    with sqlite3.connect(DB) as c:
+        c.row_factory = sqlite3.Row
+        riga = c.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    assert riga["meals_per_day"] == 2, "il profilo vecchio resta a due pasti"
+    assert riga["full_name"] == "Vecchio", "i dati esistenti non si perdono"

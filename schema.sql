@@ -67,5 +67,19 @@ CREATE TABLE IF NOT EXISTS profile (
     full_name  TEXT NOT NULL DEFAULT '',
     restrictions TEXT NOT NULL DEFAULT '',   -- testo libero, una voce per riga o separata da virgole
     onboarded  INTEGER NOT NULL DEFAULT 0,
+    -- quanti pasti al giorno l'utente vuole gestire (1-5): da qui si ricava
+    -- l'elenco dei pasti mostrati nel piano e accettati dall'API
+    meals_per_day INTEGER NOT NULL DEFAULT 2,
+    -- 0 finche' il passo di scelta delle preferite non e' stato mostrato:
+    -- serve a riproporlo a chi si era profilato prima che esistesse
+    fav_prompted INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ricette preferite: tabella a parte invece di una colonna su `recipes` perche'
+-- e' una preferenza dell'utente, non un dato della ricetta, e perche' la chiave
+-- esterna con CASCADE tiene l'elenco pulito quando una ricetta viene eliminata.
+CREATE TABLE IF NOT EXISTS favorites (
+    recipe_id  INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
