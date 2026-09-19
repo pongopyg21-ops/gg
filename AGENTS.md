@@ -18,18 +18,29 @@ informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici).
 ./avvia.sh restart                       # ferma e riavvia
 ./avvia.sh status                        # attivo? su quale porta?
 ./avvia.sh log                           # ultime righe del log
-python3 -m pytest test_cucina.py -q      # 134 test
+./avvia.sh test                          # test nella venv del progetto
 ```
 
-`avvia.sh` fa quello che serve per rimettere in piedi l'app: installa Flask se
-manca, crea `cucina.db` con `seed.py` se non c'è, avvia il server staccato dalla
+**All'inizio di ogni conversazione il server non è attivo.** L'ambiente viene
+azzerato fra una sessione e l'altra: i processi in background muoiono e i
+pacchetti installati con `pip` di sistema spariscono. Il primo passo operativo è
+quindi sempre `./avvia.sh`, che rimette in piedi tutto e aspetta che `/api/meta`
+risponda davvero. Non serve chiederlo all'utente: è il modo normale di
+ricominciare.
+
+Le dipendenze però non si reinstallano più a ogni giro: stanno in una **venv
+dentro il progetto** (`.venv`). `/workspace` è un volume che sopravvive
+all'azzeramento mentre `$HOME` no, quindi la venv resta e Flask si installa solo
+la prima volta. Non spostarla in `$HOME`: sparirebbe a ogni conversazione.
+Da venv già pronta l'avvio è sotto il secondo; da zero (venv da creare) circa
+cinque secondi. Se la venv non è creabile — `python3-venv` assente, disco pieno —
+`avvia.sh` ripiega sui pacchetti di sistema senza fermarsi.
+
+`avvia.sh` fa quello che serve per rimettere in piedi l'app: prepara l'ambiente,
+crea `cucina.db` con `seed.py` se non c'è, avvia il server staccato dalla
 shell e **aspetta che risponda davvero** su `/api/meta` invece di dare per scontato
 che sia partito. È il modo normale di avviare l'app: evita di ripetere a mano i
 passi qui sotto.
-
-L'ambiente può essere azzerato fra una sessione e l'altra: `cucina.db` sopravvive,
-ma i pacchetti installati no. Se `import flask` fallisce, reinstalla da
-`requirements.txt` prima di avviare il server.
 
 L'host pubblico inoltra sulla **porta 12000** (predefinita nello script): senza
 `PORT=12000` il server si avvia su 8000 e il link esterno restituisce errore. Il

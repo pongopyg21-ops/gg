@@ -6,11 +6,16 @@
 # script rimette insieme le due cose e verifica che il server risponda davvero,
 # invece di dare per scontato che sia partito.
 #
+# Le dipendenze vivono in una venv dentro il progetto (.venv). /workspace è un
+# volume che sopravvive all'azzeramento, quindi la venv resta e reinstalla Flask
+# solo la prima volta; se non è creabile si ripiega sui pacchetti di sistema.
+#
 #   ./avvia.sh            avvia (o riavvia se già in esecuzione)
 #   ./avvia.sh stop       ferma il server
 #   ./avvia.sh restart    ferma e riavvia
 #   ./avvia.sh status     dice se è attivo e su quale porta
 #   ./avvia.sh log        mostra le ultime righe del log
+#   ./avvia.sh test       esegue i test nella venv del progetto
 #
 # Porta: 12000 per impostazione predefinita (è quella inoltrata dall'host).
 # Modificabile con PORT=... ./avvia.sh
@@ -24,7 +29,6 @@ LOG_FILE="$BASE_DIR/server.log"
 DB_FILE="${CUCINA_DB:-$BASE_DIR/cucina.db}"
 
 PYTHON="${PYTHON:-python3}"
-PIP="${PIP:-pip3}"
 
 rosso()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -84,25 +88,79 @@ vivo() {
 }
 
 # --- dipendenze ----------------------------------------------------------
+#
+# La venv sta dentro il progetto (.venv) e NON in $HOME: solo /workspace è un
+# volume che sopravvive all'azzeramento dell'ambiente, mentre $HOME viene
+# ricostruito ogni volta. Una venv in $HOME sparirebbe come i pacchetti di
+# sistema; una venv nel progetto no, quindi reinstallare Flask diventa un caso
+# raro (la primissima volta) invece della norma a ogni conversazione.
+#
+# Se la venv non si riesce a creare — python3-venv assente, disco pieno — non è
+# un problema: si ripiega sui pacchetti di sistema, come prima.
 
-controlla_dipendenze() {
-  if "$PYTHON" -c "import flask" 2>/dev/null; then
+SYS_PYTHON="${PYTHON:-python3}"
+VENV_DIR="$BASE_DIR/.venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
+
+# La venv è utilizzabile solo se il suo interprete parte davvero. Dopo un cambio
+# di versione di Python i collegamenti interni puntano a un file che non c'è più
+# e il comando muore: in quel caso va ricreata, non solo riusata.
+venv_funzionante() {
+  [ -x "$VENV_PYTHON" ] && "$VENV_PYTHON" -c "" 2>/dev/null
+}
+
+crea_venv() {
+  venv_funzionante && return 0
+  giallo "Preparo l'ambiente del progetto in .venv…"
+  "$SYS_PYTHON" -m venv "$VENV_DIR" 2>/dev/null || return 1
+  venv_funzionante
+}
+
+pip_installa() {
+  local py="$1"
+  if [ -f "$BASE_DIR/requirements.txt" ]; then
+    "$py" -m pip install -q -r "$BASE_DIR/requirements.txt"
+  else
+    "$py" -m pip install -q "flask>=3.0"
+  fi
+}
+
+prepara_ambiente() {
+  # caso normale: la venv c'è già e ha tutto (è il motivo per cui esiste)
+  if venv_funzionante && "$VENV_PYTHON" -c "import flask" 2>/dev/null; then
+    PYTHON="$VENV_PYTHON"
+    return 0
+  fi
+
+  # venv assente o incompleta: la si crea e si riempie
+  if crea_venv; then
+    if "$VENV_PYTHON" -c "import flask" 2>/dev/null \
+       || pip_installa "$VENV_PYTHON"; then
+      if "$VENV_PYTHON" -c "import flask" 2>/dev/null; then
+        verde "Ambiente del progetto pronto (.venv)."
+        PYTHON="$VENV_PYTHON"
+        return 0
+      fi
+    fi
+    rosso "La venv non riesce a importare Flask: ripiego sul sistema."
+  fi
+
+  # ripiego: pacchetti di sistema, il comportamento di prima
+  if "$SYS_PYTHON" -c "import flask" 2>/dev/null; then
+    PYTHON="$SYS_PYTHON"
     return 0
   fi
   giallo "Flask non è installato (l'ambiente è stato azzerato). Lo installo…"
-  if [ -f "$BASE_DIR/requirements.txt" ]; then
-    "$PIP" install -q -r "$BASE_DIR/requirements.txt" || {
-      rosso "Installazione fallita. Provvedi a mano con: $PIP install -r requirements.txt"
-      return 1
-    }
-  else
-    "$PIP" install -q "flask>=3.0" || return 1
-  fi
-  "$PYTHON" -c "import flask" 2>/dev/null || {
-    rosso "Flask continua a non essere importabile da $PYTHON."
+  pip_installa "$SYS_PYTHON" || {
+    rosso "Installazione fallita. Provvedi a mano con: $SYS_PYTHON -m pip install -r requirements.txt"
+    return 1
+  }
+  "$SYS_PYTHON" -c "import flask" 2>/dev/null || {
+    rosso "Flask continua a non essere importabile da $SYS_PYTHON."
     return 1
   }
   verde "Flask installato."
+  PYTHON="$SYS_PYTHON"
 }
 
 # --- azioni --------------------------------------------------------------
@@ -130,7 +188,7 @@ ferma() {
 }
 
 avvia() {
-  controlla_dipendenze || return 1
+  prepara_ambiente || return 1
 
   local pid
   pid="$(pid_attivo)"
@@ -197,18 +255,30 @@ stato() {
   return 1
 }
 
+# I test girano nella venv del progetto, così vedono le stesse dipendenze del
+# server. Il server non serve: i test usano un database temporaneo.
+testa() {
+  prepara_ambiente || return 1
+  if ! "$PYTHON" -c "import pytest" 2>/dev/null; then
+    giallo "pytest non c'è: lo installo."
+    "$PYTHON" -m pip install -q pytest || return 1
+  fi
+  (cd "$BASE_DIR" && "$PYTHON" -m pytest test_cucina.py -q)
+}
+
 case "${1:-avvia}" in
   avvia|start)   avvia ;;
   stop)          ferma ;;
   restart)       ferma && avvia ;;
   status|stato)  stato ;;
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
+  test|tests)    testa ;;
   -h|--help|help)
-    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     ;;
   *)
     rosso "Comando sconosciuto: $1"
-    echo "Uso: $0 [avvia|stop|restart|status|log]"
+    echo "Uso: $0 [avvia|stop|restart|status|log|test]"
     exit 2
     ;;
 esac
