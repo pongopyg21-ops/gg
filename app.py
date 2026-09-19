@@ -1,0 +1,1269 @@
+import os
+import re
+import sqlite3
+from contextlib import closing
+import datetime
+
+from flask import Flask, g, jsonify, request, send_from_directory
+
+import allergens
+import faq
+import igiene
+import units
+import voice
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.environ.get("CUCINA_DB", os.path.join(BASE_DIR, "cucina.db"))
+SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
+
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+# Quanti pasti al giorno e quali. L'utente sceglie il numero nel primo passo
+# dell'onboarding, e da lì derivano i pasti mostrati nel piano e accettati
+# dall'API. Due è il valore di partenza.
+MEAL_SETS = {
+    1: ["cena"],
+    2: ["pranzo", "cena"],
+    3: ["colazione", "pranzo", "cena"],
+    4: ["colazione", "pranzo", "merenda", "cena"],
+    5: ["colazione", "spuntino", "pranzo", "merenda", "cena"],
+}
+MEALS_PER_DAY_MIN, MEALS_PER_DAY_MAX = 1, 5
+MEALS = MEAL_SETS[2]
+
+
+def valid_meals(db):
+    """I pasti che l'utente ha scelto di gestire.
+
+    Il numero sta nel profilo: da qui si ricava l'elenco, che è l'unica fonte
+    dei pasti validi sia in lettura sia in scrittura.
+    """
+    scelti = get_profile(db).get("meals_per_day") or 2
+    return MEAL_SETS.get(int(scelti), MEALS)
+
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(_exc=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def migrate(db):
+    """Aggiunge le colonne mancanti ai database creati da versioni precedenti.
+
+    `CREATE TABLE IF NOT EXISTS` non tocca le tabelle esistenti: senza questo
+    passaggio un database gia' in uso resterebbe senza le colonne nuove.
+    """
+    have = {r["name"] for r in db.execute("PRAGMA table_info(recipes)")}
+    for col, ddl in (
+        ("image", "ALTER TABLE recipes ADD COLUMN image TEXT NOT NULL DEFAULT ''"),
+        ("image_credit", "ALTER TABLE recipes ADD COLUMN image_credit TEXT NOT NULL DEFAULT ''"),
+    ):
+        if col not in have:
+            db.execute(ddl)
+
+    # chi si era profilato prima che esistesse la scelta delle preferite non l'ha
+    # mai vista: il passo gli viene riproposto una volta sola
+    have = {r["name"] for r in db.execute("PRAGMA table_info(profile)")}
+    if have and "fav_prompted" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN fav_prompted INTEGER NOT NULL DEFAULT 0")
+    # i profili nati prima della scelta dei pasti restano a due, il valore storico
+    if have and "meals_per_day" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN meals_per_day INTEGER NOT NULL DEFAULT 2")
+    # il giorno fisso delle pulizie: sabato, come suggerisce l'articolo
+    if have and "chore_day" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN chore_day INTEGER NOT NULL DEFAULT 5")
+
+    # Il catalogo delle pulizie si semina qui, non in seed.py: la sezione Igiene
+    # deve funzionare anche su un database creato prima che esistesse, senza
+    # obbligare a rilanciare il seed a mano. L'inserimento e' idempotente e non
+    # tocca le righe gia' presenti, cosi' le modifiche dell'utente restano.
+    _semina_pulizie(db)
+
+
+def _semina_pulizie(db):
+    # `migrate` viene chiamata anche su database vecchi a cui manca del tutto la
+    # tabella: senza questo controllo il seme fallirebbe su un DB legittimo
+    tabelle = {r["name"] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "chores" not in tabelle:
+        return
+    esistenti = {r["name"] for r in db.execute("SELECT name FROM chores")}
+    nuove = [v for v in igiene.catalogo() if v["name"] not in esistenti]
+    if not nuove:
+        return
+    db.executemany(
+        """INSERT INTO chores (name, area, frequency, minutes, month)
+           VALUES (:name, :area, :frequency, :minutes, :month)""",
+        nuove,
+    )
+
+
+def init_db():
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        db.row_factory = sqlite3.Row
+        with open(SCHEMA_PATH, encoding="utf-8") as fh:
+            db.executescript(fh.read())
+        migrate(db)
+        db.commit()
+
+
+def rows(cur):
+    return [dict(r) for r in cur.fetchall()]
+
+
+def one(cur):
+    r = cur.fetchone()
+    return dict(r) if r else None
+
+
+def bad_request(msg, code=400):
+    return jsonify({"error": msg}), code
+
+
+def parse_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
+    name = (name or "").strip()
+    if not name:
+        return None
+    cur = db.execute("SELECT * FROM ingredients WHERE name = ? COLLATE NOCASE", (name,))
+    found = one(cur)
+    if found:
+        return found["id"]
+    cur = db.execute(
+        "INSERT INTO ingredients (name, unit, category) VALUES (?, ?, ?)",
+        (name, unit, category),
+    )
+    return cur.lastrowid
+
+
+def parse_terms(raw):
+    """Da testo libero a elenco di termini: separatori riga, virgola e punto e virgola."""
+    if isinstance(raw, (list, tuple)):
+        parts = [str(p) for p in raw]
+    else:
+        parts = re.split(r"[,;\n]+", str(raw or ""))
+    seen, terms = set(), []
+    for part in parts:
+        term = part.strip()
+        key = term.lower()
+        if term and key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms
+
+
+def favorite_ids(db):
+    """Id delle ricette preferite, in ordine di nome (come l'elenco ricette)."""
+    cur = db.execute(
+        """SELECT f.recipe_id FROM favorites f JOIN recipes r ON r.id = f.recipe_id
+           ORDER BY r.name"""
+    )
+    return [r["recipe_id"] for r in cur]
+
+
+def set_favorites(db, raw):
+    """Sostituisce l'insieme delle preferite.
+
+    Gli id che non corrispondono a una ricetta esistente vengono ignorati invece
+    di far fallire il salvataggio: un elenco scelto prima che una ricetta venisse
+    eliminata altrove non deve bloccare l'utente.
+    """
+    valid = {r["id"] for r in db.execute("SELECT id FROM recipes")}
+    wanted = []
+    seen = set()
+    for value in raw if isinstance(raw, (list, tuple)) else []:
+        try:
+            rid = int(value)
+        except (TypeError, ValueError):
+            continue
+        if rid in valid and rid not in seen:
+            seen.add(rid)
+            wanted.append(rid)
+    db.execute("DELETE FROM favorites")
+    db.executemany("INSERT INTO favorites (recipe_id) VALUES (?)", [(r,) for r in wanted])
+    db.commit()
+    return favorite_ids(db)
+
+
+def get_profile(db):
+    """Profilo utente; la riga viene creata al primo accesso."""
+    cur = db.execute("SELECT * FROM profile WHERE id = 1")
+    profile = one(cur)
+    if profile is None:
+        db.execute("INSERT INTO profile (id) VALUES (1)")
+        db.commit()
+        profile = one(db.execute("SELECT * FROM profile WHERE id = 1"))
+    profile["restriction_list"] = parse_terms(profile["restrictions"])
+    profile["favorite_ids"] = favorite_ids(db)
+    return profile
+
+
+PROFILE_FIELDS = {"full_name", "restrictions", "onboarded", "fav_prompted",
+                  "meals_per_day", "chore_day"}
+
+
+def save_profile(db, data):
+    # la riga singola deve esistere prima dell'UPDATE, altrimenti non aggiorna nulla
+    get_profile(db)
+    # le preferite stanno in una tabella a parte: si toccano solo se il campo
+    # e' presente, cosi' un salvataggio parziale (es. solo il nome) non le azzera
+    if "favorite_ids" in data:
+        set_favorites(db, data["favorite_ids"])
+    values = {k: data[k] for k in PROFILE_FIELDS if k in data}
+    if "restrictions" in values:
+        values["restrictions"] = ", ".join(parse_terms(values["restrictions"]))
+    for flag in ("onboarded", "fav_prompted"):
+        if flag in values:
+            values[flag] = 1 if values[flag] else 0
+    if "meals_per_day" in values:
+        try:
+            scelti = int(values["meals_per_day"])
+        except (TypeError, ValueError):
+            raise ValueError("Numero di pasti non valido (da 1 a 5)")
+        if scelti not in MEAL_SETS:
+            raise ValueError("Numero di pasti non valido (da 1 a 5)")
+        values["meals_per_day"] = scelti
+    if "chore_day" in values:
+        try:
+            giorno = int(values["chore_day"])
+        except (TypeError, ValueError):
+            raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
+        if not 0 <= giorno <= 6:
+            raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
+        values["chore_day"] = giorno
+    if values:
+        assignments = ", ".join(f"{k} = ?" for k in values)
+        db.execute(
+            f"UPDATE profile SET {assignments}, updated_at = datetime('now') WHERE id = 1",
+            list(values.values()),
+        )
+        db.commit()
+    return get_profile(db)
+
+
+def recipe_safety(db, rid, restriction_list):
+    """Allergeni riconosciuti negli ingredienti e termini dichiarati che combaciano."""
+    names = [r["name"] for r in db.execute(
+        """SELECT i.name FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
+           WHERE ri.recipe_id = ?""",
+        (rid,),
+    )]
+    tags = allergens.tags_for(names)
+    return tags, allergens.matching_terms(restriction_list, tags, names)
+
+
+# ---------------------------------------------------------------- index
+@app.route("/")
+def index():
+    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+
+
+@app.route("/api/meta")
+def meta():
+    db = get_db()
+    return jsonify({"meals": valid_meals(db), "meals_per_day": get_profile(db).get("meals_per_day") or 2,
+                    "meal_sets": {str(k): v for k, v in MEAL_SETS.items()},
+                    "units": ["pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino", "confezione", "fetta"],
+                    "categories": ["Frutta e Verdura", "Carne e Pesce", "Latticini", "Dispensa",
+                                   "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"],
+                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()]})
+
+
+# ---------------------------------------------------------------- profilo
+@app.route("/api/profile", methods=["GET", "PUT"])
+def profile():
+    db = get_db()
+    if request.method == "PUT":
+        data = request.get_json(force=True) or {}
+        try:
+            return jsonify(save_profile(db, data))
+        except ValueError as err:
+            return bad_request(str(err) or "Valore non valido")
+    return jsonify(get_profile(db))
+
+
+@app.route("/api/profile/allergens", methods=["GET"])
+def profile_allergens():
+    """Quali allergeni sono riconosciuti in ciascun ingrediente in uso."""
+    db = get_db()
+    cur = db.execute("SELECT DISTINCT name FROM ingredients ORDER BY name")
+    return jsonify({r["name"]: sorted(allergens.allergens_for(r["name"])) for r in cur})
+
+
+# ---------------------------------------------------------------- ingredients
+@app.route("/api/ingredients", methods=["GET", "POST"])
+def ingredients():
+    db = get_db()
+    if request.method == "POST":
+        data = request.get_json(force=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return bad_request("Il nome è obbligatorio")
+        iid = get_or_create_ingredient(db, name, units.normalize(data.get("unit")), data.get("category") or "Altro")
+        db.commit()
+        return jsonify({"id": iid}), 201
+    cur = db.execute("SELECT * FROM ingredients WHERE name LIKE ? ORDER BY name", (f"%{request.args.get('q', '')}%",))
+    return jsonify(rows(cur))
+
+
+# ---------------------------------------------------------------- pantry
+@app.route("/api/pantry", methods=["GET"])
+def pantry_list():
+    db = get_db()
+    cur = db.execute(
+        """SELECT p.id, p.quantity, p.unit, p.updated_at,
+                  i.id AS ingredient_id, i.name, i.category
+           FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
+           ORDER BY i.name"""
+    )
+    return jsonify(rows(cur))
+
+
+@app.route("/api/pantry", methods=["POST"])
+def pantry_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return bad_request("Il nome è obbligatorio")
+    unit = units.normalize(data.get("unit"))
+    iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
+    qty = parse_float(data.get("quantity"), 0)
+    existing = one(db.execute(
+        "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
+    if not existing:
+        # nessuna riga nella stessa unità: si prova ad accodarsi a una compatibile
+        for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
+            converted = units.convert(qty, unit, cand["unit"])
+            if converted is not None:
+                db.execute(
+                    "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                    (converted, cand["id"]))
+                db.commit()
+                return jsonify({"ok": True}), 201
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
+    else:
+        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                   (qty, existing["id"]))
+    db.commit()
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/api/pantry/<int:pid>", methods=["PATCH", "DELETE"])
+def pantry_modify(pid):
+    db = get_db()
+    if request.method == "DELETE":
+        db.execute("DELETE FROM pantry WHERE id = ?", (pid,))
+        db.commit()
+        return jsonify({"ok": True})
+    data = request.get_json(force=True) or {}
+    db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
+               (parse_float(data.get("quantity"), 0), pid))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- recipes
+def recipe_full(db, rid):
+    rec = one(db.execute("SELECT * FROM recipes WHERE id = ?", (rid,)))
+    if not rec:
+        return None
+    rec["items"] = rows(db.execute(
+        """SELECT ri.id, ri.quantity, ri.unit, i.id AS ingredient_id, i.name
+           FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
+           WHERE ri.recipe_id = ? ORDER BY i.name""",
+        (rid,),
+    ))
+    rec["favorite"] = rid in set(favorite_ids(db))
+    return rec
+
+
+def clean_image(value):
+    """Accetta solo un nome di file semplice, senza percorsi ne' traversal."""
+    nome = os.path.basename((value or "").strip())
+    if not nome or nome != (value or "").strip():
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9._-]+\.(jpg|jpeg|png|webp)", nome, re.IGNORECASE):
+        return ""
+    return nome
+
+
+IMAGE_DIR = os.path.join(BASE_DIR, "static", "recipes")
+
+
+@app.route("/api/recipe-images")
+def recipe_images():
+    """Nomi dei file immagine disponibili, per il campo foto del form."""
+    try:
+        nomi = sorted(f for f in os.listdir(IMAGE_DIR)
+                      if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp")))
+    except OSError:
+        nomi = []
+    return jsonify(nomi)
+
+
+@app.route("/api/recipes", methods=["GET", "POST"])
+def recipes():
+    db = get_db()
+    if request.method == "POST":
+        data = request.get_json(force=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return bad_request("Il nome è obbligatorio")
+        image = clean_image(data.get("image"))
+        cur = db.execute(
+            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions, image, image_credit)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, int(parse_float(data.get("servings"), 2)), data.get("time_minutes") or None,
+             data.get("difficulty") or "facile", data.get("instructions") or "",
+             image, (data.get("image_credit") or "").strip() if image else ""),
+        )
+        rid = cur.lastrowid
+        for it in data.get("items") or []:
+            iname = (it.get("name") or "").strip()
+            if not iname:
+                continue
+            iid = get_or_create_ingredient(db, iname, units.normalize(it.get("unit")), it.get("category") or "Altro")
+            db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
+                       (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
+        db.commit()
+        return jsonify(recipe_full(db, rid)), 201
+
+    if request.args.get("full") == "1" or request.args.get("safe") == "1":
+        ids = [r["id"] for r in db.execute("SELECT id FROM recipes ORDER BY name")]
+        restriction_list = get_profile(db)["restriction_list"]
+        preferite = set(favorite_ids(db))
+        out = []
+        for i in ids:
+            rec = recipe_full(db, i)
+            tags, hits = recipe_safety(db, i, restriction_list)
+            rec["allergens"] = sorted(allergens.label_for(t) for t in tags)
+            rec["conflicts"] = hits
+            rec["favorite"] = i in preferite
+            if request.args.get("safe") == "1" and hits:
+                continue
+            out.append(rec)
+        return jsonify(out)
+    cur = db.execute("SELECT * FROM recipes ORDER BY name")
+    return jsonify(rows(cur))
+
+
+@app.route("/api/recipes/<int:rid>", methods=["GET", "PUT", "DELETE"])
+def recipe_detail(rid):
+    db = get_db()
+    if not one(db.execute("SELECT id FROM recipes WHERE id = ?", (rid,))):
+        return bad_request("Ricetta non trovata", 404)
+
+    if request.method == "DELETE":
+        db.execute("DELETE FROM recipes WHERE id = ?", (rid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    if request.method == "PUT":
+        data = request.get_json(force=True) or {}
+        attuale = one(db.execute("SELECT image, image_credit FROM recipes WHERE id = ?", (rid,)))
+        # la foto si tocca solo se il campo e' presente: un salvataggio parziale
+        # (es. solo gli ingredienti) non deve cancellarla
+        if "image" in data:
+            image = clean_image(data.get("image"))
+            credito = (data.get("image_credit") or "").strip() if image else ""
+        else:
+            image = attuale["image"]
+            credito = attuale["image_credit"]
+        db.execute(
+            """UPDATE recipes SET name = ?, servings = ?, time_minutes = ?, difficulty = ?,
+               instructions = ?, image = ?, image_credit = ? WHERE id = ?""",
+            ((data.get("name") or "").strip(), int(parse_float(data.get("servings"), 2)),
+             data.get("time_minutes") or None, data.get("difficulty") or "facile",
+             data.get("instructions") or "", image, credito, rid),
+        )
+        db.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (rid,))
+        for it in data.get("items") or []:
+            iname = (it.get("name") or "").strip()
+            if not iname:
+                continue
+            iid = get_or_create_ingredient(db, iname, units.normalize(it.get("unit")), it.get("category") or "Altro")
+            db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
+                       (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
+        db.commit()
+        return jsonify(recipe_full(db, rid))
+
+    return jsonify(recipe_full(db, rid))
+
+
+# ---------------------------------------------------------------- meal plan
+@app.route("/api/plan", methods=["GET"])
+def plan_list():
+    db = get_db()
+    start = request.args.get("start")
+    end = request.args.get("end")
+    sql = """SELECT mp.id, mp.date, mp.meal, mp.servings, r.id AS recipe_id, r.name AS recipe_name
+             FROM meal_plan mp JOIN recipes r ON r.id = mp.recipe_id"""
+    params = []
+    if start and end:
+        sql += " WHERE mp.date BETWEEN ? AND ?"
+        params = [start, end]
+    sql += " ORDER BY mp.date, mp.meal"
+    out = rows(db.execute(sql, params))
+    restriction_list = get_profile(db)["restriction_list"]
+    for entry in out:
+        _, hits = recipe_safety(db, entry["recipe_id"], restriction_list)
+        entry["conflicts"] = hits
+    return jsonify(out)
+
+
+@app.route("/api/plan", methods=["POST"])
+def plan_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    if not data.get("date") or not data.get("meal") or not data.get("recipe_id"):
+        return bad_request("date, meal e recipe_id sono obbligatori")
+    if data["meal"] not in valid_meals(db):
+        return bad_request("Pasto non valido")
+    db.execute(
+        """INSERT INTO meal_plan (date, meal, recipe_id, servings) VALUES (?, ?, ?, ?)
+           ON CONFLICT(date, meal) DO UPDATE SET recipe_id = excluded.recipe_id, servings = excluded.servings""",
+        (data["date"], data["meal"], int(data["recipe_id"]), int(parse_float(data.get("servings"), 2))),
+    )
+    db.commit()
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/api/plan/<int:pid>", methods=["DELETE"])
+def plan_delete(pid):
+    db = get_db()
+    db.execute("DELETE FROM meal_plan WHERE id = ?", (pid,))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- shopping
+def pantry_available(pantry_rows, unit):
+    """Giacenza di un ingrediente da mostrare accanto a una voce di spesa.
+
+    `pantry_rows` sono le giacenze dell'ingrediente (quantità e unità). Se le unità
+    sono convertibili le somma e riporta il totale nell'unità della voce. Quando la
+    conversione non è possibile (es. dispensa in pezzi contro una voce in grammi)
+    riporta la giacenza nella sua unità, sommando solo quelle uguali.
+
+    Non esprime giudizi: la quantità in lista è già al netto della dispensa, quindi
+    un confronto fra i due numeri sarebbe fuorviante.
+    """
+    if not pantry_rows:
+        return None
+
+    total = 0.0
+    convertible = 0
+    for row in pantry_rows:
+        converted = units.convert(row["quantity"], row["unit"], unit)
+        if converted is not None:
+            total += converted
+            convertible += 1
+
+    if convertible:
+        unit = units.normalize(unit)
+    else:
+        unit = units.normalize(pantry_rows[0]["unit"])
+        total = sum(r["quantity"] for r in pantry_rows if units.normalize(r["unit"]) == unit)
+
+    return {"quantity": units.format_quantity(total), "unit": unit}
+
+
+@app.route("/api/shopping", methods=["GET", "POST"])
+def shopping():
+    db = get_db()
+    if request.method == "POST":
+        data = request.get_json(force=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return bad_request("Il nome è obbligatorio")
+        unit = units.normalize(data.get("unit"))
+        iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
+        db.execute(
+            "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
+            (name, parse_float(data.get("quantity"), 1), unit, data.get("category") or "Altro", iid),
+        )
+        db.commit()
+        return jsonify({"ok": True}), 201
+
+    items = rows(db.execute("SELECT * FROM shopping_items ORDER BY checked, category, name"))
+
+    # giacenze di tutti gli ingredienti in lista, in una sola query
+    ids = sorted({i["ingredient_id"] for i in items if i["ingredient_id"]})
+    if ids:
+        marks = ",".join("?" * len(ids))
+        stock = {}
+        for p in db.execute(
+            f"SELECT ingredient_id, quantity, unit FROM pantry WHERE ingredient_id IN ({marks})", ids
+        ):
+            stock.setdefault(p["ingredient_id"], []).append(p)
+    else:
+        stock = {}
+
+    for item in items:
+        item["pantry"] = pantry_available(stock.get(item["ingredient_id"], []), item["unit"])
+        item["days"] = _day_breakdown(db, item)
+        item["perishable"] = item["category"] in PERISHABLE_CATEGORIES
+    return jsonify(items)
+
+
+# categorie che deperiscono: comprarle in anticipo le fa scadere o perdere qualità
+PERISHABLE_CATEGORIES = {"Frutta e Verdura", "Carne e Pesce", "Latticini"}
+
+
+def _need_by_day(db, ingredient_id):
+    """Fabbisogno di un ingrediente in ciascun giorno del piano, in unità base.
+
+    Si legge dal piano invece di memorizzarlo: il piano è già la fonte di verità
+    di quando serve un ingrediente, e una copia salvata si disallineerebbe appena
+    si modifica il piano.
+    """
+    needs = {}
+    dim = preferred = None
+    filtro, pasti = meal_clause(db)
+    for r in db.execute(
+        f"""SELECT mp.date, mp.servings AS plan_servings, r.servings AS base_servings,
+                  ri.quantity, ri.unit
+           FROM meal_plan mp
+           JOIN recipes r ON r.id = mp.recipe_id
+           JOIN recipe_items ri ON ri.recipe_id = r.id
+           WHERE ri.ingredient_id = ? AND {filtro}""",
+        (ingredient_id, *pasti),
+    ):
+        fattore = r["plan_servings"] / (r["base_servings"] or 1)
+        qty, _ = units.to_base(r["quantity"] * fattore, r["unit"])
+        needs[r["date"]] = needs.get(r["date"], 0.0) + qty
+        dim = dim or units.dimension(r["unit"])
+        preferred = preferred or r["unit"]
+    return needs, dim, preferred
+
+
+def _day_breakdown(db, item):
+    """Quando serve la voce, ripartendo la quantità in lista sui giorni del piano.
+
+    La quantità mostrata in lista resta quella di sempre: qui si dice solo come si
+    distribuisce. Si scala al valore effettivo della voce, così la somma dei giorni
+    coincide con la vista completa anche quando la lista è stata corretta a mano.
+    """
+    if not item["ingredient_id"]:
+        return []
+    needs, dim, preferred = _need_by_day(db, item["ingredient_id"])
+    if not needs:
+        return []
+    check_unit = units.base_unit(dim) if dim else preferred
+    fabbisogno = sum(needs.values())
+    # la dispensa copre i giorni più vicini, esattamente come in generazione
+    have = fabbisogno - net_quantity(db, item["ingredient_id"], check_unit, fabbisogno)
+    net = _distribute(needs, have)
+
+    giorni = {}
+    for giorno, q in net.items():
+        q_item = units.convert(q, check_unit, item["unit"])
+        if q_item is None:
+            q_item = q
+        giorni[giorno] = q_item
+    totale = sum(giorni.values())
+    if totale <= 0:
+        # voce che la dispensa coprirebbe del tutto: se è in lista per accumulo o
+        # per modifica manuale va comunque attribuita a un giorno, non nascosta
+        giorni = {min(needs): item["quantity"]} if item["quantity"] > 0 else {}
+        totale = sum(giorni.values())
+    if totale <= 0:
+        return []
+    scala = item["quantity"] / totale
+
+    return [{"date": g, "quantity": units.format_quantity(giorni[g] * scala),
+             "unit": item["unit"]} for g in sorted(giorni)]
+
+
+def _distribute(by_day, coperto):
+    """Ripartisce il fabbisogno sui giorni, togliendo prima la dispensa.
+
+    `coperto` e' quanto si ha gia' in casa: viene sottratto a partire dal giorno
+    piu' vicino, perche' quello che si ha in dispensa serve naturalmente ai primi
+    pasti, non a quelli della settimana dopo. La somma dei giorni restituiti e'
+    esattamente il fabbisogno meno la dispensa, cioe' il totale che compare nella
+    lista: se i due numeri non coincidessero, la vista per giorno contraddirebbe
+    la vista completa. Con `coperto` negativo (in lista c'e' piu' del fabbisogno,
+    perche' la generazione si accumula) l'eccedenza va al primo giorno.
+    """
+    restante = coperto
+    out = {}
+    for giorno in sorted(by_day):
+        q = by_day[giorno]
+        if restante >= q:
+            restante -= q  # giorno interamente coperto dalla dispensa
+            continue
+        out[giorno] = q - restante
+        restante = 0.0
+    return out
+
+
+@app.route("/api/shopping/<int:sid>", methods=["PATCH", "DELETE"])
+def shopping_modify(sid):
+    db = get_db()
+    if request.method == "DELETE":
+        db.execute("DELETE FROM shopping_items WHERE id = ?", (sid,))
+        db.commit()
+        return jsonify({"ok": True})
+    data = request.get_json(force=True) or {}
+    if "checked" in data:
+        db.execute("UPDATE shopping_items SET checked = ? WHERE id = ?", (1 if data["checked"] else 0, sid))
+    if "quantity" in data:
+        db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?", (parse_float(data["quantity"], 1), sid))
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/shopping/clear-checked", methods=["POST"])
+def shopping_clear_checked():
+    db = get_db()
+    db.execute("DELETE FROM shopping_items WHERE checked = 1")
+    db.commit()
+    return jsonify({"ok": True})
+
+
+def meal_clause(db, alias="mp"):
+    """Filtro SQL dei soli pasti gestiti, con i valori da passare.
+
+    Riducendo i pasti al giorno le righe dei pasti non più gestiti restano nel
+    piano: senza questo filtro continuerebbero a contare nella spesa pur non
+    essendo più visibili né modificabili, e i numeri non tornerebbero.
+    """
+    pasti = valid_meals(db)
+    posti = ", ".join("?" for _ in pasti)
+    return f"{alias}.meal IN ({posti})", pasti
+
+
+def net_quantity(db, ingredient_id, unit, needed):
+    """Quantità da comprare: fabbisogno meno dispensa, convertendo le unità compatibili."""
+    have = 0.0
+    for p in db.execute("SELECT quantity, unit FROM pantry WHERE ingredient_id = ?", (ingredient_id,)):
+        converted = units.convert(p["quantity"], p["unit"], unit)
+        if converted is not None:
+            have += converted
+    return max(needed - have, 0.0)
+
+
+@app.route("/api/shopping/generate", methods=["POST"])
+def shopping_generate():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    start = data.get("start")
+    end = data.get("end")
+    if not start or not end:
+        return bad_request("start e end sono obbligatori")
+
+    filtro, pasti = meal_clause(db)
+    plan = rows(db.execute(
+        f"""SELECT mp.recipe_id, mp.servings AS plan_servings
+           FROM meal_plan mp JOIN recipes r ON r.id = mp.recipe_id
+           WHERE mp.date BETWEEN ? AND ? AND {filtro}""",
+        (start, end, *pasti),
+    ))
+    if not plan:
+        return bad_request("Nessun pasto pianificato nel periodo indicato", 404)
+
+    # Ricette coinvolte, con le porzioni della ricetta base per scalare le quantità
+    recipe_base = {r["id"]: (r["servings"] or 1) for r in db.execute(
+        f"""SELECT DISTINCT r.id, r.servings FROM recipes r
+           JOIN meal_plan mp ON mp.recipe_id = r.id
+           WHERE mp.date BETWEEN ? AND ? AND {filtro}""",
+        (start, end, *pasti),
+    )}
+
+    # Il fabbisogno si accumula nell'unità base della dimensione: così 'g' e 'kg'
+    # dello stesso ingrediente confluiscono in un'unica voce.
+    needed = {}
+    for p in plan:
+        factor = p["plan_servings"] / recipe_base[p["recipe_id"]]
+        for it in db.execute(
+            """SELECT ri.quantity, ri.unit, i.id AS ingredient_id, i.name, i.category
+               FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
+               WHERE ri.recipe_id = ?""",
+            (p["recipe_id"],),
+        ):
+            key = (it["ingredient_id"], units.group_key(it["unit"]))
+            entry = needed.setdefault(key, {
+                "name": it["name"], "category": it["category"],
+                "dim": units.dimension(it["unit"]), "preferred": it["unit"], "base_qty": 0.0,
+            })
+            qty, _base = units.to_base(it["quantity"] * factor, it["unit"])
+            entry["base_qty"] += qty
+
+    added = 0
+
+    for (iid, _group), entry in needed.items():
+        dim = entry["dim"]
+        base_qty = entry["base_qty"]
+        # si confronta con la dispensa nell'unità base: la conversione rende
+        # sommabili anche unità diverse dello stesso ingrediente
+        check_unit = units.base_unit(dim) if dim else entry["preferred"]
+        to_buy_base = net_quantity(db, iid, check_unit, base_qty)
+        if to_buy_base <= 0:
+            continue
+        buy_unit = units.display_unit(to_buy_base, dim, entry["preferred"])
+        to_buy = units.convert(to_buy_base, check_unit, buy_unit)
+        if to_buy is None:
+            to_buy = to_buy_base
+        row = one(db.execute(
+            "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0 AND unit = ?",
+            (iid, buy_unit)))
+        if not row:
+            # voce aperta in un'altra unità compatibile: ci si accoda convertendo
+            for cand in db.execute(
+                "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0", (iid,)
+            ):
+                converted = units.convert(to_buy, buy_unit, cand["unit"])
+                if converted is not None:
+                    row = cand
+                    to_buy = converted
+                    break
+        if row:
+            db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?",
+                       (units.format_quantity(row["quantity"] + to_buy), row["id"]))
+        else:
+            db.execute(
+                "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
+                (entry["name"], units.format_quantity(to_buy), buy_unit, entry["category"], iid),
+            )
+        added += 1
+    db.commit()
+    return jsonify({"added": added})
+
+
+# ---------------------------------------------------------------- voce
+@app.route("/api/voice", methods=["POST"])
+def voice_command():
+    """Comprende una frase dettata ed esegue il comando.
+
+    Il riconoscimento vocale avviene nel browser (Web Speech API), che consegna
+    solo testo: la comprensione resta qui, dove si può verificare con dei test
+    senza microfono. La risposta contiene anche un messaggio di conferma in
+    italiano, così il client non deve ricostruire da capo cosa è successo.
+    """
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    cmd = voice.parse(data.get("text"))
+
+    if cmd["intent"] == "pantry_add":
+        unit = units.normalize(cmd["unit"] or "pz")
+        qty = parse_float(cmd["quantity"], 1) or 1
+        iid = get_or_create_ingredient(db, cmd["name"], unit)
+        pantry_add_row(db, iid, cmd["name"], qty, unit)
+        db.commit()
+        return jsonify({**cmd, "message": f"In dispensa: {cmd['name']} {units.format_quantity(qty)} {unit}",
+                        "reload": ["pantry", "shopping"]})
+
+    if cmd["intent"] == "shopping_add":
+        unit = units.normalize(cmd["unit"] or "pz")
+        qty = parse_float(cmd["quantity"], 1) or 1
+        row = one(db.execute("SELECT * FROM ingredients WHERE name = ? COLLATE NOCASE", (cmd["name"],)))
+        category = row["category"] if row else "Altro"
+        iid = get_or_create_ingredient(db, cmd["name"], unit, category)
+        add_to_shopping(db, iid, cmd["name"], qty, unit, category)
+        db.commit()
+        return jsonify({**cmd, "message": f"In lista: {cmd['name']} {units.format_quantity(qty)} {unit}",
+                        "reload": ["shopping"]})
+
+    if cmd["intent"] == "term_add":
+        current = get_profile(db)["restriction_list"]
+        aggiunti = [t for t in cmd["terms"] if t.lower() not in {c.lower() for c in current}]
+        profile = save_profile(db, {"restrictions": current + aggiunti})
+        if not aggiunti:
+            return jsonify({**cmd, "message": "Restrizioni già presenti nel profilo",
+                            "reload": []})
+        return jsonify({**cmd, "message": "Aggiunto al profilo: " + ", ".join(aggiunti),
+                        "restriction_list": profile["restriction_list"],
+                        "reload": ["profile"]})
+
+    if cmd["intent"] == "recipe_search":
+        return jsonify({**cmd, "message": f"Cerco «{cmd['query']}»", "query": cmd["query"]})
+
+    return jsonify({**cmd, "message": "Non ho capito il comando"}), 422
+
+
+def pantry_add_row(db, iid, name, qty, unit):
+    """Accoda alla riga esistente se l'unità è compatibile, altrimenti ne crea una."""
+    existing = one(db.execute(
+        "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
+    if not existing:
+        for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
+            converted = units.convert(qty, unit, cand["unit"])
+            if converted is not None:
+                db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                           (units.format_quantity(converted), cand["id"]))
+                return
+    if existing:
+        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                   (units.format_quantity(qty), existing["id"]))
+    else:
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)",
+                   (iid, qty, unit))
+
+
+def add_to_shopping(db, iid, name, qty, unit, category):
+    """Fonde con una voce aperta dello stesso ingrediente, come la generazione."""
+    row = one(db.execute(
+        "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0 AND unit = ?",
+        (iid, unit)))
+    if not row:
+        for cand in db.execute(
+            "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0", (iid,)
+        ):
+            converted = units.convert(qty, unit, cand["unit"])
+            if converted is not None:
+                db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?",
+                           (units.format_quantity(cand["quantity"] + converted), cand["id"]))
+                return
+    if row:
+        db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?",
+                   (units.format_quantity(row["quantity"] + qty), row["id"]))
+    else:
+        db.execute(
+            "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
+            (name, qty, unit, category, iid))
+
+
+# ------------------------------------------------------------------ igiene
+# Le attivita' di pulizia e quando vanno rifatte. Il catalogo sta in `chores`,
+# la cronologia in `chore_log`; le scadenze si calcolano a ogni lettura da
+# `igiene.scadenza`, non si salvano.
+
+def _oggi(db):
+    """La data di oggi, in un unico posto.
+
+    Si puo' forzare con ?date= (aaaa-mm-gg): serve al calendario per mostrare un
+    giorno scelto e ai test per non dipendere dalla data reale.
+    """
+    richiesta = (request.args.get("date") or "").strip()
+    if richiesta:
+        try:
+            return datetime.date.fromisoformat(richiesta).isoformat()
+        except ValueError:
+            pass
+    return datetime.date.today().isoformat()
+
+
+def _ultime(db):
+    """L'ultima volta che ogni attivita' e' stata fatta: {chore_id: 'aaaa-mm-gg'}."""
+    cur = db.execute("SELECT chore_id, MAX(date) AS ultima FROM chore_log GROUP BY chore_id")
+    return {r["chore_id"]: r["ultima"] for r in cur}
+
+
+def _chore_o_404(db, cid):
+    row = one(db.execute("SELECT * FROM chores WHERE id = ?", (cid,)))
+    if row is None:
+        return None, bad_request("Attività non trovata", 404)
+    return row, None
+
+
+@app.route("/api/chores/meta")
+def chores_meta():
+    """Le scelte fisse della sezione: frequenze, ambienti, mesi, giorni."""
+    db = get_db()
+    return jsonify({
+        "frequencies": igiene.FREQUENZE,
+        "areas": igiene.AMBIENTI,
+        "days": [{"key": i, "label": g} for i, g in enumerate(igiene.GIORNI_SETTIMANA)],
+        "months": igiene.mesi(),
+        "chore_day": get_profile(db).get("chore_day") or 0,
+    })
+
+
+@app.route("/api/chores", methods=["GET"])
+def chores_list():
+    """Il catalogo con lo stato di scadenza, e cosa c'e' da fare oggi."""
+    db = get_db()
+    oggi = _oggi(db)
+    ultime = _ultime(db)
+    attivita = rows(db.execute("SELECT * FROM chores ORDER BY frequency, area, name"))
+
+    for voce in attivita:
+        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi, voce["month"]))
+
+    giorno = get_profile(db).get("chore_day") or 0
+    piano = igiene.piano(attivita, ultime, oggi, giorno)
+    return jsonify({"oggi": oggi, "attivita": attivita, "piano": piano,
+                    "attive": sum(1 for v in attivita if v["active"])})
+
+
+@app.route("/api/chores", methods=["POST"])
+def chores_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return bad_request("Il nome è obbligatorio")
+    freq = data.get("frequency") or "settimanale"
+    if freq not in igiene.CADENZE and freq != "stagionale":
+        return bad_request("Frequenza non valida")
+    month = data.get("month")
+    if freq == "stagionale":
+        if not isinstance(month, int) or not 1 <= month <= 12:
+            return bad_request("Un'attività annuale richiede un mese da 1 a 12")
+    else:
+        month = None
+    try:
+        cur = db.execute(
+            """INSERT INTO chores (name, area, frequency, minutes, month)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, data.get("area") or "Tutta la casa", freq,
+             max(0, int(data.get("minutes") or 15)), month))
+    except sqlite3.IntegrityError:
+        return bad_request("Esiste già un'attività con questo nome")
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM chores WHERE id = ?", (cur.lastrowid,)))), 201
+
+
+@app.route("/api/chores/<int:cid>", methods=["PUT", "DELETE"])
+def chores_modify(cid):
+    db = get_db()
+    row, errore = _chore_o_404(db, cid)
+    if errore:
+        return errore
+    if request.method == "DELETE":
+        db.execute("DELETE FROM chores WHERE id = ?", (cid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    campi = {}
+    if "name" in data:
+        nome = (data.get("name") or "").strip()
+        if not nome:
+            return bad_request("Il nome è obbligatorio")
+        campi["name"] = nome
+    if "area" in data:
+        campi["area"] = data["area"] or "Tutta la casa"
+    if "minutes" in data:
+        try:
+            campi["minutes"] = max(0, int(data["minutes"]))
+        except (TypeError, ValueError):
+            return bad_request("Minuti non validi")
+    if "active" in data:
+        campi["active"] = 1 if data["active"] else 0
+    if "frequency" in data:
+        if data["frequency"] not in igiene.CADENZE and data["frequency"] != "stagionale":
+            return bad_request("Frequenza non valida")
+        campi["frequency"] = data["frequency"]
+    # il mese segue la frequenza: si azzera quando l'attivita' non e' annuale,
+    # altrimenti resterebbe un mese su una voce che non lo usa
+    freq_finale = campi.get("frequency", row["frequency"])
+    if freq_finale == "stagionale":
+        mese = data.get("month", row["month"])
+        if not isinstance(mese, int) or not 1 <= mese <= 12:
+            return bad_request("Un'attività annuale richiede un mese da 1 a 12")
+        campi["month"] = mese
+    else:
+        campi["month"] = None
+
+    try:
+        assignments = ", ".join(f"{k} = ?" for k in campi)
+        db.execute(f"UPDATE chores SET {assignments} WHERE id = ?", [*campi.values(), cid])
+    except sqlite3.IntegrityError:
+        return bad_request("Esiste già un'attività con questo nome")
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM chores WHERE id = ?", (cid,))))
+
+
+@app.route("/api/chores/<int:cid>/done", methods=["POST", "DELETE"])
+def chores_done(cid):
+    """Segna un'attivita' come fatta oggi, o annulla l'ultima volta.
+
+    I minuti sono il tempo impiegato davvero, se misurato: 0 significa "fatto,
+    ma non cronometrato" e non va confuso con un'attivita' da zero minuti.
+    """
+    db = get_db()
+    _row, errore = _chore_o_404(db, cid)
+    if errore:
+        return errore
+
+    if request.method == "DELETE":
+        ultima = one(db.execute(
+            "SELECT * FROM chore_log WHERE chore_id = ? ORDER BY date DESC, id DESC LIMIT 1", (cid,)))
+        if ultima is None:
+            return bad_request("Nessun completamento da annullare", 404)
+        db.execute("DELETE FROM chore_log WHERE id = ?", (ultima["id"],))
+        db.commit()
+        return jsonify({"ok": True, "annullata": ultima["date"]})
+
+    data = request.get_json(silent=True) or {}
+    try:
+        minuti = max(0, int(data.get("minutes") or 0))
+    except (TypeError, ValueError):
+        return bad_request("Minuti non validi")
+    giorno = (data.get("date") or _oggi(db))
+    try:
+        giorno = datetime.date.fromisoformat(str(giorno)[:10]).isoformat()
+    except ValueError:
+        return bad_request("Data non valida")
+
+    db.execute("INSERT INTO chore_log (chore_id, date, minutes) VALUES (?, ?, ?)",
+               (cid, giorno, minuti))
+    db.commit()
+    return jsonify({"ok": True, "date": giorno, "minutes": minuti})
+
+
+@app.route("/api/chores/history")
+def chores_history():
+    """Le ultime pulizie fatte, con il tempo impiegato quando e' stato misurato."""
+    db = get_db()
+    limite = request.args.get("limit", type=int) or 30
+    cur = db.execute(
+        """SELECT l.id, l.chore_id, l.date, l.minutes, c.name, c.area, c.frequency
+           FROM chore_log l JOIN chores c ON c.id = l.chore_id
+           ORDER BY l.date DESC, l.id DESC LIMIT ?""",
+        (max(1, min(limite, 200)),))
+    return jsonify(rows(cur))
+
+
+@app.route("/api/chores/summary")
+def chores_summary():
+    """Quanto tempo e' andato nelle pulizie: oggi, questa settimana, questo mese.
+
+    Si contano solo i completamenti cronometrati: le attivita' spuntate senza
+    timer non hanno un tempo, e contarle come zero abbasserebbe la media.
+    """
+    db = get_db()
+    oggi = datetime.date.fromisoformat(_oggi(db))
+    lunedi = oggi - datetime.timedelta(days=oggi.weekday())
+    inizio_mese = oggi.replace(day=1)
+
+    def totale(da):
+        row = one(db.execute(
+            "SELECT COUNT(*) AS volte, COALESCE(SUM(minutes), 0) AS minuti FROM chore_log WHERE date >= ?",
+            (da.isoformat(),)))
+        return {"volte": row["volte"], "minuti": row["minuti"]}
+
+    return jsonify({
+        "oggi": totale(oggi),
+        "settimana": {**totale(lunedi), "dal": lunedi.isoformat()},
+        "mese": {**totale(inizio_mese), "dal": inizio_mese.isoformat()},
+    })
+
+
+# ---------------------------------------------------------------------- faq
+# Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le
+# categorie stanno in `faq.py`, le voci nella tabella `faq`.
+#
+# La ricerca e' lato client, come per le ricette: l'elenco e' piccolo e filtrare
+# in locale e' immediato, senza una richiesta a ogni lettera digitata.
+
+
+def _faq_o_404(db, fid):
+    row = one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,)))
+    if row is None:
+        return None, bad_request("Voce non trovata", 404)
+    return row, None
+
+
+def _faq_campi(data, row=None):
+    """I campi validati per un inserimento o una modifica.
+
+    Restituisce (campi, errore). In modifica si toccano solo i campi presenti,
+    come per il profilo: un salvataggio parziale non deve azzerare il resto.
+    """
+    campi = {}
+    if row is None or "question" in data:
+        domanda = (data.get("question") or "").strip()
+        if not domanda:
+            return None, bad_request("Il titolo è obbligatorio")
+        campi["question"] = domanda
+    if row is None or "answer" in data:
+        campi["answer"] = (data.get("answer") or "").strip()
+    if "category" in data:
+        campi["category"] = faq.categoria_valida(data.get("category"))
+    for chiave in ("secret", "pinned"):
+        if chiave in data:
+            campi[chiave] = 1 if data[chiave] else 0
+    return campi, None
+
+
+@app.route("/api/faq/meta")
+def faq_meta():
+    """Le scelte fisse della sezione: le categorie, con quante voci hanno."""
+    db = get_db()
+    conteggi = {r["category"]: r["n"] for r in db.execute(
+        "SELECT category, COUNT(*) AS n FROM faq GROUP BY category")}
+    return jsonify({
+        "categories": [{**c, "count": conteggi.get(c["key"], 0)} for c in faq.categorie()],
+        "default_category": faq.CATEGORIA_DEFAULT,
+    })
+
+
+@app.route("/api/faq", methods=["GET"])
+def faq_list():
+    """Tutte le voci, ordinate: in evidenza, poi per categoria, poi per titolo."""
+    db = get_db()
+    voci = rows(db.execute("SELECT * FROM faq"))
+    for v in voci:
+        # l'etichetta della categoria arriva dal server: il frontend non deve
+        # avere una seconda copia della mappa, che si disallineerebbe
+        v["category_label"] = faq.etichetta(v["category"])
+    return jsonify({
+        "voci": faq.ordina(voci),
+        "totale": len(voci),
+        "riservate": sum(1 for v in voci if v["secret"]),
+    })
+
+
+@app.route("/api/faq", methods=["POST"])
+def faq_add():
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    campi, errore = _faq_campi(data)
+    if errore:
+        return errore
+    cur = db.execute(
+        """INSERT INTO faq (category, question, answer, secret, pinned)
+           VALUES (?, ?, ?, ?, ?)""",
+        (campi.get("category", faq.CATEGORIA_DEFAULT), campi["question"],
+         campi.get("answer", ""), campi.get("secret", 0), campi.get("pinned", 0)))
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (cur.lastrowid,)))), 201
+
+
+@app.route("/api/faq/<int:fid>", methods=["PUT", "DELETE"])
+def faq_modify(fid):
+    db = get_db()
+    _row, errore = _faq_o_404(db, fid)
+    if errore:
+        return errore
+    if request.method == "DELETE":
+        db.execute("DELETE FROM faq WHERE id = ?", (fid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    campi, errore = _faq_campi(data, row=_row)
+    if errore:
+        return errore
+    if not campi:
+        return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
+
+    assignments = ", ".join(f"{k} = ?" for k in campi)
+    db.execute(f"UPDATE faq SET {assignments} WHERE id = ?", [*campi.values(), fid])
+    db.commit()
+    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=True)

@@ -1,0 +1,994 @@
+/* Font ospitati localmente: l'app non dipende da una CDN esterna.
+   Fraunces (serif, per i titoli) e Hanken Grotesk (sans, per l'interfaccia). */
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/static/fonts/hanken-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* ============================================================
+   Cucina & Spesa — stile editoriale, carta e inchiostro
+   Titoli in Fraunces (serif), interfaccia in Hanken Grotesk.
+   L'eleganza sta in tipografia, spaziatura e linee sottili:
+   niente ombre pesanti, niente decorazioni superflue.
+   ============================================================ */
+
+:root {
+  --paper: #fbf9f5;
+  --surface: #ffffff;
+  --ink: #26221e;
+  --muted: #6b6157;
+  --line: #ece5db;
+  --line-strong: #ddd3c5;
+
+  --accent: #a8452b;
+  --accent-deep: #8a3821;
+  --accent-soft: #f8eae3;
+
+  --green: #4a6b4a;
+  --green-soft: #eef2eb;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(38, 34, 30, .04), 0 10px 28px -18px rgba(38, 34, 30, .22);
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Hanken Grotesk', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-top: env(safe-area-inset-top);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--accent-soft); }
+
+/* ---------- pagina iniziale ----------
+   Le tre sezioni sono la prima cosa che si vede: schede grandi, una per
+   ambito, con lo stesso linguaggio visivo del resto (carta, inchiostro,
+   un solo accento) invece di un menu di voci uguali. */
+.home {
+  max-width: 960px; margin: 0 auto;
+  padding: 56px 28px 72px;
+  min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+}
+.home-hero { margin-bottom: 34px; }
+.home-kicker {
+  margin: 0 0 10px; font-size: 12px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+}
+.home-hero h1 {
+  margin: 0 0 14px; font-family: var(--font-display);
+  font-size: clamp(34px, 7vw, 52px); font-weight: 500;
+  font-variation-settings: 'opsz' 144;
+  letter-spacing: -.025em; line-height: 1.05;
+}
+.home-lead {
+  margin: 0; max-width: 54ch; font-size: 16px; color: var(--muted); line-height: 1.55;
+}
+
+.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+
+/* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
+.home-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  text-align: left; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px 20px; cursor: pointer; font-weight: 400;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.home-card:hover {
+  border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-2px);
+}
+.home-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.home-emoji { font-size: 30px; line-height: 1; }
+.home-name {
+  font-family: var(--font-display); font-size: 21px; font-weight: 500;
+  letter-spacing: -.01em;
+}
+.home-desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.home-go {
+  margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent-deep);
+  letter-spacing: .01em;
+}
+
+/* Profilo da completare: si segnala sulla scheda della sezione interessata. */
+.home-todo {
+  align-self: flex-start; margin-top: 2px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent-deep); background: var(--accent-soft);
+  padding: 3px 8px; border-radius: 999px;
+}
+
+/* Scelta dei pasti al giorno: una scheda per numero, con i nomi dei pasti.
+   Toccare tutta la scheda e' piu' comodo che centrare un radio su telefono. */
+.meal-choice {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px; margin: 4px 0 2px;
+}
+.meal-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 8px; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 12px;
+  cursor: pointer; font-weight: 400; line-height: 1.3;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.meal-opt:hover { border-color: var(--accent); }
+.meal-opt.on {
+  border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.meal-opt.on .meal-num { color: var(--accent-deep); }
+.meal-num {
+  font-family: var(--font-display); font-size: 24px; font-weight: 600;
+  letter-spacing: -.02em; color: var(--ink);
+}
+.meal-names {
+  font-size: 11.5px; color: var(--muted); text-align: center;
+  letter-spacing: .005em;
+}
+
+/* Sezione aperta ma ancora senza funzioni: si dice cosa ci sara', senza
+   inventare dati che non esistono. */
+.empty-state {
+  max-width: 52ch; margin: 40px auto; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.empty-emoji { font-size: 40px; line-height: 1; }
+.empty-state h2 {
+  margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 500;
+  letter-spacing: -.01em;
+}
+.empty-state p { margin: 0; color: var(--muted); line-height: 1.6; }
+
+/* Ritorno alle sezioni: nella testata, sopra il titolo dell'area aperta. */
+.back-home {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0 0 10px;
+  color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer;
+  letter-spacing: .01em;
+}
+.back-home:hover { color: var(--accent-deep); }
+
+/* ---------- testata e schede ---------- */
+header {
+  padding: 30px 28px 0;
+  max-width: 1140px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 20px;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 500;
+  font-variation-settings: 'opsz' 120;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+}
+
+/* La barra resta agganciata in alto: su telefono si cambia scheda senza risalire. */
+nav {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  max-width: 1140px; margin: 0 auto; padding: 0 28px;
+  position: sticky; top: env(safe-area-inset-top); z-index: 20;
+  background: var(--paper);
+}
+
+nav button {
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 13px; margin-bottom: -1px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500;
+  letter-spacing: .005em; color: var(--muted);
+  transition: color .16s ease, border-color .16s ease;
+}
+nav button:hover { color: var(--ink); }
+nav button.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+
+main { max-width: 1140px; margin: 0 auto; padding: 28px; padding-bottom: 100px; }
+
+.tab { display: none; }
+.tab.active { display: block; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+.spacer { flex: 1; }
+
+/* ---------- controlli ---------- */
+button, input, select, textarea {
+  font-family: inherit; font-size: inherit; color: inherit;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--surface); padding: 8px 11px;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+button { cursor: pointer; font-weight: 500; }
+button:hover { border-color: var(--muted); }
+button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+}
+button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+button.icon {
+  border: none; background: none; font-size: 17px; padding: 4px 8px;
+  color: var(--muted); box-shadow: none;
+}
+button.icon:hover { color: var(--accent); background: none; }
+
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+}
+
+/* cifre incolonnate: le quantita' non ballano fra una riga e l'altra */
+.qty-input, .unit-input, .qty-cell, .shop-item .qty, .slot .rname {
+  font-variant-numeric: tabular-nums;
+}
+.qty-input { width: 90px; }
+.unit-input { width: 110px; }
+.qty-cell { width: 90px; }
+
+/* ---------- piano settimanale ---------- */
+.plan-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+
+.day {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px; min-height: 190px;
+  box-shadow: var(--shadow);
+}
+.day.today { border-color: var(--accent); }
+.day.today h3 { color: var(--accent); }
+.day h3 {
+  margin: 0 0 10px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+}
+
+.slot {
+  border: 1px dashed var(--line-strong); border-radius: 8px;
+  padding: 7px 9px; margin-bottom: 6px; font-size: 13px; cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.slot:hover { border-color: var(--accent); background: var(--accent-soft); }
+.slot .meal {
+  display: block; font-size: 9.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted);
+}
+.slot .rname { font-weight: 500; font-family: var(--font-display); font-size: 13.5px; }
+.slot.filled { border-style: solid; border-color: var(--green); background: var(--green-soft); }
+.slot.filled .meal { color: var(--green); }
+
+/* ---------- schede ricette ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; display: flex; flex-direction: column; gap: 7px;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.card[data-recipe] { cursor: pointer; }
+.card h3 {
+  margin: 0; font-family: var(--font-display);
+  font-size: 17px; font-weight: 500; letter-spacing: -.005em; line-height: 1.25;
+}
+.card .meta { font-size: 12px; color: var(--muted); letter-spacing: .01em; }
+.card .ings { font-size: 12.5px; color: var(--muted); }
+.card .actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; }
+.card .actions button { font-size: 12px; padding: 5px 10px; }
+
+/* Foto: piena larghezza della scheda, proporzione fissa 3:2 e ritaglio
+   centrato, cosi' le schede restano allineate anche con foto diverse. */
+.card-photo {
+  margin: -16px -16px 3px; overflow: hidden;
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  background: var(--accent-soft); aspect-ratio: 3 / 2;
+}
+.card-photo img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform .35s ease;
+}
+.card:hover .card-photo img { transform: scale(1.025); }
+
+/* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */
+.photo-field { display: flex; gap: 12px; align-items: flex-start; }
+.photo-field img {
+  width: 132px; aspect-ratio: 3 / 2; object-fit: cover; flex: none;
+  border: 1px solid var(--line-strong); border-radius: 8px; background: var(--accent-soft);
+}
+.photo-field img[hidden] { display: none; }
+.photo-controls { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.photo-controls select, .photo-controls input { width: 100%; }
+.photo-controls button { align-self: flex-start; font-size: 12px; padding: 5px 10px; }
+
+@media (max-width: 560px) {
+  .photo-field { flex-direction: column; }
+  .photo-field img { width: 100%; }
+}
+
+/* ---------- tabelle ---------- */
+table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+}
+th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--line); }
+th {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); background: #fcfaf7;
+}
+tbody tr:hover td { background: #fdfbf8; }
+tr:last-child td { border-bottom: none; }
+
+/* ---------- lista della spesa ---------- */
+.shop-list { display: flex; flex-direction: column; gap: 16px; }
+.shop-group h3 {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); margin: 0 0 7px;
+}
+.shop-item {
+  display: flex; align-items: center; gap: 11px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 13px; margin-bottom: 6px;
+  transition: border-color .16s ease;
+}
+.shop-item:hover { border-color: var(--line-strong); }
+.shop-item.done { opacity: .48; }
+.shop-item.done .name { text-decoration: line-through; }
+.shop-item .name { font-weight: 500; flex: 1; }
+.pantry-note { display: block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.shop-item.done .pantry-note { text-decoration: none; }
+.shop-item .qty { color: var(--muted); font-size: 13px; }
+.shop-item input[type=checkbox] {
+  width: 18px; height: 18px; accent-color: var(--green); cursor: pointer;
+}
+
+/* filtro per giorno: si compra ciò che serve, quando serve */
+.day-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.day-filter button {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: 12.5px;
+}
+.day-filter button:hover { border-color: var(--line-strong); color: var(--ink); }
+.day-filter button.active {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep);
+  font-weight: 600;
+}
+.day-note {
+  display: block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px;
+}
+.perish-hint {
+  margin: 0 0 14px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px;
+  background: var(--green-soft); color: var(--green); border: 1px solid transparent;
+}
+
+/* ---------- finestra modale ---------- */
+.modal {
+  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
+}
+.modal.hidden, .toast.hidden, .hidden { display: none !important; }
+.modal-box {
+  background: var(--surface); border-radius: 14px; width: min(620px, 100%);
+  max-height: 88vh; overflow: auto; padding: 24px;
+  box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .45);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
+  border-bottom: 1px solid var(--line); padding-bottom: 14px;
+}
+.modal-head h2 {
+  margin: 0; font-family: var(--font-display);
+  font-size: 21px; font-weight: 500; letter-spacing: -.01em;
+}
+.field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 5px; }
+.field label {
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .09em;
+}
+.field textarea { min-height: 90px; resize: vertical; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > input, .row > select { flex: 1; min-width: 0; }
+.ing-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.ing-row input:first-child { flex: 3; }
+.ing-row input:nth-child(2) { flex: 1; max-width: 90px; }
+.ing-row input:nth-child(3) { flex: 1; max-width: 120px; }
+
+/* riga del pulsante di conferma in fondo al modale */
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+
+/* --- preparazione di una ricetta --- */
+.detail-photo {
+  margin: -24px -24px 16px; overflow: hidden;
+  border-radius: 13px 13px 0 0; background: var(--accent-soft); aspect-ratio: 3 / 2;
+}
+.detail-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.detail-meta { margin-bottom: 16px; }
+.detail-sub {
+  margin: 18px 0 8px; font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted);
+}
+.detail-ings {
+  margin: 0; padding: 0; list-style: none;
+  border-top: 1px solid var(--line);
+}
+.detail-ings li {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.detail-ings .qty { color: var(--muted); white-space: nowrap; }
+.steps { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.6; }
+.steps li { margin-bottom: 9px; padding-left: 3px; }
+.steps li::marker { color: var(--accent); font-weight: 600; }
+.detail-unsafe {
+  margin: 16px 0 0; padding: 9px 12px; border-radius: 8px;
+  background: #fbeae6; border: 1px solid #eecdc2;
+  color: var(--accent-deep); font-size: 12.5px;
+}
+.muted { color: var(--muted); }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
+  font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(38, 34, 30, .5);
+}
+
+/* ---------- comandi vocali ----------
+   Il pulsante è un cerchio in basso a destra: resta sotto il pollice su telefono
+   e non copre i contenuti. Durante l'ascolto pulsa, così si vede che è attivo. */
+.mic {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  width: 58px; height: 58px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--accent); font-size: 24px; line-height: 1;
+  box-shadow: 0 10px 26px -12px rgba(38, 34, 30, .4);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
+.mic.on { background: var(--accent); color: #fff; border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
+.mic-icon { pointer-events: none; }
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 69, 43, .45); }
+  50% { box-shadow: 0 0 0 12px rgba(168, 69, 43, 0); }
+}
+
+.voice {
+  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center;
+  padding: 20px; z-index: 70;
+}
+.voice-box {
+  background: var(--surface); border-radius: 16px; width: min(560px, 100%);
+  padding: 20px; box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .5);
+  /* su schermi bassi (telefono piccolo, tastiera aperta) il pannello scorre
+     dentro di sé invece di spingere il pulsante di chiusura fuori dallo schermo */
+  max-height: 100%; overflow-y: auto;
+}
+.voice-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.voice-head strong {
+  font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: -.01em;
+}
+.voice-head strong[data-tipo="ok"] { color: var(--green); }
+.voice-head strong[data-tipo="err"] { color: var(--accent-deep); }
+.voice-heard {
+  margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--muted);
+  min-height: 44px; padding: 11px 13px; border-radius: 10px;
+  background: var(--paper); border: 1px solid var(--line);
+}
+.voice-examples { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.voice-ex {
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: 12px;
+}
+.voice-ex:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+.voice-result {
+  margin: 0 0 14px; padding: 10px 13px; border-radius: 8px; font-size: 13.5px;
+}
+.voice-result.ok { background: var(--green-soft); color: var(--green); }
+.voice-result.err { background: #fbeae6; color: var(--accent-deep); }
+.voice-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  padding-top: 14px; border-top: 1px solid var(--line);
+}
+.voice-foot + .voice-foot { margin-top: 4px; padding-top: 4px; border-top: none; }
+/* il selettore del timbro: sobrio, ma toccabile e con il testo ben leggibile */
+#voice-pick {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 9px; min-height: 34px;
+}
+#voice-pick:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- allergie e intolleranze ---------- */
+.banner {
+  background: var(--accent-soft); border: 1px solid #efd7cc;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: 13px 17px; margin-bottom: 20px;
+}
+.banner strong { display: block; margin-bottom: 5px; font-weight: 600; letter-spacing: .005em; }
+.banner p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px; max-width: 640px;
+}
+.hint { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.toggle { display: flex; align-items: center; gap: 7px; font-size: 13.5px; cursor: pointer; }
+.section-title {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted); margin: 28px 0 12px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.chip {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 5px 13px; font-family: inherit; font-size: 13px;
+  font-weight: 500; cursor: pointer;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+.chip:hover { border-color: var(--accent); color: var(--ink); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+/* --- ricette preferite --- */
+/* la stella accanto al nome resta discreta: e' un promemoria, non un'allerta */
+.fav-star { color: #d4a24c; font-size: 15px; margin-left: 6px; }
+/* il pulsante preferita sta a sinistra, separato dalle azioni sulla ricetta */
+.card .actions .fav-toggle { margin-right: auto; color: var(--muted); }
+.card .actions .fav-toggle.on { color: var(--accent); font-weight: 600; }
+
+/* testo introduttivo dei passi di onboarding */
+.lead { margin: 0 0 16px; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+/* il selettore delle preferite sta anche nei modali stretti: la ricerca occupa
+   tutta la larghezza disponibile */
+.fav-search { width: 100%; margin-bottom: 4px; }
+
+/* etichette di allerta su ricette e piano */
+.card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 7px; }
+.card.unsafe { border-color: #e6c3b8; }
+.slot.unsafe { border-color: #d99b85; background: #fdf1ec; }
+.badge {
+  display: inline-block; background: #fbeae6; color: var(--accent-deep);
+  border: 1px solid #eecdc2; border-radius: 999px;
+  padding: 1px 9px; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .02em; margin: 4px 4px 0 0;
+}
+.warn-icon { font-size: 12px; margin-left: 4px; }
+
+.report-row {
+  display: flex; gap: 12px; align-items: baseline; padding: 7px 0;
+  border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.report-row:last-child { border-bottom: none; }
+.report-row .ing { font-weight: 500; min-width: 170px; }
+.report-row.unsafe .ing { color: var(--accent-deep); }
+.report-row .tags { color: var(--muted); }
+
+/* ---------- comparse morbide ---------- */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.tab.active .card, .tab.active .day, .tab.active .shop-group { animation: rise .3s ease-out both; }
+.tab.active .card:nth-child(2), .tab.active .day:nth-child(2) { animation-delay: .03s; }
+.tab.active .card:nth-child(3), .tab.active .day:nth-child(3) { animation-delay: .06s; }
+.tab.active .card:nth-child(4), .tab.active .day:nth-child(4) { animation-delay: .09s; }
+.tab.active .card:nth-child(5), .tab.active .day:nth-child(5) { animation-delay: .12s; }
+.tab.active .card:nth-child(n+6), .tab.active .day:nth-child(n+6) { animation-delay: .15s; }
+
+/* ---------- pulizie e igiene ----------
+   Il metodo: tre blocchi per frequenza piu' il calendario annuale. La gerarchia
+   visiva segue l'ordine d'uso — prima cosa c'e' da fare adesso (grande, con il
+   tempo stimato), poi la routine, poi l'anno. Le righe sono liste, non tabelle:
+   si spuntano con un tocco e su telefono restano leggibili. */
+
+.ch-hero {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;
+  flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px 24px; box-shadow: var(--shadow);
+}
+.ch-hero-day {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+}
+.ch-hero-num { display: flex; align-items: baseline; gap: 10px; }
+.ch-hero-num strong {
+  font-family: var(--font-display); font-size: 40px; font-weight: 500;
+  font-variation-settings: 'opsz' 144; line-height: 1; letter-spacing: -.02em;
+}
+.ch-hero-num span { color: var(--muted); font-size: 14px; }
+.ch-hero-time { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.ch-hero-min {
+  font-family: var(--font-display); font-size: 22px; font-weight: 500;
+  color: var(--accent); line-height: 1.1;
+}
+.ch-hero-min-lab { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.ch-hero-done { font-size: 12px; color: var(--green); margin-top: 4px; }
+.ch-pill {
+  display: inline-block; margin: 12px 0 0; padding: 4px 12px;
+  background: var(--accent-soft); color: var(--accent-deep);
+  border-radius: 999px; font-size: 12px; font-weight: 600;
+}
+
+.ch-sub {
+  font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+  margin: 22px 0 8px; color: var(--ink);
+}
+.ch-hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+.ch-count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+.ch-day { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+.ch-todo { list-style: none; margin: 0; padding: 0; }
+.ch-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 10px;
+  padding: 9px 4px; border-bottom: 1px solid var(--line);
+}
+.ch-row:last-child { border-bottom: none; }
+/* una voce spuntata resta leggibile ma si ritira: si vede che e' fatta senza
+   sparire, altrimenti sembra che il tocco non abbia funzionato */
+.ch-row.done .ch-name, .ch-row.done .ch-when { color: var(--muted); }
+.ch-row.done .ch-name { text-decoration: line-through; text-decoration-color: var(--line-strong); }
+
+.ch-check {
+  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px; line-height: 1;
+}
+.ch-row.done .ch-check {
+  background: var(--green); border-color: var(--green); color: #fff; font-weight: 700;
+}
+.ch-name { min-width: 0; }
+.ch-area {
+  font-size: 11px; color: var(--muted); background: var(--paper);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px;
+  white-space: nowrap;
+}
+.ch-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ch-min { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ch-clock {
+  width: 28px; height: 28px; padding: 0; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; color: var(--muted);
+}
+.ch-clock:hover { color: var(--accent); border-color: var(--accent); }
+
+/* il blocco del mese: mensili e annuali stanno insieme, con il focus che dice
+   perche' si fanno proprio adesso */
+.ch-month {
+  margin-top: 26px; padding: 18px 20px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.ch-month-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; flex-wrap: wrap;
+}
+.ch-month-head .ch-sub { margin: 0; font-size: 13.5px; }
+.ch-month-lab { font-size: 12px; color: var(--muted); }
+.ch-focus {
+  margin: 6px 0 4px; font-size: 13px; color: var(--muted); font-style: italic;
+}
+
+.ch-block { margin-bottom: 8px; }
+
+/* regola dei 15 minuti: un'uscita di sicurezza per le giornate piene, non un
+   comando principale — discreta, ma a un tocco di distanza */
+.ch-blitz-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 14px;
+}
+.ch-blitz-row button { font-size: 13px; white-space: nowrap; }
+.ch-blitz-hint { font-size: 12px; color: var(--muted); }
+
+/* calendario annuale: un mese per riga, si apre quello corrente */
+.ch-year { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.ch-month-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.ch-month-card[open] { grid-column: 1 / -1; }
+.ch-month-card.current { border-color: var(--accent); }
+.ch-month-card summary {
+  cursor: pointer; display: flex; align-items: baseline; gap: 9px;
+  list-style: none; flex-wrap: wrap;
+}
+.ch-month-card summary::-webkit-details-marker { display: none; }
+.ch-month-name {
+  font-family: var(--font-display); font-size: 16px; font-weight: 500; min-width: 92px;
+}
+.ch-month-title { font-size: 12.5px; color: var(--muted); flex: 1; }
+.ch-month-count {
+  font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+  background: var(--paper); border-radius: 999px; padding: 1px 9px;
+}
+.ch-month-card .ch-todo { margin-top: 10px; }
+
+/* catalogo: righe piu' fitte, con i comandi in coda */
+.ch-catalog { list-style: none; margin: 0 0 6px; padding: 0; }
+.ch-cat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+  align-items: center; gap: 8px;
+  padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.ch-cat-row:last-child { border-bottom: none; }
+/* disattivata: resta in elenco perche' si puo' riattivare, ma si vede che e' fuori */
+.ch-cat-row.off { opacity: .48; }
+.ch-cat-row.off .ch-name { text-decoration: line-through; }
+.ch-cat-row button { font-size: 12px; padding: 4px 10px; }
+.ch-month-tag {
+  font-size: 11px; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 8px;
+}
+
+/* --- timer ---
+   Barra fissa in basso: si avvia e si va a pulire, quindi deve restare visibile.
+   Sta sopra il microfono (z 40) e sotto il toast (z 100). */
+.ch-timer {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: max(16px, env(safe-area-inset-bottom)); z-index: 60;
+  display: flex; align-items: center; gap: 18px;
+  background: var(--ink); color: #fff;
+  border-radius: 999px; padding: 10px 12px 10px 22px;
+  box-shadow: 0 16px 40px -14px rgba(38, 34, 30, .6);
+  font-size: 13.5px;
+}
+.ch-timer-info { display: flex; align-items: baseline; gap: 12px; }
+.ch-timer-what { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-timer-clock {
+  font-variant-numeric: tabular-nums; font-weight: 600; font-size: 16px;
+  font-family: var(--font-display);
+}
+.ch-timer-actions { display: flex; gap: 6px; }
+.ch-timer button { font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
+.ch-timer button.primary { background: var(--accent); border-color: var(--accent); }
+.ch-timer button:not(.primary) {
+  background: none; border-color: rgba(255, 255, 255, .3); color: #fff;
+}
+.ch-timer button:not(.primary):hover { border-color: #fff; }
+/* tempo scaduto nella regola dei 15 minuti: si vede, non suona — un allarme
+   sonoro mentre si pulisce sarebbe solo fastidioso */
+.ch-timer.scaduto { background: var(--accent-deep); }
+.ch-timer.scaduto .ch-timer-clock { font-size: 15px; }
+
+/* azione secondaria: stesso ingombro del pulsante normale, meno peso visivo */
+.ghost {
+  background: none; border-color: transparent; color: var(--muted);
+}
+.ghost:hover { border-color: var(--line-strong); color: var(--ink); background: var(--surface); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important; transition: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .plan-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============================================================
+   FAQ — informazioni utili
+   ============================================================ */
+.faq-count { color: var(--muted); font-size: 12.5px; margin: -8px 0 14px; }
+.faq-n { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.faq-none { color: var(--muted); padding: 20px 2px; }
+
+.faq-item {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+}
+.faq-item-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.faq-q { font-weight: 600; font-size: 15px; }
+.faq-pin { color: var(--accent); margin-right: 5px; }
+.faq-cat {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 999px; padding: 1px 9px; white-space: nowrap;
+}
+
+/* il valore e' quello che si e' venuti a cercare: piu' grande del resto */
+.faq-a {
+  font-size: 15px; line-height: 1.6; color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.faq-empty { color: var(--muted); font-style: italic; }
+.faq-link { color: var(--accent-deep); text-decoration: underline; text-underline-offset: 2px; }
+
+/* valore nascosto: si vede che c'e' qualcosa, non cosa c'e' */
+.faq-secret {
+  font-family: var(--font-ui); letter-spacing: .12em;
+  color: var(--muted); margin-right: 10px;
+}
+.faq-reveal { min-height: 30px; padding: 2px 10px; font-size: 12.5px; }
+
+.faq-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.faq-tools .ghost { min-height: 32px; padding: 4px 10px; font-size: 12.5px; }
+.faq-note {
+  margin: -6px 0 14px; font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+
+/* ============================================================
+   Telefono — una colonna sola
+   ============================================================ */
+@media (max-width: 560px) {
+  .plan-grid { grid-template-columns: 1fr; }
+  .day { min-height: auto; }
+  main, header, nav {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  header { padding-top: 22px; }
+  h1 { font-size: 25px; margin-bottom: 16px; }
+  main { padding-top: 20px; }
+
+  /* Sotto i 16px iOS ingrandisce la pagina appena si tocca un campo, e non torna
+     piu' indietro: e' il fastidio piu' evidente dell'app sul telefono. */
+  input, select, textarea { font-size: 16px; }
+
+  /* bersagli comodi per il dito */
+  button, input:not([type=checkbox]), select, textarea { min-height: 44px; }
+  button.icon { min-width: 44px; }
+  .chip { min-height: 42px; padding: 8px 15px; }
+  .shop-item input[type=checkbox] { width: 22px; height: 22px; }
+  .shop-item { padding: 12px 13px; }
+
+  /* la barra strumenti va a capo senza spaziatori e i campi riempiono la riga */
+  .toolbar { gap: 7px; margin-bottom: 16px; }
+  .toolbar .spacer { display: none; }
+  .toolbar input:not([type=checkbox]), .toolbar select { flex: 1 1 130px; min-width: 0; }
+  .toolbar .qty-input { flex: 0 1 84px; }
+  .toolbar .unit-input { flex: 1 1 90px; }
+  .toolbar button { flex: 1 1 auto; }
+  .toolbar button.primary { flex: 1 1 100%; }
+
+  /* la dispensa passa da tabella a schede: quattro colonne non stanno nello schermo */
+  #pantry-table { border: none; background: none; overflow: visible; }
+  #pantry-table thead { display: none; }
+  #pantry-table, #pantry-table tbody, #pantry-table tr, #pantry-table td { display: block; width: 100%; }
+  #pantry-table tr {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+    padding: 11px 13px; margin-bottom: 8px;
+  }
+  #pantry-table td { border: none; padding: 3px 0; }
+  #pantry-table td::before {
+    content: attr(data-label); display: inline-block; width: 88px;
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--muted);
+  }
+  #pantry-table tbody tr:hover td { background: none; }
+  #pantry-table td:first-child { font-family: var(--font-display); font-size: 16px; font-weight: 500; }
+  #pantry-table td:first-child::before, #pantry-table td[colspan]::before { display: none; }
+  #pantry-table td[colspan] { text-align: center; color: var(--muted); }
+  #pantry-table td:last-child { text-align: right; padding-top: 5px; }
+
+  /* il modale sale dal basso e sfrutta tutta l'altezza disponibile */
+  .modal { padding: 0; align-items: flex-end; }
+  .modal-box {
+    width: 100%; max-height: 92vh; max-height: 92dvh;
+    border-radius: 16px 16px 0 0; padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-head {
+    position: sticky; top: -18px; background: var(--surface);
+    padding: 15px 0 12px; margin-bottom: 12px;
+  }
+  /* la foto del dettaglio deve combaciare con la spaziatura ridotta del modale */
+  .detail-photo { margin: -18px -16px 14px; border-radius: 15px 15px 0 0; }
+  .card .actions { flex-wrap: wrap; }
+  /* il pulsante di conferma resta visibile anche se il modulo e' lungo */
+  .modal-foot {
+    position: sticky; bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
+    background: var(--surface); border-top: 1px solid var(--line);
+    margin: 18px -16px 0; padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-foot button { flex: 1; }
+
+  /* nell'editor ingredienti il nome prende una riga, quantita' e unita' la successiva */
+  .ing-row { flex-wrap: wrap; }
+  .ing-row input { min-width: 0; }
+  .ing-row input:first-child { flex: 1 1 100%; }
+  .ing-row input:nth-child(2), .ing-row input:nth-child(3) { flex: 1 1 0; max-width: none; }
+
+  /* l'onboarding e' lungo: stretto un po' i blocchi per far entrare il pulsante finale */
+  .modal-box .field { margin-bottom: 9px; }
+  .modal-box .banner { padding: 9px 12px; margin-bottom: 12px; }
+  .modal-box .banner p { font-size: 12.5px; }
+  .modal-box .banner strong { font-size: 13.5px; }
+  .modal-box .chips { gap: 5px; margin-bottom: 8px; }
+
+  /* nome e valore dell'ingrediente su righe separate invece che affiancati */
+  .report-row { flex-direction: column; gap: 1px; }
+  .report-row .ing { min-width: 0; }
+
+  .qty-input, .unit-input { width: auto; }
+  .shop-item .qty { white-space: nowrap; }
+  /* il toast sta sopra il pulsante vocale, altrimenti lo coprirebbe */
+  .toast { bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)); width: max-content; max-width: calc(100% - 28px); }
+
+  /* il microfono resta sotto il pollice, staccato dal bordo */
+  .mic { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
+  /* spazio in fondo, altrimenti il pulsante copre l'ultima voce delle liste */
+  main { padding-bottom: 88px; }
+  /* il pannello vocale sale dal basso come il modale */
+  .voice { padding: 0; }
+  .voice-box {
+    width: 100%; border-radius: 16px 16px 0 0;
+    padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* pulizie: le righe passano a due fasce — cosa fare a sinistra, stato e
+     comandi a destra — invece di cinque colonne che non stanno nello schermo */
+  .ch-hero { padding: 18px 16px; }
+  .ch-hero-num strong { font-size: 34px; }
+  .ch-hero-time { text-align: left; }
+  .ch-row {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    row-gap: 3px; padding: 11px 2px;
+  }
+  /* nome e ambiente sulla prima riga, stato e tempo sulla seconda */
+  .ch-row .ch-name { grid-column: 2; }
+  .ch-row .ch-area { grid-column: 3; }
+  .ch-row .ch-when { grid-column: 2; font-size: 11.5px; }
+  .ch-row .ch-min { grid-column: 3; justify-self: end; }
+  .ch-row .ch-clock { grid-column: 3; grid-row: 1; justify-self: end; }
+  .ch-row .ch-check { grid-row: 1 / span 2; align-self: center; }
+  .ch-year { grid-template-columns: 1fr; }
+  .ch-cat-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 6px; padding: 10px 2px;
+  }
+  .ch-cat-row .ch-name { grid-column: 1 / -1; }
+  .ch-cat-row button { min-height: 36px; }
+  /* il timer va sopra il microfono: in basso a destra c'e' gia' lui */
+  .ch-timer { bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); max-width: calc(100% - 28px); }
+  .ch-timer-what { max-width: 30vw; }
+  /* e il toast sale ancora, per non coprire il timer quando e' attivo */
+  .ch-timer:not(.hidden) ~ .voice, body:has(.ch-timer:not(.hidden)) .toast {
+    bottom: max(150px, calc(env(safe-area-inset-bottom) + 150px));
+  }
+}

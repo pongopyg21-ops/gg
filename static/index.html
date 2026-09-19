@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Il Cliente</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<!-- Pagina iniziale: smista verso le tre aree dell'app. Gli ambiti sono
+     diversi (la cucina, l'igiene, i progetti) e le funzioni di ciascuno vivono
+     dentro la propria sezione: qui non c'e' nessuna scheda, solo la scelta. -->
+<section id="home" class="home">
+  <header class="home-hero">
+    <p class="home-kicker">Benvenuto</p>
+    <h1>Il Cliente</h1>
+    <p class="home-lead">Scegli da dove cominciare. Dentro ogni sezione trovi gli
+      strumenti di quell'ambito, raccolti insieme e senza confusione.</p>
+  </header>
+  <div class="home-cards">
+    <button class="home-card" data-section="cucina">
+      <span class="home-emoji">🍳</span>
+      <span class="home-name">Cucina</span>
+      <span class="home-desc">Piano pasti, ricette, dispensa e lista della spesa,
+        con i comandi vocali per quando hai le mani occupate.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+    <button class="home-card" data-section="igiene">
+      <span class="home-emoji">🧽</span>
+      <span class="home-name">Igiene</span>
+      <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
+        da ricordare.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+    <button class="home-card" data-section="progetti">
+      <span class="home-emoji">📋</span>
+      <span class="home-name">Progetti</span>
+      <span class="home-desc">Lavori in corso, idee e cose da fare, raccolti
+        in un posto solo.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+    <button class="home-card" data-section="faq">
+      <span class="home-emoji">📌</span>
+      <span class="home-name">FAQ</span>
+      <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
+        contatti e codici, senza doverli cercare ogni volta.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+  </div>
+</section>
+
+<!-- L'app vera e propria: testata e schede restano nascoste finche' non si
+     sceglie una sezione dalla pagina iniziale. -->
+<div id="app" class="app hidden">
+<header>
+  <button id="to-home" class="back-home" title="Torna alla pagina iniziale">‹ Sezioni</button>
+  <h1 id="app-title">🍳 Cucina</h1>
+</header>
+<nav id="tabs">
+  <button data-tab="plan" data-section="cucina" class="active">📅 Piano</button>
+  <button data-tab="recipes" data-section="cucina">📖 Ricette</button>
+  <button data-tab="pantry" data-section="cucina">🧺 Dispensa</button>
+  <button data-tab="shopping" data-section="cucina">🛒 Spesa</button>
+  <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
+  <button data-tab="igiene" data-section="igiene">🧽 Pulizie</button>
+  <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
+  <button data-tab="faq" data-section="faq">📌 FAQ</button>
+</nav>
+
+<main>
+  <!-- PIANO -->
+  <section id="tab-plan" class="tab active">
+    <div class="toolbar">
+      <button id="week-prev">‹ Settimana</button>
+      <strong id="week-label"></strong>
+      <button id="week-next">Settimana ›</button>
+      <button id="week-today">Oggi</button>
+      <span class="spacer"></span>
+      <button id="gen-week" class="primary">Genera lista della spesa</button>
+    </div>
+    <div id="plan-grid" class="plan-grid"></div>
+  </section>
+
+  <!-- RICETTE -->
+  <section id="tab-recipes" class="tab">
+    <div class="toolbar">
+      <input id="recipe-search" type="search" placeholder="Cerca ricetta...">
+      <label class="toggle"><input type="checkbox" id="fav-only"> Solo preferite</label>
+      <span class="spacer"></span>
+      <button id="new-recipe" class="primary">+ Nuova ricetta</button>
+    </div>
+    <div id="recipe-list" class="cards"></div>
+  </section>
+
+  <!-- DISPENSA -->
+  <section id="tab-pantry" class="tab">
+    <div class="toolbar">
+      <input id="pantry-name" placeholder="Ingrediente" list="ingredient-list">
+      <input id="pantry-qty" class="qty-input" type="number" step="0.1" value="1">
+      <input id="pantry-unit" class="unit-input" list="unit-list" value="pz">
+      <button id="pantry-add" class="primary">Aggiungi</button>
+      <span class="spacer"></span>
+      <input id="pantry-search" type="search" placeholder="Filtra...">
+    </div>
+    <datalist id="unit-list"></datalist>
+    <datalist id="ingredient-list"></datalist>
+    <table id="pantry-table">
+      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- SPESA -->
+  <section id="tab-shopping" class="tab">
+    <div class="toolbar">
+      <input id="shop-name" placeholder="Prodotto" list="ingredient-list">
+      <input id="shop-qty" class="qty-input" type="number" step="0.1" value="1">
+      <input id="shop-unit" class="unit-input" list="unit-list" value="pz">
+      <select id="shop-cat"></select>
+      <button id="shop-add" class="primary">Aggiungi</button>
+      <span class="spacer"></span>
+      <button id="shop-clear">Rimuovi spuntati</button>
+    </div>
+    <div id="shop-days" class="day-filter"></div>
+    <p id="shop-hint" class="perish-hint" hidden></p>
+    <div id="shop-list" class="shop-list"></div>
+  </section>
+
+  <!-- PROFILO -->
+  <section id="tab-profile" class="tab">
+    <div class="banner">
+      <strong>⚠️ Le allerte sono indicative</strong>
+      <p>Il riconoscimento avviene dal nome degli ingredienti, quindi può sfuggire un allergene
+      nascosto in un prodotto lavorato (es. salsa di soia, dado, pasta sfoglia). Verifica sempre
+      l'etichetta: questa app non sostituisce il parere del medico.</p>
+    </div>
+    <div class="panel">
+      <div class="field"><label>Nome</label>
+        <input id="pf-name" placeholder="Come ti chiami?"></div>
+      <div class="field">
+        <label>Pasti al giorno</label>
+        <select id="pf-meals"></select>
+        <p class="hint">Quanti pasti vuoi pianificare ogni giorno: il piano mostra
+          una casella per ciascuno.</p>
+      </div>
+      <div class="field">
+        <label>Allergie e intolleranze dichiarate</label>
+        <div id="pf-allergens" class="chips"></div>
+        <div class="row">
+          <input id="pf-term" placeholder="Altro termine (es. nichel, fruttosio)">
+          <button id="pf-term-add">Aggiungi</button>
+        </div>
+        <p class="hint">Termini liberi: vengono cercati nel nome degli ingredienti.</p>
+      </div>
+      <div id="pf-custom" class="chips"></div>
+      <div class="row">
+        <button class="primary" id="pf-save">Salva profilo</button>
+        <label class="toggle"><input type="checkbox" id="pf-filter"> Nascondi le ricette in conflitto</label>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="field">
+        <label>Ricette preferite</label>
+        <p class="hint">Clicca per segnare le ricette che ti piacciono: le ritrovi con
+        il filtro <strong>Solo preferite</strong> nella scheda Ricette.</p>
+      </div>
+      <div id="pf-favorites"></div>
+    </div>
+    <h3 class="section-title">Riepilogo ingredienti</h3>
+    <div id="pf-report"></div>
+  </section>
+
+  <!-- IGIENE — pulizie di casa e della cucina. Il metodo e' quello del calendario
+       mensile: tre blocchi per frequenza (ogni giorno, ogni settimana, ogni mese)
+       piu' un calendario annuale con un focus per mese. La pagina apre su cosa
+       c'e' da fare adesso, perche' e' quello che serve davvero. -->
+  <section id="tab-igiene" class="tab">
+    <div id="ch-oggi"></div>
+    <div class="ch-blitz-row">
+      <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
+      <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
+    </div>
+
+    <h3 class="section-title">Routine</h3>
+    <div class="toolbar">
+      <label class="ch-day">Giorno delle pulizie
+        <select id="ch-day"></select>
+      </label>
+    </div>
+    <div id="ch-routine"></div>
+
+    <h3 class="section-title">Calendario dell'anno</h3>
+    <div id="ch-year" class="ch-year"></div>
+
+    <h3 class="section-title">Attività</h3>
+    <div class="toolbar">
+      <button id="ch-new" class="ghost">+ Nuova attività</button>
+      <span id="ch-count" class="ch-count"></span>
+    </div>
+    <div id="ch-list"></div>
+  </section>
+
+  <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->
+  <section id="tab-progetti" class="tab">
+    <div class="empty-state">
+      <span class="empty-emoji">📋</span>
+      <h2>Progetti</h2>
+      <p>Qui vivranno i lavori in corso e le idee da portare avanti, con il loro
+        stato. Anche questa sezione è pronta per le sue funzioni.</p>
+    </div>
+  </section>
+
+  <!-- FAQ — informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici.
+       Non e' un manuale ma un promemoria: la ricerca sta in cima perche' si apre
+       questa pagina per trovare una cosa precisa, non per leggerla tutta. -->
+  <section id="tab-faq" class="tab">
+    <div class="toolbar">
+      <input id="faq-search" type="search" placeholder="Cerca: wifi, idraulico, cancello...">
+      <select id="faq-filter"></select>
+      <span class="spacer"></span>
+      <button id="faq-new" class="primary">+ Nuova voce</button>
+    </div>
+    <div id="faq-count" class="faq-count"></div>
+    <div id="faq-list"></div>
+  </section>
+</main>
+</div>
+
+<!-- Modale ricetta / pasto -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="modal-title">Ricetta</h2>
+      <button id="modal-close" class="icon">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- Timer delle pulizie: barra fissa in basso, non un modale. Si avvia il timer
+     e si va a pulire, quindi deve restare visibile mentre si gira per l'app.
+     Il caso d'uso e' la regola dei 15 minuti: timer su una zona sola. -->
+<div id="ch-timer" class="ch-timer hidden" role="status" aria-live="polite">
+  <div class="ch-timer-info">
+    <span class="ch-timer-what" id="ch-timer-what">Pulizia</span>
+    <span class="ch-timer-clock" id="ch-timer-clock">0:00</span>
+  </div>
+  <div class="ch-timer-actions">
+    <button id="ch-timer-done" class="primary">Fatto</button>
+    <button id="ch-timer-cancel" class="ghost">Annulla</button>
+  </div>
+</div>
+
+<!-- Comandi vocali: il pulsante resta raggiungibile da ogni scheda, perché serve
+     proprio quando non si possono usare le mani (es. mentre si cucina). -->
+<button id="mic" class="mic hidden" type="button" title="Comandi vocali" aria-label="Comandi vocali">
+  <span class="mic-icon">🎙</span>
+</button>
+
+<div id="voice" class="voice hidden" role="dialog" aria-live="polite">
+  <div class="voice-box">
+    <div class="voice-head">
+      <strong id="voice-status">Ti ascolto…</strong>
+      <button id="voice-close" class="icon">✕</button>
+    </div>
+    <p id="voice-heard" class="voice-heard">Parla ora: ad esempio «aggiungi due chili di farina in dispensa».</p>
+    <div id="voice-examples" class="voice-examples">
+      <button type="button" class="voice-ex" data-say="aggiungi due chili di farina in dispensa">«aggiungi due chili di farina in dispensa»</button>
+      <button type="button" class="voice-ex" data-say="metti mezzo litro di latte nella spesa">«metti mezzo litro di latte nella spesa»</button>
+      <button type="button" class="voice-ex" data-say="sono allergico al nichel">«sono allergico al nichel»</button>
+      <button type="button" class="voice-ex" data-say="cerca la carbonara">«cerca la carbonara»</button>
+    </div>
+    <p id="voice-result" class="voice-result" hidden></p>
+    <div class="row">
+      <input id="voice-text" placeholder="Oppure scrivi il comando…">
+      <button id="voice-send">Invia</button>
+    </div>
+    <div class="voice-foot">
+      <label class="toggle">Voce
+        <select id="voice-pick">
+          <option value="chiara">Chiara · femminile</option>
+          <option value="profonda">Profonda · maschile</option>
+          <option value="calda">Calda · pacata</option>
+        </select>
+      </label>
+      <label class="toggle"><input type="checkbox" id="voice-speak" checked> Conferma a voce</label>
+    </div>
+    <div class="voice-foot">
+      <label class="toggle"><input type="checkbox" id="voice-ting" checked> Suono all'avvio</label>
+      <span class="spacer"></span>
+      <button id="voice-retry" class="primary">🔁 Ripeti</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+flask>=3.0
+
+# Solo per i test. Sta qui e non in un file separato perché l'ambiente viene
+# azzerato fra una sessione e l'altra: senza questa riga `avvia.sh` reinstallerebbe
+# Flask e i test resterebbero non eseguibili ("No module named pytest").
+pytest>=8.0

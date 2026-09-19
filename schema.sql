@@ -1,0 +1,139 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS ingredients (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL UNIQUE,
+    unit     TEXT NOT NULL DEFAULT 'pz',
+    category TEXT NOT NULL DEFAULT 'Altro',
+    UNIQUE(name)
+);
+
+CREATE TABLE IF NOT EXISTS pantry (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+    quantity      REAL NOT NULL DEFAULT 0,
+    unit          TEXT NOT NULL DEFAULT 'pz',
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(ingredient_id, unit)
+);
+
+CREATE TABLE IF NOT EXISTS recipes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    servings     INTEGER NOT NULL DEFAULT 2,
+    time_minutes INTEGER,
+    difficulty   TEXT NOT NULL DEFAULT 'facile',
+    instructions TEXT NOT NULL DEFAULT '',
+    image        TEXT NOT NULL DEFAULT '',   -- nome file in static/recipes/
+    image_credit TEXT NOT NULL DEFAULT '',   -- autore, licenza e provenienza
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS recipe_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipe_id     INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+    quantity      REAL NOT NULL DEFAULT 0,
+    unit          TEXT NOT NULL DEFAULT 'pz'
+);
+
+CREATE TABLE IF NOT EXISTS meal_plan (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    date       TEXT NOT NULL,
+    meal       TEXT NOT NULL,
+    recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    servings   INTEGER NOT NULL DEFAULT 2,
+    UNIQUE(date, meal)
+);
+
+CREATE TABLE IF NOT EXISTS shopping_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    quantity      REAL NOT NULL DEFAULT 1,
+    unit          TEXT NOT NULL DEFAULT 'pz',
+    category      TEXT NOT NULL DEFAULT 'Altro',
+    ingredient_id INTEGER REFERENCES ingredients(id) ON DELETE SET NULL,
+    checked       INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_date ON meal_plan(date);
+CREATE INDEX IF NOT EXISTS idx_items_recipe ON recipe_items(recipe_id);
+
+-- Dichiarazione di allergie e intolleranze. Riga singola (id = 1): le preferenze
+-- sono di un solo utente locale.
+CREATE TABLE IF NOT EXISTS profile (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    full_name  TEXT NOT NULL DEFAULT '',
+    restrictions TEXT NOT NULL DEFAULT '',   -- testo libero, una voce per riga o separata da virgole
+    onboarded  INTEGER NOT NULL DEFAULT 0,
+    -- quanti pasti al giorno l'utente vuole gestire (1-5): da qui si ricava
+    -- l'elenco dei pasti mostrati nel piano e accettati dall'API
+    meals_per_day INTEGER NOT NULL DEFAULT 2,
+    -- 0 finche' il passo di scelta delle preferite non e' stato mostrato:
+    -- serve a riproporlo a chi si era profilato prima che esistesse
+    fav_prompted INTEGER NOT NULL DEFAULT 0,
+    -- giorno fisso della settimana per le pulizie (0 = lunedi' ... 6 = domenica):
+    -- la routine crea costanza, dice l'articolo, e il giorno lo sceglie l'utente
+    chore_day INTEGER NOT NULL DEFAULT 5,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ricette preferite: tabella a parte invece di una colonna su `recipes` perche'
+-- e' una preferenza dell'utente, non un dato della ricetta, e perche' la chiave
+-- esterna con CASCADE tiene l'elenco pulito quando una ricetta viene eliminata.
+CREATE TABLE IF NOT EXISTS favorites (
+    recipe_id  INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ---------------------------------------------------------------- igiene
+-- Attivita' di pulizia. Il catalogo di partenza (igiene.py) viene seminato qui
+-- come le ricette: si puo' modificare, disattivare o aggiungere senza toccare
+-- il codice. `frequency` divide i tre blocchi del metodo (quotidiane,
+-- settimanali, mensili) piu' le stagionali, che si fanno nel loro `month`.
+CREATE TABLE IF NOT EXISTS chores (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL UNIQUE,
+    area      TEXT NOT NULL DEFAULT 'Tutta la casa',
+    frequency TEXT NOT NULL DEFAULT 'settimanale',
+    minutes   INTEGER NOT NULL DEFAULT 15,
+    month     INTEGER,                        -- 1-12, solo per le stagionali
+    active    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Quando un'attivita' e' stata fatta. Le scadenze NON si salvano: si ricavano
+-- dall'ultima riga, come i giorni della spesa dal piano. Una tabella di appoggio
+-- si disallineerebbe appena si registra un completamento.
+CREATE TABLE IF NOT EXISTS chore_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chore_id   INTEGER NOT NULL REFERENCES chores(id) ON DELETE CASCADE,
+    date       TEXT NOT NULL,
+    minutes    INTEGER NOT NULL DEFAULT 0,    -- tempo impiegato davvero, 0 se non misurato
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chore_log_chore ON chore_log(chore_id, date);
+CREATE INDEX IF NOT EXISTS idx_chores_freq ON chores(frequency, month);
+
+-- ---------------------------------------------------------------- faq
+-- Informazioni utili: Wi-Fi, indirizzi, contatti, codici. Le categorie stanno in
+-- `faq.py`, non qui: sono la struttura della sezione, non un contenuto
+-- dell'utente. `question` e' l'etichetta (breve) e `answer` il valore (puo'
+-- essere lungo: un indirizzo completo, gli orari di un ambulatorio).
+--
+-- `secret` fa nascondere il valore finche' non lo si tocca. NON e' una
+-- protezione: il valore viaggia comunque nella risposta dell'API. Serve a non
+-- tenere una password sullo schermo quando qualcuno passa dietro la scrivania.
+CREATE TABLE IF NOT EXISTS faq (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    category   TEXT NOT NULL DEFAULT 'generale',
+    question   TEXT NOT NULL,
+    answer     TEXT NOT NULL DEFAULT '',
+    secret     INTEGER NOT NULL DEFAULT 0,
+    pinned     INTEGER NOT NULL DEFAULT 0,   -- in cima all'elenco
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
