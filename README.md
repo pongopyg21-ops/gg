@@ -1,0 +1,3 @@
+# gg
+
+Repository initialized.
