@@ -233,10 +233,14 @@ Il layout sotto i 560px è una sola colonna. Tre vincoli da non rompere quando s
 
 ## Stile
 
-Direzione: editoriale da ricettario. Fondo carta calda, inchiostro scuro, un solo accento terracotta. Titoli in Fraunces (`--font-display`), interfaccia in Hanken Grotesk (`--font-ui`).
+Direzione: mare. Fondo schiuma, inchiostro blu profondo, un solo accento acqua. Tutto in Helvetica (`--font-display` e `--font-ui` puntano allo stesso stack).
 
-- I font sono in `static/fonts/` e serviti da Flask, non da una CDN: l'app resta usabile senza internet.
+- **Niente `@font-face`**: Helvetica Neue (macOS/iOS), Arial (Windows) e Liberation Sans (Linux) sono già nei sistemi. Il font non si scarica, la pagina si compone alla prima visita e non c'è niente da mantenere in `static/fonts/`. La cartella è stata rimossa: se un domani serve un font che i sistemi non hanno, va rimessa e vanno ripristinati i `@font-face`.
+- Lo stack è `'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif`. `sans-serif` in fondo non è decorativo: è la rete di sicurezza per i sistemi senza nessuna delle tre.
 - I colori stanno tutti in `:root`. Cambiare palette significa toccare solo quelle variabili.
+- `--font-display` e `--font-ui` sono uguali, ma restano due variabili: distinguono titoli e interfaccia, quindi un domani si possono separare senza toccare le regole.
+- **Il peso va scelto per Helvetica, non per un serif**: a parità di `font-weight`, un sans sembra più leggero. I titoli sono a `700` e con `letter-spacing` negativo, altrimenti in Helvetica si sfaldano. Non esistono più i `font-variation-settings: 'opsz'`, che erano della variabile Fraunces: con un font statico non fanno nulla.
+- `--sand` è l'unico accento caldo (stelle delle preferite e priorità dei progetti). Scurito a `#b0761c` perché il tono più chiaro scendeva a 2.88:1 sul fondo carta, sotto il minimo di 3:1 per gli elementi grafici.
 - Ogni combinazione testo/fondo deve restare sopra 4.5:1 (WCAG AA). Il grigio `--muted` è scelto per passare anche sui fondi colorati come `--accent-soft`, dove un grigio più chiaro scenderebbe a 4.37.
 - Le cifre delle quantità usano `tabular-nums`.
 

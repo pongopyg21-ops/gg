@@ -1,67 +1,39 @@
-/* Font ospitati localmente: l'app non dipende da una CDN esterna.
-   Fraunces (serif, per i titoli) e Hanken Grotesk (sans, per l'interfaccia). */
-
-@font-face {
-  font-family: 'Fraunces';
-  font-style: normal;
-  font-weight: 300 700;
-  font-display: swap;
-  src: url('/static/fonts/fraunces-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-
-@font-face {
-  font-family: 'Fraunces';
-  font-style: normal;
-  font-weight: 300 700;
-  font-display: swap;
-  src: url('/static/fonts/fraunces-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 300 700;
-  font-display: swap;
-  src: url('/static/fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 300 700;
-  font-display: swap;
-  src: url('/static/fonts/hanken-grotesk-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
 /* ============================================================
-   Cucina & Spesa — stile editoriale, carta e inchiostro
-   Titoli in Fraunces (serif), interfaccia in Hanken Grotesk.
-   L'eleganza sta in tipografia, spaziatura e linee sottili:
-   niente ombre pesanti, niente decorazioni superflue.
+   Cucina & Spesa — palette mare, tipografia Helvetica.
+   Helvetica e le sue simili (Helvetica Neue, Arial, Liberation Sans)
+   sono gia' nei sistemi: nessun font da scaricare, e la pagina si
+   compone subito alla prima visita.
+   L'eleganza sta in spaziatura, peso e linee sottili: niente ombre
+   pesanti, niente decorazioni superflue.
    ============================================================ */
 
 :root {
-  --paper: #fbf9f5;
+  /* mare: schiuma, acqua bassa, acqua profonda */
+  --paper: #f2f8fa;
   --surface: #ffffff;
-  --ink: #26221e;
-  --muted: #6b6157;
-  --line: #ece5db;
-  --line-strong: #ddd3c5;
+  --ink: #0e2a38;
+  --muted: #4d6c7d;
+  --line: #dce9ef;
+  --line-strong: #c2d6e0;
 
-  --accent: #a8452b;
-  --accent-deep: #8a3821;
-  --accent-soft: #f8eae3;
+  --accent: #0b6e8f;
+  --accent-deep: #05506b;
+  --accent-soft: #e2f1f8;
 
-  --green: #4a6b4a;
-  --green-soft: #eef2eb;
+  /* il verde resta per cio' che e' concluso o riuscito, ma virato al mare */
+  --green: #17796b;
+  --green-soft: #e0f2ef;
+
+  /* sabbia: l'unico accento caldo, per le stelle e le priorita' */
+  --sand: #b0761c;
 
   --radius: 10px;
-  --shadow: 0 1px 2px rgba(38, 34, 30, .04), 0 10px 28px -18px rgba(38, 34, 30, .22);
-  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-ui: 'Hanken Grotesk', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  --shadow: 0 1px 2px rgba(14, 42, 56, .04), 0 10px 28px -18px rgba(14, 42, 56, .22);
+  /* Helvetica e simili, nell'ordine in cui i sistemi le hanno davvero:
+     macOS e iOS hanno Helvetica Neue, Windows ha Arial, Linux Liberation Sans
+     (metricamente identica ad Arial). Il sans-serif finale regge comunque. */
+  --font-display: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif;
+  --font-ui: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -95,9 +67,8 @@ body {
 }
 .home-hero h1 {
   margin: 0 0 14px; font-family: var(--font-display);
-  font-size: clamp(34px, 7vw, 52px); font-weight: 500;
-  font-variation-settings: 'opsz' 144;
-  letter-spacing: -.025em; line-height: 1.05;
+  font-size: clamp(34px, 7vw, 52px); font-weight: 700;
+  letter-spacing: -.03em; line-height: 1.05;
 }
 .home-lead {
   margin: 0; max-width: 54ch; font-size: 16px; color: var(--muted); line-height: 1.55;
@@ -119,8 +90,8 @@ body {
 .home-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .home-emoji { font-size: 30px; line-height: 1; }
 .home-name {
-  font-family: var(--font-display); font-size: 21px; font-weight: 500;
-  letter-spacing: -.01em;
+  font-family: var(--font-display); font-size: 21px; font-weight: 700;
+  letter-spacing: -.02em;
 }
 .home-desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
 .home-go {
@@ -172,8 +143,8 @@ body {
 }
 .empty-emoji { font-size: 40px; line-height: 1; }
 .empty-state h2 {
-  margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 500;
-  letter-spacing: -.01em;
+  margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 700;
+  letter-spacing: -.02em;
 }
 .empty-state p { margin: 0; color: var(--muted); line-height: 1.6; }
 
@@ -197,9 +168,8 @@ h1 {
   margin: 0 0 20px;
   font-family: var(--font-display);
   font-size: 30px;
-  font-weight: 500;
-  font-variation-settings: 'opsz' 120;
-  letter-spacing: -.015em;
+  font-weight: 700;
+  letter-spacing: -.025em;
   line-height: 1.15;
 }
 
@@ -347,9 +317,9 @@ table {
 th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--line); }
 th {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .09em; color: var(--muted); background: #fcfaf7;
+  letter-spacing: .09em; color: var(--muted); background: #f7fbfc;
 }
-tbody tr:hover td { background: #fdfbf8; }
+tbody tr:hover td { background: #f4fafc; }
 tr:last-child td { border-bottom: none; }
 
 /* ---------- lista della spesa ---------- */
@@ -395,7 +365,7 @@ tr:last-child td { border-bottom: none; }
 
 /* ---------- finestra modale ---------- */
 .modal {
-  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  position: fixed; inset: 0; background: rgba(14, 42, 56, .42);
   backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
 }
@@ -403,7 +373,7 @@ tr:last-child td { border-bottom: none; }
 .modal-box {
   background: var(--surface); border-radius: 14px; width: min(620px, 100%);
   max-height: 88vh; overflow: auto; padding: 24px;
-  box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .45);
+  box-shadow: 0 30px 70px -28px rgba(14, 42, 56, .45);
 }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
@@ -411,7 +381,7 @@ tr:last-child td { border-bottom: none; }
 }
 .modal-head h2 {
   margin: 0; font-family: var(--font-display);
-  font-size: 21px; font-weight: 500; letter-spacing: -.01em;
+  font-size: 21px; font-weight: 700; letter-spacing: -.02em;
 }
 .field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 5px; }
 .field label {
@@ -458,7 +428,7 @@ tr:last-child td { border-bottom: none; }
 .steps li::marker { color: var(--accent); font-weight: 600; }
 .detail-unsafe {
   margin: 16px 0 0; padding: 9px 12px; border-radius: 8px;
-  background: #fbeae6; border: 1px solid #eecdc2;
+  background: #e2f1f8; border: 1px solid #b9d7e5;
   color: var(--accent-deep); font-size: 12.5px;
 }
 .muted { color: var(--muted); }
@@ -466,7 +436,7 @@ tr:last-child td { border-bottom: none; }
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
-  font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(38, 34, 30, .5);
+  font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(14, 42, 56, .5);
 }
 
 /* ---------- comandi vocali ----------
@@ -477,11 +447,11 @@ tr:last-child td { border-bottom: none; }
   width: 58px; height: 58px; border-radius: 50%; padding: 0;
   border: 1px solid var(--line-strong); background: var(--surface);
   color: var(--accent); font-size: 24px; line-height: 1;
-  box-shadow: 0 10px 26px -12px rgba(38, 34, 30, .4);
+  box-shadow: 0 10px 26px -12px rgba(14, 42, 56, .4);
   display: flex; align-items: center; justify-content: center;
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
-.mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
+.mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(14, 42, 56, .5); }
 .mic.on { background: var(--accent); color: #fff; border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
 .mic-icon { pointer-events: none; }
 
@@ -491,25 +461,25 @@ tr:last-child td { border-bottom: none; }
   width: 58px; height: 58px; border-radius: 50%; padding: 0;
   border: 1px solid var(--line-strong); background: var(--surface);
   color: var(--accent); font-size: 24px; line-height: 1;
-  box-shadow: 0 10px 26px -12px rgba(38, 34, 30, .4);
+  box-shadow: 0 10px 26px -12px rgba(14, 42, 56, .4);
   display: flex; align-items: center; justify-content: center;
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
-.home-fab:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
+.home-fab:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(14, 42, 56, .5); }
 .home-fab-icon { pointer-events: none; }
 @keyframes mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 69, 43, .45); }
-  50% { box-shadow: 0 0 0 12px rgba(168, 69, 43, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(11, 110, 143, .45); }
+  50% { box-shadow: 0 0 0 12px rgba(11, 110, 143, 0); }
 }
 
 .voice {
-  position: fixed; inset: 0; background: rgba(38, 34, 30, .42);
+  position: fixed; inset: 0; background: rgba(14, 42, 56, .42);
   backdrop-filter: blur(2px); display: flex; align-items: flex-end; justify-content: center;
   padding: 20px; z-index: 70;
 }
 .voice-box {
   background: var(--surface); border-radius: 16px; width: min(560px, 100%);
-  padding: 20px; box-shadow: 0 30px 70px -28px rgba(38, 34, 30, .5);
+  padding: 20px; box-shadow: 0 30px 70px -28px rgba(14, 42, 56, .5);
   /* su schermi bassi (telefono piccolo, tastiera aperta) il pannello scorre
      dentro di sé invece di spingere il pulsante di chiusura fuori dallo schermo */
   max-height: 100%; overflow-y: auto;
@@ -519,7 +489,7 @@ tr:last-child td { border-bottom: none; }
   margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
 }
 .voice-head strong {
-  font-family: var(--font-display); font-size: 17px; font-weight: 500; letter-spacing: -.01em;
+  font-family: var(--font-display); font-size: 17px; font-weight: 700; letter-spacing: -.02em;
 }
 .voice-head strong[data-tipo="ok"] { color: var(--green); }
 .voice-head strong[data-tipo="err"] { color: var(--accent-deep); }
@@ -538,7 +508,7 @@ tr:last-child td { border-bottom: none; }
   margin: 0 0 14px; padding: 10px 13px; border-radius: 8px; font-size: 13.5px;
 }
 .voice-result.ok { background: var(--green-soft); color: var(--green); }
-.voice-result.err { background: #fbeae6; color: var(--accent-deep); }
+.voice-result.err { background: #e2f1f8; color: var(--accent-deep); }
 .voice-foot {
   display: flex; align-items: center; gap: 8px; margin-top: 14px;
   padding-top: 14px; border-top: 1px solid var(--line);
@@ -554,7 +524,7 @@ tr:last-child td { border-bottom: none; }
 
 /* ---------- allergie e intolleranze ---------- */
 .banner {
-  background: var(--accent-soft); border: 1px solid #efd7cc;
+  background: var(--accent-soft); border: 1px solid #c3dce8;
   border-left: 3px solid var(--accent);
   border-radius: var(--radius); padding: 13px 17px; margin-bottom: 20px;
 }
@@ -584,7 +554,7 @@ tr:last-child td { border-bottom: none; }
 
 /* --- ricette preferite --- */
 /* la stella accanto al nome resta discreta: e' un promemoria, non un'allerta */
-.fav-star { color: #d4a24c; font-size: 15px; margin-left: 6px; }
+.fav-star { color: var(--sand); font-size: 15px; margin-left: 6px; }
 /* il pulsante preferita sta a sinistra, separato dalle azioni sulla ricetta */
 .card .actions .fav-toggle { margin-right: auto; color: var(--muted); }
 .card .actions .fav-toggle.on { color: var(--accent); font-weight: 600; }
@@ -598,11 +568,11 @@ tr:last-child td { border-bottom: none; }
 
 /* etichette di allerta su ricette e piano */
 .card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 7px; }
-.card.unsafe { border-color: #e6c3b8; }
-.slot.unsafe { border-color: #d99b85; background: #fdf1ec; }
+.card.unsafe { border-color: #a8cde0; }
+.slot.unsafe { border-color: #7fb8d2; background: #e8f4fa; }
 .badge {
-  display: inline-block; background: #fbeae6; color: var(--accent-deep);
-  border: 1px solid #eecdc2; border-radius: 999px;
+  display: inline-block; background: #e2f1f8; color: var(--accent-deep);
+  border: 1px solid #b9d7e5; border-radius: 999px;
   padding: 1px 9px; font-size: 10.5px; font-weight: 600;
   letter-spacing: .02em; margin: 4px 4px 0 0;
 }
@@ -647,13 +617,13 @@ tr:last-child td { border-bottom: none; }
 }
 .ch-hero-num { display: flex; align-items: baseline; gap: 10px; }
 .ch-hero-num strong {
-  font-family: var(--font-display); font-size: 40px; font-weight: 500;
-  font-variation-settings: 'opsz' 144; line-height: 1; letter-spacing: -.02em;
+  font-family: var(--font-display); font-size: 40px; font-weight: 700;
+  line-height: 1; letter-spacing: -.03em;
 }
 .ch-hero-num span { color: var(--muted); font-size: 14px; }
 .ch-hero-time { text-align: right; display: flex; flex-direction: column; gap: 2px; }
 .ch-hero-min {
-  font-family: var(--font-display); font-size: 22px; font-weight: 500;
+  font-family: var(--font-display); font-size: 22px; font-weight: 700;
   color: var(--accent); line-height: 1.1;
 }
 .ch-hero-min-lab { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
@@ -749,7 +719,7 @@ tr:last-child td { border-bottom: none; }
 }
 .ch-month-card summary::-webkit-details-marker { display: none; }
 .ch-month-name {
-  font-family: var(--font-display); font-size: 16px; font-weight: 500; min-width: 92px;
+  font-family: var(--font-display); font-size: 16px; font-weight: 700; min-width: 92px;
 }
 .ch-month-title { font-size: 12.5px; color: var(--muted); flex: 1; }
 .ch-month-count {
@@ -785,7 +755,7 @@ tr:last-child td { border-bottom: none; }
   display: flex; align-items: center; gap: 18px;
   background: var(--ink); color: #fff;
   border-radius: 999px; padding: 10px 12px 10px 22px;
-  box-shadow: 0 16px 40px -14px rgba(38, 34, 30, .6);
+  box-shadow: 0 16px 40px -14px rgba(14, 42, 56, .6);
   font-size: 13.5px;
 }
 .ch-timer-info { display: flex; align-items: baseline; gap: 12px; }
@@ -1028,7 +998,7 @@ tr:last-child td { border-bottom: none; }
   font-weight: 600; color: var(--ink); word-break: break-word;
 }
 .project-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
-.project-stars { color: #c8931f; font-size: 15px; letter-spacing: 1px; }
+.project-stars { color: var(--sand); font-size: 15px; letter-spacing: 1px; }
 .project-dates { font-size: 12.5px; color: var(--muted); }
 
 .project-desc {
