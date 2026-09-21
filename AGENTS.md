@@ -92,7 +92,14 @@ ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
   a ogni lettura dal piano con `_need_by_day`/`_day_breakdown`, non si salvano: una
   tabella di appoggio si disallineerebbe appena si modifica un pasto. L'invariante
   `sum(days) == quantity` va mantenuta, e le quote vanno riscalate sul totale
-  effettivo della voce perché la lista si accumula a ogni generazione.
+  effettivo della voce, che l'utente può aver corretto a mano.
+- La lista della spesa distingue le voci generate (`shopping_items.generated = 1`)
+  da quelle scritte a mano (`0`). La generazione cancella e ricostruisce solo le
+  prime: è una fotografia del piano, quindi una ricetta tolta dal piano porta via
+  i suoi ingredienti, e rigenerare due volte non raddoppia le quantità. Se esiste
+  già una voce manuale aperta per un ingrediente, la generazione la salta
+  (`already_listed`) invece di duplicarla o fondersi: quella riga è dell'utente.
+  Aggiungendo un nuovo percorso che crea voci dal piano, va marcato `generated`.
 - Le ricette preferite stanno nella tabella `favorites`, non in una colonna di
   `recipes`: sono una scelta dell'utente e la FK con `ON DELETE CASCADE` evita
   preferenze orfane. In `PUT /api/profile` i campi si toccano solo se presenti

@@ -98,7 +98,9 @@ Due dettagli che rendono i numeri affidabili:
 - la somma delle quote giornaliere è esattamente il totale della voce, quindi la vista per giorno non contraddice quella completa;
 - la dispensa viene scalata a partire dai giorni più vicini, perché quello che si ha in casa serve naturalmente ai primi pasti. Con 400 g di riso in dispensa e due pasti da 400 g, il giorno più vicino risulta già coperto e resta da comprare solo quello lontano.
 
-Quando la quantità in lista non corrisponde al fabbisogno del piano — perché la lista si accumula a ogni generazione o perché è stata corretta a mano — le quote vengono riscalate sul valore effettivo della voce, così i due numeri continuano a coincidere.
+Quando la quantità in lista non corrisponde al fabbisogno del piano — perché è stata corretta a mano — le quote vengono riscalate sul valore effettivo della voce, così i due numeri continuano a coincidere.
+
+La lista della spesa è una fotografia del piano attuale, non un registro di tutte le generazioni: rigenerarla la ricostruisce da zero, togliendo gli ingredienti delle ricette non più pianificate. Le voci aggiunte a mano (o a voce) sono di chi le ha scritte e la generazione non le tocca: se ne esiste già una aperta per un ingrediente, la generazione salta quella voce invece di duplicarla o fondersi con essa.
 
 Le categorie che deperiscono (Frutta e Verdura, Carne e Pesce, Latticini) sono segnalate con un avviso, che invita a comprarle vicino al giorno in cui servono.
 

@@ -167,7 +167,12 @@ def test_dispensa_somma_unita_compatibili_multiple(client):
     assert items[0]["quantity"] == pytest.approx(500)  # 2000 g - 1500 g
 
 
-def test_generazione_ripetuta_accumula(client):
+def test_generazione_ripetuta_non_accumula(client):
+    """Rigenerare senza cambiare il piano non raddoppia la spesa.
+
+    La lista generata e' una fotografia del piano: la si ricostruisce, non la si
+    somma, altrimenti ogni clic gonfierebbe le quantita' da comprare.
+    """
     rid = ricetta(client, "Pomodori", 2, [{"name": "Pomodori", "quantity": 500, "unit": "g"}])
     client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
 
@@ -175,7 +180,51 @@ def test_generazione_ripetuta_accumula(client):
     client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
     items = client.get("/api/shopping").get_json()
     assert len(items) == 1
-    assert items[0]["quantity"] == pytest.approx(1000)
+    assert items[0]["quantity"] == pytest.approx(500)
+
+
+def test_cambio_piano_rimuove_le_voci_dismesse(client):
+    """Togliendo una ricetta dal piano, i suoi ingredienti escono dalla lista.
+
+    È il caso segnalato: in lista restavano gli ingredienti di ricette non più
+    pianificate, mescolati a quelli giusti.
+    """
+    a = ricetta(client, "A", 2, [{"name": "Pomodoro", "quantity": 500, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Zucchine", "quantity": 300, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": a, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    [pasto] = client.get("/api/plan").get_json()
+    client.delete(f"/api/plan/{pasto['id']}")
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": b, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-16", "end": "2026-09-16"})
+
+    nomi = [i["name"] for i in client.get("/api/shopping").get_json()]
+    assert nomi == ["Zucchine"]
+
+
+def test_voce_manuale_sopravvive_alla_rigenerazione(client):
+    """Quello che l'utente scrive a mano non è della generazione e resta."""
+    client.post("/api/shopping", json={"name": "Carta da cucina", "quantity": 1, "unit": "pz"})
+    rid = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+    nomi = [i["name"] for i in client.get("/api/shopping").get_json()]
+    assert nomi == ["Carta da cucina", "Farina"]
+
+
+def test_voce_manuale_mantiene_la_sua_quantita(client):
+    """La riga scritta a mano non viene fusa né riscritta dalla generazione."""
+    client.post("/api/shopping", json={"name": "Farina", "quantity": 100, "unit": "g"})
+    rid = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    r = client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
+    assert r.get_json() == {"added": 0, "already_listed": 1}
+    voci = [i for i in client.get("/api/shopping").get_json() if i["name"] == "Farina"]
+    assert len(voci) == 1
+    assert voci[0]["quantity"] == pytest.approx(100)
 
 
 def test_aggiunta_dispensa_si_converte_a_unita_esistente(client):
@@ -703,16 +752,16 @@ def test_dispensa_che_copre_un_giorno_solo(client):
     assert sum(giorni.values()) == pytest.approx(voce["quantity"])
 
 
-def test_generazione_ripetuta_riflette_le_quote_giornaliere(client):
-    """Rigenerare raddoppia il totale e anche le quote giornaliere."""
+def test_generazione_ripetuta_tiene_le_quote_giornaliere(client):
+    """Rigenerare più volte non gonfia né il totale né le quote giornaliere."""
     rid = ricetta(client, "A", 2, [{"name": "Zucchine", "quantity": 250, "unit": "g"}])
     client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
 
     client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
     client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
     [voce] = client.get("/api/shopping").get_json()
-    assert voce["quantity"] == pytest.approx(500)
-    assert voce["days"][0]["quantity"] == pytest.approx(500)
+    assert voce["quantity"] == pytest.approx(250)
+    assert voce["days"][0]["quantity"] == pytest.approx(250)
 
 
 def test_voce_manuale_non_ha_giorni(client):
@@ -765,27 +814,27 @@ def test_voce_preesistente_senza_giorni_non_contraddice_il_totale(client):
     E' il caso della lista già in uso: il totale c'è, i giorni no. Al momento
     della lettura la ripartizione viene riscalata sul totale effettivo.
     """
-    # voce creata a mano con quantità, poi rigenerata dal piano
+    # voce creata a mano con quantità: la generazione non la tocca
     client.post("/api/shopping", json={"name": "Farina", "quantity": 100, "unit": "g"})
     rid = ricetta(client, "A", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
     client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
 
     client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
     [voce] = client.get("/api/shopping").get_json()
-    assert voce["quantity"] == pytest.approx(300)  # 100 manuale + 200 dal piano
-    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(300)
+    assert voce["quantity"] == pytest.approx(100)  # la voce manuale resta com'è
+    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(100)
 
 
 def test_generazione_ripetuta_non_amplifica_le_quote(client):
-    """Rigenerare più volte non deve gonfiare le quote oltre il totale."""
+    """Rigenerare più volte non deve gonfiare né le quote né il totale."""
     rid = ricetta(client, "A", 2, [{"name": "Olio", "quantity": 50, "unit": "ml"}])
     client.post("/api/plan", json={"date": "2026-09-15", "meal": "cena", "recipe_id": rid, "servings": 2})
     for _ in range(3):
         client.post("/api/shopping/generate", json={"start": "2026-09-15", "end": "2026-09-15"})
 
     [voce] = client.get("/api/shopping").get_json()
-    assert voce["quantity"] == pytest.approx(150)
-    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(150)
+    assert voce["quantity"] == pytest.approx(50)
+    assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(50)
 
 
 

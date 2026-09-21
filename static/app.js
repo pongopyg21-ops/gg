@@ -211,7 +211,9 @@ $('#gen-week').addEventListener('click', async () => {
     const r = await api('/api/shopping/generate', {
       method: 'POST', body: { start: iso(weekStart), end: iso(end) },
     });
-    toast(`${r.added} voci aggiunte alla lista della spesa`);
+    // la lista generata si ricostruisce: le voci manuali restano e non si contano
+    const extra = r.already_listed ? `, ${r.already_listed} già in lista a mano` : '';
+    toast(`${r.added} voci aggiunte alla lista della spesa${extra}`);
     $$('#tabs button').find((b) => b.dataset.tab === 'shopping').click();
   } catch (err) { toast(err.message); }
 });

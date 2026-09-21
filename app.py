@@ -89,6 +89,17 @@ def migrate(db):
     # tocca le righe gia' presenti, cosi' le modifiche dell'utente restano.
     _semina_pulizie(db)
 
+    # Le voci create prima che esistesse la distinzione non dicono da dove
+    # vengono, e non c'e' modo di ricavarlo: anche una voce scritta a mano
+    # valorizza `ingredient_id`. Si marcano tutte come generate, cosi' la prima
+    # rigenerazione ripulisce la lista accumulata invece di lasciarla a meta'.
+    # Le poche voci aggiunte a mano prima dell'aggiornamento vanno reinserite:
+    # meglio una lista che riparte pulita che una che resta sbagliata.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(shopping_items)")}
+    if have and "generated" not in have:
+        db.execute("ALTER TABLE shopping_items ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
+        db.execute("UPDATE shopping_items SET generated = 1")
+
 
 def _semina_pulizie(db):
     # `migrate` viene chiamata anche su database vecchi a cui manca del tutto la
@@ -836,6 +847,13 @@ def shopping_generate():
             entry["base_qty"] += qty
 
     added = 0
+    marcate = 0
+
+    # La lista generata e' una fotografia del piano attuale, non un registro di
+    # tutte le generazioni passate: si azzera e si ricostruisce. Accumulare
+    # portava a voci di ricette non piu' pianificate e a quantita' raddoppiate
+    # a ogni clic. Le voci aggiunte a mano (`generated = 0`) non si toccano.
+    db.execute("DELETE FROM shopping_items WHERE generated = 1")
 
     for (iid, _group), entry in needed.items():
         dim = entry["dim"]
@@ -850,30 +868,21 @@ def shopping_generate():
         to_buy = units.convert(to_buy_base, check_unit, buy_unit)
         if to_buy is None:
             to_buy = to_buy_base
-        row = one(db.execute(
-            "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0 AND unit = ?",
-            (iid, buy_unit)))
-        if not row:
-            # voce aperta in un'altra unità compatibile: ci si accoda convertendo
-            for cand in db.execute(
-                "SELECT * FROM shopping_items WHERE ingredient_id = ? AND checked = 0", (iid,)
-            ):
-                converted = units.convert(to_buy, buy_unit, cand["unit"])
-                if converted is not None:
-                    row = cand
-                    to_buy = converted
-                    break
-        if row:
-            db.execute("UPDATE shopping_items SET quantity = ? WHERE id = ?",
-                       (units.format_quantity(row["quantity"] + to_buy), row["id"]))
-        else:
-            db.execute(
-                "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id) VALUES (?, ?, ?, ?, ?)",
-                (entry["name"], units.format_quantity(to_buy), buy_unit, entry["category"], iid),
-            )
+        # una voce scritta a mano per lo stesso ingrediente e' di chi l'ha
+        # scritta: non si duplica ne' si fonde, si lascia com'e'
+        manuale = one(db.execute(
+            "SELECT id FROM shopping_items WHERE ingredient_id = ? AND checked = 0",
+            (iid,)))
+        if manuale:
+            marcate += 1
+            continue
+        db.execute(
+            "INSERT INTO shopping_items (name, quantity, unit, category, ingredient_id, generated) VALUES (?, ?, ?, ?, ?, 1)",
+            (entry["name"], units.format_quantity(to_buy), buy_unit, entry["category"], iid),
+        )
         added += 1
     db.commit()
-    return jsonify({"added": added})
+    return jsonify({"added": added, "already_listed": marcate})
 
 
 # ---------------------------------------------------------------- voce

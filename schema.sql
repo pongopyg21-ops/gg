@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS shopping_items (
     category      TEXT NOT NULL DEFAULT 'Altro',
     ingredient_id INTEGER REFERENCES ingredients(id) ON DELETE SET NULL,
     checked       INTEGER NOT NULL DEFAULT 0,
+    -- 1 se la voce e' stata calcolata dal piano: alla rigenerazione si puo'
+    -- ricostruire da zero senza toccare quello che l'utente ha aggiunto a mano
+    generated     INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
