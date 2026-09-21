@@ -81,6 +81,7 @@ ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
   Non toccano `cucina.db`.
 - `cucina.db` non è versionato: per provare l'app va creato con `seed.py`.
 - `seed.py` è idempotente e rimuove le ricette elencate in `REMOVED`.
+- `ingredients` è un catalogo condiviso: le ricette lo popolano via `get_or_create_ingredient`, ma eliminare una ricetta non lo ripulisce (il `CASCADE` tocca `recipe_items`, non il catalogo). Ogni endpoint che rimuove un uso — ricetta, dispensa, voce di spesa — chiama `delete_orphan_ingredients`, che cancella solo gli id non referenziati da nessuna delle tre tabelle. Aggiungendo un nuovo percorso di rimozione, va chiamata anche lì.
 - Aggiungendo una ricetta al seed si usa una delle costanti di categoria (`FRUTTA`,
   `CARNE`, …): se manca il valore, va aggiunta in cima a `seed.py`, altrimenti la
   categoria finisce nel DB come stringa sbagliata. Ogni formato di pasta nuovo va
@@ -200,7 +201,7 @@ Il layout sotto i 560px è una sola colonna. Tre vincoli da non rompere quando s
 - Gli input del telefono usano `font-size: 16px`: sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro.
 - La dispensa è una tabella che diventa elenco di schede. Le etichette di colonna arrivano da `data-label` sulle celle, generato in `renderPantry`, e sono mostrate via `::before`: aggiungendo una colonna va aggiunto anche il `data-label`.
 - I bersagli toccabili hanno `min-height: 42px`.
-- Il pulsante vocale è `position: fixed` in basso a destra, quindi `main` ha `padding-bottom` generoso: senza, il pulsante coprirebbe l'ultima voce delle liste. Lo `z-index` (40) è sotto i modali, così non galleggia sopra le finestre aperte.
+- Il pulsante vocale è `position: fixed` in basso a destra, quindi `main` ha `padding-bottom` generoso: senza, il pulsante coprirebbe l'ultima voce delle liste. Lo `z-index` (40) è sotto i modali, così non galleggia sopra le finestre aperte. Il pulsante Home flottante (`.home-fab`) sta nello stesso punto ma a sinistra: se un domani si aggiunge un terzo pulsante, va tenuto conto che gli angoli bassi sono occupati.
 - `.voice-box` ha `max-height: 100%; overflow-y: auto`: su schermi bassi (telefono piccolo, tastiera aperta) scorre dentro di sé invece di spingere la ✕ fuori dallo schermo. Senza, il pannello diventa impossibile da chiudere.
 
 ## Stile

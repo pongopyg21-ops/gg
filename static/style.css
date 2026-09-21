@@ -484,6 +484,19 @@ tr:last-child td { border-bottom: none; }
 .mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
 .mic.on { background: var(--accent); color: #fff; border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
 .mic-icon { pointer-events: none; }
+
+/* Ritorno alle sezioni: stesso stile del microfono, angolo opposto. */
+.home-fab {
+  position: fixed; left: 20px; bottom: 20px; z-index: 40;
+  width: 58px; height: 58px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--accent); font-size: 24px; line-height: 1;
+  box-shadow: 0 10px 26px -12px rgba(38, 34, 30, .4);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.home-fab:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(38, 34, 30, .5); }
+.home-fab-icon { pointer-events: none; }
 @keyframes mic-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(168, 69, 43, .45); }
   50% { box-shadow: 0 0 0 12px rgba(168, 69, 43, 0); }
@@ -952,6 +965,7 @@ tr:last-child td { border-bottom: none; }
 
   /* il microfono resta sotto il pollice, staccato dal bordo */
   .mic { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
+  .home-fab { left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
   /* spazio in fondo, altrimenti il pulsante copre l'ultima voce delle liste */
   main { padding-bottom: 88px; }
   /* il pannello vocale sale dal basso come il modale */

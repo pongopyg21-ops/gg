@@ -152,6 +152,27 @@ def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
     return cur.lastrowid
 
 
+def delete_orphan_ingredients(db):
+    """Rimuove gli ingredienti che nessuno usa piu'.
+
+    Eliminando una ricetta, `recipe_items` sparisce per CASCADE ma la riga in
+    `ingredients` resta: e' un catalogo, non un dato della ricetta. Senza questa
+    pulizia il nome continua a comparire nel riepilogo allergeni e fra i
+    suggerimenti del form, anche se nessuna ricetta lo nomina piu'.
+
+    Un ingrediente con una giacenza in dispensa o una voce in lista e' ancora in
+    uso: la spesa si genera dalle ricette, ma un articolo comprato a mano ha
+    diritto a restare. Per questo la condizione guarda tutte e tre le tabelle.
+    """
+    db.execute(
+        """DELETE FROM ingredients
+           WHERE id NOT IN (SELECT DISTINCT ingredient_id FROM recipe_items)
+             AND id NOT IN (SELECT ingredient_id FROM pantry)
+             AND id NOT IN (SELECT ingredient_id FROM shopping_items
+                            WHERE ingredient_id IS NOT NULL)"""
+    )
+
+
 def parse_terms(raw):
     """Da testo libero a elenco di termini: separatori riga, virgola e punto e virgola."""
     if isinstance(raw, (list, tuple)):
@@ -370,6 +391,7 @@ def pantry_modify(pid):
     db = get_db()
     if request.method == "DELETE":
         db.execute("DELETE FROM pantry WHERE id = ?", (pid,))
+        delete_orphan_ingredients(db)
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
@@ -472,6 +494,8 @@ def recipe_detail(rid):
 
     if request.method == "DELETE":
         db.execute("DELETE FROM recipes WHERE id = ?", (rid,))
+        # gli ingredienti che solo questa ricetta usava restano orfani altrimenti
+        delete_orphan_ingredients(db)
         db.commit()
         return jsonify({"ok": True})
 
@@ -501,6 +525,8 @@ def recipe_detail(rid):
             iid = get_or_create_ingredient(db, iname, units.normalize(it.get("unit")), it.get("category") or "Altro")
             db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit) VALUES (?, ?, ?, ?)",
                        (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
+        # togliendo un ingrediente dalla ricetta puo' restare senza padrone
+        delete_orphan_ingredients(db)
         db.commit()
         return jsonify(recipe_full(db, rid))
 
@@ -720,6 +746,7 @@ def shopping_modify(sid):
     db = get_db()
     if request.method == "DELETE":
         db.execute("DELETE FROM shopping_items WHERE id = ?", (sid,))
+        delete_orphan_ingredients(db)
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
@@ -735,6 +762,7 @@ def shopping_modify(sid):
 def shopping_clear_checked():
     db = get_db()
     db.execute("DELETE FROM shopping_items WHERE checked = 1")
+    delete_orphan_ingredients(db)
     db.commit()
     return jsonify({"ok": True})
 

@@ -230,6 +230,75 @@ def test_eliminazione_ricetta_rimuove_dal_piano(client):
     assert client.get("/api/plan").get_json() == []
 
 
+def nomi_ingredienti(client, q=""):
+    return [i["name"] for i in client.get(f"/api/ingredients?q={q}").get_json()]
+
+
+def test_eliminazione_ricetta_rimuove_gli_ingredienti_orfani(client):
+    """Il catalogo non deve conservare nomi che nessuna ricetta usa piu'.
+
+    Eliminando la ricetta `recipe_items` sparisce per CASCADE ma la riga in
+    `ingredients` no: senza la pulizia il nome resterebbe nel riepilogo
+    allergeni e fra i suggerimenti del form.
+    """
+    rid = ricetta(client, "Prova", 2, [{"name": "ZZZunico", "quantity": 100, "unit": "g"}])
+    assert "ZZZunico" in nomi_ingredienti(client, "ZZZunico")
+
+    client.delete(f"/api/recipes/{rid}")
+    assert nomi_ingredienti(client, "ZZZunico") == []
+    assert "ZZZunico" not in client.get("/api/profile/allergens").get_json()
+
+
+def test_ingrediente_condiviso_sopravvive_alla_rimozione(client):
+    """Se un'altra ricetta lo usa ancora, l'ingrediente resta."""
+    a = ricetta(client, "Prima", 2, [{"name": "ZZZcondiviso", "quantity": 100, "unit": "g"}])
+    ricetta(client, "Seconda", 2, [{"name": "ZZZcondiviso", "quantity": 50, "unit": "g"}])
+
+    client.delete(f"/api/recipes/{a}")
+    assert "ZZZcondiviso" in nomi_ingredienti(client, "ZZZcondiviso")
+
+
+def test_ingrediente_in_dispensa_non_e_orfano(client):
+    """Un ingrediente ancora in dispensa si tiene, anche senza ricette."""
+    rid = ricetta(client, "Prova", 2, [{"name": "ZZZindispensa", "quantity": 100, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "ZZZindispensa", "quantity": 2, "unit": "kg"})
+
+    client.delete(f"/api/recipes/{rid}")
+    assert "ZZZindispensa" in nomi_ingredienti(client, "ZZZindispensa")
+
+
+def test_ingrediente_in_lista_non_e_orfano(client):
+    """Comprare a mano qualcosa lo rende un ingrediente in uso."""
+    rid = ricetta(client, "Prova", 2, [{"name": "ZZZinlista", "quantity": 100, "unit": "g"}])
+    client.post("/api/shopping", json={"name": "ZZZinlista", "quantity": 1, "unit": "kg"})
+
+    client.delete(f"/api/recipes/{rid}")
+    assert "ZZZinlista" in nomi_ingredienti(client, "ZZZinlista")
+
+
+def test_modifica_ricetta_ripulisce_l_ingrediente_tolto(client):
+    """Togliere un ingrediente dalla ricetta lo rimuove anche dal catalogo."""
+    ric = crea_ricetta(client, name="Prova", items=[
+        {"name": "ZZZresta", "quantity": 100, "unit": "g"},
+        {"name": "ZZZsparisce", "quantity": 50, "unit": "g"}])
+    assert "ZZZsparisce" in nomi_ingredienti(client, "ZZZsparisce")
+
+    client.put(f"/api/recipes/{ric['id']}", json={
+        "name": "Prova", "servings": 2,
+        "items": [{"name": "ZZZresta", "quantity": 100, "unit": "g"}]})
+    assert nomi_ingredienti(client, "ZZZsparisce") == []
+    assert "ZZZresta" in nomi_ingredienti(client, "ZZZresta")
+
+
+def test_rimozione_dalla_dispensa_libera_l_ingrediente(client):
+    """Svuotata la dispensa, un ingrediente senza ricette non ha piu' motivo di restare."""
+    client.post("/api/pantry", json={"name": "ZZZdispensa", "quantity": 1, "unit": "pz"})
+    riga = client.get("/api/pantry").get_json()[0]
+
+    client.delete(f"/api/pantry/{riga['id']}")
+    assert nomi_ingredienti(client, "ZZZdispensa") == []
+
+
 def test_dettaglio_ricetta_espone_la_preparazione(client):
     """La finestra della preparazione legge istruzioni, ingredienti e tempi."""
     rid = ricetta(client, "Frittata", 2, [{"name": "Uova", "quantity": 3, "unit": "pz"}])

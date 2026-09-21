@@ -87,6 +87,8 @@ function apriSezione(nome) {
   $('#app').classList.remove('hidden');
   // il microfono e' una funzione della cucina: altrove non serve
   $('#mic').classList.toggle('hidden', nome !== 'cucina');
+  // la home invece resta raggiungibile da ogni area
+  $('#home-fab').classList.remove('hidden');
   window.scrollTo(0, 0);
   switchTab(cfg.prima);
   // le domande iniziali riguardano la cucina: si aprono qui, non sulla home
@@ -98,6 +100,7 @@ function tornaAlleSezioni() {
   $('#voice').classList.add('hidden');
   $('#app').classList.add('hidden');
   $('#mic').classList.add('hidden');
+  $('#home-fab').classList.add('hidden');
   $('#home').classList.remove('hidden');
   document.title = 'Il Cliente';
   window.scrollTo(0, 0);
@@ -105,6 +108,7 @@ function tornaAlleSezioni() {
 
 $$('.home-card').forEach((card) => card.addEventListener('click', () => apriSezione(card.dataset.section)));
 $('#to-home').addEventListener('click', tornaAlleSezioni);
+$('#home-fab').addEventListener('click', tornaAlleSezioni);
 
 /* ---------- tabs ---------- */
 $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
