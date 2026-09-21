@@ -56,21 +56,20 @@ un nome comune e si rischierebbe di fermare quello di un altro progetto.
 
 ## Recupero e link pubblico
 
-Il codice vive sul branch **`gg`** del repository `pongopyg21-ops/gg` (non su
-`main`, che è vuoto). Una conversazione nuova parte su `main`: per riprendere il
-lavoro va recuperato il branch giusto prima di avviare.
-
-```bash
-git fetch --depth=1 origin gg:refs/remotes/origin/gg
-git checkout -B gg origin/gg
-./avvia.sh
-```
+Il codice vive sul branch **`gg`**, allineato a **`main`**: un clone normale del
+repository contiene già tutto, non serve recuperare nulla prima di `./avvia.sh`.
 
 Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
 12000, quindi l'indirizzo da aprire è quello della conversazione *corrente*
-(`work-1-...`) e non quello della vecchia sessione. Un link di una conversazione
+(`work-1-...`) e non quello di una sessione vecchia. Un link di una conversazione
 chiusa risponde 404 anche se l'app era sana: significa solo che il sandbox non è
 più attivo. Il rimedio è riavviare l'app in una sessione attiva, non ricostruirla.
+
+**Bad Gateway (502) invece è il server dell'app spento**, non un problema di
+rete: l'ambiente termina i processi in background anche durante una sessione,
+non solo fra una e l'altra, e la porta inoltrata resta senza ascoltatore. Si
+risolve con `./avvia.sh`, che riparte e aspetta `/api/meta`. Vale la pena
+ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
