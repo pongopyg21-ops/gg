@@ -1,14 +1,21 @@
 """Popola il database con un ricettario italiano di partenza.
 
 Idempotente: le ricette con un nome già presente vengono saltate.
+
 Uso:  python3 seed.py            (usa CUCINA_DB, default cucina.db)
+
+`semina(percorso)` e' anche la funzione che `app.init_db()` chiama per le case
+nuove, che nascono con questo ricettario: agisce su un percorso esplicito e non
+passa dall'app, cosi' non dipende dalla casa collegata.
 """
 import os
-import sys
+import sqlite3
+from contextlib import closing
 
 os.environ.setdefault("CUCINA_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "cucina.db"))
 
 import app as app_module  # noqa: E402
+import units  # noqa: E402
 
 FRUTTA = "Frutta e Verdura"
 CARNE = "Carne e Pesce"
@@ -753,53 +760,88 @@ PHOTOS = {
 }
 
 
+def semina(percorso, remove=REMOVED, recipes=None, photos=None, stampa=False):
+    """Scrive il ricettario in `percorso`. Ritorna (aggiunte, rimosse, totali).
+
+    Parla direttamente col database invece di usare le API: una casa appena
+    creata non ha nessuna sessione, quindi le API risponderebbero 401. Le foto
+    restano condivise in `static/recipes/`: sono file, non dati di una casa.
+    """
+    recipes = RECIPES if recipes is None else recipes
+    photos = PHOTOS if photos is None else photos
+    with closing(sqlite3.connect(percorso)) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys = ON")
+
+        rimosse = 0
+        for nome in remove:
+            cur = db.execute("DELETE FROM recipes WHERE name = ?", (nome,))
+            if cur.rowcount:
+                rimosse += 1
+                if stampa:
+                    print(f"  rimossa: {nome}")
+
+        esistenti = {r["name"] for r in db.execute("SELECT name FROM recipes")}
+        aggiunte = 0
+        for recipe in recipes:
+            if recipe["name"] in esistenti:
+                if stampa:
+                    print(f"  saltata (già presente): {recipe['name']}")
+                continue
+            foto = photos.get(recipe["name"])
+            rid = _inserisci_ricetta(db, recipe, foto)
+            aggiunte += 1
+            if stampa:
+                print(f"  aggiunta: {recipe['name']}")
+            esistenti.add(recipe["name"])
+
+        # collega le foto anche alle ricette gia' presenti, senza toccare il resto
+        aggiornate = 0
+        for r in db.execute("SELECT id, name, image, image_credit FROM recipes"):
+            foto = photos.get(r["name"])
+            if not foto or (r["image"] == foto[0] and r["image_credit"] == foto[1]):
+                continue
+            db.execute("UPDATE recipes SET image = ?, image_credit = ? WHERE id = ?",
+                       (foto[0], foto[1], r["id"]))
+            aggiornate += 1
+        if aggiornate and stampa:
+            print(f"  {aggiornate} foto collegate alle ricette esistenti.")
+
+        totali = db.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
+        db.commit()
+    return aggiunte, rimosse, totali
+
+
+def _inserisci_ricetta(db, recipe, foto=None):
+    """Inserisce una ricetta con i suoi ingredienti. Usa le stesse regole
+    dell'API: le unita' passano da `units.normalize`, gli ingredienti sono
+    condivisi per nome."""
+    image, credito = (foto or ("", ""))
+    cur = db.execute(
+        "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions,"
+        " image, image_credit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (recipe["name"], recipe.get("servings", 2), recipe.get("time_minutes"),
+         recipe.get("difficulty", "facile"), recipe.get("instructions", ""),
+         image, credito if image else ""),
+    )
+    rid = cur.lastrowid
+    for voce in recipe.get("items", []):
+        unita = units.normalize(voce.get("unit"))
+        ingrediente = app_module.get_or_create_ingredient(
+            db, voce.get("name"), unita, voce.get("category", "Altro"))
+        if ingrediente is None:
+            continue
+        db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                   " VALUES (?, ?, ?, ?)",
+                   (rid, ingrediente, float(voce.get("quantity", 0) or 0), unita))
+    return rid
+
+
 def main():
     app_module.init_db()
-    client = app_module.app.test_client()
-    esistenti = {r["name"]: r["id"] for r in client.get("/api/recipes").get_json()}
-
-    rimosse = 0
-    for nome in REMOVED:
-        rid = esistenti.get(nome)
-        if rid is None:
-            continue
-        client.delete(f"/api/recipes/{rid}")
-        rimosse += 1
-        print(f"  rimossa: {nome}")
-
-    aggiunte = 0
-    for recipe in RECIPES:
-        if recipe["name"] in esistenti:
-            print(f"  saltata (già presente): {recipe['name']}")
-            continue
-        photo = PHOTOS.get(recipe["name"])
-        if photo:
-            recipe = dict(recipe, image=photo[0], image_credit=photo[1])
-        response = client.post("/api/recipes", json=recipe)
-        if response.status_code != 201:
-            print(f"  ERRORE su {recipe['name']}: {response.get_json()}", file=sys.stderr)
-            continue
-        aggiunte += 1
-        print(f"  aggiunta: {recipe['name']}")
-
-    # collega le foto anche alle ricette gia' presenti, senza toccare il resto
-    aggiornate = 0
-    for recipe in client.get("/api/recipes").get_json():
-        photo = PHOTOS.get(recipe["name"])
-        if not photo:
-            continue
-        dettaglio = client.get(f"/api/recipes/{recipe['id']}").get_json()
-        if dettaglio.get("image") == photo[0] and dettaglio.get("image_credit") == photo[1]:
-            continue
-        dettaglio["image"] = photo[0]
-        dettaglio["image_credit"] = photo[1]
-        client.put(f"/api/recipes/{recipe['id']}", json=dettaglio)
-        aggiornate += 1
-    if aggiornate:
-        print(f"\n{aggiornate} foto collegate alle ricette esistenti.")
-
-    totali = client.get("/api/recipes").get_json()
-    print(f"\n{aggiunte} aggiunte, {rimosse} rimosse, {len(totali)} in totale.")
+    aggiunte, rimosse, totali = semina(
+        os.environ["CUCINA_DB"], stampa=True)
+    print(f"\n{aggiunte} aggiunte, {rimosse} rimosse, {totali} in totale.")
     print(f"Database: {os.environ['CUCINA_DB']}")
 
 

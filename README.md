@@ -16,6 +16,58 @@ Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non 
 mescolano. Il pulsante vocale 🎙 resta raggiungibile da ogni area, e in home c'è
 un pulsante **Parla al maggiordomo** accanto al titolo.
 
+## Case separate
+
+L'app non ha un solo insieme di dati: ogni **casa** ha il suo, con ricette,
+dispensa, piano, spesa, pulizie, FAQ, progetti e magazzino propri. Si entra
+scrivendo il nome della casa e la sua password; la sessione resta in un biscotto
+firmato, quindi **si scrive una volta sola** e si rimane collegati anche
+riaprendo il browser giorni dopo. Il pulsante **Esci**, in testata, riporta alla
+schermata di accesso per cambiare casa.
+
+La separazione è un **file di database distinto** per casa (`case/case-<slug>.db`),
+non una colonna `house_id` sulle tabelle. Le tabelle sono tredici e le query
+cinquanta: una colonna dimenticata da qualche parte mostrerebbe i dati di una casa
+a un'altra. Cambiando il file, invece, tutte le query restano identiche a prima —
+è `get_db()` (`app.py`) che apre quello giusto, e non c'è modo di dimenticare un
+filtro.
+
+Le password stanno in un registro a parte (`houses.db`), in PBKDF2-SHA256 con sale
+casuale: se il registro finisce in un backup, non è leggibile in chiaro. Il registro
+sa quali case esistono, ma **non contiene nessun dato della casa**: cancellare una
+casa è togliere la sua riga, senza toccare le altre. Il file del database non viene
+cancellato, per non distruggere mesi di ricette con un click sbagliato; chi vuole
+ripulire davvero trova i file in `case/`.
+
+Le case nuove nascono con il **ricettario italiano di partenza** (`seed.py`), così
+si parte con contenuti da selezionare invece che con una schermata vuota.
+
+### La prima casa
+
+La prima volta che l'app parte, il database che c'era prima (`cucina.db`) diventa
+la casa **Casa**, senza copiare né spostare nulla: il registro punta a quel file.
+La password viene generata e **stampata una volta sola** nel log dell'avvio:
+
+```
+============================================================
+Le case sono attive: il database esistente e' diventato la casa "Casa".
+  Nome:     Casa
+  Password: ...
+Annotala: nel registro c'e' solo l'impronta, non la password.
+============================================================
+```
+
+Va trascritta subito: nel registro c'è solo l'impronta, quindi non è recuperabile
+in seguito. Si può cambiare in qualsiasi momento da `PUT /api/houses/password`.
+
+### Perché la password non è un optional
+
+Con dati separati, senza password chiunque abbia il link potrebbe scrivere il nome
+di un'altra casa e leggerne dispensa, ricette e progetti — comprese le password del
+Wi-Fi e i codici che stanno nelle FAQ. Sulla domanda "serve la password?" la risposta
+è quindi sì, una per casa: è quello che rende reale la separazione invece di
+lasciarla di comodo.
+
 ## Funzionalità
 
 - **Piano settimanale** — assegna una ricetta ai pasti di ogni giorno, con porzioni personalizzabili. Quanti pasti al giorno si sceglie all'inizio (da 1 a 5) e si cambia quando si vuole dal Profilo: i nomi dei pasti stanno in `MEAL_SETS` (`app.py`), l'interfaccia li legge da `/api/meta`, quindi aggiungerne o toglierne uno si fa in un punto solo.
@@ -154,18 +206,26 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Novantacinque test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, esecuzione reale degli intenti via `/api/voice`) e la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa).
+Centonovantasette test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso).
 
 
 ## Interfaccia
 
-Lo stile è editoriale, da ricettario: fondo carta calda, inchiostro scuro e un solo accento terracotta. I titoli sono in **Fraunces** (serif variabile), l'interfaccia in **Hanken Grotesk**. Entrambi i font sono ospitati in `static/fonts/`, quindi l'app funziona anche senza connessione e non dipende da CDN esterne.
+Direzione mare: fondo schiuma, inchiostro blu profondo, un solo accento acqua. Tutto in **Helvetica** e nelle sue simili già presenti nei sistemi (Helvetica Neue su macOS/iOS, Arial su Windows, Liberation Sans su Linux): il font non si scarica, la pagina si compone alla prima visita e non c'è niente da mantenere in `static/fonts/`.
 
 L'eleganza sta in tipografia, spaziature e linee sottili: niente ombre marcate o decorazioni. Le quantità usano cifre incolonnate (`tabular-nums`), così i numeri non ballano fra una riga e l'altra.
 
 Per la scelta dei colori vale il contrasto WCAG AA: ogni testo resta sopra 4.5:1 sul proprio fondo, anche il grigio secondario, che sui fondi colorati tende a scendere sotto soglia.
 
 L'app funziona anche da telefono, dove sta in una sola colonna: la barra delle schede resta agganciata in alto, i campi di input usano 16px (sotto questa soglia iOS ingrandisce la pagina al primo tocco e non torna indietro), i bersagli toccabili sono alti almeno 42px e la tabella della dispensa diventa un elenco di schede, perché quattro colonne non entrerebbero nello schermo.
+
+## Accesso
+
+Quando non si è collegati la pagina mostra la **schermata di accesso**: nome della casa e password, con i nomi delle case esistenti proposti come suggerimento. Chi non ha ancora una casa la crea da lì (**Crea una casa nuova**) e nasce subito collegato, col ricettario di partenza.
+
+Un messaggio d'errore compare sotto il modulo per password sbagliata o casa inesistente, **con lo stesso testo nei due casi**: dire quale dei due è errato aiuterebbe a indovinare le case altrui.
+
+La sessione sta in un biscotto firmato lato server, quindi non passa dalla memoria della pagina: ricaricando o riaprendo il browser si resta collegati. Il segreto che firma i biscotti è in `houses.db`, non in una variabile generata all'avvio, altrimenti ogni riavvio del server scollegherebbe tutti — e i riavvii qui sono frequenti.
 
 ## Foto delle ricette
 
@@ -191,7 +251,7 @@ Dal **Piano** la finestra ha in più il pulsante *Rimuovi dal piano*, perché cl
 ./avvia.sh
 ```
 
-Lo script prepara l'ambiente e avvia il server, verificando che risponda davvero: installa Flask se manca, crea il database con `seed.py` se non esiste, avvia il processo staccato dalla shell e attende la risposta di `/api/meta`. Se qualcosa non va, lo dice e mostra le ultime righe del log invece di lasciare un link muto.
+Lo script prepara l'ambiente e avvia il server, verificando che risponda davvero: installa Flask se manca, crea il database con `seed.py` se non esiste, avvia il processo staccato dalla shell e attende la risposta della **pagina iniziale**. Il controllo è sulla pagina e non su un'API perché con le case separate le API rispondono 401 finché non si è collegati: un 401 farebbe sembrare morto un server che invece è pronto a mostrare l'accesso. Se qualcosa non va, lo script lo dice e mostra le ultime righe del log invece di lasciare un link muto.
 
 ```bash
 ./avvia.sh            # avvia (o riavvia se già attivo)
@@ -228,6 +288,12 @@ Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:loc
 
 | Metodo | Endpoint | Descrizione |
 | --- | --- | --- |
+| GET | `/api/session` | Chi è collegato (`{authenticated, house, nome}`) |
+| GET | `/api/houses` | Case esistenti (`[{slug, nome}]`), senza le password |
+| POST | `/api/houses` | Crea una casa `{nome, password}` col ricettario di partenza e vi collega chi la crea |
+| POST | `/api/login` | Accesso `{nome, password}`; risponde 401 con lo stesso messaggio per casa inesistente e password sbagliata |
+| POST | `/api/logout` | Esce dalla casa |
+| PUT | `/api/houses/password` | Cambia password `{attuale, nuova}` |
 | GET | `/api/meta` | Pasti e numero di pasti al giorno, unità di misura, categorie, allergeni |
 | GET/PUT | `/api/profile` | Profilo: nome, `meals_per_day`, restrizioni dichiarate, `favorite_ids` (preferite) e `fav_prompted` |
 | GET | `/api/profile/allergens` | Allergeni riconosciuti per ogni ingrediente in uso |
@@ -245,10 +311,13 @@ Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:loc
 | POST | `/api/shopping/generate` | Genera la lista da un intervallo `{start, end}` |
 | POST | `/api/voice` | Interpreta un comando dettato `{text}` (`voice.py`) e lo esegue: `pantry_add`, `shopping_add`, `term_add`, `recipe_search`. Risponde 422 se la frase non è un comando |
 
+Tutte le API tranne quelle di accesso richiedono una sessione e rispondono **401** senza: la pagina iniziale, i file statici e le rotte qui sopra dell'accesso sono le uniche pubbliche. Il controllo sta in un `before_request` unico (`app.py`), non su ogni rotta, perché dimenticarsene una significherebbe esporre una casa.
+
 ## Struttura
 
 ```
 app.py              # backend Flask + API REST + logica di generazione
+houses.py           # case separate: registro, password, un database per casa
 units.py            # conversione e normalizzazione delle unità di misura
 voice.py            # comprensione dei comandi vocali
 allergens.py        # riconoscimento di allergeni e intolleranze
@@ -259,6 +328,9 @@ avvia.sh            # avvio dell'app (dipendenze, seed, server)
 static/index.html   # interfaccia
 static/style.css
 static/app.js
-static/recipes/     # foto delle ricette (Wikimedia Commons, licenze libere)
-static/fonts/       # Fraunces e Hanken Grotesk, ospitati in locale
+static/recipes/     # foto delle ricette (Wikimedia Commons, licenze libere), condivise fra le case
 ```
+
+I database (**`cucina.db`, `houses.db`, `case/`**) non sono versionati: si creano al
+primo avvio. Le foto delle ricette sono file condivisi, non dati di una casa: ogni
+casa sceglie quali usare.

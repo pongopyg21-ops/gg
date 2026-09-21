@@ -13,16 +13,64 @@ os.environ["CUCINA_DB"] = DB
 
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
+import houses  # noqa: E402
 import igiene  # noqa: E402
 import units  # noqa: E402
 import voice  # noqa: E402
 
+# Il registro delle case nel test non tocca quello vero del progetto.
+REGISTRO = os.path.join(os.path.dirname(DB), "test-houses.db")
+houses.REGISTRY_PATH = REGISTRO
+houses.CASE_DIR = os.path.join(os.path.dirname(DB), "test-case")
+
+CASA_TEST = "casa-test"
+PASSWORD_TEST = "password-di-prova"
+
+
+def registra_casa(nome="Casa Test", password=PASSWORD_TEST, db_path=None):
+    """Registra la casa di prova e le prepara il database.
+
+    I test delle funzioni (ricette, dispensa, spesa...) non riguardano le case:
+    questa casa unica serve a farli girare come prima, quando il database era
+    uno solo. I test della separazione fra case creano le proprie.
+    """
+    houses.init_registro()
+    if not houses.esiste(CASA_TEST):
+        houses.registra(CASA_TEST, nome, password, db_file="")
+    percorso = db_path or houses.db_path(CASA_TEST)
+    app_module.init_db(percorso)
+    return CASA_TEST
+
 
 @pytest.fixture()
 def client():
+    if os.path.exists(REGISTRO):
+        os.remove(REGISTRO)
     if os.path.exists(DB):
         os.remove(DB)
-    app_module.init_db()
+    for f in os.listdir(houses.CASE_DIR) if os.path.isdir(houses.CASE_DIR) else []:
+        if f.startswith("case-"):
+            os.remove(os.path.join(houses.CASE_DIR, f))
+    registra_casa()
+    app_module.app.config.update(TESTING=True)
+    with app_module.app.test_client() as c:
+        # la casa di prova e' collegata in partenza: i test che non riguardano
+        # l'accesso non devono ripetere il login ogni volta
+        c.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST})
+        yield c
+
+
+@pytest.fixture()
+def anon():
+    """Un client senza nessuna casa collegata: per i test dell'accesso."""
+    if os.path.exists(REGISTRO):
+        os.remove(REGISTRO)
+    if os.path.exists(DB):
+        os.remove(DB)
+    for f in os.listdir(houses.CASE_DIR) if os.path.isdir(houses.CASE_DIR) else []:
+        if f.startswith("case-"):
+            os.remove(os.path.join(houses.CASE_DIR, f))
+    registra_casa()
     app_module.app.config.update(TESTING=True)
     with app_module.app.test_client() as c:
         yield c
@@ -1191,6 +1239,7 @@ def test_riducendo_i_pasti_il_fabbisogno_per_giorno_ignora_i_nascosti(client):
 
 def test_migrazione_aggiunge_il_numero_di_pasti(client):
     """Un DB creato prima della scelta pasti riceve la colonna a 2."""
+    DB = houses.db_path(CASA_TEST)   # ora il database e' quello della casa
     with sqlite3.connect(DB) as c:
         c.execute("ALTER TABLE profile RENAME TO profile_vecchio")
         c.execute("""CREATE TABLE profile (
@@ -1887,4 +1936,176 @@ def test_magazzino_ordina_prima_quello_che_manca(client):
     client.post("/api/storage", json={"name": "Abbondante", "quantity": 10, "min_quantity": 1})
     client.post("/api/storage", json={"name": "Scarso", "quantity": 1, "min_quantity": 5})
     assert [v["name"] for v in client.get("/api/storage").get_json()][0] == "Scarso"
+
+
+# ------------------------------------------------------------ case
+# La separazione fra case: il comportamento che deve reggere e' che i dati di
+# una casa non si vedano mai dall'altra, ne' in lettura ne' in scrittura.
+
+
+def test_senza_accesso_le_api_rispondono_401(anon):
+    """Nessuna casa collegata: i dati non si toccano e non si leggono."""
+    for percorso in ["/api/recipes", "/api/pantry", "/api/shopping", "/api/profile",
+                     "/api/meta", "/api/storage", "/api/projects", "/api/faq"]:
+        r = anon.get(percorso)
+        assert r.status_code == 401, f"{percorso} accessibile senza accesso"
+        assert r.get_json().get("auth") is False
+
+
+def test_la_pagina_e_i_file_statici_restano_pubblici(anon):
+    """La pagina deve caricarsi per poter mostrare l'accesso."""
+    assert anon.get("/").status_code == 200
+    assert anon.get("/static/app.js").status_code == 200
+
+
+def test_sessione_anonima_dice_non_autenticato(anon):
+    assert anon.get("/api/session").get_json() == {"authenticated": False}
+
+
+def test_password_sbagliata_non_entra(anon):
+    r = anon.post("/api/login", json={"nome": "Casa Test", "password": "sbagliata"})
+    assert r.status_code == 401
+    assert anon.get("/api/session").get_json()["authenticated"] is False
+
+
+def test_casa_inesistente_non_entra(anon):
+    r = anon.post("/api/login", json={"nome": "Non Esiste", "password": "x"})
+    assert r.status_code == 401
+    # stesso messaggio della password sbagliata: non rivela quali case esistono
+    assert r.get_json()["error"] == "Nome o password non corretti"
+
+
+def test_accesso_riuscito_e_session(anon):
+    r = anon.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST})
+    assert r.status_code == 200
+    info = anon.get("/api/session").get_json()
+    assert info["authenticated"] is True
+    assert info["nome"] == "Casa Test"
+
+
+def test_uscire_toglie_laccesso(anon):
+    anon.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST})
+    assert anon.get("/api/recipes").status_code == 200
+    anon.post("/api/logout")
+    assert anon.get("/api/recipes").status_code == 401
+
+
+def test_ogni_casa_vede_solo_le_sue_ricette(anon):
+    """Il cuore della separazione: due case, ricette diverse, nessuna interferenza."""
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
+    anon.post("/api/recipes", json={"name": "Piatto di A", "servings": 2, "items": []})
+    nomi_a = {r["name"] for r in anon.get("/api/recipes").get_json()}
+    assert "Piatto di A" in nomi_a
+
+    # casa B, creata dopo: non deve vedere nulla di A
+    anon.post("/api/logout")
+    anon.post("/api/houses", json={"nome": "Casa B", "password": "bbbb"})
+    nomi_b = {r["name"] for r in anon.get("/api/recipes").get_json()}
+    assert "Piatto di A" not in nomi_b, "una casa vede le ricette dell'altra"
+    anon.post("/api/recipes", json={"name": "Piatto di B", "servings": 2, "items": []})
+
+    # tornando ad A, la ricetta di B non deve comparire
+    anon.post("/api/logout")
+    anon.post("/api/login", json={"nome": "Casa A", "password": "aaaa"})
+    nomi_a2 = {r["name"] for r in anon.get("/api/recipes").get_json()}
+    assert "Piatto di B" not in nomi_a2, "una casa vede le ricette dell'altra"
+    assert "Piatto di A" in nomi_a2
+
+
+def test_case_separate_per_dispensa_e_spesa(anon):
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
+    anon.post("/api/pantry", json={"name": "Farina", "quantity": 5, "unit": "kg"})
+    assert any(v["name"] == "Farina" for v in anon.get("/api/pantry").get_json())
+
+    anon.post("/api/logout")
+    anon.post("/api/houses", json={"nome": "Casa B", "password": "bbbb"})
+    assert not any(v["name"] == "Farina" for v in anon.get("/api/pantry").get_json())
+
+
+def test_una_casa_nuova_nasce_col_ricettario(anon):
+    """Le case nuove non partono vuote: hanno il ricettario italiano di partenza."""
+    anon.post("/api/houses", json={"nome": "Casa Nuova", "password": "cccc"})
+    ricette = anon.get("/api/recipes").get_json()
+    assert len(ricette) > 10, "una casa nuova deve avere il ricettario di partenza"
+    nomi = {r["name"] for r in ricette}
+    assert "Pasta al pomodoro" in nomi
+
+
+def test_la_casa_nuova_ha_gli_ingredienti_del_ricettario(anon):
+    """Il ricettario seminato deve avere ingredienti veri e foto, non gusci vuoti."""
+    anon.post("/api/houses", json={"nome": "Casa Nuova", "password": "cccc"})
+    ricette = anon.get("/api/recipes").get_json()
+    con_foto = [r for r in ricette if r.get("image")]
+    assert con_foto, "le ricette seminate devono avere le foto"
+
+    # l'elenco non porta gli ingredienti: il dettaglio si' (gli ingredienti sono
+    # nella tabella `recipe_items`, che l'elenco non interroga)
+    pomodoro = next(r for r in ricette if r["name"] == "Pasta al pomodoro")
+    dettaglio = anon.get(f"/api/recipes/{pomodoro['id']}").get_json()
+    assert len(dettaglio["items"]) >= 3, "la ricetta seminata deve avere ingredienti"
+    assert all(v["name"].strip() for v in dettaglio["items"])
+
+
+def test_non_si_possono_creare_due_case_con_lo_stesso_nome(anon):
+    anon.post("/api/houses", json={"nome": "Casa Unica", "password": "aaaa"})
+    anon.post("/api/logout")
+    r = anon.post("/api/houses", json={"nome": "casa unica", "password": "bbbb"})
+    assert r.status_code == 400
+    assert "nome" in r.get_json()["error"].lower()
+
+
+def test_creare_una_casa_richiede_una_password(anon):
+    r = anon.post("/api/houses", json={"nome": "Senza Password", "password": ""})
+    assert r.status_code == 400
+
+
+def test_lenco_delle_case_non_espone_le_password(anon):
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
+    elenco = anon.get("/api/houses").get_json()
+    assert elenco and all(set(v) == {"slug", "nome"} for v in elenco)
+
+
+def test_cambiare_password(anon):
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "vecchia"})
+    # sbagliata: non deve cambiare nulla
+    assert anon.put("/api/houses/password",
+                    json={"attuale": "sbagliata", "nuova": "nuovissima"}).status_code == 400
+    assert anon.put("/api/houses/password",
+                    json={"attuale": "vecchia", "nuova": "nuovissima"}).status_code == 200
+    anon.post("/api/logout")
+    assert anon.post("/api/login", json={"nome": "Casa A", "password": "vecchia"}).status_code == 401
+    assert anon.post("/api/login", json={"nome": "Casa A", "password": "nuovissima"}).status_code == 200
+
+
+def test_la_password_non_si_salva_in_chiaro(anon):
+    """Se il registro finisce in un backup, la password non deve essere leggibile."""
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "segretissima"})
+    with sqlite3.connect(REGISTRO) as c:
+        salvata = c.execute("SELECT password FROM houses WHERE nome = 'Casa A'").fetchone()[0]
+    assert "segretissima" not in salvata
+    assert salvata.startswith("pbkdf2_sha256$")
+
+
+def test_la_password_e_verificata_correttamente():
+    impronta = houses.hash_password("prova")
+    assert houses.verifica_password("prova", impronta)
+    assert not houses.verifica_password("sbagliata", impronta)
+    assert not houses.verifica_password("prova", "formato-non-valido")
+
+
+def test_lo_slug_non_ammette_percorsi():
+    """Niente traversal: dal nome si ricava uno slug prevedibile."""
+    assert houses.slugify("Casa di Anna!") == "casa-di-anna"
+    assert houses.slugify("../../etc/passwd") == "etc-passwd"
+    with pytest.raises(ValueError):
+        houses.db_path("../../etc/passwd")
+
+
+def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
+    """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
+    anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
+    houses.elimina("casa-a")
+    info = anon.get("/api/session").get_json()
+    assert info["authenticated"] is False
+
 

@@ -7,11 +7,59 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<!-- Accesso: la prima cosa che si vede quando non si e' collegati. Ogni casa
+     ha la sua password e i suoi dati, quindi finche' non si entra non si
+     carica niente: le API rispondono 401 e la pagina resta qui. -->
+<section id="accesso" class="accesso hidden">
+  <div class="accesso-box">
+    <p class="home-kicker">Benvenuto</p>
+    <h1>Il Maggiordomo</h1>
+    <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
+    <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
+
+    <form id="accesso-form" class="accesso-form">
+      <div class="field">
+        <label for="acc-nome">Casa</label>
+        <input id="acc-nome" list="case-esistenti" autocomplete="username"
+               placeholder="Nome della casa" required>
+        <datalist id="case-esistenti"></datalist>
+      </div>
+      <div class="field">
+        <label for="acc-password">Password</label>
+        <input id="acc-password" type="password" autocomplete="current-password"
+               placeholder="La password della casa" required>
+      </div>
+      <p id="acc-errore" class="accesso-errore" hidden></p>
+      <button id="acc-entra" class="primary" type="submit">Entra</button>
+    </form>
+
+    <form id="nuova-form" class="accesso-form hidden">
+      <p class="home-lead">Una casa nuova nasce col ricettario italiano di partenza.</p>
+      <div class="field">
+        <label for="new-nome">Nome della casa</label>
+        <input id="new-nome" placeholder="Es. Casa di Anna" required>
+      </div>
+      <div class="field">
+        <label for="new-password">Password</label>
+        <input id="new-password" type="password" autocomplete="new-password"
+               placeholder="Almeno 4 caratteri" required>
+      </div>
+      <p id="new-errore" class="accesso-errore" hidden></p>
+      <div class="accesso-bottoni">
+        <button id="new-crea" class="primary" type="submit">Crea la casa</button>
+        <button id="new-annulla" type="button">Annulla</button>
+      </div>
+    </form>
+
+    <button id="acc-crea" class="accesso-link" type="button">Crea una casa nuova</button>
+  </div>
+</section>
+
 <!-- Pagina iniziale: smista verso le quattro aree dell'app. Gli ambiti sono
      diversi (la cucina, l'igiene, i progetti, le informazioni) e le funzioni di
      ciascuno vivono dentro la propria sezione: qui non c'e' nessuna scheda,
      solo la scelta. -->
-<section id="home" class="home">
+<section id="home" class="home hidden">
   <header class="home-hero">
     <p class="home-kicker">Benvenuto</p>
     <h1>Il Maggiordomo</h1>
@@ -64,6 +112,7 @@
 <header>
   <button id="to-home" class="back-home" title="Torna alla pagina iniziale">‹ Sezioni</button>
   <h1 id="app-title">🍳 Cucina</h1>
+  <button id="esci" class="esci" title="Esci dalla casa">Esci</button>
 </header>
 <nav id="tabs">
   <button data-tab="plan" data-section="cucina" class="active">📅 Piano</button>

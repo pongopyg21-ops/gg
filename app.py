@@ -1,23 +1,33 @@
 import os
+import secrets
 import re
 import sqlite3
 from contextlib import closing
 import datetime
 
-from flask import Flask, g, jsonify, request, send_from_directory
+from flask import Flask, g, jsonify, request, send_from_directory, session
 
 import allergens
 import faq
+import houses
 import igiene
 import magazzino
 import units
 import voice
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Il database storico: la prima casa, quella che raccoglie quello che c'era
+# prima che le case esistessero. Le altre stanno in `case/case-<slug>.db`.
 DB_PATH = os.environ.get("CUCINA_DB", os.path.join(BASE_DIR, "cucina.db"))
 SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+app.secret_key = houses.secret_key()
+# Il biscotto di sessione dura a lungo: l'utente scrive nome e password una volta
+# sola, poi resta collegato anche riaprendo il browser giorni dopo.
+app.config.update(PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=365),
+                  SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SAMESITE="Lax")
 
 # Quanti pasti al giorno e quali. L'utente sceglie il numero nel primo passo
 # dell'onboarding, e da lì derivano i pasti mostrati nel piano e accettati
@@ -43,9 +53,23 @@ def valid_meals(db):
     return MEAL_SETS.get(int(scelti), MEALS)
 
 
+def casa_attiva():
+    """Lo slug della casa collegata, o None. Sta nella sessione firmata."""
+    return session.get("casa")
+
+
 def get_db():
+    """Il database della casa collegata.
+
+    Aprire il file giusto e' tutto quello che separa due case: le query restano
+    identiche a prima, quindi non c'e' modo di dimenticarsi un filtro. Senza
+    sessione non c'e' database: le API rispondono 401 e non toccano nulla.
+    """
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        slug = casa_attiva()
+        if not slug:
+            return None
+        g.db = sqlite3.connect(houses.db_path(slug))
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
@@ -120,13 +144,33 @@ def _semina_pulizie(db):
     )
 
 
-def init_db():
-    with closing(sqlite3.connect(DB_PATH)) as db:
+def init_db(percorso=None, con_ricettario=False):
+    """Crea (se serve) il database di una casa e vi applica schema e migrazioni.
+
+    `con_ricettario` serve alle case nuove: nascono col ricettario italiano di
+    partenza invece che vuote. Non si usa per il database storico, che ha gia' i
+    suoi dati.
+    """
+    percorso = percorso or DB_PATH
+    with closing(sqlite3.connect(percorso)) as db:
         db.row_factory = sqlite3.Row
         with open(SCHEMA_PATH, encoding="utf-8") as fh:
             db.executescript(fh.read())
         migrate(db)
         db.commit()
+    if con_ricettario:
+        _semina_ricettario(percorso)
+
+
+def _semina_ricettario(percorso):
+    """Il ricettario di partenza in una casa nuova.
+
+    Riusa `seed.py` invece di duplicare l'elenco: le ricette sono 45 e con le
+    foto, e tenerne due copie significherebbe che un giorno divergono.
+    """
+    import seed
+
+    seed.semina(percorso)
 
 
 def rows(cur):
@@ -136,6 +180,85 @@ def rows(cur):
 def one(cur):
     r = cur.fetchone()
     return dict(r) if r else None
+
+
+# ---------------------------------------------------------------- accesso
+# Le rotte pubbliche sono poche e non toccano dati di una casa: la pagina, i
+# file statici e l'accesso. Tutto il resto richiede una sessione. La difesa sta
+# qui, in un punto solo, invece che su ogni rotta: dimenticarsene una
+# significherebbe esporre i dati di una casa, e sono cinquanta.
+ROTTE_PUBBLICHE = {"/", "/api/houses", "/api/login", "/api/logout", "/api/session"}
+
+
+@app.before_request
+def richiedi_accesso():
+    percorso = request.path
+    if percorso in ROTTE_PUBBLICHE:
+        return None
+    if percorso.startswith("/static/"):
+        return None
+    if casa_attiva():
+        return None
+    return jsonify({"error": "Non sei collegato a nessuna casa", "auth": False}), 401
+
+
+@app.route("/api/session")
+def api_session():
+    """Chi e' collegato. La usa la pagina per decidere se mostrare l'accesso."""
+    slug = casa_attiva()
+    if not slug:
+        return jsonify({"authenticated": False})
+    nome = houses.nome_di(slug)
+    if nome is None:
+        # la casa e' stata eliminata mentre la sessione era aperta
+        session.clear()
+        return jsonify({"authenticated": False})
+    return jsonify({"authenticated": True, "house": slug, "nome": nome})
+
+
+@app.route("/api/houses")
+def api_houses():
+    """Le case esistenti, per proporle nella schermata di accesso.
+
+    Non e' un'informazione sensibile: sono nomi di casa, e senza la password non
+    danno accesso a nulla.
+    """
+    return jsonify(houses.elenco())
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.get_json(force=True) or {}
+    casa = houses.per_nome(data.get("nome"))
+    if not casa or not houses.autentica(casa["slug"], data.get("password")):
+        # stesso messaggio per casa inesistente e password sbagliata: dire quale
+        # delle due e' errata aiuterebbe a indovinare le case altrui
+        return bad_request("Nome o password non corretti", 401)
+    session.clear()
+    session["casa"] = casa["slug"]
+    session.permanent = True
+    return jsonify({"house": casa["slug"], "nome": casa["nome"]})
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/houses", methods=["POST"])
+def api_house_create():
+    """Crea una casa con il ricettario di partenza e vi collega chi la crea."""
+    data = request.get_json(force=True) or {}
+    try:
+        slug = houses.crea(data.get("nome"), data.get("password"))
+    except ValueError as err:
+        return bad_request(str(err))
+    init_db(houses.db_path(slug), con_ricettario=True)
+    session.clear()
+    session["casa"] = slug
+    session.permanent = True
+    return jsonify({"house": slug, "nome": houses.nome_di(slug)}), 201
 
 
 def bad_request(msg, code=400):
@@ -1497,6 +1620,43 @@ def faq_modify(fid):
     return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
 
 
+@app.route("/api/houses/password", methods=["PUT"])
+def api_house_password():
+    """Cambia la password della casa collegata."""
+    slug = casa_attiva()
+    data = request.get_json(force=True) or {}
+    try:
+        houses.cambia_password(slug, data.get("attuale"), data.get("nuova"))
+    except ValueError as err:
+        return bad_request(str(err))
+    return jsonify({"ok": True})
+
+
+def migra_case():
+    """La prima casa raccoglie il database che c'era prima delle case.
+
+    Se il registro e' vuoto e `cucina.db` esiste, quel database diventa la casa
+    storica invece di restare orfano: senza questo passaggio i dati di mesi
+    diventerebbero irraggiungibili, perche' nessuna sessione potrebbe puntarvi.
+    La password e' generata e stampata una volta sola: va trascritta, non si
+    recupera in seguito (nel registro c'e' solo l'impronta, non la password).
+    """
+    houses.init_registro()
+    if houses.elenco():
+        return
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+        return
+    password = secrets.token_urlsafe(9)
+    houses.registra(houses.STORICA, "Casa", password, db_file=os.path.basename(DB_PATH))
+    print("\n" + "=" * 64)
+    print("Le case sono attive: il database esistente e' diventato la casa \"Casa\".")
+    print(f"  Nome:     Casa")
+    print(f"  Password: {password}")
+    print("Annotala: nel registro c'e' solo l'impronta, non la password.")
+    print("=" * 64 + "\n")
+
+
 if __name__ == "__main__":
+    migra_case()
     init_db()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=True)

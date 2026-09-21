@@ -1,9 +1,9 @@
 # Il Maggiordomo — note per gli agenti
 
-App Flask + SQLite + SPA in JS puro. Backend in `app.py`, conversione unità in
-`units.py`, riconoscimento allergeni in `allergens.py`, comandi vocali in
-`voice.py`, dati iniziali in `seed.py`, pulizie in `igiene.py`, informazioni utili
-in `faq.py`, magazzino in `magazzino.py`.
+App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
+`houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
+`allergens.py`, comandi vocali in `voice.py`, dati iniziali in `seed.py`, pulizie
+in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
 **Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa, spesa,
@@ -25,9 +25,10 @@ contatti, codici).
 **All'inizio di ogni conversazione il server non è attivo.** L'ambiente viene
 azzerato fra una sessione e l'altra: i processi in background muoiono e i
 pacchetti installati con `pip` di sistema spariscono. Il primo passo operativo è
-quindi sempre `./avvia.sh`, che rimette in piedi tutto e aspetta che `/api/meta`
-risponda davvero. Non serve chiederlo all'utente: è il modo normale di
-ricominciare.
+quindi sempre `./avvia.sh`, che rimette in piedi tutto e aspetta che la **pagina
+iniziale** risponda davvero (non un'API: con le case separate le API rispondono 401
+finché non si è collegati, e un 401 farebbe sembrare morto un server vivo). Non
+serve chiederlo all'utente: è il modo normale di ricominciare.
 
 Le dipendenze però non si reinstallano più a ogni giro: stanno in una **venv
 dentro il progetto** (`.venv`). `/workspace` è un volume che sopravvive
@@ -39,9 +40,9 @@ cinque secondi. Se la venv non è creabile — `python3-venv` assente, disco pie
 
 `avvia.sh` fa quello che serve per rimettere in piedi l'app: prepara l'ambiente,
 crea `cucina.db` con `seed.py` se non c'è, avvia il server staccato dalla
-shell e **aspetta che risponda davvero** su `/api/meta` invece di dare per scontato
-che sia partito. È il modo normale di avviare l'app: evita di ripetere a mano i
-passi qui sotto.
+shell e **aspetta che risponda davvero** invece di dare per scontato che sia
+partito. È il modo normale di avviare l'app: evita di ripetere a mano i passi qui
+sotto.
 
 L'host pubblico inoltra sulla **porta 12000** (predefinita nello script): senza
 `PORT=12000` il server si avvia su 8000 e il link esterno restituisce errore. Il
@@ -74,6 +75,45 @@ ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
+
+## Case separate
+
+Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,
+progetti e magazzino non si vedono fra case diverse. La separazione è un **file di
+database distinto** (`case/case-<slug>.db`), non una colonna `house_id`: le tabelle
+sono tredici e le query cinquanta, e una colonna dimenticata da qualche parte
+mostrerebbe i dati di una casa a un'altra. `get_db()` (`app.py`) apre il file giusto
+e tutte le query restano com'erano: **non aggiungere filtri per casa alle query**, la
+separazione è già nel file.
+
+Conseguenze pratiche per chi mette mano al codice:
+
+- **Ogni rotta nuova richiede una sessione.** Il controllo sta in un unico
+  `before_request` (`app.py`) con l'elenco `ROTTE_PUBBLICHE`; una rotta non elencata
+  lì è protetta da sola. Aggiungendo una rotta pubblica, va aggiunta a quell'insieme
+  — e deve essere una che non tocca dati di una casa.
+- **`get_db()` può restituire `None`** se non c'è sessione. In pratica non succede
+  mai dentro una rotta, perché `before_request` risponde 401 prima; ma un nuovo
+  percorso chiamato fuori da una richiesta (uno script, un comando) non ha sessione
+  e va fatto passare da un percorso esplicito, come fa `seed.semina()`.
+- **Il seed di una casa nuova non passa dalle API**: una casa appena creata non ha
+  sessione, quindi le API risponderebbero 401. `seed.semina(percorso)` scrive
+  direttamente sul database, e `app.init_db(..., con_ricettario=True)` la chiama
+  alla creazione.
+- **Le password stanno in `houses.db`**, in PBKDF2-SHA256 con sale. `houses.db`
+  contiene solo nomi e password: nessun dato di casa. Il file del database non si
+  cancella insieme alla casa (mesi di ricette non devono sparire con un click
+  sbagliato).
+- **Il segreto delle sessioni è in `houses.db`** (`houses.secret_key()`), non in una
+  variabile generata all'avvio: altrimenti ogni riavvio del server scollegherebbe
+  tutti, e i riavvii qui sono frequenti.
+- **La casa storica** (`slug` `casa`) è il `cucina.db` di prima: `houses.migra_case()`
+  la registra al primo avvio e stampa la password una volta sola. Il registro tiene
+  il percorso in `db_file`, vuoto per le case normali.
+- **Nei test** il registro e la cartella delle case sono deviati su una cartella
+  temporanea (`houses.REGISTRY_PATH`, `houses.CASE_DIR` in `test_cucina.py`), così i
+  test non toccano il `houses.db` vero. La fixture `client` collega la casa di prova
+  e la `anon` no: i test dell'accesso usano `anon`.
 
 ## Convenzioni
 

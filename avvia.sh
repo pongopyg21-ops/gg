@@ -67,7 +67,10 @@ pid_attivo() {
 }
 
 risponde() {
-  curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/api/meta" 2>/dev/null
+  # Si chiede la pagina, non un'API: con le case separate le API rispondono 401
+  # finche' non si e' collegati, e un 401 qui farebbe sembrare morto un server
+  # che invece e' vivo e pronto a mostrare la schermata di accesso.
+  curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/" 2>/dev/null
 }
 
 # "kill -0" riesce anche su uno zombie, che però ha già finito di lavorare: in

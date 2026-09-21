@@ -2128,8 +2128,126 @@ async function loadIngredientsDatalist() {
   $('#ingredient-list').innerHTML = items.map((i) => `<option value="${esc(i.name)}">`).join('');
 }
 
+/* ---------- accesso ----------
+   Con case separate la password non e' un optional: senza, chiunque abbia il
+   link scriverebbe il nome di un'altra casa e ne leggerebbe i dati. La sessione
+   la tiene il server in un biscotto firmato, quindi qui non si salva nulla:
+   si chiede a /api/session chi e' collegato. */
+async function avviaAccesso() {
+  mostraAccesso();
+  await caricaCaseEsistenti();
+  $('#accesso-form').addEventListener('submit', entra);
+  $('#nuova-form').addEventListener('submit', creaCasa);
+  $('#acc-crea').addEventListener('click', () => {
+    $('#accesso-form').classList.add('hidden');
+    $('#acc-crea').classList.add('hidden');
+    $('#nuova-form').classList.remove('hidden');
+    $('#new-nome').focus();
+  });
+  $('#new-annulla').addEventListener('click', () => {
+    $('#nuova-form').classList.add('hidden');
+    $('#accesso-form').classList.remove('hidden');
+    $('#acc-crea').classList.remove('hidden');
+    nascondiErrore('#new-errore');
+  });
+  $('#acc-nome').focus();
+}
+
+function mostraAccesso() {
+  // la testata e le schede vivono dentro #app, che parte nascosto: basta
+  // togliere la home, il resto resta com'e'
+  $('#accesso').classList.remove('hidden');
+  $('#home').classList.add('hidden');
+}
+
+function nascondiErrore(sel) {
+  const el = $(sel);
+  el.hidden = true;
+  el.textContent = '';
+}
+
+function mostraErrore(sel, messaggio) {
+  const el = $(sel);
+  el.textContent = messaggio;
+  el.hidden = false;
+}
+
+async function caricaCaseEsistenti() {
+  try {
+    const caseEsistenti = await api('/api/houses');
+    $('#case-esistenti').innerHTML = caseEsistenti
+      .map((c) => `<option value="${esc(c.nome)}">`).join('');
+  } catch (e) {
+    // l'elenco e' solo un suggerimento: senza, si scrive il nome a mano
+  }
+}
+
+async function entra(evento) {
+  evento.preventDefault();
+  nascondiErrore('#acc-errore');
+  const bottone = $('#acc-entra');
+  bottone.disabled = true;
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: { nome: $('#acc-nome').value, password: $('#acc-password').value },
+    });
+    sessionStorage.removeItem('maggiordomo-errore'); // la sessione e' nuova
+    await avviaApp();
+  } catch (e) {
+    mostraErrore('#acc-errore', e.message || 'Nome o password non corretti');
+    $('#acc-password').value = '';
+    $('#acc-password').focus();
+  } finally {
+    bottone.disabled = false;
+  }
+}
+
+async function creaCasa(evento) {
+  evento.preventDefault();
+  nascondiErrore('#new-errore');
+  const bottone = $('#new-crea');
+  bottone.disabled = true;
+  try {
+    await api('/api/houses', {
+      method: 'POST',
+      body: { nome: $('#new-nome').value, password: $('#new-password').value },
+    });
+    await avviaApp();
+  } catch (e) {
+    mostraErrore('#new-errore', e.message || 'Non è stato possibile creare la casa');
+  } finally {
+    bottone.disabled = false;
+  }
+}
+
+async function esci() {
+  await api('/api/logout', { method: 'POST', body: {} });
+  location.reload();
+}
+
+/** Load della pagina: si entra solo se c'e' una casa collegata. */
+async function avviaApp() {
+  try {
+    const sessione = await api('/api/session');
+    if (!sessione.authenticated) {
+      await avviaAccesso();
+      return;
+    }
+    await init();
+  } catch (e) {
+    // se anche la sessione non risponde, meglio mostrare l'accesso che una
+    // pagina vuota: il messaggio d'errore serve a capire cosa succede
+    mostraAccesso();
+    mostraErrore('#acc-errore', e.message || 'Il server non risponde');
+  }
+}
+
 /* ---------- init ---------- */
-(async function init() {
+async function init() {
+  $('#accesso').classList.add('hidden');
+  $('#home').classList.remove('hidden');
+  $('#esci').addEventListener('click', esci);
   meta = await api('/api/meta');
   MEALS = meta.meals;
   allergenLabels = Object.fromEntries(meta.allergens.map((a) => [a.key, a.label]));
@@ -2150,7 +2268,11 @@ async function loadIngredientsDatalist() {
   // preferite) riguardano la cucina, quindi si aprono entrando in Cucina e non
   // addosso a chi sta andando in Igiene o Progetti.
   mostraInvitoProfilo();
-})();
+}
+
+// All'avvio non si carica niente: prima si chiede al server chi e' collegato.
+// `avviaApp` decide se mostrare la home o la schermata di accesso.
+avviaApp();
 
 /** Prima apertura: segnala sulla scheda Cucina che c'e' da completare il profilo. */
 function mostraInvitoProfilo() {
