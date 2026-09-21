@@ -1,20 +1,20 @@
-# 🍳 Il Cliente
+# 🍳 Il Maggiordomo
 
 Web app per gestire la cucina — ricette, dispensa, piano pasti settimanale e lista
 della spesa — insieme alle altre aree di casa.
 
 ## Sezioni
 
-L'app si apre su una **pagina iniziale** con tre aree:
+L'app si apre su una **pagina iniziale** con quattro aree:
 
-- **🍳 Cucina** — tutto quello che l'app sa fare oggi: piano pasti, ricette,
-  dispensa, lista della spesa, profilo e comandi vocali.
-- **🧽 Igiene** — pulizie di casa e della cucina. Sezione predisposta, ancora senza
-  funzioni.
-- **📋 Progetti** — lavori in corso e idee. Sezione predisposta, ancora senza funzioni.
+- **🍳 Cucina** — piano pasti, ricette, dispensa, lista della spesa, profilo e comandi vocali.
+- **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
+- **📋 Progetti** — lavori in corso e idee, con il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
+- **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
 
 Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non si
-mescolano; il pulsante vocale, che serve in cucina, resta nascosto altrove.
+mescolano. Il pulsante vocale 🎙 resta raggiungibile da ogni area, e in home c'è
+un pulsante **Parla al maggiordomo** accanto al titolo.
 
 ## Funzionalità
 
@@ -23,11 +23,11 @@ mescolano; il pulsante vocale, che serve in cucina, resta nascosto altrove.
 - **Dispensa** — ciò che hai già in casa, con quantità aggiornabili.
 - **Spesa** — lista raggruppata per categoria merceologica, con spunta degli articoli acquistati. Ogni voce indica quanto ne è già in dispensa.
 - **Filtro per giorno** — ogni voce dice quando serve e la lista si può restringere a un singolo giorno. Così i freschi si comprano vicino al pasto in cui servono, invece di fare tutta la spesa il lunedì per la domenica.
-- **Generazione automatica** — dal piano settimanale crea la lista della spesa: somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
+- **Lista della spesa automatica** — non c'è nulla da generare a mano: la lista si ricostruisce da sola quando si aggiunge o toglie un pasto, si modificano le dosi di una ricetta o si mette qualcosa in dispensa. Somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 - **Ricette preferite** — sempre in fase di profilazione si scelgono le ricette preferite, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
-- **Comandi vocali** — un pulsante 🎙 in basso a destra apre la dettatura: si può chiedere di aggiungere qualcosa alla dispensa o alla spesa, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina. La voce di conferma si può scegliere fra tre timbri, e un breve suono di apertura accompagna l'ingresso nell'app.
+- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa o alla spesa, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina. La voce di conferma si può scegliere fra tre timbri, e un breve suono di apertura accompagna l'ingresso nell'app.
 
 ## Allergie e intolleranze
 

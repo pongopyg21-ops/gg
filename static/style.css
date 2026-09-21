@@ -73,6 +73,29 @@ body {
 .home-lead {
   margin: 0; max-width: 54ch; font-size: 16px; color: var(--muted); line-height: 1.55;
 }
+.home-mission { margin-top: 8px; }
+.home-warning {
+  margin: 14px 0 0; font-size: 13px; font-weight: 600; color: var(--accent-deep);
+}
+
+/* Il microfono in home: il pulsante flottante e' nascosto qui, perche' non c'e'
+   ancora una sezione da cui parlare. Questo lo sostituisce, con la stessa
+   promessa ma senza l'angolo dello schermo. */
+.home-voice { margin: 0 0 28px; }
+.home-mic {
+  display: inline-flex; align-items: center; gap: 10px;
+  min-height: 46px; padding: 12px 22px; border-radius: 999px;
+  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  font-size: 15px; font-weight: 600; letter-spacing: .01em;
+  box-shadow: 0 10px 26px -14px rgba(14, 42, 56, .6);
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.home-mic:hover {
+  background: var(--accent-deep); border-color: var(--accent-deep);
+  transform: translateY(-2px);
+}
+.home-mic:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; }
+.home-mic .mic-icon { font-size: 20px; line-height: 1; pointer-events: none; }
 
 .home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 

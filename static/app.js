@@ -79,7 +79,7 @@ function apriSezione(nome) {
   if (!cfg) return;
   $('#app-title').textContent = cfg.titolo;
   $('#app-title').dataset.sezione = nome;
-  document.title = `${cfg.titolo} · Il Cliente`;
+  document.title = `${cfg.titolo} · Il Maggiordomo`;
   // solo le schede dell'area aperta
   $$('#tabs button').forEach((b) => {
     b.classList.toggle('hidden', b.dataset.section !== nome);
@@ -103,7 +103,7 @@ function tornaAlleSezioni() {
   $('#mic').classList.add('hidden');
   $('#home-fab').classList.add('hidden');
   $('#home').classList.remove('hidden');
-  document.title = 'Il Cliente';
+  document.title = 'Il Maggiordomo';
   window.scrollTo(0, 0);
 }
 
@@ -118,6 +118,9 @@ function apreSezioneDella(nome) {
 $$('.home-card').forEach((card) => card.addEventListener('click', () => apriSezione(card.dataset.section)));
 $('#to-home').addEventListener('click', tornaAlleSezioni);
 $('#home-fab').addEventListener('click', tornaAlleSezioni);
+// Stesso pannello del microfono flottante, ma raggiungibile dalla home: qui il
+// pulsante flottante e' nascosto, perche' non c'e' ancora una sezione aperta.
+$('#home-mic').addEventListener('click', apriVoce);
 
 /* ---------- tabs ---------- */
 $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
@@ -1712,7 +1715,7 @@ async function openOnboarding() {
   };
 
   const passoAllergie = () => {
-    showModal('Benvenuto su Il Cliente', `
+    showModal('Benvenuto su Il Maggiordomo', `
       <p class="lead">Passo 2 di 3 · dichiara allergie e intolleranze: le ricette che le
       contengono verranno segnalate. Puoi modificare tutto in seguito dalla scheda
       <strong>Profilo</strong>.</p>

@@ -3,20 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Il Cliente</title>
+<title>Il Maggiordomo</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<!-- Pagina iniziale: smista verso le tre aree dell'app. Gli ambiti sono
-     diversi (la cucina, l'igiene, i progetti) e le funzioni di ciascuno vivono
-     dentro la propria sezione: qui non c'e' nessuna scheda, solo la scelta. -->
+<!-- Pagina iniziale: smista verso le quattro aree dell'app. Gli ambiti sono
+     diversi (la cucina, l'igiene, i progetti, le informazioni) e le funzioni di
+     ciascuno vivono dentro la propria sezione: qui non c'e' nessuna scheda,
+     solo la scelta. -->
 <section id="home" class="home">
   <header class="home-hero">
     <p class="home-kicker">Benvenuto</p>
-    <h1>Il Cliente</h1>
-    <p class="home-lead">Scegli da dove cominciare. Dentro ogni sezione trovi gli
-      strumenti di quell'ambito, raccolti insieme e senza confusione.</p>
+    <h1>Il Maggiordomo</h1>
+    <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
+    <p class="home-lead home-mission">Progetti, informazioni e diritti, ma soprattutto
+      doveri dello stare a casa.</p>
+    <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
   </header>
+  <div class="home-voice">
+    <button id="home-mic" class="home-mic" type="button" title="Parla al maggiordomo" aria-label="Parla al maggiordomo">
+      <span class="mic-icon">🎙</span>
+      <span>Parla al maggiordomo</span>
+    </button>
+  </div>
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
       <span class="home-emoji">🍳</span>
