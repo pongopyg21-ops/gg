@@ -54,6 +54,27 @@ aspetta cinque secondi e poi "forza" un processo già morto. Il riconoscimento d
 processo verifica anche che giri da questa cartella (`/proc/<pid>/cwd`): `app.py` è
 un nome comune e si rischierebbe di fermare quello di un altro progetto.
 
+## Recupero e link pubblico
+
+Il codice vive sul branch **`gg`** del repository `pongopyg21-ops/gg` (non su
+`main`, che è vuoto). Una conversazione nuova parte su `main`: per riprendere il
+lavoro va recuperato il branch giusto prima di avviare.
+
+```bash
+git fetch --depth=1 origin gg:refs/remotes/origin/gg
+git checkout -B gg origin/gg
+./avvia.sh
+```
+
+Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
+12000, quindi l'indirizzo da aprire è quello della conversazione *corrente*
+(`work-1-...`) e non quello della vecchia sessione. Un link di una conversazione
+chiusa risponde 404 anche se l'app era sana: significa solo che il sandbox non è
+più attivo. Il rimedio è riavviare l'app in una sessione attiva, non ricostruirla.
+
+`cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
+`seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
+
 ## Convenzioni
 
 - `MEALS` in `app.py` è l'unica fonte dei pasti; il frontend li legge da `/api/meta`.
