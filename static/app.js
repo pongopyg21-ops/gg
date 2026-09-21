@@ -78,6 +78,7 @@ function apriSezione(nome) {
   const cfg = SEZIONI[nome];
   if (!cfg) return;
   $('#app-title').textContent = cfg.titolo;
+  $('#app-title').dataset.sezione = nome;
   document.title = `${cfg.titolo} · Il Cliente`;
   // solo le schede dell'area aperta
   $$('#tabs button').forEach((b) => {
@@ -85,8 +86,8 @@ function apriSezione(nome) {
   });
   $('#home').classList.add('hidden');
   $('#app').classList.remove('hidden');
-  // il microfono e' una funzione della cucina: altrove non serve
-  $('#mic').classList.toggle('hidden', nome !== 'cucina');
+  // il microfono serve in ogni area, non solo in cucina
+  $('#mic').classList.remove('hidden');
   // la home invece resta raggiungibile da ogni area
   $('#home-fab').classList.remove('hidden');
   window.scrollTo(0, 0);
@@ -106,6 +107,14 @@ function tornaAlleSezioni() {
   window.scrollTo(0, 0);
 }
 
+/* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
+   Serve ai comandi vocali, che possono toccare una scheda di un'altra area. */
+function apreSezioneDella(nome) {
+  if (!nome) return;
+  if (!$('#app').classList.contains('hidden') && $('#app-title').dataset.sezione === nome) return;
+  apriSezione(nome);
+}
+
 $$('.home-card').forEach((card) => card.addEventListener('click', () => apriSezione(card.dataset.section)));
 $('#to-home').addEventListener('click', tornaAlleSezioni);
 $('#home-fab').addEventListener('click', tornaAlleSezioni);
@@ -120,6 +129,8 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'shopping') renderShopping();
   if (btn.dataset.tab === 'profile') renderProfile();
   if (btn.dataset.tab === 'igiene') renderIgiene();
+  if (btn.dataset.tab === 'progetti') renderProgetti();
+  if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
 }));
 
@@ -205,17 +216,10 @@ $('#week-prev').addEventListener('click', () => { weekStart = addDays(weekStart,
 $('#week-next').addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderPlan(); });
 $('#week-today').addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderPlan(); });
 
-$('#gen-week').addEventListener('click', async () => {
-  const end = addDays(weekStart, 6);
-  try {
-    const r = await api('/api/shopping/generate', {
-      method: 'POST', body: { start: iso(weekStart), end: iso(end) },
-    });
-    // la lista generata si ricostruisce: le voci manuali restano e non si contano
-    const extra = r.already_listed ? `, ${r.already_listed} già in lista a mano` : '';
-    toast(`${r.added} voci aggiunte alla lista della spesa${extra}`);
-    $$('#tabs button').find((b) => b.dataset.tab === 'shopping').click();
-  } catch (err) { toast(err.message); }
+// la lista si aggiorna da sola a ogni modifica del piano: qui si va solo a
+// guardarla, senza dover rigenerare nulla
+$('#gen-week').addEventListener('click', () => {
+  $$('#tabs button').find((b) => b.dataset.tab === 'shopping').click();
 });
 
 /* ---------- RICETTE ---------- */
@@ -978,6 +982,278 @@ function apriChoreForm(v) {
 
 $('#ch-new').addEventListener('click', () => apriChoreForm(null));
 
+/* ---------- PROGETTI ----------
+   Lavori in corso e idee, fuori dalla cucina. La priorita' e' una scelta
+   dell'utente da 1 a 5 stelle e ordina la lista: e' il senso della sezione,
+   quindi i conclusi si nascondono invece di mescolarsi agli aperti. */
+let progetti = [];
+
+function stelle(n) {
+  // la stella piena e' un carattere, non un'immagine: resta nitida a ogni zoom
+  return '★'.repeat(n) + '☆'.repeat(5 - n);
+}
+
+function fmtData(iso) {
+  if (!iso) return '';
+  const [a, m, g] = iso.split('-');
+  return `${g}/${m}/${a}`;
+}
+
+function periodoProgetto(p) {
+  if (p.start_date && p.end_date) return `${fmtData(p.start_date)} → ${fmtData(p.end_date)}`;
+  if (p.start_date) return `dal ${fmtData(p.start_date)}`;
+  if (p.end_date) return `entro il ${fmtData(p.end_date)}`;
+  return '';
+}
+
+async function renderProgetti() {
+  const tutti = await api('/api/projects');
+  const mostraConclusi = $('#pr-show-done').checked;
+  progetti = tutti.filter((p) => mostraConclusi || !p.done);
+
+  if (!progetti.length) {
+    $('#pr-list').innerHTML = `<div class="empty-state">
+        <span class="empty-emoji">📋</span>
+        <h2>${tutti.length ? 'Nessun progetto aperto' : 'Nessun progetto'}</h2>
+        <p>${tutti.length
+          ? 'Tutti i progetti sono conclusi. Spunta "Mostra conclusi" per rivederli.'
+          : 'Aggiungi il primo progetto con data di inizio, fine e priorità.'}</p>
+      </div>`;
+    return;
+  }
+
+  $('#pr-list').innerHTML = progetti.map((p) => `
+    <article class="project-card ${p.done ? 'done' : ''}" data-id="${p.id}">
+      <div class="project-head">
+        <button class="project-check ${p.done ? 'on' : ''}" data-act="done"
+          title="${p.done ? 'Riapri' : 'Segna come concluso'}">${p.done ? '✓' : ''}</button>
+        <div class="project-main">
+          <h3 class="project-title">${esc(p.title)}</h3>
+          <div class="project-meta">
+            <span class="project-stars" title="Priorità ${p.priority} di 5">${stelle(p.priority)}</span>
+            ${periodoProgetto(p) ? `<span class="project-dates">📅 ${periodoProgetto(p)}</span>` : ''}
+          </div>
+        </div>
+        <div class="project-actions">
+          <button data-act="edit" title="Modifica">✏️</button>
+          <button data-act="del" title="Elimina">🗑️</button>
+        </div>
+      </div>
+      ${p.description ? `<p class="project-desc">${esc(p.description)}</p>` : ''}
+    </article>`).join('');
+}
+
+$('#pr-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = Number(btn.closest('.project-card').dataset.id);
+  const p = progetti.find((x) => x.id === id);
+  if (!p) return;
+
+  if (btn.dataset.act === 'done') {
+    await api(`/api/projects/${id}`, { method: 'PUT', body: { done: !p.done } });
+    toast(p.done ? 'Progetto riaperto' : 'Progetto concluso');
+    renderProgetti();
+  } else if (btn.dataset.act === 'edit') {
+    apriProgettoForm(p);
+  } else if (btn.dataset.act === 'del') {
+    if (!confirm(`Eliminare "${p.title}"?`)) return;
+    await api(`/api/projects/${id}`, { method: 'DELETE' });
+    toast('Progetto eliminato');
+    renderProgetti();
+  }
+});
+
+function apriProgettoForm(p) {
+  showModal(p ? 'Modifica progetto' : 'Nuovo progetto', `
+    <div class="field"><label>Titolo</label>
+      <input id="prf-title" value="${esc(p ? p.title : '')}" placeholder="Es. Sistemare il garage"></div>
+    <div class="field"><label>Descrizione</label>
+      <textarea id="prf-desc" rows="3" placeholder="Cosa c'è da fare, a grandi linee">${esc(p ? p.description : '')}</textarea></div>
+    <div class="row" style="margin-bottom:12px; align-items:flex-end">
+      <div class="field" style="flex:1; margin:0"><label>Inizio</label>
+        <input id="prf-start" type="date" value="${p ? p.start_date : ''}"></div>
+      <div class="field" style="flex:1; margin:0"><label>Fine</label>
+        <input id="prf-end" type="date" value="${p ? p.end_date : ''}"></div>
+    </div>
+    <div class="field"><label>Priorità</label>
+      <select id="prf-prio" class="plain">${[5, 4, 3, 2, 1].map((n) =>
+        `<option value="${n}"${(p ? p.priority : 3) === n ? ' selected' : ''}>${stelle(n)} (${n})</option>`).join('')}</select></div>
+    <div class="modal-foot">
+      <button id="prf-save" class="primary">${p ? 'Salva' : 'Aggiungi'}</button>
+      <button id="prf-cancel">Annulla</button>
+    </div>`);
+
+  $('#prf-cancel').addEventListener('click', hideModal);
+  $('#prf-save').addEventListener('click', async () => {
+    const corpo = {
+      title: $('#prf-title').value.trim(),
+      description: $('#prf-desc').value.trim(),
+      start_date: $('#prf-start').value,
+      end_date: $('#prf-end').value,
+      priority: Number($('#prf-prio').value),
+    };
+    if (!corpo.title) return toast('Inserisci un titolo');
+    try {
+      if (p) await api(`/api/projects/${p.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/projects', { method: 'POST', body: corpo });
+      hideModal();
+      toast(p ? 'Progetto salvato' : 'Progetto aggiunto');
+      renderProgetti();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+$('#pr-new').addEventListener('click', () => apriProgettoForm(null));
+$('#pr-show-done').addEventListener('change', renderProgetti);
+
+/* ---------- MAGAZZINO ----------
+   Quello che si tiene in casa e non si mangia: sapone, ferramenta, batterie.
+   Vive nei Progetti perche' non centra con la cucina: non entra in nessuna
+   ricetta e non si scala dal fabbisogno della spesa come fa la dispensa. */
+let magazzinoDati = [];
+let magazzinoMeta = { categories: [], places: [], default_category: 'Altro', default_place: 'Ripostiglio' };
+let magazzinoFiltro = '';
+
+async function renderMagazzino() {
+  if (!magazzinoMeta.categories.length) {
+    magazzinoMeta = await api('/api/magazzino/meta');
+    $('#st-filter').innerHTML = '<option value="">Tutte le categorie</option>' +
+      magazzinoMeta.categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  }
+
+  const tutti = await api('/api/storage');
+  const q = $('#st-search').value.trim().toLowerCase();
+  const soloScarsi = $('#st-low-only').checked;
+  magazzinoDati = tutti.filter((v) =>
+    (!soloScarsi || v.low) &&
+    (!magazzinoFiltro || v.category === magazzinoFiltro) &&
+    (!q || v.name.toLowerCase().includes(q) || v.place.toLowerCase().includes(q)));
+
+  const scarsi = tutti.filter((v) => v.low).length;
+  $('#st-count').textContent = tutti.length
+    ? `${tutti.length} ${tutti.length === 1 ? 'voce' : 'voci'}${scarsi ? ` · ${scarsi} in esaurimento` : ''}`
+    : '';
+
+  if (!magazzinoDati.length) {
+    $('#st-list').innerHTML = `<div class="empty-state">
+        <span class="empty-emoji">📦</span>
+        <h2>${tutti.length ? 'Nessun risultato' : 'Magazzino vuoto'}</h2>
+        <p>${tutti.length
+          ? 'Nessuna voce corrisponde al filtro.'
+          : 'Aggiungi quello che tieni in casa e non si mangia: sapone, bricolage, batterie.'}</p>
+      </div>`;
+    return;
+  }
+
+  $('#st-list').innerHTML = magazzinoDati.map((v) => `
+    <article class="storage-card ${v.low ? 'low' : ''}" data-id="${v.id}">
+      <div class="storage-head">
+        <div class="storage-main">
+          <h3 class="storage-name">${esc(v.name)}</h3>
+          <div class="storage-meta">
+            <span class="storage-tag">${esc(v.category)}</span>
+            <span class="storage-place">📍 ${esc(v.place)}</span>
+          </div>
+        </div>
+        <div class="storage-qty">
+          <input type="number" step="0.1" value="${v.quantity}" data-qty="${v.id}" class="qty-cell">
+          <span class="storage-unit">${esc(v.unit)}</span>
+        </div>
+        <div class="project-actions">
+          <button data-act="edit" title="Modifica">✏️</button>
+          <button data-act="del" title="Elimina">🗑️</button>
+        </div>
+      </div>
+      ${v.low ? '<p class="storage-alert">⚠️ Sta finendo</p>' : ''}
+      ${v.notes ? `<p class="storage-notes">${esc(v.notes)}</p>` : ''}
+    </article>`).join('');
+}
+
+$('#st-search').addEventListener('input', renderMagazzino);
+$('#st-filter').addEventListener('change', (e) => { magazzinoFiltro = e.target.value; renderMagazzino(); });
+$('#st-low-only').addEventListener('change', renderMagazzino);
+
+// la giacenza si corregge dalla cella stessa: e' il dato che cambia piu'
+// spesso, e aprire il form per una virgola e' un ostacolo inutile
+$('#st-list').addEventListener('change', async (e) => {
+  const id = e.target.dataset.qty;
+  if (!id) return;
+  await api(`/api/storage/${id}`, { method: 'PATCH', body: { quantity: Number(e.target.value) } });
+  toast('Quantità aggiornata');
+  renderMagazzino();
+});
+
+$('#st-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = Number(btn.closest('.storage-card').dataset.id);
+  const v = magazzinoDati.find((x) => x.id === id);
+  if (!v) return;
+
+  if (btn.dataset.act === 'edit') {
+    apriStorageForm(v);
+  } else if (btn.dataset.act === 'del') {
+    if (!confirm(`Eliminare "${v.name}" dal magazzino?`)) return;
+    await api(`/api/storage/${id}`, { method: 'DELETE' });
+    toast('Voce eliminata');
+    renderMagazzino();
+  }
+});
+
+function apriStorageForm(v) {
+  const cat = v ? v.category : magazzinoMeta.default_category;
+  const luogo = v ? v.place : magazzinoMeta.default_place;
+  showModal(v ? 'Modifica voce' : 'Nuova voce', `
+    <div class="field"><label>Nome</label>
+      <input id="stf-name" value="${esc(v ? v.name : '')}" placeholder="Es. Sapone per i piatti"></div>
+    <div class="row" style="margin-bottom:12px">
+      <div class="field" style="flex:1; margin:0"><label>Categoria</label>
+        <select id="stf-cat" class="plain">${magazzinoMeta.categories.map((c) =>
+          `<option${cat === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1; margin:0"><label>Dove</label>
+        <select id="stf-place" class="plain">${magazzinoMeta.places.map((p) =>
+          `<option${luogo === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <div class="field" style="flex:1; margin:0"><label>Quantità</label>
+        <input id="stf-qty" type="number" step="0.1" value="${v ? v.quantity : 1}"></div>
+      <div class="field" style="flex:1; margin:0"><label>Unità</label>
+        <input id="stf-unit" list="unit-list" value="${v ? v.unit : 'pz'}"></div>
+      <div class="field" style="flex:1; margin:0"><label>Scorta minima</label>
+        <input id="stf-min" type="number" step="0.1" value="${v ? v.min_quantity : 0}"></div>
+    </div>
+    <div class="field"><label>Note</label>
+      <input id="stf-notes" value="${esc(v ? v.notes : '')}" placeholder="Es. scaffale in alto, marca X"></div>
+    <div class="modal-foot">
+      <button id="stf-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
+      <button id="stf-cancel">Annulla</button>
+    </div>`);
+
+  $('#stf-cancel').addEventListener('click', hideModal);
+  $('#stf-save').addEventListener('click', async () => {
+    const corpo = {
+      name: $('#stf-name').value.trim(),
+      category: $('#stf-cat').value,
+      place: $('#stf-place').value,
+      quantity: Number($('#stf-qty').value) || 0,
+      unit: $('#stf-unit').value.trim() || 'pz',
+      min_quantity: Number($('#stf-min').value) || 0,
+      notes: $('#stf-notes').value.trim(),
+    };
+    if (!corpo.name) return toast('Inserisci un nome');
+    try {
+      if (v) await api(`/api/storage/${v.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/storage', { method: 'POST', body: corpo });
+      hideModal();
+      toast(v ? 'Voce salvata' : 'Voce aggiunta');
+      renderMagazzino();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+$('#st-new').addEventListener('click', () => apriStorageForm(null));
+
 /* ---------- FAQ ----------
    Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le voci
    si raggruppano per categoria e si cercano in locale: l'elenco e' piccolo e
@@ -1711,11 +1987,17 @@ async function eseguiComando(testo) {
 
     // una ricerca apre subito la scheda Ricette con il testo cercato
     if (res.intent === 'recipe_search') {
+      apriSezione('cucina');
       switchTab('recipes');
       $('#recipe-search').value = res.query;
       if (typeof renderRecipes === 'function') renderRecipes();
     } else {
+      // un comando puo' toccare una scheda di un'altra area (dettare una spesa
+      // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la
+      // scheda si attiverebbe sotto un'intestazione che non le appartiene
       for (const tab of res.reload || []) {
+        const btn = $(`#tabs button[data-tab="${tab}"]`);
+        if (btn) apreSezioneDella(btn.dataset.section);
         if (tab === 'pantry') renderPantry();
         if (tab === 'shopping') renderShopping();
         if (tab === 'profile') renderProfile();

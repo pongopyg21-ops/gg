@@ -9,6 +9,7 @@ from flask import Flask, g, jsonify, request, send_from_directory
 import allergens
 import faq
 import igiene
+import magazzino
 import units
 import voice
 
@@ -388,11 +389,16 @@ def pantry_add():
                     "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
                     (converted, cand["id"]))
                 db.commit()
+                rebuild_shopping(db)
+                db.commit()
                 return jsonify({"ok": True}), 201
         db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
     else:
         db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
                    (qty, existing["id"]))
+    db.commit()
+    # quello che entra in dispensa non serve piu' comprarlo: la lista segue
+    rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True}), 201
 
@@ -403,11 +409,14 @@ def pantry_modify(pid):
     if request.method == "DELETE":
         db.execute("DELETE FROM pantry WHERE id = ?", (pid,))
         delete_orphan_ingredients(db)
+        # senza la scorta in casa l'ingrediente torna da comprare
+        rebuild_shopping(db)
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
     db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
                (parse_float(data.get("quantity"), 0), pid))
+    rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True})
 
@@ -507,6 +516,8 @@ def recipe_detail(rid):
         db.execute("DELETE FROM recipes WHERE id = ?", (rid,))
         # gli ingredienti che solo questa ricetta usava restano orfani altrimenti
         delete_orphan_ingredients(db)
+        # se la ricetta era nel piano, i suoi ingredienti non servono piu' comprarli
+        rebuild_shopping(db)
         db.commit()
         return jsonify({"ok": True})
 
@@ -538,6 +549,9 @@ def recipe_detail(rid):
                        (rid, iid, parse_float(it.get("quantity"), 0), units.normalize(it.get("unit"))))
         # togliendo un ingrediente dalla ricetta puo' restare senza padrone
         delete_orphan_ingredients(db)
+        # e la lista deve seguire: se la ricetta e' nel piano, le quantita'
+        # cambiate valgono subito, senza rigenerare a mano
+        rebuild_shopping(db)
         db.commit()
         return jsonify(recipe_full(db, rid))
 
@@ -578,6 +592,9 @@ def plan_add():
            ON CONFLICT(date, meal) DO UPDATE SET recipe_id = excluded.recipe_id, servings = excluded.servings""",
         (data["date"], data["meal"], int(data["recipe_id"]), int(parse_float(data.get("servings"), 2))),
     )
+    # pianificare e' cio' che rende il piano una fonte di verita' per la spesa:
+    # la lista si aggiorna qui, cosi' non serve ricordarsi di rigenerarla
+    rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True}), 201
 
@@ -586,6 +603,8 @@ def plan_add():
 def plan_delete(pid):
     db = get_db()
     db.execute("DELETE FROM meal_plan WHERE id = ?", (pid,))
+    # togliendo un pasto i suoi ingredienti non servono piu': la lista segue
+    rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True})
 
@@ -800,31 +819,34 @@ def net_quantity(db, ingredient_id, unit, needed):
     return max(needed - have, 0.0)
 
 
-@app.route("/api/shopping/generate", methods=["POST"])
-def shopping_generate():
-    db = get_db()
-    data = request.get_json(force=True) or {}
-    start = data.get("start")
-    end = data.get("end")
-    if not start or not end:
-        return bad_request("start e end sono obbligatori")
+def rebuild_shopping(db):
+    """Ricostruisce la parte generata della lista della spesa dal piano intero.
 
+    La lista e' una fotografia del piano, non un registro di tutte le generazioni
+    passate: si azzera la parte generata e si rifa' da capo, cosi' una ricetta
+    tolta dal piano porta via i suoi ingredienti e rigenerare non raddoppia le
+    quantita'. Le voci scritte a mano (`generated = 0`) non si toccano mai.
+
+    Si guarda il piano intero e non un intervallo di date: i giorni in cui serve
+    una voce (`_day_breakdown`) si calcolano gia' su tutto il piano, e limitare le
+    quantita' a una settimana le faceva contraddire dai giorni.
+
+    Restituisce (voci_aggiunte, voci_già_in_lista_a_mano).
+    """
     filtro, pasti = meal_clause(db)
     plan = rows(db.execute(
         f"""SELECT mp.recipe_id, mp.servings AS plan_servings
            FROM meal_plan mp JOIN recipes r ON r.id = mp.recipe_id
-           WHERE mp.date BETWEEN ? AND ? AND {filtro}""",
-        (start, end, *pasti),
+           WHERE {filtro}""",
+        pasti,
     ))
-    if not plan:
-        return bad_request("Nessun pasto pianificato nel periodo indicato", 404)
 
     # Ricette coinvolte, con le porzioni della ricetta base per scalare le quantità
     recipe_base = {r["id"]: (r["servings"] or 1) for r in db.execute(
         f"""SELECT DISTINCT r.id, r.servings FROM recipes r
            JOIN meal_plan mp ON mp.recipe_id = r.id
-           WHERE mp.date BETWEEN ? AND ? AND {filtro}""",
-        (start, end, *pasti),
+           WHERE {filtro}""",
+        pasti,
     )}
 
     # Il fabbisogno si accumula nell'unità base della dimensione: così 'g' e 'kg'
@@ -846,15 +868,10 @@ def shopping_generate():
             qty, _base = units.to_base(it["quantity"] * factor, it["unit"])
             entry["base_qty"] += qty
 
-    added = 0
-    marcate = 0
-
-    # La lista generata e' una fotografia del piano attuale, non un registro di
-    # tutte le generazioni passate: si azzera e si ricostruisce. Accumulare
-    # portava a voci di ricette non piu' pianificate e a quantita' raddoppiate
-    # a ogni clic. Le voci aggiunte a mano (`generated = 0`) non si toccano.
     db.execute("DELETE FROM shopping_items WHERE generated = 1")
 
+    added = 0
+    marcate = 0
     for (iid, _group), entry in needed.items():
         dim = entry["dim"]
         base_qty = entry["base_qty"]
@@ -881,8 +898,187 @@ def shopping_generate():
             (entry["name"], units.format_quantity(to_buy), buy_unit, entry["category"], iid),
         )
         added += 1
+    return added, marcate
+
+
+@app.route("/api/shopping/generate", methods=["POST"])
+def shopping_generate():
+    """Rigenera la lista dal piano. Il piano la rigenera da solo a ogni modifica:
+    l'endpoint resta per poterla forzare a mano."""
+    db = get_db()
+    if not one(db.execute("SELECT id FROM meal_plan LIMIT 1")):
+        return bad_request("Nessun pasto pianificato", 404)
+    added, marcate = rebuild_shopping(db)
     db.commit()
     return jsonify({"added": added, "already_listed": marcate})
+
+
+# ---------------------------------------------------------------- progetti
+def project_row(r):
+    return {**dict(r), "done": bool(r["done"])}
+
+
+def project_payload(data):
+    """Normalizza e valida i campi di un progetto. Restituisce (campi, errore)."""
+    title = (data.get("title") or "").strip()
+    if not title:
+        return None, "Il titolo è obbligatorio"
+    priority = int(parse_float(data.get("priority"), 3))
+    if not 1 <= priority <= 5:
+        return None, "La priorità va da 1 a 5"
+    start = (data.get("start_date") or "").strip()
+    end = (data.get("end_date") or "").strip()
+    if start and end and end < start:
+        return None, "La data di fine non può precedere quella di inizio"
+    return {
+        "title": title,
+        "description": (data.get("description") or "").strip(),
+        "start_date": start,
+        "end_date": end,
+        "priority": priority,
+    }, None
+
+
+@app.route("/api/projects", methods=["GET", "POST"])
+def projects():
+    db = get_db()
+    if request.method == "POST":
+        campi, errore = project_payload(request.get_json(force=True) or {})
+        if errore:
+            return bad_request(errore)
+        cur = db.execute(
+            """INSERT INTO projects (title, description, start_date, end_date, priority)
+               VALUES (?, ?, ?, ?, ?)""",
+            (campi["title"], campi["description"], campi["start_date"],
+             campi["end_date"], campi["priority"]),
+        )
+        db.commit()
+        return jsonify(project_row(one(db.execute(
+            "SELECT * FROM projects WHERE id = ?", (cur.lastrowid,))))), 201
+
+    # aperti prima, poi per priorita' decrescente: l'ordine e' il senso della lista
+    return jsonify([project_row(r) for r in db.execute(
+        "SELECT * FROM projects ORDER BY done, priority DESC, end_date = '', end_date, id")])
+
+
+@app.route("/api/projects/<int:pid>", methods=["PUT", "DELETE"])
+def project_detail(pid):
+    db = get_db()
+    if not one(db.execute("SELECT id FROM projects WHERE id = ?", (pid,))):
+        return bad_request("Progetto non trovato", 404)
+
+    if request.method == "DELETE":
+        db.execute("DELETE FROM projects WHERE id = ?", (pid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    attuale = one(db.execute("SELECT * FROM projects WHERE id = ?", (pid,)))
+    # i campi si toccano solo se presenti: spuntare un progetto non deve
+    # richiedere di rimandare tutto il resto
+    if "done" in data:
+        db.execute("UPDATE projects SET done = ? WHERE id = ?",
+                   (1 if data["done"] else 0, pid))
+    if set(data) - {"done"}:
+        campi, errore = project_payload({**dict(attuale), **data})
+        if errore:
+            return bad_request(errore)
+        db.execute(
+            """UPDATE projects SET title = ?, description = ?, start_date = ?,
+               end_date = ?, priority = ? WHERE id = ?""",
+            (campi["title"], campi["description"], campi["start_date"],
+             campi["end_date"], campi["priority"], pid),
+        )
+    db.commit()
+    return jsonify(project_row(one(db.execute("SELECT * FROM projects WHERE id = ?", (pid,)))))
+
+
+# ---------------------------------------------------------------- magazzino
+@app.route("/api/storage", methods=["GET", "POST"])
+def storage():
+    db = get_db()
+    if request.method == "POST":
+        campi, errore = storage_payload(request.get_json(force=True) or {})
+        if errore:
+            return bad_request(errore)
+        cur = db.execute(
+            """INSERT INTO storage (name, category, place, quantity, unit, min_quantity, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (campi["name"], campi["category"], campi["place"], campi["quantity"],
+             campi["unit"], campi["min_quantity"], campi["notes"]),
+        )
+        db.commit()
+        return jsonify(storage_row(one(db.execute(
+            "SELECT * FROM storage WHERE id = ?", (cur.lastrowid,))))), 201
+
+    # prima quello che sta finendo, poi per categoria: e' l'ordine in cui si
+    # guarda un magazzino, cioe' cosa manca
+    return jsonify([storage_row(r) for r in db.execute(
+        """SELECT * FROM storage
+           ORDER BY (min_quantity > 0 AND quantity <= min_quantity) DESC, category, name""")])
+
+
+def storage_payload(data, attuale=None):
+    """Normalizza e valida i campi di una voce di magazzino. (campi, errore)."""
+    base = dict(attuale) if attuale else {}
+    name = (data["name"] if "name" in data else base.get("name", ""))
+    name = (name or "").strip()
+    if not name:
+        return None, "Il nome è obbligatorio"
+    return {
+        "name": name,
+        "category": (data.get("category") or base.get("category") or magazzino.CATEGORIA_DEFAULT).strip(),
+        "place": (data.get("place") or base.get("place") or magazzino.LUOGO_DEFAULT).strip(),
+        "quantity": parse_float(data.get("quantity", base.get("quantity", 0)), 0),
+        "unit": (data.get("unit") or base.get("unit") or "pz").strip() or "pz",
+        "min_quantity": parse_float(data.get("min_quantity", base.get("min_quantity", 0)), 0),
+        "notes": (data.get("notes", base.get("notes", "")) or "").strip(),
+    }, None
+
+
+def storage_row(r):
+    d = dict(r)
+    # "sta finendo" e' una proprieta' derivata dalla giacenza e dalla soglia:
+    # calcolarla qui evita che il client rifaccia il confronto e lo sbagli
+    d["low"] = bool(d["min_quantity"] > 0 and d["quantity"] <= d["min_quantity"])
+    return d
+
+
+@app.route("/api/storage/<int:sid>", methods=["GET", "PUT", "PATCH", "DELETE"])
+def storage_detail(sid):
+    db = get_db()
+    attuale = one(db.execute("SELECT * FROM storage WHERE id = ?", (sid,)))
+    if not attuale:
+        return bad_request("Voce non trovata", 404)
+
+    if request.method == "DELETE":
+        db.execute("DELETE FROM storage WHERE id = ?", (sid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    # PATCH e' per ritoccare solo la giacenza (il campo che si cambia piu'
+    # spesso); PUT rimanda la voce intera
+    if request.method == "PATCH":
+        campi, errore = storage_payload(data, attuale)
+    else:
+        campi, errore = storage_payload({**dict(attuale), **data})
+    if errore:
+        return bad_request(errore)
+    db.execute(
+        """UPDATE storage SET name = ?, category = ?, place = ?, quantity = ?,
+           unit = ?, min_quantity = ?, notes = ?, updated_at = datetime('now')
+           WHERE id = ?""",
+        (campi["name"], campi["category"], campi["place"], campi["quantity"],
+         campi["unit"], campi["min_quantity"], campi["notes"], sid),
+    )
+    db.commit()
+    return jsonify(storage_row(one(db.execute("SELECT * FROM storage WHERE id = ?", (sid,)))))
+
+
+@app.route("/api/magazzino/meta", methods=["GET"])
+def magazzino_meta():
+    return jsonify(magazzino.meta())
 
 
 # ---------------------------------------------------------------- voce

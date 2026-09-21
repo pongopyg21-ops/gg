@@ -1608,3 +1608,283 @@ def test_faq_valori_booleani_normalizzati(client):
     assert voce["secret"] == 0 and voce["pinned"] == 0
     dopo = client.put(f"/api/faq/{voce['id']}", json={"secret": True, "pinned": True}).get_json()
     assert dopo["secret"] == 1 and dopo["pinned"] == 1
+
+
+# ---------------------------------------------------- spesa automatica
+def test_aggiungere_al_piano_aggiorna_la_spesa_da_sola(client):
+    """Pianificare basta: la lista si aggiorna senza premere "rigenera"."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    items = client.get("/api/shopping").get_json()
+    assert [i["name"] for i in items] == ["Pasta"]
+    assert items[0]["quantity"] == pytest.approx(400)
+
+
+def test_togliere_dal_piano_toglie_dalla_spesa(client):
+    """Eliminare un pasto porta via i suoi ingredienti, senza altri comandi."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert client.get("/api/shopping").get_json()
+
+    [pasto] = client.get("/api/plan").get_json()
+    client.delete(f"/api/plan/{pasto['id']}")
+    assert client.get("/api/shopping").get_json() == []
+
+
+def test_cambiare_ricetta_nello_stesso_pasto_sostituisce_gli_ingredienti(client):
+    """Lo stesso slot aggiornato con un'altra ricetta non lascia i vecchi."""
+    a = ricetta(client, "A", 2, [{"name": "Pomodoro", "quantity": 500, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Zucchine", "quantity": 300, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": b, "servings": 2})
+
+    assert [i["name"] for i in client.get("/api/shopping").get_json()] == ["Zucchine"]
+
+
+def test_spesa_automatica_rispetta_la_dispensa(client):
+    """L'aggiornamento automatico scala comunque quello che c'e' in casa."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 0.1, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    items = client.get("/api/shopping").get_json()
+    assert items[0]["quantity"] == pytest.approx(300)
+
+
+def test_spesa_coperta_dalla_dispensa_non_compare(client):
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 200, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 1, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    assert client.get("/api/shopping").get_json() == []
+
+
+def test_piano_multiplo_confluisce_in_una_voce(client):
+    """Due pasti con lo stesso ingrediente si sommano in una riga sola."""
+    a = ricetta(client, "A", 2, [{"name": "Riso", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-17", "meal": "cena", "recipe_id": a, "servings": 2})
+
+    [voce] = client.get("/api/shopping").get_json()
+    assert voce["quantity"] == pytest.approx(400)
+
+
+def test_rigenerazione_senza_piano_non_esplode(client):
+    """L'endpoint resta utilizzabile: senza pasti risponde 404, non 500."""
+    assert client.post("/api/shopping/generate", json={}).status_code == 404
+
+
+def test_modificare_una_ricetta_aggiorna_la_spesa(client):
+    """Cambiare le dosi di una ricetta gia' in piano vale subito in lista."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert client.get("/api/shopping").get_json()[0]["quantity"] == pytest.approx(200)
+
+    client.put(f"/api/recipes/{rid}", json={
+        "name": "Pasta", "servings": 2,
+        "items": [{"name": "Pasta", "quantity": 500, "unit": "g"}]})
+    assert client.get("/api/shopping").get_json()[0]["quantity"] == pytest.approx(500)
+
+
+def test_togliere_un_ingrediente_dalla_ricetta_lo_toglie_dalla_spesa(client):
+    """Un ingrediente rimosso dalla ricetta non resta in lista come orfano."""
+    rid = ricetta(client, "Pasta", 2, [
+        {"name": "Pasta", "quantity": 200, "unit": "g"},
+        {"name": "Basilico", "quantity": 1, "unit": "pz"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert len(client.get("/api/shopping").get_json()) == 2
+
+    client.put(f"/api/recipes/{rid}", json={
+        "name": "Pasta", "servings": 2,
+        "items": [{"name": "Pasta", "quantity": 200, "unit": "g"}]})
+    assert [i["name"] for i in client.get("/api/shopping").get_json()] == ["Pasta"]
+
+
+def test_eliminare_una_ricetta_in_piano_pulisce_la_spesa(client):
+    """Eliminare la ricetta porta via i suoi ingredienti dalla lista."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 200, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert client.get("/api/shopping").get_json()
+
+    client.delete(f"/api/recipes/{rid}")
+    assert client.get("/api/shopping").get_json() == []
+
+
+def test_mettere_in_dispensa_toglie_dalla_spesa(client):
+    """Quello che si compra e si mette via non deve restare in lista."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert client.get("/api/shopping").get_json()[0]["quantity"] == pytest.approx(400)
+
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 0.2, "unit": "kg"})
+    assert client.get("/api/shopping").get_json()[0]["quantity"] == pytest.approx(200)
+
+
+def test_togliere_dalla_dispensa_rimette_in_spesa(client):
+    """Senza piu' la scorta in casa l'ingrediente torna da comprare."""
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/pantry", json={"name": "Pasta", "quantity": 1, "unit": "kg"})
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+    assert client.get("/api/shopping").get_json() == []
+
+    [voce] = client.get("/api/pantry").get_json()
+    client.delete(f"/api/pantry/{voce['id']}")
+    assert client.get("/api/shopping").get_json()[0]["quantity"] == pytest.approx(400)
+
+
+# ---------------------------------------------------- progetti
+def test_progetto_si_crea_con_tutti_i_campi(client):
+    r = client.post("/api/projects", json={
+        "title": "Sistemare il garage", "description": "Liberare l'angolo",
+        "start_date": "2026-09-01", "end_date": "2026-09-30", "priority": 5,
+    })
+    assert r.status_code == 201
+    p = r.get_json()
+    assert p["title"] == "Sistemare il garage"
+    assert p["priority"] == 5
+    assert p["done"] is False
+
+
+def test_progetto_senza_titolo_rifiutato(client):
+    assert client.post("/api/projects", json={"description": "x"}).status_code == 400
+
+
+def test_progetto_priorita_fuori_scala_rifiutata(client):
+    assert client.post("/api/projects", json={"title": "X", "priority": 6}).status_code == 400
+    assert client.post("/api/projects", json={"title": "X", "priority": 0}).status_code == 400
+
+
+def test_progetto_fine_prima_dell_inizio_rifiutata(client):
+    r = client.post("/api/projects", json={
+        "title": "X", "start_date": "2026-09-30", "end_date": "2026-09-01"})
+    assert r.status_code == 400
+
+
+def test_progetto_si_conclude_e_si_riapre(client):
+    pid = client.post("/api/projects", json={"title": "X", "priority": 3}).get_json()["id"]
+    assert client.put(f"/api/projects/{pid}", json={"done": True}).get_json()["done"] is True
+    assert client.put(f"/api/projects/{pid}", json={"done": False}).get_json()["done"] is False
+
+
+def test_concludere_un_progetto_non_ne_cancella_i_campi(client):
+    """Spuntare "concluso" non deve richiedere di rimandare tutto il resto."""
+    pid = client.post("/api/projects", json={
+        "title": "X", "description": "Nota", "priority": 4}).get_json()["id"]
+    client.put(f"/api/projects/{pid}", json={"done": True})
+    p = client.get("/api/projects").get_json()[0]
+    assert p["description"] == "Nota" and p["priority"] == 4
+
+
+def test_progetti_ordinati_per_priorita(client):
+    for t, p in (("Bassa", 1), ("Alta", 5), ("Media", 3)):
+        client.post("/api/projects", json={"title": t, "priority": p})
+    assert [p["title"] for p in client.get("/api/projects").get_json()] == ["Alta", "Media", "Bassa"]
+
+
+def test_progetti_conclusi_in_fondo(client):
+    a = client.post("/api/projects", json={"title": "A", "priority": 5}).get_json()["id"]
+    client.post("/api/projects", json={"title": "B", "priority": 1})
+    client.put(f"/api/projects/{a}", json={"done": True})
+    assert [p["title"] for p in client.get("/api/projects").get_json()] == ["B", "A"]
+
+
+def test_progetto_eliminato(client):
+    pid = client.post("/api/projects", json={"title": "X"}).get_json()["id"]
+    assert client.delete(f"/api/projects/{pid}").status_code == 200
+    assert client.get("/api/projects").get_json() == []
+
+
+def test_progetto_inesistente_da_404(client):
+    assert client.put("/api/projects/999", json={"title": "X"}).status_code == 404
+    assert client.delete("/api/projects/999").status_code == 404
+
+
+def test_progetto_priorita_predefinita_tre(client):
+    assert client.post("/api/projects", json={"title": "X"}).get_json()["priority"] == 3
+
+
+# ---------------------------------------------------- magazzino
+def test_voce_magazzino_si_crea(client):
+    r = client.post("/api/storage", json={
+        "name": "Sapone per i piatti", "category": "Pulizia casa",
+        "place": "Cucina", "quantity": 2, "unit": "pz", "min_quantity": 1,
+    })
+    assert r.status_code == 201
+    v = r.get_json()
+    assert v["name"] == "Sapone per i piatti"
+    assert v["low"] is False
+
+
+def test_voce_magazzino_senza_nome_rifiutata(client):
+    assert client.post("/api/storage", json={"quantity": 1}).status_code == 400
+
+
+def test_voce_in_esaurimento_segnalata(client):
+    """Sotto la scorta minima la voce si segnala: e' il motivo del magazzino."""
+    client.post("/api/storage", json={"name": "Batterie", "quantity": 1, "min_quantity": 4})
+    assert client.get("/api/storage").get_json()[0]["low"] is True
+
+
+def test_voce_senza_scorta_minima_non_e_mai_in_esaurimento(client):
+    """Senza soglia non si segnala nulla: 0 non e' una soglia."""
+    client.post("/api/storage", json={"name": "Quadro", "quantity": 0, "min_quantity": 0})
+    assert client.get("/api/storage").get_json()[0]["low"] is False
+
+
+def test_giacenza_magazzino_si_ritocca_da_sola(client):
+    """PATCH cambia la giacenza senza toccare il resto della voce."""
+    v = client.post("/api/storage", json={
+        "name": "Detersivo", "category": "Pulizia casa", "place": "Cantina",
+        "quantity": 5, "min_quantity": 2, "notes": "scaffale alto"}).get_json()
+    dopo = client.patch(f"/api/storage/{v['id']}", json={"quantity": 1}).get_json()
+    assert dopo["quantity"] == pytest.approx(1)
+    assert dopo["category"] == "Pulizia casa" and dopo["place"] == "Cantina"
+    assert dopo["notes"] == "scaffale alto"
+    assert dopo["low"] is True
+
+
+def test_voce_magazzino_si_modifica_interamente(client):
+    v = client.post("/api/storage", json={"name": "Rasoio", "quantity": 1}).get_json()
+    dopo = client.put(f"/api/storage/{v['id']}", json={
+        "name": "Rasoi", "category": "Igiene personale", "place": "Bagno",
+        "quantity": 3, "unit": "pz", "min_quantity": 1, "notes": "usa e getta"}).get_json()
+    assert dopo["name"] == "Rasoi" and dopo["quantity"] == pytest.approx(3)
+
+
+def test_voce_magazzino_eliminata(client):
+    v = client.post("/api/storage", json={"name": "Mensola"}).get_json()
+    assert client.delete(f"/api/storage/{v['id']}").status_code == 200
+    assert client.get("/api/storage").get_json() == []
+
+
+def test_magazzino_inesistente_da_404(client):
+    assert client.delete("/api/storage/999").status_code == 404
+
+
+def test_magazzino_non_entra_nella_spesa(client):
+    """Un detergente non e' un ingrediente: non deve finire in lista."""
+    client.post("/api/storage", json={"name": "Sapone", "quantity": 1})
+    rid = ricetta(client, "Pasta", 2, [{"name": "Pasta", "quantity": 400, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-16", "meal": "cena", "recipe_id": rid, "servings": 2})
+
+    assert [i["name"] for i in client.get("/api/shopping").get_json()] == ["Pasta"]
+
+
+def test_magazzino_non_tocca_la_dispensa(client):
+    """Le due sezioni sono separate: riempire una non riempie l'altra."""
+    client.post("/api/storage", json={"name": "Sapone", "quantity": 3})
+    assert client.get("/api/pantry").get_json() == []
+
+
+def test_magazzino_meta_ha_categorie_e_luoghi(client):
+    meta = client.get("/api/magazzino/meta").get_json()
+    assert "Pulizia casa" in meta["categories"]
+    assert "Ripostiglio" in meta["places"]
+
+
+def test_magazzino_ordina_prima_quello_che_manca(client):
+    client.post("/api/storage", json={"name": "Abbondante", "quantity": 10, "min_quantity": 1})
+    client.post("/api/storage", json={"name": "Scarso", "quantity": 1, "min_quantity": 5})
+    assert [v["name"] for v in client.get("/api/storage").get_json()][0] == "Scarso"
+

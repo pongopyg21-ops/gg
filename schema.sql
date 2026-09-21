@@ -140,3 +140,44 @@ CREATE TABLE IF NOT EXISTS faq (
 );
 
 CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
+
+-- ---------------------------------------------------------------- progetti
+-- Lavori in corso e idee, tenuti fuori dalla cucina. `priority` e' una scelta
+-- dell'utente da 1 a 5; le date sono quelle del piano di lavoro, non un
+-- promemoria. `done` chiude il progetto senza cancellarlo: la storia resta.
+CREATE TABLE IF NOT EXISTS projects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    start_date  TEXT NOT NULL DEFAULT '',
+    end_date    TEXT NOT NULL DEFAULT '',
+    priority    INTEGER NOT NULL DEFAULT 3 CHECK (priority BETWEEN 1 AND 5),
+    done        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_done ON projects(done, priority);
+
+-- ---------------------------------------------------------------- magazzino
+-- Tutto quello che si tiene in casa e non si mangia: sapone, bagnoschiuma,
+-- rasoi, mensole, quadri, batterie. Non centra con la cucina, quindi e' una
+-- tabella a parte e non un secondo elenco della dispensa: la dispensa si
+-- confronta con le ricette, il magazzino no.
+--
+-- `min_quantity` e' la soglia sotto la quale vale la pena ricomprare. Non e'
+-- automazione: serve a vedere a colpo d'occhio cosa sta finendo, che e' il
+-- motivo per cui si tiene un magazzino.
+CREATE TABLE IF NOT EXISTS storage (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    category      TEXT NOT NULL DEFAULT 'Altro',
+    place         TEXT NOT NULL DEFAULT 'Ripostiglio',
+    quantity      REAL NOT NULL DEFAULT 0,
+    unit          TEXT NOT NULL DEFAULT 'pz',
+    min_quantity  REAL NOT NULL DEFAULT 0,
+    notes         TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_cat ON storage(category);

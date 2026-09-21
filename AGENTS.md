@@ -3,13 +3,14 @@
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, conversione unità in
 `units.py`, riconoscimento allergeni in `allergens.py`, comandi vocali in
 `voice.py`, dati iniziali in `seed.py`, pulizie in `igiene.py`, informazioni utili
-in `faq.py`.
+in `faq.py`, magazzino in `magazzino.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
 **Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa, spesa,
 profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in **Igiene**;
-Progetti ha una pagina dedicata ma ancora senza funzioni; **FAQ** raccoglie le
-informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici).
+**Progetti** raccoglie lavori e idee da fare ed è anche la casa del **Magazzino**;
+**FAQ** raccoglie le informazioni utili da consultare (Wi-Fi, indirizzi,
+contatti, codici).
 
 ## Comandi
 
@@ -100,6 +101,13 @@ ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
   già una voce manuale aperta per un ingrediente, la generazione la salta
   (`already_listed`) invece di duplicarla o fondersi: quella riga è dell'utente.
   Aggiungendo un nuovo percorso che crea voci dal piano, va marcato `generated`.
+- La lista si ricostruisce **da sola**: `rebuild_shopping()` è chiamata da ogni
+  endpoint che cambia il fabbisogno — piani, ricette e dispensa — non solo da
+  `/api/shopping/generate`. Il pulsante "Vai alla spesa" nel piano è quindi solo
+  una scorciatoia di navigazione: se un percorso nuovo modifica ingredienti,
+  quantità o scorte e non la richiama, la lista resta indietro senza che l'utente
+  abbia un modo per accorgersene. La dispensa è compresa perché quello che si
+  compra e si mette via non deve restare anche in lista.
 - Le ricette preferite stanno nella tabella `favorites`, non in una colonna di
   `recipes`: sono una scelta dell'utente e la FK con `ON DELETE CASCADE` evita
   preferenze orfane. In `PUT /api/profile` i campi si toccano solo se presenti
@@ -110,6 +118,18 @@ ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
   Attenzione anche alle tabelle **nuove**: `_semina_pulizie` deve controllare
   `sqlite_master` prima di leggere `chores`, altrimenti la migrazione di un DB
   vecchio fallisce con "no such table: chores".
+- **Progetti**: la priorità è 1–5 stelle e l'ordinamento è per priorità
+  decrescente, con i conclusi in fondo. Spuntare "concluso" **non** richiede di
+  rimandare titolo e date: `PUT /api/projects/<id>` tocca solo i campi presenti,
+  altrimenti spuntare una casella cancellerebbe il resto della scheda.
+- **Magazzino**: sta dentro Progetti, non in Cucina, perché non entra in nessuna
+  ricetta e non si scala dal fabbisogno della spesa. È una tabella a parte
+  (`storage`) e non un secondo elenco della dispensa: tenerli insieme
+  costringerebbe la generazione della spesa a filtrarli via a ogni giro, e prima
+  o poi un detergente finirebbe in una lista di ingredienti. Il test
+  `test_magazzino_non_entra_nella_spesa` esiste per questo. `low` (in
+  esaurimento) è calcolato dal server e non dal client, così il confronto fra
+  giacenza e scorta minima resta in un posto solo.
 - **Igiene**: il catalogo di partenza sta in `igiene.py` e viene seminato in
   `chores`, come le ricette. La cadenza (`giornaliera`, `settimanale`, `mensile`,
   `stagionale`) decide quando una voce rientra; le stagionali solo nel loro `month`

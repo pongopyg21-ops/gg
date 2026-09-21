@@ -35,8 +35,8 @@
     <button class="home-card" data-section="progetti">
       <span class="home-emoji">📋</span>
       <span class="home-name">Progetti</span>
-      <span class="home-desc">Lavori in corso, idee e cose da fare, raccolti
-        in un posto solo.</span>
+      <span class="home-desc">Lavori in corso, idee e cose da fare, con il
+        magazzino di quello che si tiene in casa.</span>
       <span class="home-go">Apri →</span>
     </button>
     <button class="home-card" data-section="faq">
@@ -64,6 +64,7 @@
   <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
   <button data-tab="igiene" data-section="igiene">🧽 Pulizie</button>
   <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
+  <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
 </nav>
 
@@ -76,7 +77,7 @@
       <button id="week-next">Settimana ›</button>
       <button id="week-today">Oggi</button>
       <span class="spacer"></span>
-      <button id="gen-week" class="primary">Genera lista della spesa</button>
+      <button id="gen-week">Vai alla spesa</button>
     </div>
     <div id="plan-grid" class="plan-grid"></div>
   </section>
@@ -202,12 +203,27 @@
 
   <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->
   <section id="tab-progetti" class="tab">
-    <div class="empty-state">
-      <span class="empty-emoji">📋</span>
-      <h2>Progetti</h2>
-      <p>Qui vivranno i lavori in corso e le idee da portare avanti, con il loro
-        stato. Anche questa sezione è pronta per le sue funzioni.</p>
+    <div class="toolbar">
+      <button id="pr-new" class="primary">+ Nuovo progetto</button>
+      <span class="spacer"></span>
+      <label class="check-inline"><input type="checkbox" id="pr-show-done"> Mostra conclusi</label>
     </div>
+    <div id="pr-list" class="project-list"></div>
+  </section>
+
+  <!-- MAGAZZINO — quello che si tiene in casa e non si mangia: sapone,
+       ferramenta, batterie. Sta nei Progetti perche' non centra con la cucina:
+       non entra in nessuna ricetta e non si scala dal fabbisogno della spesa. -->
+  <section id="tab-magazzino" class="tab">
+    <div class="toolbar">
+      <button id="st-new" class="primary">+ Nuova voce</button>
+      <input id="st-search" type="search" placeholder="Filtra: sapone, batterie...">
+      <select id="st-filter"></select>
+      <span class="spacer"></span>
+      <label class="check-inline"><input type="checkbox" id="st-low-only"> Solo in esaurimento</label>
+    </div>
+    <div id="st-count" class="st-count"></div>
+    <div id="st-list" class="storage-list"></div>
   </section>
 
   <!-- FAQ — informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici.
