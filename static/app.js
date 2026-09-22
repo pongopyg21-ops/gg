@@ -2477,6 +2477,9 @@ async function avviaAccesso() {
 function mostraAccesso() {
   // la testata e le schede vivono dentro #app, che parte nascosto: basta
   // togliere la home, il resto resta com'e'
+  // il titolo si scrive solo qui: sulla schermata di accesso la scheda del
+  // browser mostrerebbe l'indirizzo invece del nome dell'app
+  document.title = 'Il Maggiordomo';
   $('#accesso').classList.remove('hidden');
   $('#home').classList.add('hidden');
 }
