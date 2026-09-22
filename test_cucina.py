@@ -17,6 +17,7 @@ import houses  # noqa: E402
 import igiene  # noqa: E402
 import units  # noqa: E402
 import voice  # noqa: E402
+import voce_cloud  # noqa: E402
 
 # Il registro delle case nel test non tocca quello vero del progetto.
 REGISTRO = os.path.join(os.path.dirname(DB), "test-houses.db")
@@ -2189,5 +2190,148 @@ def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     houses.elimina("casa-a")
     info = anon.get("/api/session").get_json()
     assert info["authenticated"] is False
+
+
+# ------------------------------------------------------------ voce neurale cloud
+# La sintesi cloud non si puo' provare chiamando Azure dentro i test: sarebbe una
+# chiamata di rete fatturata che dipende da una chiave. Si prova tutto quello che
+# sta intorno, che e' la parte che sbaglia: costruzione dell'SSML, validazione
+# della voce, limiti, traduzione degli errori e comportamento dell'endpoint.
+
+def test_ssml_ha_voce_lingua_e_prosodia():
+    ssml = voce_cloud.costruisci_ssml("Ciao", "it-IT-IsabellaNeural", rate=1.2, pitch=-10)
+    assert 'name="it-IT-IsabellaNeural"' in ssml
+    assert 'xml:lang="it-IT"' in ssml
+    assert 'rate="20%"' in ssml
+    assert 'pitch="-10%"' in ssml
+    assert ">Ciao<" in ssml
+
+
+def test_ssml_senza_prosodia_non_aggiunge_tag():
+    # a valori normali non deve comparire <prosody>: un tag inutile cambia la
+    # lettura di alcune voci, e non c'e' ragione di generarlo
+    ssml = voce_cloud.costruisci_ssml("Ciao", "it-IT-ElsaNeural")
+    assert "<prosody" not in ssml
+    assert ">Ciao<" in ssml
+
+
+def test_ssml_mette_al_riparo_il_testo():
+    # il testo arriva dall'utente e finisce dentro un XML: senza escape un "&"
+    # farebbe fallire la sintesi, e un "<" potrebbe iniettare markup
+    ssml = voce_cloud.costruisci_ssml("Sale & pepe <script>", "it-IT-ElsaNeural")
+    assert "&amp;" in ssml
+    assert "&lt;script&gt;" in ssml
+    assert "<script>" not in ssml
+
+
+def test_ssml_limita_i_valori_fuori_scala():
+    # un rate assurdamente alto non deve passare ad Azure: si limita qui, dove il
+    # comportamento e' prevedibile
+    ssml = voce_cloud.costruisci_ssml("Ciao", "it-IT-ElsaNeural", rate=99, pitch=999)
+    assert 'rate="100%"' in ssml      # 2.0 - 1
+    assert 'pitch="50%"' in ssml      # tetto
+
+
+def test_voci_italiane_ufficiali():
+    nomi = {v["nome"] for v in voce_cloud.elenco_voci()}
+    # nomi presi dall'elenco ufficiale Azure: inventarne uno lo farebbe rifiutare
+    # da Azure con un 400, quindi restano qui
+    assert "it-IT-IsabellaNeural" in nomi
+    assert "it-IT-ElsaNeural" in nomi
+    assert "it-IT-DiegoNeural" in nomi
+    assert voce_cloud.VOCE_PREDEFINITA in nomi
+
+
+def test_voce_non_riconosciuta_rifiutata_senza_chiamare_azure():
+    assert voce_cloud.voce_valida("it-IT-IsabellaNeural")
+    # una voce inventata viene fermata prima della chiamata: l'errore e' leggibile
+    # e non costa una richiesta
+    assert not voce_cloud.voce_valida("it-XX-InventataNeural")
+    assert not voce_cloud.voce_valida("")
+
+
+def test_sintetizza_senza_configurazione_none(monkeypatch):
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    assert voce_cloud.configurato() is False
+    with pytest.raises(voce_cloud.ErroreVoce) as e:
+        voce_cloud.sintetizza("Ciao", "it-IT-ElsaNeural")
+    # 503 e non 502: non e' un guasto, e' una funzione non attivata, e il client
+    # usa questo codice per ripiegare sulla voce del browser senza mostrare errori
+    assert e.value.stato == 503
+
+
+def test_testo_troppo_lungo_rifiutato(monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")
+    with pytest.raises(voce_cloud.ErroreVoce) as e:
+        voce_cloud.sintetizza("a" * (voce_cloud.MAX_CARATTERI + 1), "it-IT-ElsaNeural")
+    assert e.value.stato == 400
+
+
+def test_testo_vuoto_rifiutato(monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")
+    with pytest.raises(voce_cloud.ErroreVoce) as e:
+        voce_cloud.sintetizza("   ", "it-IT-ElsaNeural")
+    assert e.value.stato == 400
+
+
+def test_endpoint_config_senza_chiave(client, monkeypatch):
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    d = client.get("/api/voce/config").get_json()
+    assert d["cloud"] is False
+    # l'elenco si mostra comunque: serve a capire cosa si attiverebbe
+    assert any(v["nome"] == "it-IT-ElsaNeural" for v in d["voci"])
+    # la chiave non deve mai comparire nella risposta
+    assert "AZURE_SPEECH_KEY" not in json.dumps(d)
+
+
+def test_endpoint_config_con_chiave_non_espone_la_chiave(client, monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "chiave-segreta-di-prova")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")
+    r = client.get("/api/voce/config")
+    assert r.get_json()["cloud"] is True
+    # il controllo che conta: la chiave resta sul server, il browser vede solo
+    # l'elenco delle voci
+    assert b"chiave-segreta-di-prova" not in r.data
+
+
+def test_endpoint_parla_senza_configurazione_da_503(client, monkeypatch):
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    r = client.post("/api/voce/parla", json={"text": "Ciao", "voice": "it-IT-ElsaNeural"})
+    assert r.status_code == 503
+
+
+def test_endpoint_parla_restituisce_audio(client, monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")
+    # si sostituisce solo la chiamata di rete: il resto del percorso (validazione,
+    # SSML, risposta HTTP) e' quello vero
+    def finta(testo, voce, rate=1.0, pitch=0.0, stile=None, timeout=12.0):
+        return b"ID3finto"
+    monkeypatch.setattr(voce_cloud, "sintetizza", finta)
+    r = client.post("/api/voce/parla", json={"text": "Fatto.", "voice": "it-IT-ElsaNeural"})
+    assert r.status_code == 200
+    assert r.mimetype == "audio/mpeg"
+    assert r.data == b"ID3finto"
+
+
+def test_endpoint_parla_rifiuta_voce_inventata(client, monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")
+    r = client.post("/api/voce/parla", json={"text": "Ciao", "voice": "it-XX-NonEsiste"})
+    # 400 e non 500: e' una richiesta sbagliata, non un guasto del server
+    assert r.status_code == 400
+
+
+def test_endpoint_parla_richiede_accesso(anon):
+    # la chiave del servizio non deve essere usabile da chi non e' collegato:
+    # altrimenti chiunque trovi il link potrebbe consumare il credito
+    r = anon.post("/api/voce/parla", json={"text": "Ciao", "voice": "it-IT-ElsaNeural"})
+    assert r.status_code == 401
+    assert anon.get("/api/voce/config").status_code == 401
 
 

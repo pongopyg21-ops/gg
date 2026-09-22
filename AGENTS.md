@@ -103,6 +103,40 @@ all'inizio della conversazione `./avvia.sh`, poi `./sorveglia.sh`.
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
 
+## Configurazione
+
+Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**, non dal browser: la chiave del servizio vocale non deve mai arrivare al client.
+
+| Variabile | A cosa serve | Valore assente |
+| --- | --- | --- |
+| `AZURE_SPEECH_KEY` | Chiave della risorsa Azure Speech | la voce neurale resta spenta, si usa quella del browser |
+| `AZURE_SPEECH_REGION` | Area della risorsa (`westeurope`, …): determina l'indirizzo, non si può indovinare | come sopra |
+| `AZURE_SPEECH_FORMAT` | Formato dell'audio richiesto | `audio-24khz-48kbitrate-mono-mp3` |
+| `PORT` | Porta del server | 12000 |
+| `CUCINA_DB` | Percorso del database della prima casa | `cucina.db` |
+
+Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository: non c'è un file di configurazione da riempire, proprio per non rischiare di versionarlo.
+
+### Voce neurale cloud
+
+La voce del browser ha un tetto: dipende da quello che il sistema ha installato, quindi cambia — e peggiora — da un dispositivo all'altro. La voce neurale **non dipende dal dispositivo**: arriva da Azure, suona identica sul telefono e sul computer, ed è la differenza fra una voce che sembra una persona e un sintetizzatore.
+
+```bash
+AZURE_SPEECH_KEY="la-tua-chiave" AZURE_SPEECH_REGION="westeurope" ./avvia.sh
+```
+
+Con le due variabili presenti, il pannello vocale mostra il blocco **Voce neurale** e la conferma arriva da lì; le voci sono le ufficiali italiane (`it-IT-IsabellaNeural`, `it-IT-ElsaNeural`, `it-IT-DiegoNeural`…) incluse le più naturali **multilingua** e **HD**. Senza, resta la voce del sistema: **non c'è niente da configurare per continuare a usare l'app**.
+
+Se la chiave c'è ma è errata, o l'area non è quella della risorsa, l'app **ripiega in silenzio** sulla voce del browser: un comando a voce resta riuscito anche quando la voce non riesce a parlare.
+
+**La chiave resta sul server.** Il client chiede l'audio a `/api/voce/parla`, il server parla con Azure e restituisce solo l'MP3. È il motivo per cui la rotta non sta nel client: una chiave nel browser la legge chiunque apra gli strumenti di sviluppo, e da lì consuma il credito. Per lo stesso motivo le due rotte vocali **richiedono l'accesso** e senza password rispondono 401.
+
+**Costo.** Azure fattura i caratteri sintetizzati. Le conferme sono brevi e ripetitive, e l'app ne tiene conto: le frasi **già sentite** non si richiedono di nuovo, c'è un **limite di 600 caratteri** per richiesta, e l'audio non viene salvato. Il piano gratuito di Azure Speech copre abbondantemente un uso domestico.
+
+**Senza connessione** si sente la voce del sistema, senza messaggi d'errore: la neurale è la preferita, quella del browser è la rete di sicurezza. Su **iPhone** la primissima riproduzione può non partire perché iOS blocca l'audio finché l'utente non tocca la pagina: si sente la voce del sistema, e dal comando successivo funziona.
+
+La sintesi è in `voce_cloud.py`, e i nomi delle voci sono un sottoinsieme verificato di quelli ufficiali Azure: un nome inventato verrebbe rifiutato con un 400, quindi la validazione avviene prima della chiamata, dove l'errore è leggibile e non costa nulla.
+
 ## Case separate
 
 Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,
@@ -260,16 +294,18 @@ Conseguenze pratiche per chi mette mano al codice:
   velocità sull'ultima: è così che la sintesi chiude l'intonazione, ed è l'unica
   leva che abbiamo su voci che non controlliamo. Prima di cambiare i valori, provare
   ad ascoltare: un numero più "espressivo" di solito suona peggio.
-- **La qualità della voce non dipende dall'app.** `scegliVoce` preferisce le voci
-  italiane **naturali** (`eVoceNaturale`, cioè con "natural"/"neural" nel nome),
+- **La qualità della voce del browser non dipende dall'app.** `scegliVoce` preferisce le
+  voci italiane **naturali** (`eVoceNaturale`, cioè con "natural"/"neural" nel nome),
   perché sono le uniche che suonano bene, e solo dopo ripiega sul timbro. Ma la
   scelta di quali voci esistano è del sistema operativo e del browser, non nostra:
   le voci naturali di Windows **non sono esposte a Chrome e Firefox**, solo a Edge.
   Quando un utente dice che la voce è pessima, la prima cosa da verificare è quali
   voci vede il suo browser — non riscrivere i valori di `rate`/`pitch`, che sono già
-  al minimo intervento possibile. `aggiornaElencoVoci` riempie la tendina
-  "Voce di sistema" con tutte le voci italiane e `#voice-avviso` avvisa quando non
-  ce n'è nessuna naturale: è la risposta onesta a quel limite.
+  al minimo intervento possibile. **La soluzione a questo limite è la voce neurale
+  cloud** (`voce_cloud.py`), che non dipende da cosa ha installato il dispositivo:
+  è la strada da percorrere quando la voce del browser non basta, non un ritocco ai
+  timbri. `aggiornaElencoVoci` riempie la tendina "Voce di sistema" con tutte le voci
+  italiane e `#voice-avviso` avvisa quando non ce n'è nessuna naturale.
 - `voceScelta` (localStorage) è una voce precisa scelta a mano, indicata per
   **`voiceURI` e non per nome**: fra due voci diverse il nome può coincidere, il
   voiceURI no. Cambiare timbro la cancella, perché il timbro è una modalità
@@ -288,6 +324,29 @@ Conseguenze pratiche per chi mette mano al codice:
   oggetto. Attenzione: con un oggetto JS semplice come voce Chromium **rifiuta**
   l'assegnazione e `u.voice` resta null; non è un difetto del codice, è l'artefatto
   dello stub. La verifica reale va fatta su una macchina con voci installate.
+- **La voce neurale cloud non si può provare chiamando Azure nei test**: sarebbe una
+  chiamata di rete che dipende da una chiave. Si prova tutto quello che sta intorno,
+  che è la parte che sbaglia: costruzione dell'SSML, escape, limiti, validazione
+  della voce, traduzione degli errori e stato delle rotte. Per il percorso client si
+  sostituisce la `fetch` della sola rotta vocale in uno script di init, lasciando vere
+  le altre: sostituendole tutte si rompe l'app e il test non misura più il fallback.
+  Un accorgimento che vale per ogni intercettazione: **una richiesta ad Azure non
+  deve mai comparire fra le chiamate del browser** — se compare, la chiave sta
+  passando dal client, che è il difetto che tutto questo esiste per evitare. Nella
+  prova il conteggio era 0, ed è la conferma che la chiave resta sul server.
+- Il `<prosody>` va emesso **solo se serve**. `rate` è un moltiplicatore (1.0 neutro)
+  mentre `pitch` è in percentuale (**0 è neutro**): confondere i due valori produce
+  un `pitch="1%"`, che non è "quasi zero" ma un tono leggermente alterato che cambia
+  la lettura. Questo è stato trovato da un test, non da un ascolto.
+- I nomi delle voci in `voce_cloud.VOCI` sono un **sottoinsieme verificato** di quelli
+  ufficiali Azure. Un nome inventato viene rifiutato con un 400: la validazione sta
+  prima della chiamata, dove l'errore è leggibile e non costa una richiesta. Prima di
+  aggiungerne uno, verificarlo sull'elenco ufficiale (`language-support?tabs=tts`),
+  senza inventarlo per simmetria con le altre voci.
+- La scelta della voce cloud è **per dispositivo** (`voceCloud` in localStorage), non
+  per casa: sul telefono si può volere una voce diversa che sul computer. I dati sì,
+  quelli sono della casa. È il motivo per cui la voce cloud, che suona identica
+  ovunque, risolve il problema di un'app usata da più dispositivi.
 - Il jingle di apertura (`suonoApertura`) è sintetizzato con la Web Audio API, senza
   file audio. **Non può partire da solo**: i browser tengono l'`AudioContext`
   sospeso finché l'utente non interagisce. `tentaSuonoApertura` è legato ai primi

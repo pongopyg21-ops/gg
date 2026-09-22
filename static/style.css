@@ -613,6 +613,22 @@ tr:last-child td { border-bottom: none; }
 }
 .voice-avviso:empty { display: none; }
 
+/* blocco della voce neurale: visibile solo quando il server ce l'ha */
+.voice-cloud {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--line-strong);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.voice-cloud[hidden] { display: none; }
+.voice-cloud .toggle { flex-wrap: wrap; max-width: 100%; }
+#voice-cloud-voice {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 9px; min-height: 34px;
+  max-width: 100%; flex: 1 1 200px;
+}
+#voice-cloud-voice:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* ---------- allergie e intolleranze ---------- */
 .banner {
   background: var(--accent-soft); border: 1px solid #c3dce8;

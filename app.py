@@ -14,6 +14,7 @@ import igiene
 import magazzino
 import units
 import voice
+import voce_cloud
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Il database storico: la prima casa, quella che raccoglie quello che c'era
@@ -1281,6 +1282,64 @@ def voice_command():
         return jsonify({**cmd, "message": f"Cerco «{cmd['query']}».", "query": cmd["query"]})
 
     return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
+
+
+@app.route("/api/voce/config")
+def voce_config():
+    """Se la voce neurale e' disponibile, e con quali voci.
+
+    Non espone la chiave ne' l'area: dice solo se la sintesi cloud e' pronta e
+    l'elenco delle voci fra cui scegliere. Il client decide in base a questo se
+    usare il cloud o ripiegare sulla voce del browser.
+    """
+    return jsonify({
+        "cloud": voce_cloud.configurato(),
+        "voci": voce_cloud.elenco_voci(),
+        "predefinita": voce_cloud.VOCE_PREDEFINITA,
+        "max_caratteri": voce_cloud.MAX_CARATTERI,
+    })
+
+
+@app.route("/api/voce/parla", methods=["POST"])
+def voce_parla():
+    """Restituisce l'audio MP3 di una frase, sintetizzato dalla voce neurale.
+
+    La chiave del servizio resta sul server: il browser riceve solo l'audio. E'
+    il motivo per cui questa rotta esiste invece di chiamare Azure dal client.
+
+    L'audio si scarica e si consegna, senza salvarlo: una cache di frasi di casa
+    su disco sarebbe un dato in piu' da custodire per un guadagno minimo.
+
+    Va tenuto presente il costo: ogni frase non ripetuta e' una chiamata fatturata.
+    Per questo il client **non** richiama il cloud per le frasi gia' sentite, e
+    c'e' un limite di lunghezza.
+    """
+    if not voce_cloud.configurato():
+        # 503 e non 500: non e' un guasto, e' una funzione non attivata. Il client
+        # lo usa per ripiegare sulla voce del browser senza mostrare un errore.
+        return jsonify({"error": "Sintesi vocale cloud non configurata"}), 503
+
+    data = request.get_json(force=True) or {}
+    testo = (data.get("text") or "").strip()
+    voce = data.get("voice") or voce_cloud.VOCE_PREDEFINITA
+    stile = data.get("style") or None
+
+    try:
+        audio = voce_cloud.sintetizza(
+            testo, voce,
+            rate=data.get("rate", 1.0),
+            pitch=data.get("pitch", 0.0),
+            stile=stile,
+        )
+    except voce_cloud.ErroreVoce as e:
+        # il messaggio e' gia' pensato per l'utente: dice cosa non va senza
+        # riportare dettagli della risorsa Azure
+        return jsonify({"error": str(e)}), e.stato
+
+    risposta = app.response_class(audio, mimetype="audio/mpeg")
+    # la voce di conferma di un comando non cambia: si puo' riusare per un po'
+    risposta.headers["Cache-Control"] = "private, max-age=300"
+    return risposta
 
 
 def _preposizione_luogo(luogo):

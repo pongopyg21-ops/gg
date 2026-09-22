@@ -79,7 +79,7 @@ lasciarla di comodo.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 - **Ricette preferite** — sempre in fase di profilazione si scelgono le ricette preferite, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
-- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La voce di conferma si può scegliere fra tre timbri, e un breve suono di apertura accompagna l'ingresso nell'app.
+- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La conferma può arrivare da una **voce neurale cloud**, uguale su ogni dispositivo, o dalla voce del sistema come ripiego.
 
 ## Allergie e intolleranze
 
@@ -213,7 +213,43 @@ I valori di velocità e tonalità di ogni timbro restano **vicini a 1**: le voci
 
 Dalla tendina **Voce di sistema** si può anche scegliere una voce precisa fra quelle che il sistema espone, non solo un timbro. Le voci **naturali** (neurali) sono contrassegnate e messe in cima, e i timbri le preferiscono da soli quando ci sono.
 
-> **Nota** — su Windows le voci naturali di Microsoft **non sono visibili a Chrome e Firefox**: compaiono solo in Edge. Se su Chrome la voce suona vecchia e metallica non è un difetto dell'app, è quel limite del browser. Aprire l'app in Microsoft Edge è il modo più semplice per sentire la differenza. Il pannello lo dice da solo quando non trova nessuna voce naturale.
+### Voce neurale cloud (consigliata)
+
+La voce del browser ha un tetto: dipende da quello che il sistema ha installato, e su Windows le voci migliori non sono visibili a Chrome e Firefox. La voce neurale **non dipende dal dispositivo**: arriva da un servizio cloud, suona uguale sul telefono, sul tablet e sul computer, ed è la differenza fra una voce che sembra una persona e una che sembra un sintetizzatore.
+
+Usa **Azure Speech** di Microsoft, con le voci ufficiali italiane (`it-IT-IsabellaNeural`, `it-IT-ElsaNeural`, `it-IT-DiegoNeural`…) e anche le versioni **multilingua** e **HD**, le più naturali.
+
+#### Attivarla
+
+Serve una risorsa Azure Speech (il piano gratuito basta per provarla). Poi due variabili d'ambiente, prima di avviare:
+
+```bash
+export AZURE_SPEECH_KEY="la-tua-chiave"
+export AZURE_SPEECH_REGION="westeurope"     # l'area della risorsa
+./avvia.sh
+```
+
+Con le due variabili presenti il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. Senza, resta la voce del sistema come prima: **non c'è niente da configurare per continuare a usare l'app**.
+
+Se la chiave c'è ma è sbagliata, o l'area non è quella della risorsa, l'app **ripiega in silenzio** sulla voce del browser: un comando a voce resta riuscito anche quando la voce non riesce a parlare.
+
+#### La chiave resta sul server
+
+La chiave **non arriva mai al browser**. Il client chiede l'audio a `/api/voce/parla`, il server parla con Azure e restituisce solo l'MP3. È il motivo per cui la rotta sta sul server invece di chiamare Azure dal client: una chiave nel browser la legge chiunque apra gli strumenti di sviluppo, e da lì chiunque può consumare il credito. Di conseguenza le due rotte vocali **richiedono l'accesso**: senza password rispondono 401 e non consumano nulla.
+
+#### Costo e consumo
+
+Azure fattura i caratteri sintetizzati. Una conferma è una frase breve, quindi il consumo è minimo, ma vale la pena sapere cosa fa l'app per contenerlo:
+
+- le frasi **già sentite** non si richiedono di nuovo: le conferme sono ripetitive ("Fatto.", "Riprova.") ed è quello che si sente più spesso;
+- c'è un **limite di 600 caratteri** per richiesta;
+- l'audio non viene salvato sul server.
+
+#### Se non c'è connessione
+
+Si sente la voce del sistema, senza messaggi d'errore. Le due voci convivono: la neurale è la preferita, quella del browser è la rete di sicurezza.
+
+Un limite da conoscere: **su iPhone la primissima riproduzione può non partire** finché non si tocca la pagina, perché iOS blocca l'audio finché l'utente non ha interagito. In quel caso si sente la voce del sistema, e dal secondo comando in poi funziona.
 
 Le conferme vengono pronunciate **una frase per volta**, non in un'unica fila: la sintesi di sistema applica una sola curva di intonazione a un testo lungo, ed è il motivo per cui «In dispensa: farina 2 kg» suonava piatto. Spezzando il testo la voce chiude l'intonazione a ogni frase, e l'ultima scende appena di tono e rallenta, come fa la voce umana a fine discorso. Il messaggio di conferma è anche scritto in modo da reggere l'ascolto: comincia con «Fatto» e finisce con un punto.
 
@@ -230,7 +266,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Duecentodue test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso).
+Duecentodiciassette test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta.
 
 
 ## Interfaccia
@@ -287,6 +323,14 @@ Lo script prepara l'ambiente e avvia il server, verificando che risponda davvero
 
 La porta è 12000 per impostazione predefinita; `PORT=8000 ./avvia.sh` ne usa un'altra.
 
+La voce neurale cloud si attiva con due variabili d'ambiente, **prima** di avviare, perché il server le legge all'avvio:
+
+```bash
+AZURE_SPEECH_KEY="la-tua-chiave" AZURE_SPEECH_REGION="westeurope" ./avvia.sh
+```
+
+Senza, l'app usa la voce del sistema come prima.
+
 Avviare a mano resta possibile:
 
 ```bash
@@ -325,6 +369,10 @@ Per trovare l'indirizzo: `hostname -I | awk '{print $1}'` (Linux/macOS) oppure `
 
 Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:localhost:12000 nokey@localhost.run` oppure `cloudflared tunnel --url http://localhost:12000`: stampano un indirizzo pubblico `https://...` da aprire sul telefono, valido finché il comando resta in esecuzione.
 
+Ogni dispositivo ha la sua sessione: ci si collega una volta con nome e password della casa e si resta collegati, anche riaprendo il browser giorni dopo. **I dati sono gli stessi su tutti i dispositivi** (stanno nel database della casa, non nel browser), mentre le preferenze di voce restano locali al dispositivo: sul telefono si può volere una voce diversa che sul computer. La voce neurale cloud è l'unica che suona identica su tutti.
+
+Per una casa con più dispositivi in modo stabile conviene una **macchina sempre accesa** (un mini-PC, un NAS, un Raspberry Pi) con un servizio di sistema che avvia il server al boot: è la stessa stanza di prima, e con la voce cloud l'esperienza è la stessa dal telefono, dal tablet e dal computer.
+
 ## API
 
 | Metodo | Endpoint | Descrizione |
@@ -351,6 +399,8 @@ Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:loc
 | POST | `/api/shopping/clear-checked` | Rimuove le voci spuntate |
 | POST | `/api/shopping/generate` | Genera la lista da un intervallo `{start, end}` |
 | POST | `/api/voice` | Interpreta un comando dettato `{text}` (`voice.py`) e lo esegue: `pantry_add`, `shopping_add`, `term_add`, `recipe_search`. Risponde 422 se la frase non è un comando |
+| GET | `/api/voce/config` | Se la voce neurale cloud è attiva e quali voci offre. Non espone la chiave. Richiede l'accesso |
+| POST | `/api/voce/parla` | Restituisce l'audio MP3 di `{text, voice, rate, pitch}` dalla voce neurale. 503 se non configurata, 400 su voce o testo non validi. Richiede l'accesso |
 
 Tutte le API tranne quelle di accesso richiedono una sessione e rispondono **401** senza: la pagina iniziale, i file statici e le rotte qui sopra dell'accesso sono le uniche pubbliche. Il controllo sta in un `before_request` unico (`app.py`), non su ogni rotta, perché dimenticarsene una significherebbe esporre una casa.
 
@@ -361,6 +411,7 @@ app.py              # backend Flask + API REST + logica di generazione
 houses.py           # case separate: registro, password, un database per casa
 units.py            # conversione e normalizzazione delle unità di misura
 voice.py            # comprensione dei comandi vocali
+voce_cloud.py       # sintesi vocale neurale (Azure), con la chiave sul server
 allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
 schema.sql          # schema SQLite

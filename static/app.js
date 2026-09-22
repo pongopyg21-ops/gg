@@ -2013,7 +2013,124 @@ function speak(text) {
   if (!$('#voice-speak').checked) return;
   // la sintesi vocale è un di più: se non è disponibile o fallisce, il comando
   // resta comunque riuscito e non deve trasformarsi in un falso errore
-  parlaTesto(text);
+  parla(text);
+}
+
+/* ---------- voce neurale cloud ----------
+   Quando il server ha una chiave configurata, la conferma arriva da una voce
+   neurale (Azure) invece che da quella del browser: è lo stesso suono su ogni
+   dispositivo, ed è la differenza fra una voce che sembra una persona e una che
+   sembra un sintetizzatore. La chiave resta sul server: qui si riceve solo l'audio.
+
+   Tre regole che valgono la pena di essere scritte, perché non sono ovvie:
+
+   1. il cloud si prova e basta. Se non risponde, non è configurato o fallisce, si
+      ripiega sulla voce del browser **senza dire niente**: l'utente ha chiesto di
+      sentire una conferma, non di sapere da dove arriva.
+   2. niente cloud per le frasi già sentite. Ogni frase non ripetuta è una chiamata
+      fatturata, e le conferme sono molto ripetitive ("Fatto.", "Riprova.").
+   3. l'anteprima del timbro resta locale. Deve essere immediata, e una chiamata di
+      rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
+
+let voceCloud = { disponibile: false, voci: [], sentite: new Map() };
+
+// oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
+const CLOUD_CACHE_MAX = 40;
+
+function cloudAttivo() {
+  return voceCloud.disponibile && $('#voice-cloud') && $('#voice-cloud').checked;
+}
+
+function voceCloudScelta() {
+  const salvata = localStorage.getItem('voceCloud');
+  if (salvata && voceCloud.voci.some((v) => v.nome === salvata)) return salvata;
+  return voceCloud.predefinita || 'it-IT-IsabellaNeural';
+}
+
+/** Scarica l'audio cloud e lo riproduce. `false` se non ci riesce, così il
+    chiamante può ripiegare sul browser. */
+async function parlaCloud(frase) {
+  if (frase.length > (voceCloud.maxCaratteri || 600)) return false;
+  const chiave = voceCloudScelta() + '|' + frase;
+
+  let blob = voceCloud.sentite.get(chiave);
+  if (!blob) {
+    try {
+      const r = await fetch('/api/voce/parla', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: frase, voice: voceCloudScelta() }),
+      });
+      if (!r.ok) return false;
+      blob = await r.blob();
+    } catch (_e) {
+      return false;
+    }
+    // tetto alla memoria: si butta la più vecchia, non si cresce all'infinito
+    if (voceCloud.sentite.size >= CLOUD_CACHE_MAX) {
+      voceCloud.sentite.delete(voceCloud.sentite.keys().next().value);
+    }
+    voceCloud.sentite.set(chiave, blob);
+  }
+
+  try {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    await audio.play();
+    // si libera l'URL quando ha finito: senza, il blob resta agganciato in memoria
+    audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+    return true;
+  } catch (_e) {
+    // capita su iOS finché l'utente non ha toccato la pagina: in quel caso si
+    // sente la voce del browser, che parte lo stesso
+    return false;
+  }
+}
+
+function parla(testo) {
+  if (!testo) return;
+  if (cloudAttivo()) {
+    const frasi = spezzaInFrasi(testo);
+    // si prova la prima frase: se il cloud non risponde, si passa al browser per
+    // **tutto** il testo, senza ripetere il tentativo a ogni frase
+    parlaCloud(frasi[0] || testo).then((ok) => {
+      if (!ok) { parlaTesto(testo); return; }
+      frasi.slice(1).forEach(async (f) => { await parlaCloud(f); });
+    });
+    return;
+  }
+  parlaTesto(testo);
+}
+
+/** Chiede al server se la voce neurale c'è, e prepara l'interfaccia. */
+async function caricaVoceCloud() {
+  try {
+    const r = await fetch('/api/voce/config');
+    if (!r.ok) return;
+    const d = await r.json();
+    voceCloud.disponibile = !!d.cloud;
+    voceCloud.voci = d.voci || [];
+    voceCloud.predefinita = d.predefinita;
+    voceCloud.maxCaratteri = d.max_caratteri || 600;
+    popolaVociCloud();
+  } catch (_e) { /* resta la voce del browser */ }
+}
+
+function popolaVociCloud() {
+  const blocco = $('#voice-cloud-block');
+  if (!blocco) return;
+  blocco.hidden = !voceCloud.disponibile;
+  if (!voceCloud.disponibile) return;
+
+  const sel = $('#voice-cloud-voice');
+  if (sel) {
+    sel.innerHTML = voceCloud.voci
+      .map((v) => `<option value="${esc(v.nome)}">${esc(v.etichetta)} · ${esc(v.genere)}</option>`)
+      .join('');
+    sel.value = voceCloudScelta();
+  }
+  const attivo = $('#voice-cloud');
+  if (attivo) attivo.checked = localStorage.getItem('voceCloudOff') !== '1';
 }
 
 /** Anteprima del timbro: si sente com'è la voce prima di usarla davvero. */
@@ -2269,6 +2386,28 @@ $('#voice-all').addEventListener('change', (e) => {
   aggiornaEtichetteVoci();
 });
 
+// voce neurale: si spegne, e la scelta resta
+$('#voice-cloud').addEventListener('change', (e) => {
+  localStorage.setItem('voceCloudOff', e.target.checked ? '0' : '1');
+  if (e.target.checked) anteprimaCloud();
+  else parlaTesto('Va bene, uso la voce del sistema.');
+});
+
+// voce neurale precisa, con anteprima: è una voce che si sceglie ascoltandola
+$('#voice-cloud-voice').addEventListener('change', (e) => {
+  localStorage.setItem('voceCloud', e.target.value);
+  anteprimaCloud();
+});
+
+/** Fa sentire la voce neurale scelta: è l'unico modo per giudicarla. */
+function anteprimaCloud() {
+  if (!voceCloud.disponibile) return;
+  voceCloud.sentite.clear();
+  parlaCloud('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.').then((ok) => {
+    if (!ok) voceStato('Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
+  });
+}
+
 // il jingle di apertura si può disattivare, e la scelta resta
 $('#voice-ting').checked = suonoAttivo();
 $('#voice-ting').addEventListener('change', (e) => {
@@ -2414,6 +2553,9 @@ async function init() {
   // quando il browser segnala che è pronto
   caricaVoci();
   if (window.speechSynthesis) speechSynthesis.addEventListener?.('voiceschanged', caricaVoci);
+  // la voce neurale si annuncia da sola se il server ce l'ha: è una richiesta
+  // sola all'avvio, e serve a sapere se mostrare il blocco nel pannello
+  caricaVoceCloud();
   await renderPlan();
   // il timer delle pulizie continua a contare anche dopo un ricaricamento: se
   // era attivo, la barra va rimessa subito
