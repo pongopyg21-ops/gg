@@ -229,7 +229,14 @@ export AZURE_SPEECH_REGION="westeurope"     # l'area della risorsa
 ./avvia.sh
 ```
 
-Con le due variabili presenti il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. Senza, resta la voce del sistema come prima: **non c'è niente da configurare per continuare a usare l'app**.
+Con le due variabili presenti il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. All'avvio lo script lo dice, così non si cerca nell'app un problema che sta in una variabile non passata:
+
+```
+Server attivo su http://127.0.0.1:12000/ (pid 3380)
+  voce neurale Azure attiva (area: westeurope)
+```
+
+Senza, resta la voce del sistema come prima: **non c'è niente da configurare per continuare a usare l'app**.
 
 Se la chiave c'è ma è sbagliata, o l'area non è quella della risorsa, l'app **ripiega in silenzio** sulla voce del browser: un comando a voce resta riuscito anche quando la voce non riesce a parlare.
 
@@ -244,6 +251,10 @@ Azure fattura i caratteri sintetizzati. Una conferma è una frase breve, quindi 
 - le frasi **già sentite** non si richiedono di nuovo: le conferme sono ripetitive ("Fatto.", "Riprova.") ed è quello che si sente più spesso;
 - c'è un **limite di 600 caratteri** per richiesta;
 - l'audio non viene salvato sul server.
+
+Il piano gratuito **F0** include **500.000 caratteri al mese senza scadenza** (circa 10 ore di parlato), con un tetto di 20 richieste ogni 60 secondi. Una giornata di comandi domestici sono poche decine di frasi brevi al giorno: la quota gratuita non si esaurisce. Oltre, il costo è di circa 16 dollari per milione di caratteri, cioè irrilevante per questo uso.
+
+Servono una sottoscrizione Azure (anche gratuita) e una risorsa **Speech**. Dal portale si prendono due valori: la **chiave** (in *Keys and Endpoint*) e l'**area** della risorsa. Il piano gratuito si sceglie come livello **F0**; il livello a pagamento **S0** non è necessario.
 
 #### Se non c'è connessione
 

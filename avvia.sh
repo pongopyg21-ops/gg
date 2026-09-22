@@ -234,6 +234,16 @@ avvia() {
     verde "Server attivo su http://127.0.0.1:$PORT/ (pid ${pid:-?})"
     [ -n "${PUBLIC_URL:-}" ] && echo "  $PUBLIC_URL"
     echo "  log: $LOG_FILE"
+    # la voce neurale e' l'unica cosa che si configura fuori dal progetto: dire
+    # subito se e' stata letta evita di cercare un problema nell'app quando la
+    # causa e' una variabile d'ambiente non passata al server
+    if [ -n "${AZURE_SPEECH_KEY:-}" ] && [ -n "${AZURE_SPEECH_REGION:-}" ]; then
+      verde "  voce neurale Azure attiva (area: $AZURE_SPEECH_REGION)"
+    elif [ -n "${AZURE_SPEECH_KEY:-}" ] || [ -n "${AZURE_SPEECH_REGION:-}" ]; then
+      giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
+    else
+      echo "  voce: quella del sistema (per la voce neurale: AZURE_SPEECH_KEY e AZURE_SPEECH_REGION)"
+    fi
     return 0
   fi
 

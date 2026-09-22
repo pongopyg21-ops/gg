@@ -117,6 +117,10 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 
 Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository: non c'è un file di configurazione da riempire, proprio per non rischiare di versionarlo.
 
+In questo ambiente la chiave va registrata fra i **segreti della conversazione** (non scritta in un file): il sistema la esporta come variabile d'ambiente prima di ogni comando, quindi `./avvia.sh` la trova e il container la ritrova anche dopo essere stato ricreato. Il nome della variabile deve coincidere esattamente con `AZURE_SPEECH_KEY`, altrimenti il codice non la vede.
+
+All'avvio `avvia.sh` dice se la voce neurale è attiva, e distingue il caso della variabile sola — l'errore più probabile — dal caso in cui non c'è nessuna configurazione. Un `giallo` "servono sia ... sia ..." significa che ne manca una.
+
 ### Voce neurale cloud
 
 La voce del browser ha un tetto: dipende da quello che il sistema ha installato, quindi cambia — e peggiora — da un dispositivo all'altro. La voce neurale **non dipende dal dispositivo**: arriva da Azure, suona identica sul telefono e sul computer, ed è la differenza fra una voce che sembra una persona e un sintetizzatore.
