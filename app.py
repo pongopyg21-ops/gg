@@ -1,11 +1,13 @@
 import os
+import io
 import secrets
 import re
 import sqlite3
+import zipfile
 from contextlib import closing
 import datetime
 
-from flask import Flask, g, jsonify, request, send_from_directory, session
+from flask import Flask, g, jsonify, request, send_file, send_from_directory, session
 
 import allergens
 import faq
@@ -18,8 +20,10 @@ import voce_cloud
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Il database storico: la prima casa, quella che raccoglie quello che c'era
-# prima che le case esistessero. Le altre stanno in `case/case-<slug>.db`.
-DB_PATH = os.environ.get("CUCINA_DB", os.path.join(BASE_DIR, "cucina.db"))
+# prima che le case esistessero. Le altre stanno in `case/case-<slug>.db`,
+# e tutte seguono `MAGGIORDOMO_DATA` (vedi houses.py): il codice puo' stare in
+# un'immagine, i dati no.
+DB_PATH = os.environ.get("CUCINA_DB", os.path.join(houses.DATA_DIR, "cucina.db"))
 SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -215,6 +219,74 @@ def api_session():
         session.clear()
         return jsonify({"authenticated": False})
     return jsonify({"authenticated": True, "house": slug, "nome": nome})
+
+
+@app.route("/api/backup")
+def api_backup():
+    """Scarica i dati della casa collegata come file.
+
+    Serve a spostare il lavoro da un posto a un altro: i database **non sono in
+    git** (contengono dati di casa, non codice), quindi senza questo passaggio
+    cambiare macchina significherebbe ripartire da zero. E' anche l'unico modo di
+    avere un salvataggio dei propri dati senza accedere al disco del server.
+
+    Esporta **solo la casa collegata**, mai l'intero registro: chi condivide una
+    casa non deve poter scaricare i dati dell'altra. Il file e' una copia
+    coerente, presa con l'API di backup di SQLite (non copiando il file mentre e'
+    in uso, che darebbe un database corrotto) e ripulita dal diario di
+    scrittura, che non serve a chi riceve la copia.
+
+    Il nome resta quello del database: cosi' il file si rimette al suo posto
+    senza rinominarlo, ed e' quello che serve a chi lo reimporta.
+    """
+    slug = casa_attiva()
+    if not slug:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+
+    percorso = houses.db_path(slug)
+    if not os.path.exists(percorso):
+        return jsonify({"error": "Il database di questa casa non esiste"}), 404
+
+    memoria = io.BytesIO()
+    with closing(sqlite3.connect(percorso)) as origine, closing(sqlite3.connect(":memory:")) as copia:
+        origine.backup(copia)
+
+        # I diari di scrittura non servono alla copia, e sqlite3 ne creerebbe uno
+        # per il file temporaneo: si passa a `journal_mode=DELETE` prima di
+        # leggere, cosi' l'archivio non contiene tracce del percorso originale.
+        copia.execute("PRAGMA journal_mode=DELETE")
+        dump = "\n".join(copia.iterdump())
+
+    nome = os.path.basename(percorso)
+    # La destinazione non e' sempre la stessa: la casa storica ha il database
+    # accanto al codice, le altre nella sottocartella `case/`. Indicare il
+    # percorso esatto evita di rimettere il file dove l'app non lo cerca, che e'
+    # il modo piu' facile di credere di aver recuperato i dati e non averlo fatto.
+    destinazione = os.path.relpath(percorso, houses.DATA_DIR)
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(nome, dump)
+        # Un file in scena: dice da dove viene e quando e' stato preso, cosi' fra
+        # tre copie sul disco si sa quale tenere.
+        z.writestr(
+            "LEGGIMI.txt",
+            "Copia dei dati de Il Maggiordomo\n"
+            f"Casa: {houses.nome_di(slug) or slug}\n"
+            f"Data: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"File: {nome}\n\n"
+            "Per rimetterla in funzione, nella cartella dell'app:\n"
+            f"  - copia {nome} in  {destinazione}\n"
+            "  - se l'app era avviata, riavviala dopo averlo copiato\n\n"
+            "In pratica: metti il file dove stanno gli altri database (accanto al\n"
+            "codice, oppure nella sottocartella case/). Non serve rinominarlo.\n",
+        )
+
+    memoria.seek(0)
+    return send_file(
+        memoria,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"maggiordomo-{slug}-{datetime.date.today().isoformat()}.zip",
+    )
 
 
 @app.route("/api/houses")
@@ -1758,7 +1830,50 @@ def migra_case():
     print("=" * 64 + "\n")
 
 
+def avvia():
+    """Avvia il server.
+
+    Due modi, e la differenza conta:
+
+    - **sviluppo** (`FLASK_DEBUG=1`): il ricaricatore di Flask, che riavvia da solo
+      a ogni modifica del codice. Comodo mentre si scrive, inadatto a un server
+      sempre acceso.
+    - **produzione** (predefinito): un server vero, multi-thread, **senza
+      ricaricatore**. Non e' un dettaglio: il ricaricatore tiene un processo
+      supervisore che genera un figlio, quindi fermare "il server" ne lascia vivo
+      uno dei due, e un sorvegliante che riavvia vedrebbe la porta occupata da un
+      processo che credeva morto. In piu' il ricaricatore riavvia il server a ogni
+      tocco di file: su una macchina di casa, con un editor aperto, significherebbe
+      cadute continue.
+
+    Si usa `waitress` se installato (regge piu' connessioni, pensato per questo),
+    altrimenti il server di sviluppo senza ricaricatore: funziona, e non serve
+    installare niente per partire.
+    """
+    host = os.environ.get("HOST", "0.0.0.0")
+    porta = int(os.environ.get("PORT", 8000))
+
+    # Il log finisce in un file, non in un terminale: senza flush riga l'annuncio
+    # del server resterebbe invisibile finche' il processo non muore, cioe' proprio
+    # quando serve leggerlo per capire cosa e' successo.
+    def annuncia(testo):
+        print(testo, flush=True)
+
+    if os.environ.get("FLASK_DEBUG") == "1":
+        annuncia(f"Server (sviluppo, con ricaricatore) su http://{host}:{porta}/")
+        app.run(host=host, port=porta, debug=True)
+        return
+
+    try:
+        from waitress import serve
+        annuncia(f"Server (waitress) su http://{host}:{porta}/")
+        serve(app, host=host, port=porta, threads=8)
+    except ImportError:
+        annuncia(f"Server (sviluppo, senza ricaricatore) su http://{host}:{porta}/")
+        app.run(host=host, port=porta, debug=False, threaded=True)
+
+
 if __name__ == "__main__":
     migra_case()
     init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=True)
+    avvia()

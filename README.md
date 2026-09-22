@@ -277,7 +277,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Duecentodiciassette test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta.
+Duecentoventuno test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta. La copia dei dati ha i suoi: l'archivio contiene il database della casa collegata e da esso si ricostruisce un database vero, richiede l'accesso, e non contiene ne' il registro delle case ne' altre case. I percorsi dei dati hanno il loro: `MAGGIORDOMO_DATA` sposta registro, case e database storico insieme.
 
 
 ## Interfaccia
@@ -412,6 +412,7 @@ Per una casa con più dispositivi in modo stabile conviene una **macchina sempre
 | POST | `/api/voice` | Interpreta un comando dettato `{text}` (`voice.py`) e lo esegue: `pantry_add`, `shopping_add`, `term_add`, `recipe_search`. Risponde 422 se la frase non è un comando |
 | GET | `/api/voce/config` | Se la voce neurale cloud è attiva e quali voci offre. Non espone la chiave. Richiede l'accesso |
 | POST | `/api/voce/parla` | Restituisce l'audio MP3 di `{text, voice, rate, pitch}` dalla voce neurale. 503 se non configurata, 400 su voce o testo non validi. Richiede l'accesso |
+| GET | `/api/backup` | Scarica i dati della **casa collegata** (ZIP col database e un `LEGGIMI.txt`). Non include il registro né le altre case. Richiede l'accesso |
 
 Tutte le API tranne quelle di accesso richiedono una sessione e rispondono **401** senza: la pagina iniziale, i file statici e le rotte qui sopra dell'accesso sono le uniche pubbliche. Il controllo sta in un `before_request` unico (`app.py`), non su ogni rotta, perché dimenticarsene una significherebbe esporre una casa.
 
@@ -428,6 +429,7 @@ seed.py             # ricettario di partenza
 schema.sql          # schema SQLite
 test_cucina.py      # test
 avvia.sh            # avvio dell'app (dipendenze, seed, server)
+windows/            # avvio e installazione su Windows (vedi windows/LEGGIMI.md)
 static/index.html   # interfaccia
 static/style.css
 static/app.js
@@ -437,3 +439,36 @@ static/recipes/     # foto delle ricette (Wikimedia Commons, licenze libere), co
 I database (**`cucina.db`, `houses.db`, `case/`**) non sono versionati: si creano al
 primo avvio. Le foto delle ricette sono file condivisi, non dati di una casa: ogni
 casa sceglie quali usare.
+
+## Mettere l'app su una macchina sempre accesa (Windows)
+
+Un'app di casa serve tutto il giorno, da più dispositivi: il posto giusto è una
+macchina che non si spegne. Su **Windows** la cartella `windows/` fa tutto:
+
+1. `windows\avvia.bat` — avvia l'app. La prima volta prepara da sé ambiente e
+   dipendenze, e mostra sia l'indirizzo per il computer sia quello per il telefono.
+2. `windows\installa.bat` — registra l'app perché parta **da sola a ogni accesso**
+   e **si riavvii se cade**.
+3. `windows\installa.bat rimuovi` — toglie l'avvio automatico.
+
+Le istruzioni complete, inclusi i dati da riportare sul computer e i problemi
+tipici (permesso del firewall, microfono dal telefono), stanno in
+**`windows/LEGGIMI.md`**.
+
+Tre cose da sapere prima:
+
+- **I dati non sono in git**, di proposito: sono dati di casa, non codice. Per
+  portarli su un'altra macchina si usa **Cucina → Profilo → Scarica una copia dei
+  dati**, che produce un file da rimettere al suo posto. Senza questo passaggio,
+  un computer nuovo riparte dal ricettario di esempio.
+- **L'export contiene una casa sola**, quella collegata, mai il registro né le
+  altre case. Chi ha accesso a una casa non deve poter scaricare i dati dell'altra.
+- **Sul computer il microfono funziona, dal telefono no.** I browser concedono
+  l'ascolto solo su connessione sicura: `localhost` è considerato tale, un
+  indirizzo di rete no. Dal telefono l'app quindi consulta e parla, ma non detta;
+  per quello serve un certificato, che è un passaggio successivo e separato.
+
+I dati possono stare anche **fuori dalla cartella del progetto**, con
+`MAGGIORDOMO_DATA`: serve se il codice viene aggiornato spesso e i dati devono
+restare fermi, ed è ciò che rende possibile un backup che comprenda davvero tutto
+(registro, case e database storico insieme).

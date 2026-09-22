@@ -1559,6 +1559,16 @@ $('#pf-filter').addEventListener('change', () => {
   renderRecipes();
 });
 
+/* Il salvataggio dei dati si scarica con un semplice link, non con `fetch`:
+   il browser deve gestire il file come un download, con la sua finestrella e il
+   suo nome. Passando da `fetch` bisognerebbe ricostruire un blob e un link
+   finto, e si perderebbero il nome suggerito dal server e la barra di
+   avanzamento. Il file e' piccolo, quindi non serve nulla di piu' elaborato. */
+$('#pf-backup').addEventListener('click', () => {
+  window.location.href = '/api/backup';
+  toast('Preparo la copia dei dati...');
+});
+
 /* ---------- ricette preferite ---------- */
 
 /* Selettore di ricette preferite, riusato dall'onboarding e dal Profilo.

@@ -141,6 +141,101 @@ Se la chiave c'è ma è errata, o l'area non è quella della risorsa, l'app **ri
 
 La sintesi è in `voce_cloud.py`, e i nomi delle voci sono un sottoinsieme verificato di quelli ufficiali Azure: un nome inventato verrebbe rifiutato con un 400, quindi la validazione avviene prima della chiamata, dove l'errore è leggibile e non costa nulla.
 
+## Windows
+
+L'app di casa va su una macchina sempre accesa, e per l'utente questa e' Windows.
+`avvia.sh` e' POSIX (bash, `venv/bin/python`, `setsid`): su Windows **non parte**, e
+adattarlo con mille condizioni lo renderebbe illeggibile per entrambe le
+piattaforme. Percio' `windows/` e' una traduzione, non una variante: fa le stesse
+cose con gli strumenti di Windows.
+
+- `windows\avvia.bat` — prepara l'ambiente (una venv separata, `.venv-win`, cosi'
+  non si confonde con quella POSIX), installa le dipendenze, avvia il server e
+  mostra i due indirizzi.
+- `windows\installa.bat` — registra un'**attivita' pianificata** che parte
+  all'accesso e riavvia se cade.
+- `windows\indirizzo.ps1` — trova l'indirizzo di rete.
+
+Cose che sembrano dettagli e non lo sono:
+
+- **L'avvio automatico e' un'attivita' pianificata, non un collegamento nella
+  cartella di avvio.** Il collegamento fa partire l'app una volta; se poi cade,
+  resta caduta. In un'app di casa la differenza e' che nessuno se ne accorge. Si
+  e' scelto `-RestartCount 999 -RestartInterval 1 minuto`, che e' il sorvegliante
+  che su Linux fa `sorveglia.sh`.
+- **Il calcolo dell'indirizzo sta in un `.ps1`, non dentro il `.bat`.** In un file
+  `.bat` virgolette e caratteri speciali hanno regole che si sbagliano facilmente, e
+  un errore in un `for /f` non si vede: fallisce in silenzio. In un file `.ps1` quel
+  codice si legge e si prova.
+- **Non serve il permesso di amministratore.** L'attivita' e' dell'utente, parte al
+  suo accesso. Chiedere privilegi per un'app di casa e' un ostacolo inutile.
+- **`localhost` e' un indirizzo sicuro per il browser, un IP di rete no.** Sul
+  computer il microfono funziona, dal telefono no: i browser pretendono una
+  connessione sicura per ascoltare, e `localhost` e' considerato tale, mentre
+  `192.168.x.x` no. Non e' una svista da correggere: e' il motivo per cui sul
+  telefono l'app consulta e parla ma non detta, e per cui il microfono dal telefono
+  richiederebbe un certificato (`waitress` non supporta HTTPS: servirebbe un proxy
+  davanti).
+- **Il firewall di Windows chiede il permesso la prima volta.** Se si risponde
+  *Annulla*, il telefono non passa e sembra un problema dell'app: e' la prima cosa
+  da controllare, ed e' scritto in `windows/LEGGIMI.md`.
+
+## Copia dei dati
+
+I database non sono in git (dati di casa, non codice), quindi **cambiare macchina
+senza un export significa ripartire da zero**. Da qui `/api/backup`, che scarica
+lo **stesso `cucina.db`/`case-*.db`** della casa collegata dentro uno ZIP con un
+`LEGGIMI.txt`.
+
+Tre vincoli, in ordine di importanza:
+
+1. **Una casa sola.** Mai il registro (`houses.db`), che contiene nomi e password
+   di tutte le case, e mai i database delle altre. Chi condivide una casa non deve
+   poter scaricare i dati dell'altra: un export "di tutto" sarebbe la violazione
+   piu' facile da scrivere e la piu' grave.
+2. **Copia coerente.** Si usa `sqlite3.Connection.backup()`, non una lettura del
+   file: copiare un database mentre e' in uso puo' dare un file corrotto, che e' il
+   peggior esito possibile per un backup (sembra riuscito e non lo e'). Si esporta
+   con `iterdump`, cosi' il file non porta con se' il diario di scrittura.
+3. **Il percorso di ripristino sta dentro il file.** La casa storica ha il database
+   accanto al codice, le altre in `case/`: il `LEGGIMI.txt` dice quello esatto,
+   ricavato con `relpath` da `DATA_DIR`. Indicare la cartella sbagliata e' il modo
+   piu' facile di credere di aver recuperato i dati senza averlo fatto.
+
+Lato client il download e' un semplice `window.location.href`, non una `fetch`: il
+browser deve trattarlo come file da scaricare, con il suo nome e la sua finestrella.
+
+## Percorsi dei dati
+
+`MAGGIORDOMO_DATA` sposta tutti i dati (registro, `case/` e database storico)
+fuori dal progetto. Serve a tenere i dati fermi mentre il codice cambia, e a fare
+un backup che li comprenda davvero.
+
+L'insidia e' che i percorsi sono **tre** e sembrano indipendenti: `houses.db` e
+`case/` in `houses.py`, il database storico in `app.py`. Dimenticarne uno dà
+un'app che sembra funzionare ma perde una parte dei dati quando i dati stanno
+altrove. Per questo `houses.db_path` cerca anche la casa storica in `DATA_DIR` e
+non accanto al codice, e per questo c'e' un test che ricarica il modulo con la
+variabile impostata e verifica tutti e tre.
+
+## Server: sviluppo e produzione
+
+Il ricaricatore di `FLASK_DEBUG` **non** va usato su una macchina sempre accesa:
+tiene un processo supervisore che genera un figlio, quindi fermare "il server" ne
+lascia vivo uno dei due, e un sorvegliante che riavvia trova la porta occupata da
+un processo che credeva morto. In piu' riavvia il server a ogni tocco di file.
+`app.avvia()` usa quindi `waitress` (multi-thread, senza ricaricatore) e ripiega
+sul server di sviluppo senza ricaricatore se manca: l'app parte comunque.
+
+`waitress` **non supporta HTTPS**: e' fatto per stare dietro a un proxy. Se un
+giorno serve la voce dal telefono, davanti ci vuole qualcosa che termini TLS
+(nginx, Caddy), non una modifica a questo codice.
+
+Il log del server dice **quale** modalita' e' attiva (`Server (waitress) su ...`).
+Vale la pena perche' il log finisce in un file e non in un terminale: senza
+`flush=True` quell'annuncio resterebbe invisibile finche' il processo non muore,
+cioe' proprio quando servirebbe leggerlo.
+
 ## Case separate
 
 Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,

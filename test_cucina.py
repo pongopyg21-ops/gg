@@ -2335,3 +2335,97 @@ def test_endpoint_parla_richiede_accesso(anon):
     assert anon.get("/api/voce/config").status_code == 401
 
 
+# ------------------------------------------------------------ copia dei dati
+# I database non sono in git: senza un modo per scaricarli, cambiare macchina
+# significherebbe perdere il lavoro. L'endpoint esiste per questo, ed e' anche
+# un punto delicato: esporta *una* casa, non tutte.
+
+def test_backup_richiede_accesso(anon):
+    assert anon.get("/api/backup").status_code == 401
+
+
+def test_backup_contiene_i_dati_della_casa_e_ricostruisce_un_database(client):
+    import io as _io
+    import zipfile as _zip
+
+    # un dato riconoscibile, per ritrovarlo dopo il giro completo
+    client.post("/api/shopping", json={"name": "Carciofi per la copia", "qty": 2})
+
+    r = client.get("/api/backup")
+    assert r.status_code == 200
+    assert r.mimetype == "application/zip"
+
+    archivio = _zip.ZipFile(_io.BytesIO(r.data))
+    nomi = archivio.namelist()
+    # il database col suo nome, piu' il file in scena
+    assert any(n.endswith(".db") for n in nomi), nomi
+    assert "LEGGIMI.txt" in nomi
+    assert "Copia dei dati" in archivio.read("LEGGIMI.txt").decode()
+
+    # il dump deve ricostruire un database vero: e' la prova che la copia serve
+    # a qualcosa, non solo che l'archivio si apre
+    dump = archivio.read([n for n in nomi if n.endswith(".db")][0]).decode()
+    ricostruito = sqlite3.connect(":memory:")
+    ricostruito.executescript(dump)
+    trovato = ricostruito.execute(
+        "SELECT COUNT(*) FROM shopping_items WHERE name LIKE '%Carciofi per la copia%'"
+    ).fetchone()[0]
+    assert trovato == 1
+
+
+def test_backup_non_contiene_le_altre_case(client, tmp_path):
+    """L'archivio non deve contenere tracce di case diverse da quella collegata.
+
+    Il registro (`houses.db`) e' la cosa da non far uscire: contiene nomi e
+    password di tutte le case. Un utente collegato a una casa non deve poter
+    scaricare l'elenco, ne' i dati, dell'altra.
+    """
+    import io as _io
+    import zipfile as _zip
+
+    r = client.get("/api/backup")
+    assert r.status_code == 200
+
+    archivio = _zip.ZipFile(_io.BytesIO(r.data))
+    nomi = archivio.namelist()
+    contenuto = b"".join(archivio.read(n) for n in nomi).decode()
+
+    # il registro delle case non deve comparire, in nessuna forma: ne' come file,
+    # ne' come tabella dentro l'esportazione
+    assert not any("houses.db" in n for n in nomi), nomi
+    assert "CREATE TABLE houses" not in contenuto
+    assert "password" not in contenuto
+
+
+# ------------------------------------------------------------ percorsi dei dati
+# I dati devono poter stare fuori dal progetto: e' quello che serve quando il
+# codice sta in un'immagine Docker e i dati in un volume, e quando si fa un
+# backup. Qui si verifica che `MAGGIORDOMO_DATA` sposti davvero *tutti* i file,
+# non solo i piu' ovvi: dimenticarne uno significherebbe un backup incompleto.
+
+def test_data_dir_sposta_registro_case_e_database_storico(tmp_path, monkeypatch):
+    import importlib
+    monkeypatch.setenv("MAGGIORDOMO_DATA", str(tmp_path))
+    # i percorsi sono calcolati all'import: per provare la variabile va ricaricato
+    importlib.reload(houses)
+    try:
+        assert houses.REGISTRY_PATH == str(tmp_path / "houses.db")
+        assert houses.CASE_DIR == str(tmp_path / "case")
+
+        # il registro deve nascere dove abbiamo detto, non accanto al codice
+        houses.init_registro()
+        assert (tmp_path / "houses.db").exists()
+        assert not (tmp_path.parent / "houses.db").exists()
+
+        houses.registra("casa-prova", "Casa Prova", "segreta", "cucina.db")
+        # la casa storica punta a un file che sta in DATA_DIR: cercarlo accanto al
+        # codice lo renderebbe invisibile con i dati altrove
+        assert houses.db_path("casa-prova").endswith("cucina.db")
+        assert os.path.dirname(houses.db_path("casa-prova")) == str(tmp_path)
+    finally:
+        # si ripristina il modulo vero, altrimenti i test successivi userebbero
+        # una DATA_DIR temporanea ormai cancellata
+        monkeypatch.delenv("MAGGIORDOMO_DATA", raising=False)
+        importlib.reload(houses)
+
+

@@ -27,11 +27,18 @@ from contextlib import closing
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Dove vivono i dati. Normalmente accanto al codice, ma `MAGGIORDOMO_DATA` permette
+# di tenerli altrove: e' quello che serve quando il codice sta in un'immagine
+# (Docker) o viene aggiornato spesso, mentre i dati devono restare fermi e fare
+# parte di un backup. I file sono tre - registro, case e database storico - e
+# stanno insieme perche' separarli significherebbe dimenticarsene uno.
+DATA_DIR = os.environ.get("MAGGIORDOMO_DATA", BASE_DIR)
+
 # Il registro e' separato per casa per scelta: contiene solo nomi e password.
-REGISTRY_PATH = os.path.join(BASE_DIR, "houses.db")
+REGISTRY_PATH = os.path.join(DATA_DIR, "houses.db")
 
 # Le case vivono qui, una per file: `case-<slug>.db`.
-CASE_DIR = os.path.join(BASE_DIR, "case")
+CASE_DIR = os.path.join(DATA_DIR, "case")
 
 # Nome della casa che raccoglie il database storico (`cucina.db`), la prima
 # creata. Serve alla migrazione: la casa che trova il database gia' pieno lo
@@ -146,9 +153,11 @@ def db_path(slug, percorso=None):
     with closing(_connect_registro(percorso)) as db:
         riga = db.execute("SELECT db_file FROM houses WHERE slug = ?", (slug,)).fetchone()
     # il nome del file non viene mai dall'esterno: lo scrive solo `registra`,
-    # e per la casa storica e' la costante `cucina.db`
+    # e per la casa storica e' la costante `cucina.db`. Va cercato in DATA_DIR e
+    # non in BASE_DIR, altrimenti la casa storica resterebbe invisibile quando i
+    # dati stanno altrove (es. un volume Docker).
     if riga is not None and riga["db_file"]:
-        return os.path.join(BASE_DIR, os.path.basename(riga["db_file"]))
+        return os.path.join(DATA_DIR, os.path.basename(riga["db_file"]))
     return os.path.join(CASE_DIR, f"case-{slug}.db")
 
 

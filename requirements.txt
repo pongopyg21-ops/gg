@@ -1,4 +1,8 @@
 flask>=3.0
+# Server di produzione: regge le connessioni in parallelo e non ha il ricaricatore
+# di Flask, inadatto a una macchina sempre accesa. Senza, `app.avvia()` ripiega
+# sul server di sviluppo, quindi l'app parte lo stesso.
+waitress>=3.0
 
 # Solo per i test. Sta qui e non in un file separato perché l'ambiente viene
 # azzerato fra una sessione e l'altra: senza questa riga `avvia.sh` reinstallerebbe
