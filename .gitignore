@@ -4,3 +4,6 @@ __pycache__/
 server.log
 .venv/
 .avvia.pid
+.sorveglia.pid
+.sorveglia.lock
+sorveglia.log

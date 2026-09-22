@@ -1850,20 +1850,57 @@ function timbroScelto() {
   return TIMBRI[localStorage.getItem('voceTimbro')] ? localStorage.getItem('voceTimbro') : 'chiara';
 }
 
-/** Sceglie la voce del sistema più vicina al timbro richiesto. */
+/** La voce scelta a mano dall'elenco completo, se esiste ancora.
+
+    Si memorizza il `voiceURI` e non il nome: fra due voci diverse il nome può
+    coincidere, il voiceURI no. Se la voce è sparita (cambio di sistema, browser
+    diverso) si torna al timbro, invece di restare senza voce. */
+function voceEsplicita() {
+  const uri = localStorage.getItem('voceScelta');
+  if (!uri || !window.speechSynthesis || !speechSynthesis.getVoices) return null;
+  return speechSynthesis.getVoices().find((v) => v.voiceURI === uri) || null;
+}
+
+/** True per le voci "naturali" (neurali), le uniche che suonano davvero bene.
+
+    Windows 11 le ha, ma **non le espone a Chrome e Firefox**: compaiono solo in
+    Edge. Per questo su Chrome si sente ancora la voce vecchia e metallica anche
+    se sul sistema ci sono voci molto migliori. Riconoscerle qui serve a
+    preferirle automaticamente quando ci sono. */
+function eVoceNaturale(v) {
+  return /natural|neural/i.test(v.name || '');
+}
+
+/** Sceglie la voce del sistema più vicina al timbro richiesto.
+
+    L'ordine conta: prima una voce **naturale** che corrisponda al timbro, poi una
+    voce normale del timbro, poi una naturale qualsiasi. Una voce naturale di
+    registro diverso si sente comunque meglio di una voce sintetica del registro
+    giusto: la qualità pesa più della sfumatura. */
 function scegliVoce(timbro) {
   if (!window.speechSynthesis || !speechSynthesis.getVoices) return null;
   const voci = speechSynthesis.getVoices();
   if (!voci.length) return null;
 
+  const scelta = voceEsplicita();
+  if (scelta) return scelta;
+
   const it = voci.filter((v) => (v.lang || '').toLowerCase().startsWith('it'));
+  if (!it.length) return null;
   const t = TIMBRI[timbro] || TIMBRI.chiara;
+  const naturale = (v) => eVoceNaturale(v);
+
+  const naturali = it.filter(naturale);
+  for (const nome of t.nomi) {
+    const trovata = naturali.find((v) => (v.name || '').toLowerCase().includes(nome));
+    if (trovata) return trovata;
+  }
   for (const nome of t.nomi) {
     const trovata = it.find((v) => (v.name || '').toLowerCase().includes(nome));
     if (trovata) return trovata;
   }
   // la prima voce italiana, in mancanza di quella cercata
-  return it[0] || null;
+  return naturali[0] || it[0] || null;
 }
 
 /** Rilegge le voci: su molte piattaforme l'elenco arriva in modo asincrono. */
@@ -1872,6 +1909,7 @@ function caricaVoci() {
   tts.caricate = true;
   tts.voce = scegliVoce(timbroScelto());
   aggiornaEtichetteVoci();
+  aggiornaElencoVoci();
 }
 
 /** Mostra il nome della voce che ogni timbro usa davvero su questo sistema.
@@ -1888,6 +1926,44 @@ function aggiornaEtichetteVoci() {
     const v = scegliVoce(chiave);
     opt.textContent = v ? `${TIMBRI[chiave].etichetta} · ${v.name}` : TIMBRI[chiave].etichetta;
   });
+}
+
+/** Riempie l'elenco completo delle voci italiane.
+
+    I tre timbri sono scorciatoie comode ma non lasciano scegliere: se il sistema
+    espone una voce naturale e il timbro ne pesca un'altra, l'utente non ha modo di
+    prenderla. Qui si mostrano tutte, marcando le naturali e quelle che funzionano
+    senza rete, così la scelta è esplicita. */
+function aggiornaElencoVoci() {
+  const sel = $('#voice-all');
+  if (!sel || !window.speechSynthesis || !speechSynthesis.getVoices) return;
+  const voci = speechSynthesis.getVoices();
+  if (!voci.length) return;
+
+  const it = voci.filter((v) => (v.lang || '').toLowerCase().startsWith('it'));
+  const corrente = voceEsplicita() || tts.voce;
+  const righe = ['<option value="">Automatica (secondo il timbro)</option>'];
+
+  // naturali in cima: sono quelle che l'utente sta cercando
+  it.sort((a, b) => (eVoceNaturale(b) ? 1 : 0) - (eVoceNaturale(a) ? 1 : 0) || a.name.localeCompare(b.name));
+  for (const v of it) {
+    const note = [];
+    if (eVoceNaturale(v)) note.push('naturale');
+    if (v.localService === false) note.push('online');
+    const etichetta = note.length ? `${v.name} · ${note.join(', ')}` : v.name;
+    const sel_ = corrente && corrente.voiceURI === v.voiceURI ? ' selected' : '';
+    righe.push(`<option value="${esc(v.voiceURI)}"${sel_}>${esc(etichetta)}</option>`);
+  }
+  sel.innerHTML = righe.join('');
+
+  const avviso = $('#voice-avviso');
+  if (avviso) {
+    // se non c'e' nessuna voce naturale, dirlo invece di lasciare l'utente a
+    // cercare fra nomi che sembrano tutti uguali
+    avviso.textContent = it.some(eVoceNaturale)
+      ? ''
+      : 'Nessuna voce naturale disponibile su questo browser. Su Windows le voci migliori compaiono solo in Microsoft Edge.';
+  }
 }
 
 /** Divide il testo in frasi, tenendo la punteggiatura di ciascuna.
@@ -1915,7 +1991,13 @@ function parlaTesto(testo) {
     frasi.forEach((frase, i) => {
       const ultima = i === frasi.length - 1;
       const u = new SpeechSynthesisUtterance(frase);
-      if (tts.voce) u.voice = tts.voce;
+      // l'assegnazione della voce sta da sola in un try: una voce non più valida
+      // (l'elenco del browser cambia, e un oggetto tenuto da parte può morire)
+      // solleva qui, e senza questa protezione se ne andrebbe in silenzio tutto
+      // il messaggio invece della sola voce. Meglio la voce predefinita che niente.
+      try {
+        if (tts.voce) u.voice = tts.voce;
+      } catch (_e) { /* si parla con la voce predefinita */ }
       u.lang = (tts.voce && tts.voce.lang) || 'it-IT';
       // l'ultima frase chiude la frase scendendo appena di tono e rallentando:
       // è quello che fa la voce umana a fine discorso, e senza si sente il
@@ -1945,12 +2027,28 @@ function anteprimaTimbro(nome) {
     frasi.forEach((frase, i) => {
       const ultima = i === frasi.length - 1;
       const u = new SpeechSynthesisUtterance(frase);
-      if (v) u.voice = v;
+      try {
+        if (v) u.voice = v;
+      } catch (_e) { /* voce non assegnabile: si sente quella predefinita */ }
       u.lang = (v && v.lang) || 'it-IT';
       u.rate = t.rate * (ultima ? 0.97 : 1.0);
       u.pitch = t.pitch * (ultima ? 0.95 : 1.0);
       speechSynthesis.speak(u);
     });
+  } catch (_e) { /* niente anteprima */ }
+}
+
+/** Anteprima brevissima di una voce scelta dall'elenco completo. */
+function anteprimaVoce(v) {
+  if (!window.speechSynthesis || !v) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance('Ciao, sono il maggiordomo.');
+    try {
+      u.voice = v;
+    } catch (_e) { /* voce non assegnabile: si sente quella predefinita */ }
+    u.lang = v.lang || 'it-IT';
+    speechSynthesis.speak(u);
   } catch (_e) { /* niente anteprima */ }
 }
 
@@ -2149,8 +2247,26 @@ $('#voice-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') inv
 $('#voice-pick').value = timbroScelto();
 $('#voice-pick').addEventListener('change', (e) => {
   localStorage.setItem('voceTimbro', e.target.value);
+  // il timbro è una modalità automatica: annulla la voce scelta a mano, altrimenti
+  // resterebbe quella e il timbro non avrebbe alcun effetto
+  localStorage.removeItem('voceScelta');
   tts.voce = scegliVoce(e.target.value);
+  aggiornaElencoVoci();
+  $('#voice-all').value = '';
   anteprimaTimbro(e.target.value);
+});
+
+// voce di sistema scelta a mano dall'elenco completo: vince sul timbro
+$('#voice-all').addEventListener('change', (e) => {
+  if (e.target.value) {
+    localStorage.setItem('voceScelta', e.target.value);
+    tts.voce = voceEsplicita() || scegliVoce(timbroScelto());
+    anteprimaVoce(tts.voce);
+  } else {
+    localStorage.removeItem('voceScelta');
+    tts.voce = scegliVoce(timbroScelto());
+  }
+  aggiornaEtichetteVoci();
 });
 
 // il jingle di apertura si può disattivare, e la scelta resta

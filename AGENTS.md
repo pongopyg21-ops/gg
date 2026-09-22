@@ -20,6 +20,8 @@ contatti, codici).
 ./avvia.sh status                        # attivo? su quale porta?
 ./avvia.sh log                           # ultime righe del log
 ./avvia.sh test                          # test nella venv del progetto
+./sorveglia.sh                           # riavvia il server da solo se cade
+./sorveglia.sh status                    # sorveglianza attiva? server su?
 ```
 
 **All'inizio di ogni conversazione il server non è attivo.** L'ambiente viene
@@ -74,6 +76,29 @@ risolve con `./avvia.sh`, che riparte e aspetta che la pagina iniziale risponda.
 Vale la pena ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa:
 una 502 non dice nulla sulla salute dell'app, dice che non c'e' nessuno in
 ascolto.
+
+**Non è successo che il processo muoia: viene ricreato il container.** È una
+distinzione che cambia il rimedio. Se `cat /proc/uptime` mostra pochi secondi o
+`ps -p 1` mostra un processo diverso da quello di prima, non è il server a essere
+caduto: è tutto l'ambiente a essere nuovo, e allora anche `sorveglia.sh` è morto
+con lui. In quel caso non serve indagare sul perché il server sia "morto" —
+non è morto, non è mai stato avviato in questo container. `./avvia.sh` rimette
+in piedi entrambi: è il primo comando da provare, sempre.
+
+`sorveglia.sh` copre il caso diverso, quello in cui **solo il server** cade
+mentre l'ambiente resta vivo: controlla la pagina ogni 15 secondi e riavvia se
+non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Scrive sul
+log solo quando interviene, così un log non vuoto è già un'informazione.
+
+Non esiste in questa immagine un gancio di avvio automatico: niente `systemd`
+(`systemctl` è presente ma `systemd` non è il PID 1), niente `cron` (`/etc/init.d/cron`
+non esiste), e il processo 1 è l'agent-server di OpenHands, che non esegue script
+del progetto. **Non perdere tempo a cercare dove agganciarsi**: non c'è, e la
+ricreazione del container porterebbe comunque via qualsiasi cosa avviata qui.
+La continuità vera (server che riparte da solo dopo un riavvio della macchina) si
+ottiene solo su una macchina propria, con un servizio di sistema o
+`docker run --restart unless-stopped`. Qui l'unica strategia sensata è:
+all'inizio della conversazione `./avvia.sh`, poi `./sorveglia.sh`.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
@@ -235,6 +260,34 @@ Conseguenze pratiche per chi mette mano al codice:
   velocità sull'ultima: è così che la sintesi chiude l'intonazione, ed è l'unica
   leva che abbiamo su voci che non controlliamo. Prima di cambiare i valori, provare
   ad ascoltare: un numero più "espressivo" di solito suona peggio.
+- **La qualità della voce non dipende dall'app.** `scegliVoce` preferisce le voci
+  italiane **naturali** (`eVoceNaturale`, cioè con "natural"/"neural" nel nome),
+  perché sono le uniche che suonano bene, e solo dopo ripiega sul timbro. Ma la
+  scelta di quali voci esistano è del sistema operativo e del browser, non nostra:
+  le voci naturali di Windows **non sono esposte a Chrome e Firefox**, solo a Edge.
+  Quando un utente dice che la voce è pessima, la prima cosa da verificare è quali
+  voci vede il suo browser — non riscrivere i valori di `rate`/`pitch`, che sono già
+  al minimo intervento possibile. `aggiornaElencoVoci` riempie la tendina
+  "Voce di sistema" con tutte le voci italiane e `#voice-avviso` avvisa quando non
+  ce n'è nessuna naturale: è la risposta onesta a quel limite.
+- `voceScelta` (localStorage) è una voce precisa scelta a mano, indicata per
+  **`voiceURI` e non per nome**: fra due voci diverse il nome può coincidere, il
+  voiceURI no. Cambiare timbro la cancella, perché il timbro è una modalità
+  automatica e senza questo non avrebbe effetto. Se la voce memorizzata non esiste
+  più (altro browser, altro sistema) `voceEsplicita()` restituisce `null` e si
+  ricade sul timbro: non si resta muti.
+- L'assegnazione `u.voice = v` va sempre dentro un suo `try`. Una voce tenuta da
+  parte può non essere più valida, e l'assegnazione solleva: senza la protezione
+  se ne va in silenzio **tutto** il messaggio invece della sola voce. Meglio la voce
+  predefinita che niente. Vale per `parlaTesto`, `anteprimaTimbro` e `anteprimaVoce`.
+- Il container di questo ambiente **non ha alcun motore di sintesi installato**
+  (`speechSynthesis.getVoices()` restituisce `[]`). Quindi la logica delle voci non
+  è verificabile dal vivo qui: va provata simulando `speechSynthesis` con
+  `Object.defineProperty` in uno script di init di Playwright. `getVoices` è di sola
+  lettura e riassegnarlo direttamente non ha effetto — serve sostituire l'intero
+  oggetto. Attenzione: con un oggetto JS semplice come voce Chromium **rifiuta**
+  l'assegnazione e `u.voice` resta null; non è un difetto del codice, è l'artefatto
+  dello stub. La verifica reale va fatta su una macchina con voci installate.
 - Il jingle di apertura (`suonoApertura`) è sintetizzato con la Web Audio API, senza
   file audio. **Non può partire da solo**: i browser tengono l'`AudioContext`
   sospeso finché l'utente non interagisce. `tentaSuonoApertura` è legato ai primi

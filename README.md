@@ -211,6 +211,10 @@ Il timbro è una *preferenza*, non un nome fisso: la voce concreta cambia fra Wi
 
 I valori di velocità e tonalità di ogni timbro restano **vicini a 1**: le voci di sistema sono sintetiche, e allontanarsi dalla loro intonazione naturale le rende artificiali invece che espressive. Il carattere di un timbro si distingue per il registro (più acuto o più grave), non per la velocità.
 
+Dalla tendina **Voce di sistema** si può anche scegliere una voce precisa fra quelle che il sistema espone, non solo un timbro. Le voci **naturali** (neurali) sono contrassegnate e messe in cima, e i timbri le preferiscono da soli quando ci sono.
+
+> **Nota** — su Windows le voci naturali di Microsoft **non sono visibili a Chrome e Firefox**: compaiono solo in Edge. Se su Chrome la voce suona vecchia e metallica non è un difetto dell'app, è quel limite del browser. Aprire l'app in Microsoft Edge è il modo più semplice per sentire la differenza. Il pannello lo dice da solo quando non trova nessuna voce naturale.
+
 Le conferme vengono pronunciate **una frase per volta**, non in un'unica fila: la sintesi di sistema applica una sola curva di intonazione a un testo lungo, ed è il motivo per cui «In dispensa: farina 2 kg» suonava piatto. Spezzando il testo la voce chiude l'intonazione a ogni frase, e l'ultima scende appena di tono e rallenta, come fa la voce umana a fine discorso. Il messaggio di conferma è anche scritto in modo da reggere l'ascolto: comincia con «Fatto» e finisce con un punto.
 
 ### Il suono all'apertura
@@ -291,6 +295,23 @@ PORT=12000 python app.py
 ```
 
 Il database SQLite (`cucina.db`) viene creato al primo avvio e popolato con il ricettario di partenza. Per usarne un altro: `CUCINA_DB=/percorso/mio.db ./avvia.sh`.
+
+### Se il link smette di rispondere
+
+In un ambiente usa e getta (una macchina che viene spenta e ricreata fra una sessione e l'altra) il server non sopravvive al riavvio: il link comincia a rispondere 502 e resta muto finché non lo si riavvia a mano. `sorveglia.sh` fa quel controllo da solo, ogni 15 secondi:
+
+```bash
+./sorveglia.sh            # avvia la sorveglianza in background
+./sorveglia.sh status     # è attiva? il server risponde?
+./sorveglia.sh log        # quando è intervenuta
+./sorveglia.sh stop       # ferma la sorveglianza (il server resta acceso)
+```
+
+Quando il server non risponde, il sorvegliante aspetta qualche secondo e riprova: se è ancora giù lo riavvia, entro pochi secondi dalla caduta. Le due letture ravvicinate servono a non far ripartire un server che stava solo rispondendo piano. Il log resta vuoto finché tutto va bene, così quando c'è qualcosa da leggere si vede subito.
+
+**Quello che non può fare** è sopravvivere alla ricreazione dell'ambiente: quando il sistema viene azzerato muoiono tutti i processi, sorvegliante compreso. In questa immagine non c'è un meccanismo di avvio automatico da agganciare (niente `systemd`, niente `cron`: il processo 1 è l'agent-server di OpenHands), quindi dopo un azzeramento va riavviato a mano. Per questo il sorvegliante è utile ma non è una garanzia di continuità: al primo 502 la cosa da fare è rieseguire `./avvia.sh && ./sorveglia.sh`.
+
+Su una macchina tua, dove il sistema non viene ricreato, la continuità si ottiene invece con un servizio di sistema (`systemd`, `launchd`, o `docker run --restart unless-stopped`): lì il server riparte da solo anche dopo un riavvio della macchina, senza sorveglianti.
 
 ### Dal telefono
 
