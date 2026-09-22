@@ -397,12 +397,25 @@ Conseguenze pratiche per chi mette mano al codice:
 - I comandi vocali stanno in `voice.py` e non nel frontend: il browser si limita a
   dettare testo con la Web Speech API e a mandarlo a `POST /api/voice`, così la
   comprensione è testabile senza microfono. `parse()` riconosce gli intenti
-  `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search` e
-  restituisce `unknown` quando non capisce. Le unità si aggiungono in
-  `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le destinazioni in
+  `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search`,
+  `recipe_add` e restituisce `unknown` quando non capisce. Le unità si aggiungono
+  in `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le destinazioni in
   `_find_destination`. Una frase senza verbo, destinazione o quantità è rumore di
   fondo e deve restare `unknown`: il microfono sente anche i discorsi in cucina e
   le voci inventate in lista sono peggio di un comando non capito.
+- `recipe_add` è l'unico intento che **non scrive niente**: risponde con
+  `open_recipe_form` e il client apre il modulo della ricetta col nome già dentro.
+  Una ricetta creata a voce senza ingredienti né preparazione sarebbe una scheda
+  vuota da ripulire, quindi la voce fa il lavoro noioso — aprire il modulo e
+  scrivere il nome — e il resto resta all'utente. Perché scatti servono **sia** la
+  parola "ricetta" **sia** un verbo di novità (`_RECIPE_VERBS`): "aggiungi" da solo
+  è una spesa, "ricetta" da sola è una ricerca. Una destinazione esplicita vince
+  sempre ("nel carrello"), e "ricetta" non può restare nel nome di un ingrediente:
+  senza queste due guardie "aggiungi la ricetta carbonara" diventa una voce di
+  lista chiamata "ricetta carbonara", che è il motivo per cui l'intento esiste.
+  Il nome si ripulisce in `_nome_ricetta`, che toglie i riempitivi ovunque ma
+  articoli e preposizioni solo ai bordi: dentro il nome sono parte di esso
+  ("pasta al forno", "risotto ai funghi"), fuori sono avanzi di discorso.
 - **La dispensa non è il magazzino.** La dispensa si confronta con le ricette, il
   magazzino no: confonderli scrive un detergente in una lista di ingredienti, che è
   il motivo per cui `storage` è una tabella a parte. `_find_destination` decide in

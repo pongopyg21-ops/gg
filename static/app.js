@@ -361,8 +361,8 @@ function photoOptions(selezionata) {
   return opts.join('');
 }
 
-function recipeForm(recipe) {
-  const r = recipe || { name: '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: [] };
+function recipeForm(recipe, nomeIniziale) {
+  const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: [] };
   showModal(recipe ? 'Modifica ricetta' : 'Nuova ricetta', `
     <div class="field"><label>Nome</label><input id="r-name" value="${esc(r.name)}"></div>
     <div class="row" style="margin-bottom:12px">
@@ -1626,9 +1626,14 @@ async function saveFavorites(ids) {
 async function openFavoritesStep(onBack, preferite) {
   preferite = preferite || new Set(profile.favorite_ids || []);
   showModal('Quali ricette ti piacciono?', `
-    <p class="lead">${onBack ? 'Passo 3 di 3 · ' : ''}scegli le tue ricette preferite: le ritrovi
-    con il filtro <strong>Solo preferite</strong> nella scheda Ricette. Puoi cambiare la scelta
-    quando vuoi dalla scheda <strong>Profilo</strong>.</p>
+    <p class="lead">${onBack ? 'Passo 3 di 3 · ' : ''}l'app parte con un
+    <strong>ricettario italiano già pronto</strong><span id="ob-count"></span>: non devi
+    inserire le ricette tu. Qui scegli quelle che ami: le ritrovi con il filtro
+    <strong>Solo preferite</strong> nella scheda Ricette. Puoi cambiare la scelta quando
+    vuoi dalla scheda <strong>Profilo</strong>.</p>
+    <p class="lead">Per aggiungere una ricetta tua, dalla scheda Ricette premi
+    <strong>+ Nuova ricetta</strong>, oppure <strong>dilla a voce</strong>: «crea la ricetta
+    pasta al forno» e il modulo si apre già col nome scritto.</p>
     <div id="ob-favorites"></div>
     <div class="modal-foot">
       ${onBack ? '<button id="ob-back">Indietro</button>' : '<button id="ob-later">Più tardi</button>'}
@@ -1646,6 +1651,10 @@ async function openFavoritesStep(onBack, preferite) {
   if (!list.length) {
     box.innerHTML = '<p class="muted">Non ci sono ancora ricette: potrai sceglierle dopo averne create.</p>';
   } else {
+    // il numero si legge dalle ricette che ci sono davvero: scritto a mano
+    // diventerebbe sbagliato al primo ritocco del ricettario
+    const count = $('#ob-count');
+    if (count) count.textContent = ` (${list.length} ricette)`;
     favoritesPicker(box, list, [...preferite], (ids) => {
       preferite.clear();
       ids.forEach((i) => preferite.add(i));
@@ -2256,6 +2265,15 @@ async function eseguiComando(testo) {
       switchTab('recipes');
       $('#recipe-search').value = res.query;
       if (typeof renderRecipes === 'function') renderRecipes();
+    } else if (res.open_recipe_form) {
+      // "crea la ricetta carbonara" apre il modulo col nome gia' scritto: la
+      // parte noiosa la fa la voce, ingredienti e preparazione restano all'utente.
+      // Il pannello vocale va chiuso prima: sta a un livello piu' alto del modulo
+      // e altrimenti lo coprirebbe.
+      chiudiVoce();
+      apriSezione('cucina');
+      switchTab('recipes');
+      if (typeof recipeForm === 'function') recipeForm(null, res.name || '');
     } else {
       // un comando puo' toccare una scheda di un'altra area (dettare una spesa
       // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la

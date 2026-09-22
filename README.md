@@ -78,8 +78,8 @@ lasciarla di comodo.
 - **Lista della spesa automatica** — non c'è nulla da generare a mano: la lista si ricostruisce da sola quando si aggiunge o toglie un pasto, si modificano le dosi di una ricetta o si mette qualcosa in dispensa. Somma gli ingredienti di tutti i pasti, scala le porzioni rispetto alla ricetta base e sottrae quello che è già in dispensa.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
-- **Ricette preferite** — sempre in fase di profilazione si scelgono le ricette preferite, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
-- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La conferma può arrivare da una **voce neurale cloud**, uguale su ogni dispositivo, o dalla voce del sistema come ripiego.
+- **Ricette preferite** — in fase di profilazione l'app dice che il ricettario di partenza è già pronto (45 ricette italiane) e si limita a chiedere quali preferisci, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. Nessuna ricetta va inserita a mano per cominciare. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
+- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia, cercare una ricetta o **detta la ricetta nuova**: «crea la ricetta pasta al forno» apre il modulo già col nome scritto, e si completano ingredienti e preparazione. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La conferma può arrivare da una **voce neurale cloud**, uguale su ogni dispositivo, o dalla voce del sistema come ripiego.
 
 ## Allergie e intolleranze
 
@@ -182,6 +182,9 @@ La comprensione della frase sta invece in `voice.py`, non nel browser, così è 
 | «metti il detersivo in cantina» | `storage_add` | aggiunge al magazzino, in cantina |
 | «sono allergico al nichel» | `term_add` | aggiunge alle restrizioni del profilo |
 | «cerca la carbonara» | `recipe_search` | filtra le ricette |
+| «crea la ricetta pasta al forno» | `recipe_add` | apre il modulo della ricetta col nome già scritto |
+
+`recipe_add` è l'unico comando che non scrive niente da solo: apre il modulo con il nome già dentro e lascia a te ingredienti e preparazione. Una ricetta creata a voce senza ingredienti sarebbe una scheda vuota da ripulire, quindi la voce si prende la parte noiosa — aprire la scheda giusta e scrivere il nome — e ti mette davanti al punto in cui aggiungere il resto. Perché il comando scatti servono sia la parola «ricetta» sia un verbo di novità («crea», «nuova», «salva», «prepara»): «aggiungi» da solo resta una spesa, «ricetta» da sola resta una ricerca. Una destinazione esplicita vince sempre, quindi «aggiungi la ricetta nel carrello» parla del carrello e non crea nulla.
 
 Senza indicazioni la destinazione predefinita è la lista della spesa, perché è la scelta più frequente e la meno rischiosa: una voce di troppo in lista si cancella con un tocco, una giacenza sbagliata in dispensa falsa i calcoli.
 

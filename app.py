@@ -1350,6 +1350,18 @@ def voice_command():
                         "restriction_list": profile["restriction_list"],
                         "reload": ["profile"]})
 
+    if cmd["intent"] == "recipe_add":
+        # Non si crea una ricetta vuota: una ricetta senza ingredienti e senza
+        # procedimento non serve a nessuno e resterebbe li' a sporcare l'elenco.
+        # Si apre invece il modulo gia' compilato col nome, cosi' la voce fa il
+        # lavoro noioso (trovare la scheda, aprire il modulo, scrivere il nome) e
+        # l'utente aggiunge ingredienti e preparazione.
+        if not cmd["name"]:
+            return jsonify({**cmd, "open_recipe_form": True,
+                            "message": "Apro il modulo per la nuova ricetta."})
+        return jsonify({**cmd, "open_recipe_form": True,
+                        "message": f"Nuova ricetta: {cmd['name']}. Completa ingredienti e preparazione."})
+
     if cmd["intent"] == "recipe_search":
         return jsonify({**cmd, "message": f"Cerco «{cmd['query']}».", "query": cmd["query"]})
 

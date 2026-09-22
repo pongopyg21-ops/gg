@@ -1035,6 +1035,89 @@ def test_voce_ricerca_ricette():
     assert voice.parse("cercami ricette con le melanzane")["query"] == "melanzane"
 
 
+def test_voce_crea_ricetta_dettata():
+    """Dettare una ricetta nuova: si apre il modulo col nome, non si crea a vuoto."""
+    casi = {
+        "crea la ricetta carbonara": "carbonara",
+        "aggiungi la ricetta carbonara": "carbonara",
+        "crea una ricetta chiamata pasta al forno": "pasta al forno",
+        "nuova ricetta polpette della nonna": "polpette della nonna",
+        "salva la ricetta risotto ai funghi": "risotto ai funghi",
+        "prepara una ricetta per la carbonara": "carbonara",
+        "vorrei aggiungere una ricetta di lasagne": "lasagne",
+    }
+    for frase, atteso in casi.items():
+        cmd = voice.parse(frase)
+        assert cmd["intent"] == "recipe_add", frase
+        assert cmd["name"] == atteso, frase
+
+
+def test_voce_senza_nome_chiede_il_modulo_vuoto():
+    """"aggiungi una ricetta" non ha un nome: il modulo si apre comunque, vuoto."""
+    cmd = voice.parse("aggiungi una ricetta")
+    assert cmd["intent"] == "recipe_add"
+    assert cmd["name"] == ""
+
+
+def test_voce_ricetta_non_finisce_nella_spesa():
+    """Senza il ramo `recipe_add`, "aggiungi la ricetta carbonara" diventava una
+    voce di lista della spesa chiamata "ricetta carbonara"."""
+    cmd = voice.parse("aggiungi la ricetta carbonara")
+    assert cmd["intent"] != "shopping_add"
+    assert cmd["intent"] != "pantry_add"
+
+
+def test_voce_ricetta_non_tocca_gli_altri_comandi():
+    """Le frasi di ingredienti, allergie e ricerca restano quelle di prima."""
+    assert voice.parse("aggiungi il pane")["intent"] == "shopping_add"
+    assert voice.parse("metti il burro in dispensa")["intent"] == "pantry_add"
+    assert voice.parse("sono allergico al nichel")["intent"] == "term_add"
+    assert voice.parse("cerca la carbonara")["intent"] == "recipe_search"
+    assert voice.parse("tre confezioni di passata di pomodoro in dispensa")["name"] == "passata di pomodoro"
+
+
+def test_voce_ricetta_ambigua_non_diventa_un_articolo():
+    """Le frasi in cui "ricetta" è l'oggetto del discorso ma non una ricetta da
+    scrivere non devono produrre una voce di lista chiamata "ricetta ...".
+
+    Sono i casi in cui la frase parla di una ricetta senza chiedere di crearne
+    una: una destinazione esplicita ("nel carrello"), un verbo debole ("vorrei"),
+    o gli ingredienti di una ricetta che esiste già."""
+    for frase in ("vorrei una ricetta",
+                  "voglio una ricetta",
+                  "metti la ricetta carbonara",
+                  "mi serve una ricetta per la cena",
+                  "aggiungi la ricetta nel carrello",
+                  "metti la ricetta nel carrello",
+                  "aggiungi gli ingredienti della ricetta carbonara"):
+        cmd = voice.parse(frase)
+        assert cmd["intent"] != "shopping_add", frase
+        assert cmd["intent"] != "pantry_add", frase
+        assert cmd["intent"] != "recipe_add", frase
+
+
+def test_voce_ricetta_nel_carrello_resta_una_destinazione():
+    """Una destinazione esplicita vince sulla parola "ricetta"."""
+    assert voice.parse("aggiungi la ricetta nel carrello")["intent"] == "unknown"
+
+
+def test_voce_endpoint_crea_ricetta_apre_il_modulo(client):
+    r = client.post("/api/voice", json={"text": "crea la ricetta pasta al forno"})
+    assert r.status_code == 200
+    dati = r.get_json()
+    assert dati["intent"] == "recipe_add"
+    assert dati["open_recipe_form"] is True
+    assert dati["name"] == "pasta al forno"
+    # non si crea nulla da soli: il modulo lo compila l'utente
+    assert client.get("/api/recipes").get_json() == []
+
+
+def test_voce_endpoint_ricetta_senza_nome(client):
+    r = client.post("/api/voice", json={"text": "aggiungi una ricetta"})
+    assert r.status_code == 200
+    assert r.get_json()["open_recipe_form"] is True
+
+
 def test_voce_frase_non_compresa():
     assert voice.parse("")["intent"] == "unknown"
     assert voice.parse("   ")["intent"] == "unknown"

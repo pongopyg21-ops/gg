@@ -143,6 +143,23 @@ _SEARCH_WORDS = {"cerca", "cercami", "cercare", "cercavo", "cercando", "mostrami
                  "con", "che", "dei", "delle", "della", "del", "al", "allo", "alla",
                  "ai", "agli", "alle", "a", "e", "ed", "o", "mangiare", "cucinare"}
 
+# Creazione di una ricetta. Serve una parola che dica "ricetta" **e** un verbo
+# che dica "nuova": "aggiungi" da solo è una spesa, "ricetta" da sola è una
+# ricerca. Insieme sono una ricetta da scrivere.
+_RECIPE_WORDS = {"ricetta", "ricette"}
+_RECIPE_VERBS = {"crea", "creare", "creami", "creo", "nuova", "nuovo", "aggiungi",
+                 "aggiungere", "aggiungimi", "salva", "salvare", "inserisci",
+                 "inserire", "scrivi", "scrivere", "registra", "registrare",
+                 "prepara", "preparami", "preparare"}
+# parole che non fanno parte del nome della ricetta. Volutamente NON contiene
+# le preposizioni: "pasta al forno" e "risotto ai funghi" le preposizioni ce le
+# hanno dentro. Si tolgono invece ai bordi, in `_nome_ricetta`, dove sono
+# avanzi del discorso ("...per la carbonara") e non parte del nome.
+_RECIPE_FILLER = _RECIPE_VERBS | _RECIPE_WORDS | {
+    "chiamata", "chiamato", "nome", "intitolata", "come", "tu", "puoi", "potresti",
+    "ho", "voglio", "vorrei",
+}
+
 
 def _norm(text):
     """Minuscolo, senza accenti e senza punteggiatura; l'apostrofo resta."""
@@ -262,6 +279,23 @@ def _clean_name(tokens, skip):
                     else p for p in parole if p).strip()
 
 
+def _nome_ricetta(tokens):
+    """Nome della ricetta dettata, o '' se la frase non ne contiene uno.
+
+    I riempitivi si tolgono da tutta la frase, non solo ai bordi come per gli
+    ingredienti: in "crea una ricetta chiamata pasta al forno" il nome sta in
+    mezzo e le parole di comando sono sparse. Articoli e preposizioni invece si
+    tolgono solo ai bordi: dentro il nome sono parte di esso ("pasta al forno"),
+    fuori sono avanzi di discorso ("una ricetta **per la** carbonara").
+    """
+    parole = [t for t in tokens if t not in _RECIPE_FILLER]
+    while parole and parole[0] in _STOPWORDS:
+        parole.pop(0)
+    while parole and parole[-1] in _STOPWORDS:
+        parole.pop()
+    return " ".join(parole).strip()
+
+
 def _clean_term(text):
     """Termine di allergia: si prova prima la frase intera, poi si divide.
 
@@ -338,6 +372,21 @@ def parse(text):
         if terms:
             return {**base, "intent": "term_add", "terms": terms}
 
+    # Creazione di una ricetta: serve un verbo di "nuova" insieme alla parola
+    # "ricetta". Prima della ricerca e degli ingredienti, perché "aggiungi la
+    # ricetta carbonara" senza questo ramo finirebbe in lista della spesa come
+    # articolo "ricetta carbonara".
+    # Una destinazione esplicita vince: "aggiungi la ricetta nel carrello" parla
+    # del carrello, non di una ricetta da scrivere. "ingredienti" esclude a sua
+    # volta: chi lo dice vuole toccare gli ingredienti di una ricetta esistente,
+    # non crearne una nuova chiamata "ingredienti ...".
+    tokens_frase = normalized.split()
+    if (_RECIPE_WORDS & set(tokens_frase) and _RECIPE_VERBS & set(tokens_frase)
+            and not _find_destination(tokens_frase)[2]
+            and not ({"ingredienti", "ingrediente"} & set(tokens_frase))):
+        nome = _nome_ricetta(tokens_frase)
+        return {**base, "intent": "recipe_add", "name": nome}
+
     # ricerca fra le ricette
     match = re.search(r"\b(cerca|cercami|cercare|mostrami|trova)\b", normalized)
     if match:
@@ -368,6 +417,13 @@ def parse(text):
 
     name = _clean_name(tokens, skip)
     if not name:
+        return base
+
+    # Un ingrediente non si chiama "ricetta": se la parola resta nel nome la
+    # frase parlava di ricette e non di spesa ("vorrei una ricetta", "metti la
+    # ricetta carbonara"). Meglio non capire che scrivere "ricetta carbonara"
+    # in lista: l'utente riprova, l'articolo sbagliato resta li' per sempre.
+    if _RECIPE_WORDS & set(name.split()):
         return base
 
     # l'etto diventa grammi: in dispensa le quantità restano confrontabili
