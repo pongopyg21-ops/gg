@@ -1819,22 +1819,27 @@ function switchTab(nome) {
    Il browser espone voci diverse a seconda del sistema operativo, quindi non si
    può indicare un nome fisso: si sceglie per caratteristiche (lingua e genere),
    con una lista di preferenze in ordine. Se una voce italiana non c'è si ripiega
-   su quella predefinita, meglio una voce diversa che nessuna voce. */
+   su quella predefinita, meglio una voce diversa che nessuna voce.
+
+   I valori di `rate` e `pitch` sono volutamente vicini a 1: le voci di sistema
+   sono sintetiche, e allontanarsi dalla loro intonazione naturale le rende
+   artificiali invece che espressive. Il timbro si distingue per il registro
+   (più acuto o più grave), non per la velocità. */
 const TIMBRI = {
   chiara: {
     etichetta: 'Chiara',
-    rate: 1.05, pitch: 1.06,
+    rate: 1.0, pitch: 1.0,
     // le voci note cambiano nome fra Windows, macOS, Android e Chrome
     nomi: ['alice', 'elsa', 'paola', 'federica', 'italiano', 'italian'],
   },
   profonda: {
     etichetta: 'Profonda',
-    rate: 0.98, pitch: 0.82,
+    rate: 0.96, pitch: 0.85,
     nomi: ['cosimo', 'diego', 'luca', 'matteo', 'italiano', 'italian'],
   },
   calda: {
     etichetta: 'Calda',
-    rate: 0.92, pitch: 0.96,
+    rate: 0.93, pitch: 0.95,
     nomi: ['alice', 'elsa', 'paola', 'italiano', 'italian'],
   },
 };
@@ -1885,21 +1890,48 @@ function aggiornaEtichetteVoci() {
   });
 }
 
-function speak(text) {
-  if (!$('#voice-speak').checked || !window.speechSynthesis) return;
-  // la sintesi vocale è un di più: se non è disponibile o fallisce, il comando
-  // resta comunque riuscito e non deve trasformarsi in un falso errore
+/** Divide il testo in frasi, tenendo la punteggiatura di ciascuna.
+
+    Serve a non leggere tutto in una fila sola: la sintesi del sistema applica
+    una sola curva di intonazione a una frase lunga, ed è il motivo per cui una
+    conferma come "In dispensa: farina 2 kg" suona piatta. Su frasi brevi il
+    sistema chiude l'intonazione a ogni punto, e l'ascolto cambia. */
+function spezzaInFrasi(testo) {
+  const parti = String(testo || '').match(/[^.!?;:]+[.!?;:]*/g) || [];
+  return parti.map((p) => p.trim()).filter(Boolean);
+}
+
+/** Pronuncia un testo spezzandolo in frasi, ognuna con la sua intonazione. */
+function parlaTesto(testo) {
+  if (!window.speechSynthesis) return;
   try {
     speechSynthesis.cancel();
     const timbro = timbroScelto();
     tts.voce = scegliVoce(timbro);
-    const u = new SpeechSynthesisUtterance(text);
-    if (tts.voce) u.voice = tts.voce;
-    u.lang = (tts.voce && tts.voce.lang) || 'it-IT';
-    u.rate = TIMBRI[timbro].rate;
-    u.pitch = TIMBRI[timbro].pitch;
-    speechSynthesis.speak(u);
+    const t = TIMBRI[timbro] || TIMBRI.chiara;
+    const frasi = spezzaInFrasi(testo);
+    if (!frasi.length) return;
+
+    frasi.forEach((frase, i) => {
+      const ultima = i === frasi.length - 1;
+      const u = new SpeechSynthesisUtterance(frase);
+      if (tts.voce) u.voice = tts.voce;
+      u.lang = (tts.voce && tts.voce.lang) || 'it-IT';
+      // l'ultima frase chiude la frase scendendo appena di tono e rallentando:
+      // è quello che fa la voce umana a fine discorso, e senza si sente il
+      // troncamento meccanico
+      u.rate = t.rate * (ultima ? 0.97 : 1.0);
+      u.pitch = t.pitch * (ultima ? 0.95 : 1.0);
+      speechSynthesis.speak(u);
+    });
   } catch (_e) { /* voce non disponibile: si prosegue */ }
+}
+
+function speak(text) {
+  if (!$('#voice-speak').checked) return;
+  // la sintesi vocale è un di più: se non è disponibile o fallisce, il comando
+  // resta comunque riuscito e non deve trasformarsi in un falso errore
+  parlaTesto(text);
 }
 
 /** Anteprima del timbro: si sente com'è la voce prima di usarla davvero. */
@@ -1907,13 +1939,18 @@ function anteprimaTimbro(nome) {
   if (!window.speechSynthesis) return;
   try {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance("Ciao, sono il tuo assistente in cucina.");
     const v = scegliVoce(nome);
-    if (v) u.voice = v;
-    u.lang = (v && v.lang) || 'it-IT';
-    u.rate = TIMBRI[nome].rate;
-    u.pitch = TIMBRI[nome].pitch;
-    speechSynthesis.speak(u);
+    const t = TIMBRI[nome] || TIMBRI.chiara;
+    const frasi = spezzaInFrasi('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.');
+    frasi.forEach((frase, i) => {
+      const ultima = i === frasi.length - 1;
+      const u = new SpeechSynthesisUtterance(frase);
+      if (v) u.voice = v;
+      u.lang = (v && v.lang) || 'it-IT';
+      u.rate = t.rate * (ultima ? 0.97 : 1.0);
+      u.pitch = t.pitch * (ultima ? 0.95 : 1.0);
+      speechSynthesis.speak(u);
+    });
   } catch (_e) { /* niente anteprima */ }
 }
 
@@ -2004,6 +2041,7 @@ async function eseguiComando(testo) {
         if (tab === 'pantry') renderPantry();
         if (tab === 'shopping') renderShopping();
         if (tab === 'profile') renderProfile();
+        if (tab === 'magazzino') renderMagazzino();
       }
       if (res.reload && res.reload.length) switchTab(res.reload[0]);
       loadIngredientsDatalist();

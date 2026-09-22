@@ -8,6 +8,8 @@ Esempi di frasi riconosciute:
 
     "aggiungi due chili di farina alla dispensa"  -> dispensa, farina, 2 kg
     "metti il latte nella spesa"                  -> spesa, latte, 1 pz
+    "aggiungi il sapone al magazzino"             -> magazzino, sapone
+    "metti il detersivo in cantina"               -> magazzino, detersivo
     "sono allergico al nichel"                    -> allergia, nichel
     "cerca la carbonara"                          -> ricerca ricetta
 """
@@ -36,8 +38,39 @@ _UNIT_TOKENS = {
 _DEST_TOKENS = {
     "dispensa": "pantry",
     "spesa": "shopping", "lista": "shopping", "carrello": "shopping",
+    "supermercato": "shopping", "mercato": "shopping", "negozio": "shopping",
     "allergia": "term", "allergie": "term", "intolleranza": "term",
     "intolleranze": "term", "restrizioni": "term",
+    "magazzino": "storage", "provviste": "storage",
+    "scorte": "storage", "scorta": "storage",
+}
+
+# Il magazzino non si nomina solo con la parola "magazzino": si dice anche dove
+# sta la roba ("in garage", "in cantina"). Il luogo e' un indizio forte ma non
+# una destinazione esplicita: "in cucina" e' anche il posto della dispensa,
+# quindi vale solo se la frase non nomina gia' una destinazione.
+_LUOGO_TOKENS = {
+    "garage": "Garage", "cantina": "Cantina", "soffitta": "Soffitta",
+    "ripostiglio": "Ripostiglio", "solaio": "Soffitta", "magazzino": "Ripostiglio",
+    "balcone": "Balcone", "terrazzo": "Balcone", "bagno": "Bagno",
+    "box": "Garage", "taverna": "Cantina",
+}
+
+# parola tipica di un oggetto di magazzino: sapone, detersivo, candeggina...
+# Serve a sciogliere il caso in cui la frase non dice dove va la cosa. Il test
+# e' per parola intera, cosi' "saponetta" non conta come "sapone".
+_MAGAZZINO_PAROLE = {
+    "sapone", "saponi", "saponetta", "saponette", "detersivo", "detersivi",
+    "candeggina", "ammorbidente", "brillantante", "disinfettante",
+    "anticalcare", "sgrassatore", "spugna", "spugne", "panno", "panni",
+    "sacchi", "sacchetto", "sacchetti", "cartaigienica", "fazzoletti",
+    "tovagliolini", "rotolone", "scottex", "sturalavandini", "scopino",
+    "candela", "candele", "pile", "batteria", "batterie", "lampadina",
+    "lampadine", "neon", "viti", "vite", "chiodi", "chiodo", "tasselli",
+    "bulloni", "nastro", "nastri", "colla", "silicone",
+    "guanti", "guanto", "rasoi", "rasoio", "lame", "spazzolino",
+    "spazzolini", "dentifricio", "dentifrici", "shampoo", "bagnoschiuma",
+    "deodorante", "assorbenti", "cotton", "cerotti", "garze", "termometro",
 }
 
 _UNITS_WORDS = {
@@ -184,12 +217,33 @@ def _extract_amount(tokens):
 
 
 def _find_destination(tokens):
-    """(destinazione, indice, esplicita). Senza indizi vale la spesa."""
+    """(destinazione, indice, esplicita, luogo). Senza indizi vale la spesa.
+
+    Il magazzino si riconosce in tre modi, dal piu' sicuro al piu' debole:
+
+    1. la parola "magazzino" (o "provviste", "scorte"): esplicito;
+    2. un luogo detto nella frase ("in garage", "in cantina"): indicato, ma non
+       esplicito, perche' "in cucina" e' anche il posto della dispensa;
+    3. la parola stessa dice che e' un oggetto di magazzino ("il sapone", "il
+       detersivo"): e' l'indizio piu' debole e vale solo in mancanza di altro.
+
+    L'ordine conta: "aggiungi il sapone in dispensa" resta dispensa, perche' la
+    destinazione esplicita vince sulla parola dell'oggetto.
+    """
     for i, tok in enumerate(tokens):
         dest = _DEST_TOKENS.get(tok)
         if dest:
-            return dest, i, True
-    return "shopping", None, False
+            return dest, i, True, _LUOGO_TOKENS.get(tok)
+
+    for i, tok in enumerate(tokens):
+        luogo = _LUOGO_TOKENS.get(tok)
+        if luogo:
+            return "storage", i, False, luogo
+
+    if _MAGAZZINO_PAROLE & set(tokens):
+        return "storage", None, False, None
+
+    return "shopping", None, False, None
 
 
 def _clean_name(tokens, skip):
@@ -235,11 +289,42 @@ def _clean_term(text):
     return out or [frase]
 
 
+def _categoria_deducibile(tokens):
+    """Categoria del magazzino suggerita dagli indizi della frase.
+
+    Il magazzino ha categorie libere, quindi indovinarla e' un di piu': se non
+    si capisce resta "Altro", che e' esattamente quello che l'utente puo'
+    correggere a mano. I consumabili (sapone, detersivo) sono la voce piu'
+    frequente: finirli in "Altro" costringerebbe a ritrovarli ogni volta.
+    """
+    if {"detersivo", "detersivi", "sgrassatore", "ammorbidente", "candeggina",
+        "anticalcare", "brillantante", "disinfettante", "pulizia"} & set(tokens):
+        return "Pulizia casa"
+    if {"sapone", "saponi", "saponetta", "saponette", "shampoo", "bagnoschiuma",
+        "dentifricio", "dentifrici", "deodorante", "rasoio", "rasoi",
+        "spazzolino", "spazzolini", "assorbenti", "cotton"} & set(tokens):
+        return "Igiene personale"
+    if "cartaigienica" in tokens or ("carta" in tokens and "igienica" in tokens):
+        return "Igiene personale"
+    if {"vite", "viti", "chiodo", "chiodi", "tassello", "tasselli", "bullone",
+        "bulloni", "martello", "cacciavite", "trapano", "chiave", "chiavi",
+        "pinza", "pinze"} & set(tokens):
+        return "Ferramenta"
+    if {"lampadina", "lampadine", "neon", "prolunga", "prolunghe", "pila",
+        "pile", "batteria", "batterie", "cavo", "cavi"} & set(tokens):
+        return "Elettricita'"
+    if {"olio", "aceto", "candela", "candele", "tovagliolini", "sacchetti",
+        "cartaforno"} & set(tokens):
+        return "Cucina"
+    return None
+
+
 def parse(text):
     """Comando strutturato ricavato dalla frase dettata.
 
     Ritorna un dizionario con `intent` fra:
-    `pantry_add`, `shopping_add`, `term_add`, `recipe_search`, `unknown`.
+    `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search`,
+    `unknown`.
     """
     raw = str(text or "").strip()
     normalized = _norm(raw)
@@ -264,9 +349,15 @@ def parse(text):
     tokens = normalized.split()
     quantity, unit, qty_idx = _extract_amount(tokens)
     skip = set(qty_idx)
-    dest, dest_idx, explicit = _find_destination(tokens)
+    dest, dest_idx, explicit, luogo = _find_destination(tokens)
     if dest_idx is not None:
         skip.add(dest_idx)
+    # se la destinazione e' il magazzino per via della parola "magazzino", quella
+    # parola non fa parte del nome ("il sapone al magazzino" -> "sapone")
+    if dest == "storage":
+        for i, tok in enumerate(tokens):
+            if i not in skip and tok in _DEST_TOKENS and _DEST_TOKENS[tok] == "storage":
+                skip.add(i)
 
     # una frase senza verbo di comando, senza destinazione e senza quantità è
     # rumore di fondo o un fraintendimento del riconoscimento, non un comando:
@@ -283,6 +374,19 @@ def parse(text):
     if unit == "etto":
         unit = "g"
         quantity = (quantity or 0) * 100
+
+    if dest == "storage":
+        categoria = _categoria_deducibile(tokens)
+        return {
+            **base,
+            "intent": "storage_add",
+            "name": name,
+            "quantity": quantity,
+            "unit": unit,
+            "explicit": explicit,
+            "place": luogo,
+            "category": categoria,
+        }
 
     intent = {"pantry": "pantry_add", "shopping": "shopping_add"}.get(dest, "shopping_add")
     return {

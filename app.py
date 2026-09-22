@@ -1224,7 +1224,7 @@ def voice_command():
         iid = get_or_create_ingredient(db, cmd["name"], unit)
         pantry_add_row(db, iid, cmd["name"], qty, unit)
         db.commit()
-        return jsonify({**cmd, "message": f"In dispensa: {cmd['name']} {units.format_quantity(qty)} {unit}",
+        return jsonify({**cmd, "message": f"Fatto. {cmd['name'].capitalize()} in dispensa, {units.format_quantity(qty)} {unit}.",
                         "reload": ["pantry", "shopping"]})
 
     if cmd["intent"] == "shopping_add":
@@ -1235,24 +1235,67 @@ def voice_command():
         iid = get_or_create_ingredient(db, cmd["name"], unit, category)
         add_to_shopping(db, iid, cmd["name"], qty, unit, category)
         db.commit()
-        return jsonify({**cmd, "message": f"In lista: {cmd['name']} {units.format_quantity(qty)} {unit}",
+        return jsonify({**cmd, "message": f"Fatto. {cmd['name'].capitalize()} in lista, {units.format_quantity(qty)} {unit}.",
                         "reload": ["shopping"]})
+
+    if cmd["intent"] == "storage_add":
+        unit = units.normalize(cmd["unit"] or "pz")
+        qty = parse_float(cmd["quantity"], 1) or 1
+        campi, _ = storage_payload({
+            "name": cmd["name"], "quantity": qty, "unit": unit,
+            "category": cmd.get("category"), "place": cmd.get("place"),
+        })
+        # il magazzino non ha un vincolo di unicita' sul nome (due scatole di viti
+        # in posti diversi sono due voci): si accoda solo se nome e luogo
+        # coincidono, altrimenti si crea una voce nuova
+        esistente = one(db.execute(
+            "SELECT * FROM storage WHERE name = ? COLLATE NOCASE AND unit = ? AND place = ?",
+            (campi["name"], campi["unit"], campi["place"])))
+        if esistente:
+            db.execute("UPDATE storage SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
+                       (campi["quantity"], esistente["id"]))
+        else:
+            db.execute(
+                """INSERT INTO storage (name, category, place, quantity, unit, min_quantity, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (campi["name"], campi["category"], campi["place"], campi["quantity"],
+                 campi["unit"], campi["min_quantity"], campi["notes"]))
+        db.commit()
+        dove = _preposizione_luogo(campi["place"])
+        return jsonify({**cmd, "storage_name": campi["name"],
+                        "message": f"Fatto. {campi['name'].capitalize()} in magazzino{dove}, {units.format_quantity(qty)} {unit}.",
+                        "reload": ["magazzino"]})
 
     if cmd["intent"] == "term_add":
         current = get_profile(db)["restriction_list"]
         aggiunti = [t for t in cmd["terms"] if t.lower() not in {c.lower() for c in current}]
         profile = save_profile(db, {"restrictions": current + aggiunti})
         if not aggiunti:
-            return jsonify({**cmd, "message": "Restrizioni già presenti nel profilo",
+            return jsonify({**cmd, "message": "Già presente nel profilo.",
                             "reload": []})
-        return jsonify({**cmd, "message": "Aggiunto al profilo: " + ", ".join(aggiunti),
+        return jsonify({**cmd, "message": "Annotato. " + ", ".join(aggiunti) + " nel profilo.",
                         "restriction_list": profile["restriction_list"],
                         "reload": ["profile"]})
 
     if cmd["intent"] == "recipe_search":
-        return jsonify({**cmd, "message": f"Cerco «{cmd['query']}»", "query": cmd["query"]})
+        return jsonify({**cmd, "message": f"Cerco «{cmd['query']}».", "query": cmd["query"]})
 
-    return jsonify({**cmd, "message": "Non ho capito il comando"}), 422
+    return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
+
+
+def _preposizione_luogo(luogo):
+    """Preposizione giusta per il luogo, così la conferma si può anche ascoltare.
+
+    "nel cantina" si sente subito sbagliato, e la conferma viene letta ad alta
+    voce: la preposizione va scelta, non concatenata.
+    """
+    if not luogo:
+        return ""
+    articolo = {
+        "Ripostiglio": "nel",       # nel ripostiglio, non "in ripostiglio"
+        "Balcone": "sul", "Terrazzo": "sul",
+    }
+    return f" {articolo.get(luogo, 'in')} {luogo.lower()}"
 
 
 def pantry_add_row(db, iid, name, qty, unit):

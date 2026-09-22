@@ -206,18 +206,35 @@ Conseguenze pratiche per chi mette mano al codice:
 - I comandi vocali stanno in `voice.py` e non nel frontend: il browser si limita a
   dettare testo con la Web Speech API e a mandarlo a `POST /api/voice`, così la
   comprensione è testabile senza microfono. `parse()` riconosce gli intenti
-  `pantry_add`, `shopping_add`, `term_add`, `recipe_search` e restituisce `unknown`
-  quando non capisce. Le unità si aggiungono in `_UNIT_TOKENS`, le parole di comando
-  in `_COMMAND_VERBS`, le preposizioni di destinazione in `_find_destination`. Una
-  frase senza verbo, destinazione o quantità è rumore di fondo e deve restare
-  `unknown`: il microfono sente anche i discorsi in cucina e le voci inventate in
-  lista sono peggio di un comando non capito.
+  `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search` e
+  restituisce `unknown` quando non capisce. Le unità si aggiungono in
+  `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le destinazioni in
+  `_find_destination`. Una frase senza verbo, destinazione o quantità è rumore di
+  fondo e deve restare `unknown`: il microfono sente anche i discorsi in cucina e
+  le voci inventate in lista sono peggio di un comando non capito.
+- **La dispensa non è il magazzino.** La dispensa si confronta con le ricette, il
+  magazzino no: confonderli scrive un detergente in una lista di ingredienti, che è
+  il motivo per cui `storage` è una tabella a parte. `_find_destination` decide in
+  quest'ordine — la parola ("al magazzino", "alle scorte"), poi un luogo
+  (`_LUOGO_TOKENS`: "in cantina", "in garage"), poi la parola dell'oggetto
+  (`_MAGAZZINO_PAROLE`). L'ordine è una regola, non un dettaglio: una destinazione
+  esplicita deve battere la parola dell'oggetto, altrimenti "il sapone in dispensa"
+  finirebbe in magazzino. I verbi come "comprare" non spostano niente. Il luogo
+  detto da solo vale solo se non c'è una destinazione: "in cucina" è anche il posto
+  della dispensa e non basta da solo. Aggiungendo una destinazione nuova, va
+  aggiunta qui e non nel ramo dell'esecuzione.
 - La voce di conferma si sceglie in `TIMBRI` (`static/app.js`) per **caratteristiche**,
   non per nome: l'elenco `nomi` è una lista di preferenze, e `scegliVoce` prende la
   prima voce italiana che combacia, altrimenti la prima italiana, altrimenti quella
   predefinita. Non tornare a un nome fisso come `Alice`: su Linux e Android quella
   voce non esiste, e la conferma resterebbe muta. `aggiornaEtichetteVoci` mostra il
   nome reale accanto al timbro, così l'etichetta dice la verità su ogni piattaforma.
+  `rate` e `pitch` restano vicini a 1: le voci di sistema sono sintetiche e
+  allontanarsi dalla loro intonazione naturale le rende robotico, non espressivo.
+  `parlaTesto` legge **una frase per volta** (`spezzaInFrasi`) e abbassa tono e
+  velocità sull'ultima: è così che la sintesi chiude l'intonazione, ed è l'unica
+  leva che abbiamo su voci che non controlliamo. Prima di cambiare i valori, provare
+  ad ascoltare: un numero più "espressivo" di solito suona peggio.
 - Il jingle di apertura (`suonoApertura`) è sintetizzato con la Web Audio API, senza
   file audio. **Non può partire da solo**: i browser tengono l'`AudioContext`
   sospeso finché l'utente non interagisce. `tentaSuonoApertura` è legato ai primi

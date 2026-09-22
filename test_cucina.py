@@ -1048,7 +1048,7 @@ def test_voce_frase_non_compresa():
 def test_voce_endpoint_aggiunge_in_dispensa(client):
     r = client.post("/api/voice", json={"text": "aggiungi due chili di farina in dispensa"})
     assert r.status_code == 200
-    assert "farina" in r.get_json()["message"]
+    assert "farina" in r.get_json()["message"].lower()
 
     righe = client.get("/api/pantry").get_json()
     assert len(righe) == 1
@@ -1068,6 +1068,88 @@ def test_voce_endpoint_aggiunge_alla_spesa(client):
     voci = client.get("/api/shopping").get_json()
     assert len(voci) == 1
     assert voci[0]["quantity"] == 1 and voci[0]["unit"] == "l"
+
+
+def test_voce_magazzino_non_e_dispensa_ne_spesa():
+    """Il magazzino è una terza destinazione: sapone e detersivo non sono cibo."""
+    cmd = voice.parse("aggiungi il sapone al magazzino")
+    assert cmd["intent"] == "storage_add"
+    assert cmd["name"] == "sapone"
+
+    cmd = voice.parse("metti due rotoli di carta igienica in magazzino")
+    assert cmd["intent"] == "storage_add"
+    assert cmd["name"] == "rotoli di carta igienica" and cmd["quantity"] == 2.0
+
+    # la destinazione esplicita vince sulla parola dell'oggetto: il sapone
+    # messo in dispensa resta in dispensa
+    assert voice.parse("aggiungi il sapone in dispensa")["intent"] == "pantry_add"
+    # e un prodotto da mangiare senza indizi resta in lista
+    assert voice.parse("aggiungi il latte")["intent"] == "shopping_add"
+
+
+def test_voce_magazzino_riconosce_il_luogo():
+    """Il magazzino si dice anche con il posto: "in garage", "in cantina"."""
+    cmd = voice.parse("metti il detersivo in cantina")
+    assert cmd["intent"] == "storage_add"
+    assert (cmd["name"], cmd["place"]) == ("detersivo", "Cantina")
+
+    cmd = voice.parse("aggiungi una scatola di viti in garage")
+    assert cmd["intent"] == "storage_add"
+    assert (cmd["name"], cmd["place"]) == ("scatola di viti", "Garage")
+
+    # un luogo senza destinazione esplicita vale comunque
+    assert voice.parse("metti il trapano in soffitta")["intent"] == "storage_add"
+
+
+def test_voce_magazzino_deduce_la_categoria():
+    """Categoria e luogo sono un di più: se non si capiscono restano i predefiniti."""
+    assert voice.parse("aggiungi il detersivo al magazzino")["category"] == "Pulizia casa"
+    assert voice.parse("aggiungi il sapone al magazzino")["category"] == "Igiene personale"
+    assert voice.parse("aggiungi il dentifricio")["category"] == "Igiene personale"
+    assert voice.parse("aggiungi una scatola di viti in garage")["category"] == "Ferramenta"
+    assert voice.parse("aggiungi delle lampadine in cantina")["category"] == "Elettricita'"
+    # senza indizi la categoria resta vuota e decide il server
+    assert voice.parse("aggiungi il coso al magazzino")["category"] is None
+
+
+def test_voce_magazzino_non_ruba_le_parole_al_nome():
+    """La parola "magazzino" non deve finire nel nome della cosa."""
+    casi = {
+        "aggiungi il sapone al magazzino": "sapone",
+        "metti il rotolone in magazzino": "rotolone",
+        "aggiungi il detersivo alle scorte": "detersivo",
+    }
+    for frase, atteso in casi.items():
+        cmd = voice.parse(frase)
+        assert cmd["intent"] == "storage_add", frase
+        assert cmd["name"] == atteso, frase
+
+
+def test_voce_endpoint_aggiunge_al_magazzino(client):
+    r = client.post("/api/voice", json={"text": "aggiungi il sapone al magazzino"})
+    assert r.status_code == 200
+    assert r.get_json()["reload"] == ["magazzino"]
+
+    voci = client.get("/api/storage").get_json()
+    assert len(voci) == 1
+    assert voci[0]["name"] == "sapone"
+    assert voci[0]["category"] == "Igiene personale"
+    assert voci[0]["quantity"] == 1
+
+    # niente di tutto questo deve finire in dispensa o in lista
+    assert client.get("/api/pantry").get_json() == []
+    assert client.get("/api/shopping").get_json() == []
+
+    # una seconda dettatura dello stesso oggetto accoda alla stessa voce
+    client.post("/api/voice", json={"text": "aggiungi il sapone al magazzino"})
+    voci = client.get("/api/storage").get_json()
+    assert len(voci) == 1 and voci[0]["quantity"] == 2
+
+    # lo stesso nome in un luogo diverso e' una voce a parte
+    client.post("/api/voice", json={"text": "metti il sapone in garage"})
+    voci = client.get("/api/storage").get_json()
+    assert len(voci) == 2
+    assert {v["place"] for v in voci} == {"Ripostiglio", "Garage"}
 
 
 def test_voce_endpoint_aggiunge_al_profilo(client):

@@ -79,7 +79,7 @@ lasciarla di comodo.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 - **Ricette preferite** — sempre in fase di profilazione si scelgono le ricette preferite, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
-- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa o alla spesa, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina. La voce di conferma si può scegliere fra tre timbri, e un breve suono di apertura accompagna l'ingresso nell'app.
+- **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia o cercare una ricetta, senza toccare la tastiera. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La voce di conferma si può scegliere fra tre timbri, e un breve suono di apertura accompagna l'ingresso nell'app.
 
 ## Allergie e intolleranze
 
@@ -178,10 +178,26 @@ La comprensione della frase sta invece in `voice.py`, non nel browser, così è 
 | --- | --- | --- |
 | «aggiungi due chili di farina in dispensa» | `pantry_add` | aggiunge in dispensa |
 | «metti mezzo litro di latte nella spesa» | `shopping_add` | aggiunge alla lista |
+| «aggiungi il sapone al magazzino» | `storage_add` | aggiunge al magazzino |
+| «metti il detersivo in cantina» | `storage_add` | aggiunge al magazzino, in cantina |
 | «sono allergico al nichel» | `term_add` | aggiunge alle restrizioni del profilo |
 | «cerca la carbonara» | `recipe_search` | filtra le ricette |
 
 Senza indicazioni la destinazione predefinita è la lista della spesa, perché è la scelta più frequente e la meno rischiosa: una voce di troppo in lista si cancella con un tocco, una giacenza sbagliata in dispensa falsa i calcoli.
+
+### Dispensa, spesa e magazzino non si confondono
+
+La dispensa è quello che si mangia, il magazzino quello che non si mangia. Sono due elenchi separati nel database e restano separati anche a voce. Il magazzino si riconosce in tre modi, dal più sicuro al più debole:
+
+1. la parola stessa — «al magazzino», «alle scorte», «fra le provviste»;
+2. il luogo — «in garage», «in cantina», «in soffitta». Il luogo non è una destinazione esplicita: «in cucina» è anche il posto della dispensa, quindi vale solo quando la frase non dice già dove va la cosa;
+3. la parola dice che è un oggetto di magazzino — «il sapone», «il detersivo», «le viti». È l'indizio più debole e vale solo in mancanza di altro.
+
+L'ordine conta. «Aggiungi il sapone in dispensa» resta dispensa, perché la destinazione esplicita vince sulla parola dell'oggetto; «aggiungi il sapone» senza altro finisce in magazzino, perché il sapone in cucina non serve a una ricetta. Verbi come «comprare» non spostano la destinazione: la frase dice cosa fare, non dove metterlo.
+
+Per il magazzino l'app prova anche a indovinare **categoria** e **luogo**, che restano comunque correggibili a mano: dal nome deduce «Pulizia casa» per il detersivo, «Igiene personale» per il sapone, «Ferramenta» per le viti. Se non capisce, il luogo resta il predefinito e la categoria «Altro», che è esattamente quello che si sarebbe scelto a mano.
+
+Le parole del magazzino sono in `_LUOGO_TOKENS` e `_MAGAZZINO_PAROLE`, le categorie in `_categoria_deducibile`.
 
 Il parser riconosce quantità in cifre e a parole, anche composte (`venticinque`, `duecento`), le frazioni (`mezzo`, `un quarto`, `un chilo e mezzo`) e le unità comuni. Gli **etti** vengono convertiti subito in grammi, così in dispensa le quantità restano confrontabili. Articoli, preposizioni e verbi di comando vengono tolti dal nome, ma solo ai bordi: all'interno restano, altrimenti `passata di pomodoro` diventerebbe `passata pomodoro`. Le unità sono elencate in `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`.
 
@@ -192,6 +208,10 @@ Una frase senza verbo di comando, senza destinazione e senza quantità è consid
 La conferma a voce usa la sintesi del sistema operativo e si può cambiare dal pannello con il selettore **Voce**: tre timbri fra cui scegliere, con anteprima immediata al momento della scelta. Il timbro preferito resta memorizzato, come la possibilità di spegnere del tutto la conferma parlata.
 
 Il timbro è una *preferenza*, non un nome fisso: la voce concreta cambia fra Windows, macOS, Android e Chrome, quindi l'app cerca la voce italiana più vicina e mostra accanto al timbro il nome che sta usando davvero. La ricerca è per genere e lingua, con una lista di nomi noti in ordine di preferenza (`alice`, `elsa`, `paola`… per il timbro femminile) e, se nessuna voce italiana esiste, si ripiega su quella predefinita invece di restare muta.
+
+I valori di velocità e tonalità di ogni timbro restano **vicini a 1**: le voci di sistema sono sintetiche, e allontanarsi dalla loro intonazione naturale le rende artificiali invece che espressive. Il carattere di un timbro si distingue per il registro (più acuto o più grave), non per la velocità.
+
+Le conferme vengono pronunciate **una frase per volta**, non in un'unica fila: la sintesi di sistema applica una sola curva di intonazione a un testo lungo, ed è il motivo per cui «In dispensa: farina 2 kg» suonava piatto. Spezzando il testo la voce chiude l'intonazione a ogni frase, e l'ultima scende appena di tono e rallenta, come fa la voce umana a fine discorso. Il messaggio di conferma è anche scritto in modo da reggere l'ascolto: comincia con «Fatto» e finisce con un punto.
 
 ### Il suono all'apertura
 
@@ -206,7 +226,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Centonovantasette test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso).
+Duecentodue test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso).
 
 
 ## Interfaccia
