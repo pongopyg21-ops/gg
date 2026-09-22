@@ -455,6 +455,11 @@ Le istruzioni complete, inclusi i dati da riportare sul computer e i problemi
 tipici (permesso del firewall, microfono dal telefono), stanno in
 **`windows/LEGGIMI.md`**.
 
+Il branch di lavoro è **`gg`**: dopo il clone serve `git checkout gg`, perché `main`
+è indietro e non contiene nemmeno `windows/`. La chiave Azure, se la usi, va in
+`windows\segreto.bat` (escluso da git) e non in `avvia.bat`: il repository è
+pubblico, e una chiave nel codice finirebbe online.
+
 Tre cose da sapere prima:
 
 - **I dati non sono in git**, di proposito: sono dati di casa, non codice. Per

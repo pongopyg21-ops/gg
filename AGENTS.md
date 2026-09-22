@@ -60,8 +60,23 @@ un nome comune e si rischierebbe di fermare quello di un altro progetto.
 
 ## Recupero e link pubblico
 
-Il codice vive sul branch **`gg`**, allineato a **`main`**: un clone normale del
-repository contiene già tutto, non serve recuperare nulla prima di `./avvia.sh`.
+Il codice vive sul branch **`gg`**, che e' il branch di lavoro: `main` e' **indietro**
+(fermo a un commit vecchio, senza case separate, voce neurale, Windows). Un clone
+normale prende `main` — cioe' la versione sbagliata — quindi **dopo aver clonato
+bisogna passare a `gg`**:
+
+```
+git clone https://github.com/pongopyg21-ops/gg.git
+cd gg
+git checkout gg
+```
+
+Da qui `./avvia.sh` trova tutto. Non serve altro.
+
+Il push va fatto sul branch `gg`, e va verificato **sul server**, non in locale:
+`git ls-remote origin` mostra il commit che GitHub ha davvero. `git fetch` puo'
+lasciare `origin/gg` vecchio, e allora un push riuscito sembra fallito (o il
+contrario), con il rischio di credere pubblicato un lavoro che non c'e'.
 
 Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
 12000, quindi l'indirizzo da aprire è quello della conversazione *corrente*
@@ -152,6 +167,8 @@ cose con gli strumenti di Windows.
 - `windows\avvia.bat` — prepara l'ambiente (una venv separata, `.venv-win`, cosi'
   non si confonde con quella POSIX), installa le dipendenze, avvia il server e
   mostra i due indirizzi.
+- `windows\segreto.esempio.bat` — modello da copiare in `windows\segreto.bat` per
+  la chiave Azure.
 - `windows\installa.bat` — registra un'**attivita' pianificata** che parte
   all'accesso e riavvia se cade.
 - `windows\indirizzo.ps1` — trova l'indirizzo di rete.
@@ -176,6 +193,15 @@ Cose che sembrano dettagli e non lo sono:
   telefono l'app consulta e parla ma non detta, e per cui il microfono dal telefono
   richiederebbe un certificato (`waitress` non supporta HTTPS: servirebbe un proxy
   davanti).
+- **Il repository e' pubblico, quindi la chiave Azure sta in `segreto.bat`.** Il
+  codice sta su GitHub, `avvia.bat` compreso: una `set AZURE_SPEECH_KEY=...` scritta
+  li' finirebbe pubblica al primo push. `windows/segreto.bat` e' in `.gitignore` e
+  `avvia.bat` lo chiama con `call` se esiste, quindi la chiave resta sulla macchina
+  e il comportamento senza chiave non cambia (voce del sistema).
+- **Il branch di lavoro e' `gg`, non `main`.** `main` e' indietro e non contiene
+  nemmeno `windows/`: un clone senza `git checkout gg` da' un'app vecchia, e chi la
+  usa crede di aver sbagliato qualcosa. E' scritto in `windows/LEGGIMI.md`, ed e' il
+  primo posto da controllare se "manca la cartella windows".
 - **Il firewall di Windows chiede il permesso la prima volta.** Se si risponde
   *Annulla*, il telefono non passa e sembra un problema dell'app: e' la prima cosa
   da controllare, ed e' scritto in `windows/LEGGIMI.md`.

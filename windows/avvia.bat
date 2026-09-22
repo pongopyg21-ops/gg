@@ -66,13 +66,18 @@ if errorlevel 1 (
 
 REM --- chiave Azure (facoltativa) ---
 REM La voce neurale e' l'unica cosa che si configura. Senza, la voce del sistema:
-REM l'app funziona lo stesso. Metti le due righe qui sotto per avere la voce
-REM neurale, togliendo "REM" e incollando i tuoi valori.
-REM set "AZURE_SPEECH_KEY=la-tua-chiave"
-REM set "AZURE_SPEECH_REGION=westeurope"
+REM l'app funziona lo stesso.
+REM
+REM Dove mettere la chiave: NON in questo file. Il codice sta su GitHub, anche
+REM questo file, e ci finirebbe anche la chiave. Si mette in `segreto.bat`, nella
+REM stessa cartella: quel file e' escluso da git, quindi la chiave resta qui.
+REM
+REM Se `segreto.bat` non esiste ancora, puoi copiare `segreto.esempio.bat`.
+REM
+if exist "%~dp0segreto.bat" call "%~dp0segreto.bat"
 
 if "%AZURE_SPEECH_KEY%"=="" (
-  echo  Voce: quella del sistema ^(per la voce neurale: vedi le righe in questo file^)
+  echo  Voce: quella del sistema
 ) else (
   echo  Voce neurale Azure attiva ^(area: %AZURE_SPEECH_REGION%^)
 )

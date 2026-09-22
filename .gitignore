@@ -7,3 +7,5 @@ server.log
 .sorveglia.pid
 .sorveglia.lock
 sorveglia.log
+segreto.bat
+windows/segreto.bat

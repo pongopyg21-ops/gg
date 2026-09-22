@@ -26,16 +26,21 @@ L'app ha bisogno di Python. Se ce l'hai già, salta al passo 2.
 ## Passo 2 — Porta l'app sul computer
 
 Apri il **Prompt dei comandi** o **PowerShell** nella cartella dove vuoi l'app
-(per esempio `C:\Maggiordomo`), e scrivi:
+(per esempio `C:\Maggiordomo`), e scrivi questi tre comandi, uno alla volta:
 
 ```powershell
 git clone https://github.com/pongopyg21-ops/gg.git
 cd gg
+git checkout gg
 ```
 
-Se `git` non è installato, scaricalo da <https://git-scm.com/download/win>, oppure
-scarica il progetto come file ZIP dalla pagina GitHub. Con lo ZIP i comandi
-successivi sono gli stessi, una volta scompattato.
+Il terzo comando **non è facoltativo.** Il branch principale (`main`) è fermo a
+una versione vecchia: senza `git checkout gg` ti trovi un'app senza case separate,
+senza voce neurale e — soprattutto — **senza la cartella `windows\`**, e quindi
+senza `avvia.bat`. Se dopo il clone non vedi la cartella `windows`, è questo il
+motivo.
+
+Se `git` non è installato, scaricalo da <https://git-scm.com/download/win>.
 
 ## Passo 3 — Avvia una volta a mano
 
@@ -104,18 +109,21 @@ posso preparare se ti serve.
 
 ## La voce neurale (facoltativa)
 
-Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure,
-apri `avvia.bat` con il Blocco note, trova queste righe in fondo, e togli `REM`
-dall'inizio delle ultime due:
+Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure:
 
-```
-REM set "AZURE_SPEECH_KEY=la-tua-chiave"
-REM set "AZURE_SPEECH_REGION=westeurope"
-```
+1. Copia `windows\segreto.esempio.bat` e rinomina la copia in `windows\segreto.bat`.
+2. Apri quel file con il Blocco note e riempi le due righe in fondo con la chiave
+   e l'area della tua risorsa Azure (spiegato dentro il file).
+3. Salva e riavvia l'app.
 
-Metti la tua chiave e la tua area, salva, riavvia l'app. All'avvio leggerai
-`Voce neurale Azure attiva`, e nella pagina, sotto **Voce**, comparirà la scelta
-della voce neurale con l'anteprima.
+All'avvio leggerai `Voce neurale Azure attiva`, e nella pagina, sotto **Voce**,
+comparirà la scelta della voce neurale con l'anteprima.
+
+**La chiave va in `segreto.bat`, non in `avvia.bat`.** La ragione è semplice: il
+codice sta su GitHub, `avvia.bat` compreso, quindi una chiave lì dentro finirebbe
+online al primo `git push`. `segreto.bat` è escluso da git: la chiave resta sul tuo
+computer. Lo stesso vale per qualunque altra password che ti venga in mente di
+mettere nel codice.
 
 Il piano gratuito Azure include 500.000 caratteri al mese, senza scadenza: per un
 uso di casa non si esaurisce.
