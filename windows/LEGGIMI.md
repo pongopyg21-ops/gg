@@ -11,22 +11,39 @@ Sono tre file:
 | `installa.bat` | Fa partire l'app da sola a ogni accesso a Windows |
 | `indirizzo.ps1` | Usato da `avvia.bat`, non serve toccarlo |
 
+Sono due passi, nell'ordine scritto. Servono all'incirca dieci minuti, più il tempo
+dei download, che sono due: **Python** (installazione, circa 30 MB) e **l'app**
+(un file ZIP, circa 2 MB). **Git non serve.**
+
 ---
 
-## Passo 1 — Installa Python
+## Passo 1 — Porta l'app sul computer
 
-L'app ha bisogno di Python. Se ce l'hai già, salta al passo 2.
+Sono due clic, e si fa prima di installare Python: è più facile quando si è già
+visto dove finiscono i file.
 
-1. Vai su <https://www.python.org/downloads/windows/> e scarica **Python 3**.
-2. Apri il file scaricato.
-3. **Importante:** nella prima schermata spunta **Add python.exe to PATH**
-   (è in fondo, in piccolo, e se non lo spunti l'app non parte).
-4. Clicca *Install Now* e aspetta.
+1. Apri questo indirizzo nel browser:
+   <https://github.com/pongopyg21-ops/gg/archive/refs/heads/gg.zip>
+   Il download parte da solo (circa 2 MB).
+2. Vai nella cartella **Download**, clic destro sul file `gg-gg.zip` → **Estrai
+   tutto** → **Estrai**.
+3. Ottieni una cartella dal nome strano, **`gg-gg`**. Va benissimo così: il nome
+   della cartella non conta, puoi anche rinominarla in `Maggiordomo` se preferisci.
+   Spostala dove vuoi tenere l'app (per esempio in `C:\`), e **dentro quella
+   cartella** troverai la sottocartella `windows`.
 
-## Passo 2 — Porta l'app sul computer
+Da qui in avanti, quando queste istruzioni dicono `windows\avvia.bat`, significa:
+dentro la cartella `gg-gg` (o come l'hai chiamata), la sottocartella `windows`, il
+file `avvia.bat`.
 
-Apri il **Prompt dei comandi** o **PowerShell** nella cartella dove vuoi l'app
-(per esempio `C:\Maggiordomo`), e scrivi questi tre comandi, uno alla volta:
+**Se un giorno ti serve aggiornare l'app**, riscarica lo ZIP e sostituisci i file
+del codice: i tuoi dati (i file `.db`) non sono nello ZIP, quindi restano al loro
+posto. In alternativa `MAGGIORDOMO_DATA` (vedi in fondo) tiene i dati
+completamente separati dal codice.
+
+### Alternativa: con Git (serve installare Git)
+
+Se hai già Git, o se vuoi poter aggiornare con un comando solo:
 
 ```powershell
 git clone https://github.com/pongopyg21-ops/gg.git
@@ -40,7 +57,21 @@ senza voce neurale e — soprattutto — **senza la cartella `windows\`**, e qui
 senza `avvia.bat`. Se dopo il clone non vedi la cartella `windows`, è questo il
 motivo.
 
-Se `git` non è installato, scaricalo da <https://git-scm.com/download/win>.
+Git si scarica da <https://git-scm.com/download/win>. Nell'installazione lascia
+le opzioni proposte: mettono Git nel PATH, ed è quello che serve perché il comando
+`git` funzioni. Se hai già provato `git` e hai visto *"Termine 'git' non
+riconosciuto"*, Git non è installato: o lo installi, o usi lo ZIP qui sopra, che
+non richiede nulla.
+
+## Passo 2 — Installa Python
+
+L'app ha bisogno di Python. Se ce l'hai già, salta al passo 3.
+
+1. Vai su <https://www.python.org/downloads/windows/> e scarica **Python 3**.
+2. Apri il file scaricato.
+3. **Importante:** nella prima schermata spunta **Add python.exe to PATH**
+   (è in fondo, in piccolo, e se non lo spunti l'app non parte).
+4. Clicca *Install Now* e aspetta.
 
 ## Passo 3 — Avvia una volta a mano
 
@@ -121,9 +152,10 @@ comparirà la scelta della voce neurale con l'anteprima.
 
 **La chiave va in `segreto.bat`, non in `avvia.bat`.** La ragione è semplice: il
 codice sta su GitHub, `avvia.bat` compreso, quindi una chiave lì dentro finirebbe
-online al primo `git push`. `segreto.bat` è escluso da git: la chiave resta sul tuo
+online al primo invio. `segreto.bat` è escluso da git: la chiave resta sul tuo
 computer. Lo stesso vale per qualunque altra password che ti venga in mente di
-mettere nel codice.
+mettere nel codice. Nota: il file `segreto.esempio.bat` **non** è escluso, quindi la
+tua chiave va nel file rinominato (`segreto.bat`), mai nel modello.
 
 Il piano gratuito Azure include 500.000 caratteri al mese, senza scadenza: per un
 uso di casa non si esaurisce.
@@ -132,9 +164,26 @@ uso di casa non si esaurisce.
 
 ## Se qualcosa non va
 
+**Ho scritto `git` e dice "Termine 'git' non riconosciuto".**
+Git non è installato, e non serve: va benissimo la strada dello ZIP al Passo 1. Se
+proprio vuoi Git, installalo da <https://git-scm.com/download/win>, chiudi e riapri
+la finestra, e riprova.
+
 **L'app non parte, la finestra si chiude subito.**
 Apri `avvia.bat` e guarda il messaggio: dice cosa manca. Quasi sempre è Python
 installato senza la spunta *Add python.exe to PATH*: reinstalla spuntandola.
+
+**Non trovo la cartella `windows` (o `avvia.bat`).**
+Stai guardando fuori dalla cartella dell'app. Deve essere: `gg-gg` (o come l'hai
+chiamata) → dentro → `windows` → dentro → `avvia.bat`. Se `windows` non c'è
+proprio, hai scaricato lo ZIP sbagliato: deve essere quello del branch `gg`
+(l'indirizzo al Passo 1), non quello di `main`.
+
+**Windows dice che il file è bloccato, o non succede niente al doppio clic.**
+I file scaricati da internet portano un "marchio" di provenienza, e Windows può
+bloccarli per prudenza. Rimedio: clic destro sul file `gg-gg.zip` **prima** di
+estrarlo → **Proprietà** → in fondo, spunta **Sblocca** → OK. Poi estrai. Se lo hai
+già estratto, puoi farlo sui singoli file dentro la cartella `windows`.
 
 **Il telefono non si collega.**
 1. Telefono e computer devono essere **sulla stessa rete Wi-Fi**.

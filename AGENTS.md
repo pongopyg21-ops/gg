@@ -202,6 +202,13 @@ Cose che sembrano dettagli e non lo sono:
   nemmeno `windows/`: un clone senza `git checkout gg` da' un'app vecchia, e chi la
   usa crede di aver sbagliato qualcosa. E' scritto in `windows/LEGGIMI.md`, ed e' il
   primo posto da controllare se "manca la cartella windows".
+- **Il percorso principale non richiede Git: e' lo ZIP del branch.** L'utente ha
+  provato `git clone` e ha ricevuto "Termine 'git' non riconosciuto" - Git non e'
+  installato, e per un'app che si scarica una volta non vale la pena installarlo.
+  L'indirizzo e' `https://github.com/pongopyg21-ops/gg/archive/refs/heads/gg.zip`
+  (branch `gg`: quello di `main` non ha `windows/`), e lo ZIP **non contiene i
+  database**, quindi aggiornare l'app non tocca i dati. Un problema in meno e' un
+  utente che arriva in fondo: le istruzioni partono da li', Git resta alternativa.
 - **Il firewall di Windows chiede il permesso la prima volta.** Se si risponde
   *Annulla*, il telefono non passa e sembra un problema dell'app: e' la prima cosa
   da controllare, ed e' scritto in `windows/LEGGIMI.md`.
