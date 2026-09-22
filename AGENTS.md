@@ -70,8 +70,10 @@ più attivo. Il rimedio è riavviare l'app in una sessione attiva, non ricostrui
 **Bad Gateway (502) invece è il server dell'app spento**, non un problema di
 rete: l'ambiente termina i processi in background anche durante una sessione,
 non solo fra una e l'altra, e la porta inoltrata resta senza ascoltatore. Si
-risolve con `./avvia.sh`, che riparte e aspetta `/api/meta`. Vale la pena
-ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa.
+risolve con `./avvia.sh`, che riparte e aspetta che la pagina iniziale risponda.
+Vale la pena ricontrollare `./avvia.sh status` prima di dare per rotto qualcosa:
+una 502 non dice nulla sulla salute dell'app, dice che non c'e' nessuno in
+ascolto.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
