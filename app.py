@@ -250,12 +250,16 @@ def api_backup():
     memoria = io.BytesIO()
     with closing(sqlite3.connect(percorso)) as origine, closing(sqlite3.connect(":memory:")) as copia:
         origine.backup(copia)
-
-        # I diari di scrittura non servono alla copia, e sqlite3 ne creerebbe uno
-        # per il file temporaneo: si passa a `journal_mode=DELETE` prima di
-        # leggere, cosi' l'archivio non contiene tracce del percorso originale.
-        copia.execute("PRAGMA journal_mode=DELETE")
-        dump = "\n".join(copia.iterdump())
+        # Il file di uscita e' un database vero, non il testo delle istruzioni
+        # SQL: chi riceve la copia la rimette al suo posto e l'app la apre con
+        # `sqlite3`. Un dump testuale sarebbe stato comodo per leggerlo, ma
+        # rinominato `.db` l'app risponde `file is not a database`, e la copia
+        # non servirebbe a niente.
+        #
+        # `serialize()` legge la copia in memoria senza toccare il disco, quindi
+        # non c'e' nessun diario di scrittura da ripulire e l'archivio non
+        # contiene tracce del percorso originale.
+        dati = copia.serialize()
 
     nome = os.path.basename(percorso)
     # La destinazione non e' sempre la stessa: la casa storica ha il database
@@ -264,7 +268,7 @@ def api_backup():
     # il modo piu' facile di credere di aver recuperato i dati e non averlo fatto.
     destinazione = os.path.relpath(percorso, houses.DATA_DIR)
     with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(nome, dump)
+        z.writestr(nome, dati)
         # Un file in scena: dice da dove viene e quando e' stato preso, cosi' fra
         # tre copie sul disco si sa quale tenere.
         z.writestr(

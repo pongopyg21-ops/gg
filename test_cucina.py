@@ -2427,7 +2427,7 @@ def test_backup_richiede_accesso(anon):
     assert anon.get("/api/backup").status_code == 401
 
 
-def test_backup_contiene_i_dati_della_casa_e_ricostruisce_un_database(client):
+def test_backup_contiene_i_dati_della_casa_e_ricostruisce_un_database(client, tmp_path):
     import io as _io
     import zipfile as _zip
 
@@ -2445,14 +2445,17 @@ def test_backup_contiene_i_dati_della_casa_e_ricostruisce_un_database(client):
     assert "LEGGIMI.txt" in nomi
     assert "Copia dei dati" in archivio.read("LEGGIMI.txt").decode()
 
-    # il dump deve ricostruire un database vero: e' la prova che la copia serve
-    # a qualcosa, non solo che l'archivio si apre
-    dump = archivio.read([n for n in nomi if n.endswith(".db")][0]).decode()
-    ricostruito = sqlite3.connect(":memory:")
-    ricostruito.executescript(dump)
-    trovato = ricostruito.execute(
-        "SELECT COUNT(*) FROM shopping_items WHERE name LIKE '%Carciofi per la copia%'"
-    ).fetchone()[0]
+    # il file estratto deve essere un database che l'app sa riaprire, non il
+    # testo delle istruzioni SQL: rinominato `.db` un dump testuale farebbe
+    # rispondere `file is not a database`, e il ripristino fallirebbe
+    dati = archivio.read([n for n in nomi if n.endswith(".db")][0])
+    assert dati[:16] == b"SQLite format 3\x00", dati[:32]
+    percorso = tmp_path / "ripristinato.db"
+    percorso.write_bytes(dati)
+    with closing(sqlite3.connect(percorso)) as riaperto:
+        trovato = riaperto.execute(
+            "SELECT COUNT(*) FROM shopping_items WHERE name LIKE '%Carciofi per la copia%'"
+        ).fetchone()[0]
     assert trovato == 1
 
 
@@ -2471,13 +2474,25 @@ def test_backup_non_contiene_le_altre_case(client, tmp_path):
 
     archivio = _zip.ZipFile(_io.BytesIO(r.data))
     nomi = archivio.namelist()
-    contenuto = b"".join(archivio.read(n) for n in nomi).decode()
+    # i byte non testuali si saltano: lo schema delle tabelle e' testo UTF-8, e
+    # quello basta a scoprire un nome indesiderato dentro l'archivio
+    grezzo = b"".join(archivio.read(n) for n in nomi)
+    contenuto = grezzo.decode("utf-8", "ignore")
 
     # il registro delle case non deve comparire, in nessuna forma: ne' come file,
     # ne' come tabella dentro l'esportazione
     assert not any("houses.db" in n for n in nomi), nomi
     assert "CREATE TABLE houses" not in contenuto
     assert "password" not in contenuto
+
+    # controlla anche la struttura, non solo il testo: il database esportato non
+    # deve avere una tabella che somigli al registro
+    percorso = tmp_path / "esportato.db"
+    percorso.write_bytes(archivio.read([n for n in nomi if n.endswith(".db")][0]))
+    with closing(sqlite3.connect(percorso)) as esportato:
+        tabelle = {r[0].lower() for r in esportato.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert not (tabelle & {"houses", "case", "registry"}), tabelle
 
 
 # ------------------------------------------------------------ percorsi dei dati
