@@ -105,6 +105,13 @@ mentre l'ambiente resta vivo: controlla la pagina ogni 15 secondi e riavvia se
 non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Scrive sul
 log solo quando interviene, così un log non vuoto è già un'informazione.
 
+**Se l'utente dice che l'app "prova a connettersi senza riscontro", la prima cosa
+da controllare è `./sorveglia.sh status`.** È il sintomo esatto di un server morto
+a metà sessione: la pagina non carica e sembra un guasto dell'app, mentre è solo
+il processo che non c'è più. Non è l'app a essere lenta: la pagina iniziale pesa
+~18 KB e `app.js` ~109 KB, e il server locale risponde in circa 1 ms. Qualunque
+attesa di minuti non viene dall'app.
+
 Non esiste in questa immagine un gancio di avvio automatico: niente `systemd`
 (`systemctl` è presente ma `systemd` non è il PID 1), niente `cron` (`/etc/init.d/cron`
 non esiste), e il processo 1 è l'agent-server di OpenHands, che non esegue script
@@ -117,6 +124,16 @@ all'inizio della conversazione `./avvia.sh`, poi `./sorveglia.sh`.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
+
+**I dati veri invece non sono in git e non si rigenerano**: `cucina.db` (ricette,
+dispensa, progetti di una casa) e `houses.db` (le case e le impronte delle
+password) sono in `.gitignore`. Sono su `/workspace`, che è un volume montato a
+parte (`/dev/nvme0n2`) e sopravvive alla ricreazione del container, ma **non**
+sopravvive alla distruzione della macchina. Se l'utente ci tiene al lavoro fatto,
+l'unico salvataggio è `/api/backup`, che scarica la casa collegata come file da
+rimettere al suo posto senza rinominarlo. Vale la pena proporlo, non darlo per
+scontato: chi ha passato giorni a riempire il ricettario non sa che il database
+non è su GitHub.
 
 ## Configurazione
 
