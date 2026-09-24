@@ -2711,6 +2711,62 @@ def test_endpoint_config_senza_chiave(client, monkeypatch):
     assert "AZURE_SPEECH_KEY" not in json.dumps(d)
 
 
+def test_elenco_voci_viene_dal_servizio_non_da_un_elenco_scritto(monkeypatch):
+    """Le voci offerte devono essere quelle che l'area ha davvero.
+
+    Un elenco scritto a mano offriva due voci "HD" che in italynorth non esistono:
+    sceglierle faceva rispondere 400, proprio alla voce presentata come migliore.
+    """
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "italynorth")
+    monkeypatch.setattr(voce_cloud, "_voci_cache", {"area": None, "quando": 0.0, "elenco": None})
+    # risposta di prova: l'area ha Isabella ma non la "HD"
+    finta = json.dumps([
+        {"ShortName": "it-IT-IsabellaNeural", "Gender": "Female"},
+        {"ShortName": "it-IT-DiegoNeural", "Gender": "Male"},
+        {"ShortName": "en-US-AvaNeural", "Gender": "Female"},   # altra lingua: fuori
+    ]).encode()
+
+    class Risposta:
+        def read(self): return finta
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(voce_cloud.urllib.request, "urlopen", lambda *a, **k: Risposta())
+    voci = voce_cloud.elenco_voci()
+    nomi = [v["nome"] for v in voci]
+    assert nomi[0] == voce_cloud.VOCE_PREDEFINITA      # la predefinita resta in testa
+    assert "it-IT-IsabellaNeural" in nomi
+    assert "it-IT-DiegoNeural" in nomi
+    assert not any("en-US" in n for n in nomi)         # solo italiano
+    assert not any("DragonHD" in n for n in nomi)      # la "HD" non esiste qui
+    # e la voce che l'area non ha viene fermata prima della chiamata
+    assert not voce_cloud.voce_valida("it-IT-Isabella:DragonHDLatestNeural")
+    assert voce_cloud.voce_valida("it-IT-IsabellaNeural")
+
+
+def test_elenco_voci_ripiega_se_il_servizio_non_risponde(monkeypatch):
+    """Senza risposta dal servizio resta l'elenco scritto a mano: meglio di nessuno."""
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "italynorth")
+    monkeypatch.setattr(voce_cloud, "_voci_cache", {"area": None, "quando": 0.0, "elenco": None})
+
+    def esplode(*a, **k):
+        raise OSError("rete assente")
+
+    monkeypatch.setattr(voce_cloud.urllib.request, "urlopen", esplode)
+    nomi = {v["nome"] for v in voce_cloud.elenco_voci()}
+    assert "it-IT-IsabellaNeural" in nomi               # il ripiego c'e'
+    assert voce_cloud.voce_valida("it-IT-ElsaNeural")   # e resta utilizzabile
+
+
+def test_errore_400_suggerisce_di_cambiare_voce(monkeypatch):
+    """L'errore non dice solo che e' andata male: dice cosa fare."""
+    import urllib.error
+    e = urllib.error.HTTPError("u", 400, "Bad Request", {}, None)
+    assert "voce" in voce_cloud._spiega_errore(e).lower()
+
+
 def test_endpoint_config_con_chiave_non_espone_la_chiave(client, monkeypatch):
     monkeypatch.setenv("AZURE_SPEECH_KEY", "chiave-segreta-di-prova")
     monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")

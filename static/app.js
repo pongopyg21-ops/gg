@@ -2171,7 +2171,7 @@ function speak(text) {
    3. l'anteprima del timbro resta locale. Deve essere immediata, e una chiamata di
       rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
 
-let voceCloud = { disponibile: false, voci: [], sentite: new Map() };
+let voceCloud = { disponibile: false, voci: [], sentite: new Map(), avvisato: false };
 
 // oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
 const CLOUD_CACHE_MAX = 40;
@@ -2200,9 +2200,25 @@ async function parlaCloud(frase) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: frase, voice: voceCloudScelta() }),
       });
-      if (!r.ok) return false;
+      if (!r.ok) {
+        // il perché va detto una volta sola: ripiegando in silenzio si sente la
+        // voce del sistema senza capire che la neurale ha smesso di funzionare,
+        // e sembra che la configurazione non sia mai stata letta
+        let motivo = '';
+        try { motivo = (await r.json()).error || ''; } catch (_e) { /* risposta non JSON */ }
+        if (!voceCloud.avvisato) {
+          voceCloud.avvisato = true;
+          voceStato(motivo ? `${motivo}: si sentirà la voce del sistema.`
+                           : 'Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
+        }
+        return false;
+      }
       blob = await r.blob();
     } catch (_e) {
+      if (!voceCloud.avvisato) {
+        voceCloud.avvisato = true;
+        voceStato('Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
+      }
       return false;
     }
     // tetto alla memoria: si butta la più vecchia, non si cresce all'infinito
@@ -2551,9 +2567,10 @@ $('#voice-cloud-voice').addEventListener('change', (e) => {
 function anteprimaCloud() {
   if (!voceCloud.disponibile) return;
   voceCloud.sentite.clear();
-  parlaCloud('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.').then((ok) => {
-    if (!ok) voceStato('Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
-  });
+  // si riprova: l'avviso torna disponibile, così una nuova prova può dire di nuovo
+  // cosa non va invece di restare in silenzio per il resto della sessione
+  voceCloud.avvisato = false;
+  parlaCloud('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.');
 }
 
 // il jingle di apertura si può disattivare, e la scelta resta

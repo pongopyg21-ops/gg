@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
-# Voci italiane neurali, dall'elenco ufficiale Azure. "standard" e' la qualita'
-# normale; "multilingua" e "HD" sono piu' recenti e piu' naturali. Il nome tecnico
-# e' quello che va nel campo `name` dell'SSML.
+# Voci italiane neurali. L'elenco e' quello ufficiale di Azure, ma **non tutte
+# esistono in ogni area**: le due voci "HD" mancano, per esempio, in italynorth,
+# e sceglierle li' fa rispondere 400. Un elenco scritto a mano promette voci che
+# l'area puo' non avere, quindi si preferisce chiedere l'elenco ad Azure
+# (`elenco_voci`) e usare questo solo come ripiego, quando non si puo' chiedere.
 VOCI = [
     {"nome": "it-IT-ElsaNeural", "etichetta": "Elsa", "genere": "femminile", "tipo": "standard"},
     {"nome": "it-IT-IsabellaNeural", "etichetta": "Isabella", "genere": "femminile", "tipo": "standard"},
@@ -55,6 +58,11 @@ VOCE_PREDEFINITA = "it-IT-IsabellaNeural"
 # testo da leggere. Un limite tiene anche il costo prevedibile.
 MAX_CARATTERI = 600
 
+# L'elenco delle voci si chiede ad Azure, e l'elenco cambia di rado: tenerlo per
+# un po' evita che ogni apertura del pannello vocale sia una chiamata di rete.
+VOCI_CACHE_SECONDI = 6 * 60 * 60
+_voci_cache: dict = {"area": None, "quando": 0.0, "elenco": None}
+
 # Limiti di accordo sui valori prosodici che il client puo' chiedere.
 RATE_MIN, RATE_MAX = 0.5, 2.0
 PITCH_MIN, PITCH_MAX = -50, 50  # in percentuale
@@ -84,12 +92,80 @@ def configurato() -> bool:
     return bool(chiave() and regione())
 
 
+def _etichetta(nome: str) -> str:
+    """Nome leggibile: "it-IT-IsabellaNeural" -> "Isabella".
+
+    Il genere non si mette qui: lo aggiunge il client in fondo, con " · ". Un
+    elenco il cui genere compare due volte si legge male.
+    """
+    return nome.split("-")[-1].replace("Neural", "").strip() or nome
+
+
+def _genere_it(g: str) -> str:
+    return "femminile" if (g or "").lower().startswith("f") else "maschile"
+
+
+def _voci_dal_servizio() -> list[dict] | None:
+    """Le voci italiane che l'area ha davvero, chieste ad Azure.
+
+    Scritto l'elenco a mano, si offrono voci che l'area puo' non avere: e' quello
+    che succedeva con le due "HD", assenti in italynorth, dove sceglierle faceva
+    rispondere 400. Chiedendolo, l'elenco e' vero per costruzione.
+
+    Restituisce `None` se non si riesce a chiedere: in quel caso si ripiega
+    sull'elenco scritto a mano, meglio un elenco forse imperfetto che nessuno.
+    """
+    url = f"https://{regione()}.tts.speech.microsoft.com/cognitiveservices/voices/list"
+    richiesta = urllib.request.Request(url, headers={"Ocp-Apim-Subscription-Key": chiave()})
+    try:
+        with urllib.request.urlopen(richiesta, timeout=8.0) as risposta:
+            dati = json.loads(risposta.read().decode("utf-8"))
+    except Exception:
+        return None
+
+    fuori = []
+    for v in dati if isinstance(dati, list) else []:
+        nome = v.get("ShortName", "")
+        if not nome.startswith("it-IT-"):
+            continue
+        genere = _genere_it(v.get("Gender", ""))
+        fuori.append({
+            "nome": nome,
+            "etichetta": _etichetta(nome),
+            "genere": genere,
+            "tipo": "multilingua" if "Multilingual" in nome else "standard",
+        })
+    fuori.sort(key=lambda v: (v["tipo"] != "standard", v["etichetta"]))
+    # la predefinita resta la prima della lista: e' quella che si sente senza scegliere
+    fuori.sort(key=lambda v: v["nome"] != VOCE_PREDEFINITA)
+    return fuori or None
+
+
 def elenco_voci() -> list[dict]:
+    """Le voci fra cui si puo' scegliere: quelle vere dell'area, se si sa chiederle."""
+    if not configurato():
+        return VOCI
+
+    adesso = time.time()
+    if (_voci_cache["elenco"] and _voci_cache["area"] == regione()
+            and adesso - _voci_cache["quando"] < VOCI_CACHE_SECONDI):
+        return _voci_cache["elenco"]
+
+    dal_servizio = _voci_dal_servizio()
+    if dal_servizio:
+        _voci_cache.update({"area": regione(), "quando": adesso, "elenco": dal_servizio})
+        return dal_servizio
     return VOCI
 
 
 def voce_valida(nome: str | None) -> bool:
-    return bool(nome) and nome in NOMI_VALIDI
+    """Se il nome e' una voce che questa area conosce.
+
+    Il controllo non e' piu' su un elenco scritto a mano ma su quello vero
+    dell'area, cosi' una voce assente qui viene fermata prima della chiamata
+    invece di far rispondere 400 al servizio.
+    """
+    return bool(nome) and any(v["nome"] == nome for v in elenco_voci())
 
 
 def escape_xml(testo: str) -> str:
@@ -217,7 +293,10 @@ def _spiega_errore(e: urllib.error.HTTPError) -> str:
         # sbagliata": sono lo stesso intreccio, e separarli manderebbe fuori strada
         return "Chiave o area del servizio vocale non valide"
     if e.code == 400:
-        return "Il servizio vocale ha rifiutato il testo o la voce"
+        # 400 qui vuol dire quasi sempre una voce che l'area non ha: si dice cosa
+        # fare, non solo che e' andata male. Le voci dell'area sono ora in elenco,
+        # quindi il caso resta raro.
+        return "Voce non disponibile in questa area: scegline un'altra"
     if e.code == 429:
         return "Troppe richieste al servizio vocale: riprova fra poco"
     return f"Il servizio vocale ha risposto con errore {e.code}"
