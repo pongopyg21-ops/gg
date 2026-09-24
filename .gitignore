@@ -9,3 +9,6 @@ server.log
 sorveglia.log
 segreto.bat
 windows/segreto.bat
+
+# la chiave della voce anche sul server (avvia.sh), non solo su Windows
+segreto.sh

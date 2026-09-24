@@ -2670,6 +2670,80 @@ def test_lo_strumento_non_cambia_niente_se_le_password_non_coincidono(monkeypatc
     assert not houses.autentica(CASA_TEST, "PrimaPassword11")
 
 
+def test_la_chiave_si_legge_dal_file_segreto(tmp_path, monkeypatch):
+    """Su Windows `segreto.bat`, sul server `segreto.sh`: senza, un riavvio fa
+    tornare la voce meccanica e non si capisce perche'."""
+    (tmp_path / "segreto.bat").write_text(
+        '@echo off\nREM nota\nset "AZURE_SPEECH_KEY=ChiaveDaFile1"\n'
+        'set "AZURE_SPEECH_REGION=italynorth"\n')
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "ChiaveDaFile1"
+    assert voce_cloud.regione() == "italynorth"
+    assert voce_cloud.configurato()
+
+
+def test_la_chiave_si_legge_anche_dal_file_sh(tmp_path, monkeypatch):
+    (tmp_path / "segreto.sh").write_text(
+        "# nota\nexport AZURE_SPEECH_KEY='ChiaveDaFile2'\nexport AZURE_SPEECH_REGION=italynorth\n")
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "ChiaveDaFile2"
+
+
+def test_la_regione_diventa_minuscola(tmp_path, monkeypatch):
+    """Scritta con maiuscole non funziona, e l'errore non lo dice."""
+    (tmp_path / "segreto.sh").write_text("export AZURE_SPEECH_REGION=ITALYNORTH\n")
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_l_ambiente_vince_sul_file(tmp_path, monkeypatch):
+    """Chi esporta la chiave a mano comanda: il file e' un ripiego, non un vincolo."""
+    (tmp_path / "segreto.sh").write_text("export AZURE_SPEECH_KEY=DalFile\n")
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "DallAmbiente")
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "DallAmbiente"
+
+
+def test_senza_file_ne_chiave_configurato_e_falso(tmp_path, monkeypatch):
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert not voce_cloud.configurato()
+
+
+def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
+    """Senza chiave la voce e' quella del sistema: la pagina deve dirlo."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "mostraAvvisoRobotica" in js and "voice-avviso-robotica" in js
+    assert client.get("/static/index.html").get_data(as_text=True).count("voice-avviso-robotica") >= 1
+
+
+def test_la_pagina_avvisa_se_il_microfono_non_puo_funzionare(client):
+    """Da http:// su rete locale il riconoscimento vocale e' negato dal browser."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "isSecureContext" in js and "mostraAvvisoSicurezza" in js
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})

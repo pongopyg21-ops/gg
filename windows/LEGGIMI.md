@@ -297,6 +297,29 @@ uso di casa non si esaurisce. Le voci disponibili sono quelle della tua area: le
 due "HD", per esempio, non esistono in tutte le aree, e l'app mostra solo quelle
 che funzionano davvero.
 
+### Se l'app gira sul server (non su Windows)
+
+La stessa cosa si fa con `segreto.sh`, nella cartella dell'app:
+
+1. Copia `segreto.esempio.sh` e rinominalo `segreto.sh`.
+2. Apri il file e togli il cancelletto alle due righe in fondo, mettendo la
+   chiave e l'area.
+3. Riavvia l'app.
+
+Non serve esportare niente a mano: l'app legge il file da sola. È lo stesso
+meccanismo di `segreto.bat`, e la ragione è la stessa — senza, ogni riavvio
+richiederebbe di ricordarsi la chiave, e un riavvio senza chiave fa tornare la
+voce meccanica senza che si capisca il perché.
+
+Per verificare che sia attiva:
+
+```
+curl -s localhost:12000/api/voce/config | grep -o '"cloud":[a-z]*'
+```
+
+Se dice `"cloud":false` la chiave non è arrivata; se dice `true` la voce naturale
+è pronta, e nella pagina compare la scelta della voce con l'anteprima.
+
 ---
 
 ## Se qualcosa non va

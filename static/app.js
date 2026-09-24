@@ -2268,6 +2268,7 @@ async function caricaVoceCloud() {
     voceCloud.predefinita = d.predefinita;
     voceCloud.maxCaratteri = d.max_caratteri || 600;
     popolaVociCloud();
+    mostraAvvisoRobotica();
   } catch (_e) { /* resta la voce del browser */ }
 }
 
@@ -2491,10 +2492,47 @@ function ascolta() {
 
 function apriVoce() {
   tentaSuonoApertura();
+  mostraAvvisoSicurezza();
   $('#voice').classList.remove('hidden');
   $('#voice-result').hidden = true;
   $('#voice-heard').textContent = "Parla ora: ad esempio «aggiungi due chili di farina in dispensa».";
   ascolta();
+}
+
+/** Avvisa quando il microfono non puo' funzionare, invece di lasciare che il
+    pulsante non faccia nulla.
+
+    Il riconoscimento vocale del browser pretende un contesto sicuro: HTTPS, o
+    `localhost`. Da `http://192.168.1.x:12000` il browser non lo concede, e il
+    pulsante resta muto senza dire perche'. Su Windows `localhost` va bene, dal
+    telefono serve HTTPS — vedi la guida, sezione Tailscale.
+*/
+function mostraAvvisoSicurezza() {
+  const el = $('#voice-avviso-sicurezza');
+  if (!el) return;
+  if (window.isSecureContext) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = 'Il microfono non funziona da questo indirizzo: il browser lo '
+    + 'concede solo con HTTPS o da localhost. Sul computer usa '
+    + 'http://localhost:12000. Dal telefono serve HTTPS (guarda la guida, '
+    + 'sezione Tailscale). La voce in ascolto resta comunque disponibile dal '
+    + 'pulsante, e puoi scrivere il comando qui sotto.';
+}
+
+/** Spiega perche' la voce e' quella meccanica del browser.
+
+    Senza la chiave Azure l'app ripiega sulla voce di sistema, che e' la voce
+    robotica che si sente: dirlo qui evita di cercare un guasto che non c'e',
+    perche' l'app funziona — le manca solo la voce naturale.
+*/
+function mostraAvvisoRobotica() {
+  const el = $('#voice-avviso-robotica');
+  if (!el) return;
+  if (voceCloud.disponibile) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = 'La voce che senti e\u2019 quella meccanica del sistema: a '
+    + 'questo server non e\u2019 stata data la chiave della voce naturale Azure. '
+    + 'Chi lo usa la configura una volta sola (vedi la guida, "La voce neurale").';
 }
 
 function chiudiVoce() {

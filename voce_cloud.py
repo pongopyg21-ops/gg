@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get("MAGGIORDOMO_DATA", BASE_DIR)
 
 # Voci italiane neurali. L'elenco e' quello ufficiale di Azure, ma **non tutte
 # esistono in ogni area**: le due voci "HD" mancano, per esempio, in italynorth,
@@ -68,14 +72,71 @@ RATE_MIN, RATE_MAX = 0.5, 2.0
 PITCH_MIN, PITCH_MAX = -50, 50  # in percentuale
 
 
+_FILE_LETTI = False
+
+
+def _leggi_file_segreto() -> None:
+    """Se l'ambiente non ha la chiave, la cerca in un file accanto all'app.
+
+    Due forme, perche' i sistemi sono due: `segreto.bat` su Windows (lo crea
+    `windows\\voce.bat`) e `segreto.sh` sul server, dove l'app parte da
+    `avvia.sh`. Il file sta fuori da git, quindi la chiave non finisce nel
+    codice.
+
+    Serve perche' altrimenti la chiave andrebbe esportata a mano a ogni avvio:
+    chi riavvia l'app dovrebbe ricordarsene, e un riavvio senza chiave fa
+    tornare la voce meccanica senza che si capisca il perche'.
+    """
+    global _FILE_LETTI
+    if _FILE_LETTI:
+        return
+    _FILE_LETTI = True
+
+    cartelle = [BASE_DIR, DATA_DIR]
+    nomi = ["segreto.sh", "segreto.bat"]
+    for cartella in dict.fromkeys(cartelle):
+        for nome in nomi:
+            percorso = os.path.join(cartella, nome)
+            if not os.path.exists(percorso):
+                continue
+            try:
+                testo = open(percorso, encoding="utf-8-sig", errors="replace").read()
+            except OSError:
+                continue
+            for riga in testo.splitlines():
+                riga = riga.strip()
+                if not riga or riga.startswith(("#", "REM ", "rem ", "@")):
+                    continue
+                m = re.match(
+                    r"(?:set\s+\"?|export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+                    r"(?:\"([^\"]*)\"|'([^']*)'|(.*))$", riga)
+                if not m:
+                    continue
+                nome = m.group(1)
+                valore = (m.group(2) or m.group(3) or m.group(4) or "").strip()
+                # in `set "NOME=valore"` la virgoletta sta solo all'inizio;
+                # se il valore ne porta una in coda, e' quella di chiusura
+                valore = valore.rstrip('"').strip()
+                if nome.startswith("AZURE_SPEECH_") and valore and not os.environ.get(nome):
+                    os.environ[nome] = valore
+            return
+
+
 def chiave() -> str:
-    """La chiave del servizio, dall'ambiente. Stringa vuota se non configurata."""
+    """La chiave del servizio, dall'ambiente o da `segreto.sh`/`segreto.bat`."""
+    _leggi_file_segreto()
     return os.environ.get("AZURE_SPEECH_KEY", "").strip()
 
 
 def regione() -> str:
-    """L'area della risorsa: determina l'indirizzo, non si puo' indovinare."""
-    return os.environ.get("AZURE_SPEECH_REGION", "").strip()
+    """L'area della risorsa: determina l'indirizzo, non si puo' indovinare.
+
+    Sempre in minuscolo: l'indirizzo del servizio non esiste in altre forme, e
+    scriverla male e' un errore silenzioso — la sintesi fallisce senza dire che
+    il problema e' una maiuscola.
+    """
+    _leggi_file_segreto()
+    return os.environ.get("AZURE_SPEECH_REGION", "").strip().lower()
 
 
 def formato_audio() -> str:
