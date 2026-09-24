@@ -30,6 +30,21 @@ DB_PATH = os.environ.get("CUCINA_DB", os.path.join(houses.DATA_DIR, "cucina.db")
 SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+
+# La pagina e i suoi file non si tengono in memoria nel browser. Senza questo,
+# una modifica alla pagina non si vede finché non si ricarica con forza, e
+# sembra che l'app non sia stata aggiornata: è successo davvero, e per giorni.
+# La pagina e il JS non hanno indirizzi che cambiano a ogni versione, quindi il
+# browser non può sapere da solo che sono nuovi. Le immagini dei dati non sono
+# toccate: là la memoria serve, e il tempo lo decidono le rotte che le servono.
+@app.after_request
+def _non_tenere_in_memoria(risposta):
+    if "Cache-Control" not in risposta.headers:
+        risposta.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        risposta.headers["Pragma"] = "no-cache"
+        risposta.headers["Expires"] = "0"
+    return risposta
 app.secret_key = houses.secret_key()
 # Il biscotto di sessione dura a lungo: l'utente scrive nome e password una volta
 # sola, poi resta collegato anche riaprendo il browser giorni dopo.

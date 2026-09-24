@@ -2859,6 +2859,26 @@ def test_la_pagina_fa_vedere_la_password(client):
     assert "acc-mostra" in js and "acc-password" in js
 
 
+def test_la_pagina_non_resta_in_memoria_nel_browser(anon):
+    """Senza questo, una pagina vecchia resta nel browser e l'app sembra
+    non aggiornata: e' successo davvero, e per giorni."""
+    r = anon.get("/")
+    assert r.status_code == 200
+    # 'no-cache' basta: dice al browser di richiedere la pagina prima di usarla
+    assert "no-cache" in r.headers.get("Cache-Control", "")
+    js = anon.get("/static/app.js")
+    assert "no-cache" in js.headers.get("Cache-Control", "")
+
+
+def test_le_immagini_dei_dati_restano_in_memoria(client):
+    """La' la memoria serve: una foto non cambia, e riscaricarla a ogni vista
+    sarebbe uno spreco."""
+    # i dati veri e propri passano dall'API e non si tengono; le foto, che non
+    # cambiano, scelgono da sole la loro scadenza in una rotta apposita
+    r = client.get("/api/recipes")
+    assert "no-cache" in r.headers.get("Cache-Control", "")
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
