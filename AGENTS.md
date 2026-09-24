@@ -368,6 +368,23 @@ Conseguenze pratiche per chi mette mano al codice:
   Attenzione anche alle tabelle **nuove**: `_semina_pulizie` deve controllare
   `sqlite_master` prima di leggere `chores`, altrimenti la migrazione di un DB
   vecchio fallisce con "no such table: chores".
+- **Schema e migrazioni si applicano a ogni casa, non solo alla storica.**
+  `get_db()` chiama `init_db()` sul database della casa collegata a ogni richiesta
+  (meno di 1 ms): una tabella o colonna nuova arriverebbe altrimenti solo al
+  `cucina.db` storico, e le case create prima risponderebbero "no such table"
+  proprio a chi ha più dati da perdere. Non aggiungere una cache dei file già
+  migrati: mentirebbe quando si rimette al suo posto una copia dei dati.
+- **Le foto del magazzino** stanno in `storage_photos` (BLOB), una riga per voce
+  con `storage_id` come chiave primaria: `ON CONFLICT ... DO UPDATE` fa sì che
+  ricaricare sostituisca la foto invece di accumularne una seconda. Il client le
+  ridimensiona da sé (`riduciFoto` in `app.js`, canvas → JPEG) prima di mandarle
+  come data URL: niente Pillow fra le dipendenze, e il server accetta solo JPEG,
+  PNG e WebP. La foto sta nel database, non su disco, così `/api/backup` resta un
+  file solo. `photo_url` porta un `?v=<hash>`, altrimenti il browser mostrerebbe
+  la foto vecchia dopo una sostituzione (la risposta è in `Cache-Control`).
+- **`GET /api/storage/<id>`** restituisce il dettaglio di una voce: senza il ramo
+  esplicito su `request.method`, il `get_json(force=True)` più sotto risponde 400
+  a ogni lettura, perché una GET non ha corpo.
 - **Progetti**: la priorità è 1–5 stelle e l'ordinamento è per priorità
   decrescente, con i conclusi in fondo. Spuntare "concluso" **non** richiede di
   rimandare titolo e date: `PUT /api/projects/<id>` tocca solo i campi presenti,
@@ -399,9 +416,26 @@ Conseguenze pratiche per chi mette mano al codice:
   quotidiane. Nell'interfaccia `quandoDetto()` controlla `fatto_oggi` **prima** di
   `giorni`, altrimenti una voce appena spuntata direbbe "rifare fra 1 giorno", che
   sembra una spunta non registrata.
-- `chore_day` in `profile` è il giorno fisso delle settimanali (0 = lunedì). È una
-  scelta dell'utente e serve a dare costanza: nel giorno scelto le settimanali
-  rientrano anche se non è ancora passata una settimana.
+- `chore_day` in `profile` è il giorno fisso delle settimanali (0 = lunedì). **Le
+  settimanali non entrano più tutte in quel giorno**: `giorni_settimanali()` le
+  distribuisce dal giorno scelto a ritroso, dalla più pesante alla più leggera, una
+  per giorno. Prima il sabato arrivava a cento minuti di sole settimanali più la
+  routine, e il piano veniva abbandonato. Il giorno scelto resta il più pesante.
+  L'ordine in `SETTIMANALI` è significativo: non riordinarle per nome.
+- Una settimanale **mai fatta** non rientra subito: aspetta il suo giorno, altrimenti
+  al primo uso rientrerebbero tutte insieme, che è l'ammasso che la distribuzione
+  deve togliere. Una settimanale **saltata** invece rientra in ritardo, perché
+  perdere il proprio giorno non deve nasconderla per una settimana.
+- `RIMOSSE` in `igiene.py` mappa una voce tolta dal catalogo alla sua sostituta, e
+  `MINUTI_CAMBIATI` mappa una voce al `(vecchio, nuovo)` dei minuti. Servono perché
+  il seme è idempotente e non tocca le righe esistenti: senza, chi usa l'app da prima
+  terrebbe per sempre la voce doppia e le stime vecchie. I completamenti della voce
+  tolta si **spostano** sulla sostituta prima del `DELETE`: il `CASCADE` li
+  porterebbe via, e sono lavoro fatto davvero. `MINUTI_CAMBIATI` aggiorna solo dal
+  valore vecchio, altrimenti cancellerebbe la stima ritoccata a mano a ogni richiesta.
+- La routine **quotidiana** sta in `QUOTIDIANE` e deve restare sotto i venticinque
+  minuti in tutto: oltre smette di essere una routine. Il test
+  `test_la_routine_quotidiana_resta_breve` lo tiene fermo.
 - Nel frontend il timer usa un **timestamp in `localStorage`** (`choreTimer`), non
   un contatore in memoria: il cronometro deve continuare se la pagina si ricarica o
   il telefono si blocca, che è esattamente ciò che succede mentre si pulisce. Il

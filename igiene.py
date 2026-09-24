@@ -48,21 +48,43 @@ GIORNI_SETTIMANA = ["lunedì", "martedì", "mercoledì", "giovedì",
 # (nome, ambiente, minuti stimati). I minuti servono a far vedere quanto costa
 # il piano di oggi prima di iniziare: e' il senso della regola dei 15 minuti.
 
+# Il budget della giornata: la routine fissa deve restare sotto i venticinque
+# minuti, altrimenti diventa un lavoro e non una routine, e il piano si
+# abbandona. Due voci dicevano la stessa cosa ("Riordino generale" e
+# "Raccogliere gli oggetti fuori posto": entrambe rimettere a posto per la casa)
+# e sono state unite; arieggiare e' aprire le finestre mentre si fa altro, non
+# un lavoro a se', quindi vale due minuti e non cinque.
 QUOTIDIANE = [
     ("Riordino generale", "Tutta la casa", 5),
     ("Piatti e superfici della cucina", "Cucina", 10),
     ("Bagno fresco: lavandino e specchio", "Bagno", 5),
-    ("Raccogliere gli oggetti fuori posto", "Tutta la casa", 5),
-    ("Arieggiare le stanze", "Tutta la casa", 5),
+    ("Arieggiare le stanze", "Tutta la casa", 2),
 ]
 
+# L'ordine conta: le settimanali si distribuiscono dal giorno scelto
+# dall'utente (`chore_day`) a ritroso, dalla piu' pesante alla piu' leggera. Si
+# parte dal piu' pesante perche' e' quella che merita il giorno scelto; le altre
+# riempiono i giorni precedenti, una per giorno. Prima entravano **tutte** nello
+# stesso giorno, che arrivava a cento minuti di soli settimanali.
 SETTIMANALI = [
     ("Aspirare e lavare i pavimenti", "Tutta la casa", 30),
     ("Pulire il bagno in profondità", "Bagno", 25),
+    ("Pulire la cucina a fondo", "Cucina", 20),
     ("Spolverare", "Tutta la casa", 15),
     ("Cambiare le lenzuola", "Camere", 10),
-    ("Pulire la cucina a fondo", "Cucina", 20),
 ]
+
+# Voci tolte dal catalogo dopo essere gia' state seminate, con la voce che le ha
+# assorbite: restano nel database di chi usa l'app da prima e vanno tolte,
+# altrimenti convivono con la loro sostituta (era il caso di "Raccogliere gli
+# oggetti fuori posto", unita a "Riordino generale"). La sostituta serve a
+# spostarci i completamenti: sono lavoro che l'utente ha fatto davvero, e
+# cancellarli sarebbe una perdita silenziosa.
+RIMOSSE = {"Raccogliere gli oggetti fuori posto": "Riordino generale"}
+
+# Minuti corretti nel catalogo, per valore **vecchio**: la migrazione tocca solo
+# le righe rimaste al valore di prima, cosi' una stima ritoccata a mano resta.
+MINUTI_CAMBIATI = {"Arieggiare le stanze": (5, 2)}
 
 MENSILI = [
     ("Lavare vetri e specchi grandi", "Tutta la casa", 30),
@@ -245,7 +267,29 @@ def scadenza(frequency, ultima, oggi, month=None):
     return stato
 
 
-def piano(attivita, ultime, oggi, giorno_pulizie=5):
+def giorni_settimanali(attivita, giorno_pulizie=5):
+    """A quale giorno della settimana tocca ogni settimanale attiva.
+
+    La piu' pesante resta nel giorno scelto dall'utente, che cosi' conserva il
+    suo significato; le altre si dispongono nei giorni precedenti, una per
+    giorno, dalla piu' pesante alla piu' leggera. Prima entravano tutte nello
+    stesso giorno: il sabato arrivava a cento minuti di soli settimanali, oltre
+    alla routine, ed e' il motivo per cui il piano veniva abbandonato.
+
+    Le voci aggiunte dall'utente non hanno un posto nel catalogo e finiscono in
+    coda all'ordine: riempiono i giorni che restano, invece di ammassarsi tutte
+    nel giorno scelto.
+    """
+    ordine = {nome: i for i, (nome, _area, _minuti) in enumerate(SETTIMANALI)}
+    settimanali = sorted(
+        (v for v in attivita
+         if v.get("frequency") == "settimanale" and v.get("active", 1)),
+        key=lambda v: (ordine.get(v["name"], len(SETTIMANALI)), v["name"]),
+    )
+    return {v["id"]: (giorno_pulizie - i) % 7 for i, v in enumerate(settimanali)}
+
+
+def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None):
     """Cosa c'e' da fare adesso e cosa c'e' da fare questo mese.
 
     La distinzione e' il cuore del metodo: mensili e stagionali non si fanno tutte
@@ -254,8 +298,10 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5):
     di minuti e il piano verrebbe abbandonato — e' il motivo per cui l'articolo
     dice di non pianificare compiti impossibili. Quindi:
 
-    - `oggi`: le quotidiane (sempre, sono la routine) e le settimanali scadute o
-      dovute perche' oggi e' il giorno fisso scelto.
+    - `oggi`: le quotidiane (sempre, sono la routine) e le settimanali che tocca
+      oggi, piu' quelle scadute (in ritardo nonostante la distribuzione). La
+      distribuzione sui giorni e' in `giorni_settimanali`: senza, le settimanali
+      si ammassavano tutte nel giorno fisso.
     - `mese`: mensili e stagionali in scadenza, con il focus del mese corrente.
     """
     oggi_d = _data(oggi) or date.today()
@@ -263,6 +309,8 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5):
     mese_gruppi = {"mensili": [], "stagionali": []}
     chiave = {"giornaliera": "quotidiane", "settimanale": "settimanali",
               "mensile": "mensili", "stagionale": "stagionali"}
+    if giorni is None:
+        giorni = giorni_settimanali(attivita, giorno_pulizie)
 
     for voce in attivita:
         if not voce.get("active", 1):
@@ -274,7 +322,12 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5):
         stato = scadenza(freq, ultime.get(voce["id"]), oggi_d, voce.get("month"))
         dentro = True
         if freq == "settimanale":
-            dentro = stato["in_scadenza"] or oggi_d.weekday() == giorno_pulizie
+            # Tocca oggi, oppure e' in ritardo perche' il suo giorno e' stato
+            # saltato. Una voce mai fatta viene mostrata nel suo giorno e non
+            # subito: al primo uso altrimenti rientrerebbero tutte insieme, che
+            # e' esattamente l'ammasso che la distribuzione deve togliere.
+            dentro = (giorni.get(voce["id"]) == oggi_d.weekday()
+                      or (not stato["mai_fatta"] and stato["in_scadenza"]))
         elif freq in ("mensile", "stagionale"):
             dentro = stato["in_scadenza"]
         if not dentro:
@@ -282,6 +335,14 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5):
         fatto_oggi = stato["ultima"] == oggi_d.isoformat()
         # una voce gia' fatta oggi resta visibile ma non conta piu' nel tempo
         voce_stato = {**voce, **stato, "fatto_oggi": fatto_oggi}
+        if freq == "settimanale":
+            # il giorno assegnato serve all'interfaccia per dire "tocca giovedi'"
+            # e all'utente per sapere quando aspettarsela
+            assegnato = giorni.get(voce["id"])
+            voce_stato["giorno_settimanale"] = assegnato
+            voce_stato["giorno_settimanale_nome"] = (
+                GIORNI_SETTIMANA[assegnato] if assegnato is not None else None)
+            voce_stato["giorno_settimanale_oggi"] = assegnato == oggi_d.weekday()
         if freq in ("giornaliera", "settimanale"):
             oggi_gruppi[gruppo].append(voce_stato)
         else:
@@ -313,4 +374,15 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5):
                             for v in elenco if not v["fatto_oggi"]),
         "mese_minuti": sum(v.get("minutes") or 0 for elenco in mese_gruppi.values()
                            for v in elenco if not v["fatto_oggi"]),
+        # com'e' divisa la settimana: serve all'interfaccia per mostrare che le
+        # settimanali non sono tutte oggi, e all'utente per sapere che giorno e'
+        "settimana": [
+            {"giorno": i, "nome": GIORNI_SETTIMANA[i],
+             "oggi": i == oggi_d.weekday(),
+             "minuti": sum(v.get("minutes") or 0 for v in attivita
+                           if v.get("active", 1) and v.get("frequency") == "settimanale"
+                           and giorni.get(v["id"]) == i)}
+            for i in range(7)
+        ],
+        "settimanali_oggi": len(oggi_gruppi["settimanali"]),
     }

@@ -181,3 +181,25 @@ CREATE TABLE IF NOT EXISTS storage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_storage_cat ON storage(category);
+
+-- La foto di una voce di magazzino, per riconoscerla a colpo d'occhio: e' il
+-- motivo per cui si fotografa una mensola o una scatola di cui non si ricorda
+-- il nome.
+--
+-- Sta **nel database della casa**, non su disco, e non e' un dettaglio: cosi'
+-- la foto viaggia con `/api/backup` insieme al resto dei dati, e il ripristino
+-- resta un file solo invece di un file piu' una cartella da rimettere al posto
+-- giusto. Il costo e' un database piu' grande, che per le foto di una casa e'
+-- accettabile.
+--
+-- Una foto per voce: `storage_id` e' UNIQUE, quindi ricaricare sostituisce
+-- invece di accumulare. La richiesta era "avere informazione visiva", non un
+-- album, e piu' foto per voce complicherebbero il modulo senza aggiungere
+-- niente a chi cerca la scatola giusta.
+CREATE TABLE IF NOT EXISTS storage_photos (
+    storage_id  INTEGER PRIMARY KEY REFERENCES storage(id) ON DELETE CASCADE,
+    mime        TEXT NOT NULL,
+    data        BLOB NOT NULL,
+    hash        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

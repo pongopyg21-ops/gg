@@ -1,4 +1,5 @@
 """Verifica conversione unità e generazione lista della spesa. Crea un DB temporaneo."""
+import base64
 import json
 import os
 import sqlite3
@@ -1533,12 +1534,68 @@ def test_piano_separa_oggi_dal_mese():
         {"id": 4, "name": "Annuale", "frequency": "stagionale", "minutes": 60, "area": "Camere", "active": 1, "month": 9},
     ]
     today = date(2026, 9, 18)  # venerdi
-    piano = igiene.piano(voci, {}, today, giorno_pulizie=5)
+    # il giorno della settimanale si fissa esplicitamente: qui interessa **dove**
+    # finisce ogni frequenza, non come si distribuisce la settimana
+    piano = igiene.piano(voci, {}, today, giorno_pulizie=5, giorni={2: 4})
 
     oggi_ids = {v["id"] for elenco in piano["gruppi"].values() for v in elenco}
     assert oggi_ids == {1, 2}, "oggi solo quotidiane e settimanali"
     mese_ids = {v["id"] for elenco in (piano["mese"]["mensili"], piano["mese"]["stagionali"]) for v in elenco}
     assert mese_ids == {3, 4}, "mensili e annuali stanno nel mese"
+
+
+def test_settimanali_distribuite_su_giorni_diversi():
+    """Le settimanali non stanno tutte lo stesso giorno.
+
+    Prima entravano tutte nel giorno fisso, che arrivava a cento minuti di soli
+    settimanali: e' l'ammasso che questa distribuzione deve togliere.
+    """
+    voci = [
+        {"id": 1, "name": "Aspirare e lavare i pavimenti", "frequency": "settimanale", "minutes": 30, "area": "Tutta la casa", "active": 1, "month": None},
+        {"id": 2, "name": "Pulire il bagno in profondità", "frequency": "settimanale", "minutes": 25, "area": "Bagno", "active": 1, "month": None},
+        {"id": 3, "name": "Spolverare", "frequency": "settimanale", "minutes": 15, "area": "Tutta la casa", "active": 1, "month": None},
+    ]
+    giorni = igiene.giorni_settimanali(voci, giorno_pulizie=5)
+    assert len(set(giorni.values())) == 3, "una per giorno"
+    assert giorni[1] == 5, "la piu' pesante resta nel giorno scelto"
+    assert giorni[2] == 4 and giorni[3] == 3, "le altre riempiono i giorni prima"
+
+
+def test_una_settimanale_saltata_rientra():
+    """Una settimanale non fatta resta nel piano anche dopo il suo giorno.
+
+    Senza, saltare il giorno assegnato la farebbe sparire per una settimana
+    intera: sembrerebbe un'attivita' conclusa.
+    """
+    voci = [{"id": 1, "name": "Aspirare e lavare i pavimenti", "frequency": "settimanale",
+             "minutes": 30, "area": "Tutta la casa", "active": 1, "month": None}]
+    # assegnata a lunedi' (0), fatta otto giorni fa: e' in ritardo
+    giorni = {1: 0}
+    piano = igiene.piano(voci, {1: "2026-09-10"}, date(2026, 9, 18), giorni=giorni)
+    assert piano["da_fare"] == 1, "in ritardo, rientra"
+
+
+def test_una_settimanale_mai_fatta_aspetta_il_suo_giorno():
+    """Al primo uso le settimanali non devono rientrare tutte insieme.
+
+    Senza questo, il primo giorno d'uso mostrerebbe l'ammasso che la
+    distribuzione deve togliere.
+    """
+    voci = [{"id": 1, "name": "Aspirare e lavare i pavimenti", "frequency": "settimanale",
+             "minutes": 30, "area": "Tutta la casa", "active": 1, "month": None}]
+    piano = igiene.piano(voci, {}, date(2026, 9, 18), giorni={1: 0})
+    assert piano["da_fare"] == 0, "il suo giorno e' lunedi', non venerdi"
+
+
+def test_la_routine_quotidiana_resta_breve():
+    """La routine di ogni giorno deve restare sotto la mezz'ora.
+
+    Oltre, smette di essere una routine e diventa un lavoro: e' il motivo per cui
+    il piano veniva abbandonato.
+    """
+    quotidiane = [v for v in igiene.catalogo() if v["frequency"] == "giornaliera"]
+    assert sum(v["minutes"] for v in quotidiane) <= 25
+    assert all(v["minutes"] <= 10 for v in quotidiane)
 
 
 def test_piano_minuti_previsti_contano_solo_oggi():
@@ -1700,15 +1757,41 @@ def test_api_giorno_pulizie_si_salva(client):
     assert client.put("/api/profile", json={"chore_day": 9}).status_code == 400
 
 
-def test_api_giorno_pulizie_raccoglie_le_settimanali(client):
-    """Scegliendo oggi come giorno fisso, le settimanali entrano nel piano di oggi."""
+def test_api_giorno_pulizie_distribuisce_le_settimanali(client):
+    """Le settimanali si distribuiscono, non si ammassano nel giorno scelto.
+
+    Il giorno scelto resta il piu' pesante, ma le altre vanno nei giorni
+    precedenti: e' la differenza fra una settimana da cento minuti in un giorno
+    solo e una da trenta al massimo.
+    """
     import datetime as _dt
     oggi = _dt.date.today()
     client.put("/api/profile", json={"chore_day": oggi.weekday()})
     r = client.get(f"/api/chores?date={oggi.isoformat()}").get_json()
-    assert r["piano"]["giorno_pulizie"] is True
-    assert len(r["piano"]["gruppi"]["settimanali"]) == 5
-    assert r["piano"]["da_fare"] > 5, "quotidiane piu' settimanali"
+    piano = r["piano"]
+    assert piano["giorno_pulizie"] is True
+    # oggi tocca solo la sua settimanale, non tutte
+    assert piano["settimanali_oggi"] == 1
+    # e la settimana e' distribuita: nessun giorno porta tutto
+    minuti = [g["minuti"] for g in piano["settimana"]]
+    assert max(minuti) <= 30, "nessun giorno con cento minuti di settimanali"
+    assert sum(1 for m in minuti if m) == 5, "una settimanale per giorno, cinque giorni"
+
+
+def test_api_ogni_settimanale_dichiara_il_suo_giorno(client):
+    """Il frontend mostra il giorno assegnato: i campi devono esserci.
+
+    Senza, la distribuzione sarebbe invisibile e una settimanale spostata a
+    giovedi' sembrerebbe sparita dall'elenco.
+    """
+    r = client.get("/api/chores").get_json()
+    settimanali = [v for v in r["attivita"] if v["frequency"] == "settimanale" and v["active"]]
+    assert settimanali
+    giorni = [v["giorno_settimanale"] for v in settimanali]
+    assert all(g is not None and 0 <= g <= 6 for g in giorni)
+    # e il piano espone la settimana, con sette giorni
+    assert len(r["piano"]["settimana"]) == 7
+    assert all("nome" in g and "minuti" in g for g in r["piano"]["settimana"])
 
 
 def test_api_pulizie_il_mese_non_invade_il_piano_di_oggi(client):
@@ -2104,6 +2187,263 @@ def test_magazzino_ordina_prima_quello_che_manca(client):
     assert [v["name"] for v in client.get("/api/storage").get_json()][0] == "Scarso"
 
 
+# ------------------------------------------------- foto del magazzino
+# La foto serve a riconoscere a colpo d'occhio una scatola di cui non si ricorda
+# il nome. Si verifica il giro completo: si carica, si rilegge identica, si
+# sostituisce, si toglie. E si verifica che la foto resti un dato della casa,
+# non un file condiviso: non deve essere visibile dall'altra casa.
+
+# Un PNG 1x1 vero: i byte devono tornare identici, quindi non basta una stringa
+# qualsiasi.
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def data_url(dati=PNG_1PX, mime="image/png"):
+    return f"data:{mime};base64," + base64.b64encode(dati).decode()
+
+
+def voce_con_foto(client, nome="Sapone"):
+    sid = client.post("/api/storage", json={"name": nome, "quantity": 1}).get_json()["id"]
+    r = client.post(f"/api/storage/{sid}/photo", json={"image": data_url()})
+    assert r.status_code == 200, r.data
+    return sid
+
+
+def version_foto(client, sid):
+    """La versione (`?v=`) che il client userebbe per la foto di questa voce."""
+    v = next(x for x in client.get("/api/storage").get_json() if x["id"] == sid)
+    return v["photo_url"].partition("?v=")[2]
+
+
+def righe_foto(sid):
+    """Quante foto ha questa voce nel database della casa di prova."""
+    with closing(sqlite3.connect(houses.db_path(CASA_TEST))) as con:
+        return con.execute(
+            "SELECT COUNT(*) FROM storage_photos WHERE storage_id = ?", (sid,)).fetchone()[0]
+
+
+def test_dettaglio_di_una_voce(client):
+    sid = client.post("/api/storage", json={"name": "Sapone", "quantity": 2}).get_json()["id"]
+    r = client.get(f"/api/storage/{sid}")
+    assert r.status_code == 200
+    v = r.get_json()
+    assert v["name"] == "Sapone"
+    assert v["quantity"] == 2
+    assert v["has_photo"] is False
+
+
+def test_dettaglio_porta_la_foto(client):
+    sid = voce_con_foto(client)
+    v = client.get(f"/api/storage/{sid}").get_json()
+    assert v["has_photo"] is True
+    assert v["photo_url"].startswith(f"/api/storage/{sid}/photo?v=")
+
+
+def test_una_voce_nasce_senza_foto(client):
+    """Il campo esiste da subito: il client non deve indovinare se manca."""
+    v = client.post("/api/storage", json={"name": "Sapone"}).get_json()
+    assert v["has_photo"] is False
+    assert v["photo_url"] == ""
+
+
+def test_caricare_una_foto_la_rende_visibile_nellelenco(client):
+    sid = voce_con_foto(client)
+    v = next(x for x in client.get("/api/storage").get_json() if x["id"] == sid)
+    assert v["has_photo"] is True
+    # l'indirizzo porta la versione della foto: senza, il browser mostrerebbe
+    # quella vecchia dopo una sostituzione
+    assert v["photo_url"].startswith(f"/api/storage/{sid}/photo?v=")
+
+
+def test_la_foto_si_rilegge_identica(client):
+    """I byte che escono sono quelli che sono entrati, senza conversioni."""
+    sid = voce_con_foto(client)
+    r = client.get(f"/api/storage/{sid}/photo")
+    assert r.status_code == 200
+    assert r.data == PNG_1PX
+    assert r.headers["Content-Type"].startswith("image/png")
+
+
+def test_sostituire_la_foto_cambia_la_versione(client):
+    """Ricaricare non accumula: la seconda foto prende il posto della prima."""
+    sid = voce_con_foto(client)
+    prima_versione = version_foto(client, sid)
+    altra = PNG_1PX + b"\x00" * 10
+
+    r = client.post(f"/api/storage/{sid}/photo", json={"image": data_url(altra)})
+    assert r.status_code == 200
+    assert client.get(f"/api/storage/{sid}/photo").data == altra
+    # la versione cambia insieme ai byte: e' quello che evita al browser di
+    # mostrare la foto vecchia presa dalla cache
+    assert version_foto(client, sid) != prima_versione
+    # una foto per voce, non una pila: la tabella ha una riga sola
+    assert righe_foto(sid) == 1
+
+
+def test_togliere_la_foto(client):
+    sid = voce_con_foto(client)
+    assert client.delete(f"/api/storage/{sid}/photo").status_code == 200
+    assert client.get(f"/api/storage/{sid}/photo").status_code == 404
+    v = client.get("/api/storage").get_json()[0]
+    assert v["has_photo"] is False
+
+
+def test_eliminare_la_voce_porta_via_la_foto(client):
+    """La foto non deve restare orfana nel database."""
+    sid = voce_con_foto(client)
+    assert righe_foto(sid) == 1
+    client.delete(f"/api/storage/{sid}")
+    assert righe_foto(sid) == 0
+
+
+def test_foto_di_una_voce_inesistente_da_404(client):
+    assert client.get("/api/storage/999/photo").status_code == 404
+    assert client.post("/api/storage/999/photo", json={"image": data_url()}).status_code == 404
+
+
+@pytest.mark.parametrize("valore,motivo", [
+    ("", "vuoto"),
+    ("ciao", "non e' un data url"),
+    ("data:image/gif;base64,R0lGODlhAQABAAAAACw=", "formato non gestito"),
+    ("data:image/png,ciao", "senza base64"),
+    ("data:image/png;base64,!!!non-base64!!!", "base64 illeggibile"),
+])
+def test_foto_non_valida_rifiutata(client, valore, motivo):
+    sid = client.post("/api/storage", json={"name": "Sapone"}).get_json()["id"]
+    r = client.post(f"/api/storage/{sid}/photo", json={"image": valore})
+    assert r.status_code == 400, f"accettata una foto {motivo}"
+    assert client.get(f"/api/storage/{sid}/photo").status_code == 404
+
+
+def test_foto_troppo_pesante_rifiutata(client):
+    """Un file sbagliato non deve far crescere il database senza limite."""
+    sid = client.post("/api/storage", json={"name": "Sapone"}).get_json()["id"]
+    enorme = b"\xff" * (app_module.FOTO_MAX_BYTE + 1000)
+    r = client.post(f"/api/storage/{sid}/photo", json={"image": data_url(enorme)})
+    assert r.status_code == 400
+    assert client.get(f"/api/storage/{sid}/photo").status_code == 404
+
+
+def test_la_foto_non_e_visibile_senza_accesso(anon):
+    """Come il resto dei dati: senza casa collegata non si scarica nulla."""
+    assert anon.get("/api/storage/1/photo").status_code == 401
+    assert anon.post("/api/storage/1/photo", json={"image": data_url()}).status_code == 401
+
+
+def test_ogni_casa_vede_solo_le_sue_foto(anon):
+    """La foto e' un dato della casa: non deve trapelare nell'altra."""
+    anon.post("/api/houses", json={"nome": "Casa Foto A", "password": "aaaa"})
+    sid_a = anon.post("/api/storage", json={"name": "Sapone di A"}).get_json()["id"]
+    anon.post(f"/api/storage/{sid_a}/photo", json={"image": data_url()})
+
+    anon.post("/api/logout")
+    anon.post("/api/houses", json={"nome": "Casa Foto B", "password": "bbbb"})
+    # per B l'id non esiste: nessun dato di A, e nessun modo di agganciarsi
+    assert anon.get(f"/api/storage/{sid_a}/photo").status_code == 404
+    assert anon.get("/api/storage").get_json() == []
+
+
+def test_pulizie_vecchie_si_riallineano_al_catalogo(tmp_path):
+    """Una casa gia' avviata deve ricevere la nuova routine, non tenerla vecchia.
+
+    Il seme non tocca le righe esistenti, quindi senza questo passaggio chi usa
+    l'app da prima continuerebbe a vedere la voce doppia e i minuti di prima:
+    il riordino non arriverebbe mai proprio a chi ha piu' da guadagnarci.
+    """
+    percorso = str(tmp_path / "vecchia.db")
+    app_module.init_db(percorso)
+    with closing(sqlite3.connect(percorso)) as con:
+        # com'era il database prima: la voce unita e i minuti vecchi
+        con.execute("INSERT INTO chores (name, area, frequency, minutes, month) "
+                    "VALUES ('Raccogliere gli oggetti fuori posto', 'Tutta la casa', 'giornaliera', 5, NULL)")
+        con.execute("UPDATE chores SET minutes = 5 WHERE name = 'Arieggiare le stanze'")
+        con.commit()
+
+    app_module.init_db(percorso)
+
+    with closing(sqlite3.connect(percorso)) as con:
+        nomi = {r[0] for r in con.execute("SELECT name FROM chores")}
+        assert "Raccogliere gli oggetti fuori posto" not in nomi, "la voce unita va tolta"
+        minuti = dict(con.execute("SELECT name, minutes FROM chores"))
+        assert minuti["Arieggiare le stanze"] == 2
+
+
+def test_pulizie_rimozione_non_perde_i_completamenti(tmp_path):
+    """Togliere una voce non deve cancellare il lavoro registrato su di essa.
+
+    La voce unita aveva dei completamenti spuntati dall'utente: spostarli sulla
+    sostituta li conserva, cancellarli sarebbe una perdita silenziosa.
+    """
+    percorso = str(tmp_path / "vecchia.db")
+    app_module.init_db(percorso)
+    with closing(sqlite3.connect(percorso)) as con:
+        con.execute("INSERT INTO chores (name, area, frequency, minutes, month) "
+                    "VALUES ('Raccogliere gli oggetti fuori posto', 'Tutta la casa', 'giornaliera', 5, NULL)")
+        vecchio_id = con.execute(
+            "SELECT id FROM chores WHERE name = 'Raccogliere gli oggetti fuori posto'").fetchone()[0]
+        con.execute("INSERT INTO chore_log (chore_id, date, minutes) VALUES (?, '2026-09-20', 6)",
+                    (vecchio_id,))
+        con.commit()
+
+    app_module.init_db(percorso)
+
+    with closing(sqlite3.connect(percorso)) as con:
+        righe = con.execute(
+            """SELECT c.name, l.date FROM chore_log l JOIN chores c ON c.id = l.chore_id""").fetchall()
+        assert ("Riordino generale", "2026-09-20") in righe, "il completamento segue la sostituta"
+
+
+def test_pulizie_minuti_ritoccati_a_mano_non_si_perdono(tmp_path):
+    """La migrazione tocca solo il valore di partenza, non la stima dell'utente.
+
+    I minuti sono una stima che l'utente puo' correggere: riallinearla a forza
+    cancellerebbe la sua correzione a ogni richiesta.
+    """
+    percorso = str(tmp_path / "vecchia.db")
+    app_module.init_db(percorso)
+    with closing(sqlite3.connect(percorso)) as con:
+        con.execute("UPDATE chores SET minutes = 7 WHERE name = 'Arieggiare le stanze'")
+        con.commit()
+
+    app_module.init_db(percorso)
+
+    with closing(sqlite3.connect(percorso)) as con:
+        minuti = dict(con.execute("SELECT name, minutes FROM chores"))
+        assert minuti["Arieggiare le stanze"] == 7, "la stima dell'utente resta"
+
+
+def test_schema_applicato_a_una_casa_gia_esistente(tmp_path):
+    """Una casa creata prima delle foto deve ricevere la tabella.
+
+    E' il caso che conta per chi aggiorna: il database ha gia' i dati, e senza
+    questo passaggio l'app risponderebbe "no such table" proprio a chi ha piu'
+    da perdere.
+    """
+    percorso = str(tmp_path / "vecchia.db")
+    # una casa di una versione precedente: schema di allora, senza le foto, e
+    # con dentro un dato che deve sopravvivere all'aggiornamento
+    app_module.init_db(percorso)
+    with closing(sqlite3.connect(percorso)) as con:
+        con.execute("INSERT INTO storage (name, quantity) VALUES ('Sapone', 3)")
+        con.execute("DROP TABLE storage_photos")
+        con.commit()
+    assert not esiste_tabella(percorso, "storage_photos")
+
+    app_module.init_db(percorso)
+
+    assert esiste_tabella(percorso, "storage_photos")
+    with closing(sqlite3.connect(percorso)) as con:
+        assert con.execute("SELECT name FROM storage").fetchone()[0] == "Sapone"
+
+
+def esiste_tabella(percorso, nome):
+    with closing(sqlite3.connect(percorso)) as con:
+        return con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (nome,)).fetchone() is not None
+
+
 # ------------------------------------------------------------ case
 # La separazione fra case: il comportamento che deve reggere e' che i dati di
 # una casa non si vedano mai dall'altra, ne' in lettura ne' in scrittura.
@@ -2457,6 +2797,33 @@ def test_backup_contiene_i_dati_della_casa_e_ricostruisce_un_database(client, tm
             "SELECT COUNT(*) FROM shopping_items WHERE name LIKE '%Carciofi per la copia%'"
         ).fetchone()[0]
     assert trovato == 1
+
+
+def test_backup_porta_via_anche_le_foto(client, tmp_path):
+    """Le foto stanno nel database proprio per questo: la copia resta un file solo.
+
+    Se le foto fossero su disco, l'archivio sarebbe incompleto e chi ripristina
+    perderebbe le immagini senza accorgersene.
+    """
+    import io as _io
+    import zipfile as _zip
+
+    sid = voce_con_foto(client, nome="Scatola fotografata")
+
+    r = client.get("/api/backup")
+    assert r.status_code == 200
+    archivio = _zip.ZipFile(_io.BytesIO(r.data))
+    dati = archivio.read([n for n in archivio.namelist() if n.endswith(".db")][0])
+    percorso = tmp_path / "con-foto.db"
+    percorso.write_bytes(dati)
+
+    with closing(sqlite3.connect(percorso)) as riaperto:
+        riga = riaperto.execute(
+            "SELECT storage_id, mime, data FROM storage_photos WHERE storage_id = ?",
+            (sid,)).fetchone()
+    assert riga is not None, "la foto non e' finita nel backup"
+    assert riga[1] == "image/png"
+    assert riga[2] == PNG_1PX
 
 
 def test_backup_non_contiene_le_altre_case(client, tmp_path):

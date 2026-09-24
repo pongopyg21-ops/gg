@@ -1,5 +1,8 @@
 import os
 import io
+import base64
+import binascii
+import hashlib
 import secrets
 import re
 import sqlite3
@@ -74,7 +77,19 @@ def get_db():
         slug = casa_attiva()
         if not slug:
             return None
-        g.db = sqlite3.connect(houses.db_path(slug))
+        percorso = houses.db_path(slug)
+        # Schema e migrazioni vanno applicati a **ogni** casa, non solo a quella
+        # storica: una tabella nuova (es. `storage_photos`) non arriverebbe mai
+        # a una casa creata prima, e l'app risponderebbe "no such table" proprio
+        # all'utente che ha gia' dei dati.
+        #
+        # Si ripete a ogni richiesta invece di ricordarsi quali file sono gia'
+        # a posto: `executescript` su tredici `CREATE TABLE IF NOT EXISTS` costa
+        # meno di un millisecondo, e un promemoria in memoria mentirebbe nel
+        # caso che conta, cioe' quando qualcuno rimette al suo posto una copia
+        # dei dati.
+        init_db(percorso)
+        g.db = sqlite3.connect(percorso)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
@@ -140,13 +155,32 @@ def _semina_pulizie(db):
         return
     esistenti = {r["name"] for r in db.execute("SELECT name FROM chores")}
     nuove = [v for v in igiene.catalogo() if v["name"] not in esistenti]
-    if not nuove:
-        return
-    db.executemany(
-        """INSERT INTO chores (name, area, frequency, minutes, month)
-           VALUES (:name, :area, :frequency, :minutes, :month)""",
-        nuove,
-    )
+    if nuove:
+        db.executemany(
+            """INSERT INTO chores (name, area, frequency, minutes, month)
+               VALUES (:name, :area, :frequency, :minutes, :month)""",
+            nuove,
+        )
+    # Una voce tolta dal catalogo e' una che l'utente si e' gia' trovato in
+    # elenco: lasciarla lo farebbe convivere con la sua sostituta. I completamenti
+    # si spostano sulla sostituta prima di cancellarla: sono lavoro fatto davvero,
+    # e il `CASCADE` li porterebbe via senza dire niente.
+    for nome, sostituta in igiene.RIMOSSE.items():
+        db.execute(
+            """UPDATE chore_log SET chore_id = (
+                   SELECT id FROM chores WHERE name = ?)
+               WHERE chore_id IN (SELECT id FROM chores WHERE name = ?)""",
+            (sostituta, nome),
+        )
+        db.execute("DELETE FROM chores WHERE name = ?", (nome,))
+    # I minuti delle voci del catalogo si riallineano **solo dal valore vecchio**:
+    # un `UPDATE` incondizionato cancellerebbe la stima che l'utente ha corretto
+    # a mano, e lo farebbe a ogni richiesta.
+    for nome, (vecchio, nuovo) in igiene.MINUTI_CAMBIATI.items():
+        db.execute(
+            "UPDATE chores SET minutes = ? WHERE name = ? AND minutes = ?",
+            (nuovo, nome, vecchio),
+        )
 
 
 def init_db(percorso=None, con_ricettario=False):
@@ -1208,14 +1242,17 @@ def storage():
              campi["unit"], campi["min_quantity"], campi["notes"]),
         )
         db.commit()
-        return jsonify(storage_row(one(db.execute(
-            "SELECT * FROM storage WHERE id = ?", (cur.lastrowid,))))), 201
+        return jsonify(storage_row(storage_by_id(db, cur.lastrowid))), 201
 
     # prima quello che sta finendo, poi per categoria: e' l'ordine in cui si
     # guarda un magazzino, cioe' cosa manca
+    # la foto si prende dalla tabella a parte: caricare i BLOB qui significherebbe
+    # portarsi dietro megabyte per disegnare un elenco che mostra miniature
     return jsonify([storage_row(r) for r in db.execute(
-        """SELECT * FROM storage
-           ORDER BY (min_quantity > 0 AND quantity <= min_quantity) DESC, category, name""")])
+        """SELECT s.*, p.hash AS photo_hash FROM storage s
+           LEFT JOIN storage_photos p ON p.storage_id = s.id
+           ORDER BY (s.min_quantity > 0 AND s.quantity <= s.min_quantity) DESC,
+                    s.category, s.name""")])
 
 
 def storage_payload(data, attuale=None):
@@ -1241,7 +1278,21 @@ def storage_row(r):
     # "sta finendo" e' una proprieta' derivata dalla giacenza e dalla soglia:
     # calcolarla qui evita che il client rifaccia il confronto e lo sbagli
     d["low"] = bool(d["min_quantity"] > 0 and d["quantity"] <= d["min_quantity"])
+    # la foto si espone come stato e indirizzo, mai come contenuto: il `v=` e'
+    # l'impronta dei byte, quindi sostituendo la foto l'indirizzo cambia e il
+    # browser non mostra quella vecchia presa dalla cache
+    impronta = d.pop("photo_hash", None)
+    d["has_photo"] = bool(impronta)
+    d["photo_url"] = f"/api/storage/{d['id']}/photo?v={impronta}" if impronta else ""
     return d
+
+
+def storage_by_id(db, sid):
+    """Una voce col suo stato foto, come la restituisce l'elenco."""
+    return one(db.execute(
+        """SELECT s.*, p.hash AS photo_hash FROM storage s
+           LEFT JOIN storage_photos p ON p.storage_id = s.id
+           WHERE s.id = ?""", (sid,)))
 
 
 @app.route("/api/storage/<int:sid>", methods=["GET", "PUT", "PATCH", "DELETE"])
@@ -1250,6 +1301,9 @@ def storage_detail(sid):
     attuale = one(db.execute("SELECT * FROM storage WHERE id = ?", (sid,)))
     if not attuale:
         return bad_request("Voce non trovata", 404)
+
+    if request.method == "GET":
+        return jsonify(storage_row(storage_by_id(db, sid)))
 
     if request.method == "DELETE":
         db.execute("DELETE FROM storage WHERE id = ?", (sid,))
@@ -1273,12 +1327,113 @@ def storage_detail(sid):
          campi["unit"], campi["min_quantity"], campi["notes"], sid),
     )
     db.commit()
-    return jsonify(storage_row(one(db.execute("SELECT * FROM storage WHERE id = ?", (sid,)))))
+    return jsonify(storage_row(storage_by_id(db, sid)))
 
 
 @app.route("/api/magazzino/meta", methods=["GET"])
 def magazzino_meta():
     return jsonify(magazzino.meta())
+
+
+# ------------------------------------------------------- foto del magazzino
+# La foto permette di riconoscere a colpo d'occhio una scatola o una mensola di
+# cui non si ricorda il nome: e' il motivo per cui si fotografa.
+#
+# Il file arriva dal browser gia' ridimensionato, come data URL base64, e si
+# salva come BLOB nel database della casa. Due conseguenze volute: il viaggio e'
+# una richiesta sola (niente multipart, niente cartella da creare sul server), e
+# la foto entra in `/api/backup` insieme ai dati, cosi' il ripristino resta un
+# file solo.
+#
+# Il ridimensionamento sta nel browser per non aggiungere Pillow alle
+# dipendenze: chi installa l'app su Windows non deve scaricare una libreria di
+# elaborazione immagini per fotografare una scatola.
+
+# Tipi accettati. Sono gli stessi che il menu delle ricette considera immagini.
+FOTO_MIME = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+
+# Limite sul peso della foto **dopo** il ridimensionamento nel browser (~1280 px
+# di lato, qualita' 0.82): una foto di casa sta largamente sotto. Il limite
+# serve a non far crescere il database senza fine con un file sbagliato, e a
+# tagliare prima di decodificare, non dopo.
+FOTO_MAX_BYTE = 2_500_000
+
+
+def _foto_da_data_url(valore):
+    """Decodifica un data URL immagine. (mime, dati, errore)."""
+    testo = (valore or "").strip()
+    if not testo:
+        return None, None, "Nessuna foto ricevuta"
+    if not testo.startswith("data:"):
+        return None, None, "Formato della foto non riconosciuto"
+    testa, _, corpo = testo.partition(",")
+    if not corpo:
+        return None, None, "Formato della foto non riconosciuto"
+    mime = testa[5:].split(";")[0].strip().lower()
+    if mime not in FOTO_MIME:
+        return None, None, "Formato non supportato: usa JPEG, PNG o WebP"
+    if "base64" not in testa:
+        return None, None, "Formato della foto non riconosciuto"
+    # il corpo base64 e' circa 4/3 dei byte reali: si scarta prima di decodificare
+    if len(corpo) > FOTO_MAX_BYTE * 4 // 3 + 100:
+        return None, None, "La foto è troppo pesante"
+    try:
+        dati = base64.b64decode(corpo, validate=True)
+    except (binascii.Error, ValueError):
+        return None, None, "Foto illeggibile"
+    if not dati:
+        return None, None, "Foto vuota"
+    if len(dati) > FOTO_MAX_BYTE:
+        return None, None, "La foto è troppo pesante"
+    return mime, dati, None
+
+
+def _storage_o_404(db, sid):
+    riga = one(db.execute("SELECT id FROM storage WHERE id = ?", (sid,)))
+    if not riga:
+        return None
+    return riga
+
+
+@app.route("/api/storage/<int:sid>/photo", methods=["GET", "POST", "DELETE"])
+def storage_photo(sid):
+    db = get_db()
+    if not _storage_o_404(db, sid):
+        return bad_request("Voce non trovata", 404)
+
+    if request.method == "GET":
+        riga = one(db.execute(
+            "SELECT mime, data FROM storage_photos WHERE storage_id = ?", (sid,)))
+        if not riga:
+            return bad_request("Nessuna foto per questa voce", 404)
+        risposta = send_file(io.BytesIO(riga["data"]), mimetype=riga["mime"])
+        # la foto di una voce non cambia spesso: si lascia in cache, e il `?v=`
+        # che il client aggiunge fa da versione quando cambia
+        risposta.headers["Cache-Control"] = "private, max-age=86400"
+        return risposta
+
+    if request.method == "DELETE":
+        db.execute("DELETE FROM storage_photos WHERE storage_id = ?", (sid,))
+        db.commit()
+        return jsonify({"ok": True, "has_photo": False})
+
+    dati_json = request.get_json(force=True) or {}
+    mime, dati, errore = _foto_da_data_url(dati_json.get("image"))
+    if errore:
+        return bad_request(errore)
+    impronta = hashlib.sha256(dati).hexdigest()[:16]
+    # `INSERT OR REPLACE` sulla chiave primaria: ricaricare sostituisce la foto
+    # invece di accumularne una seconda
+    db.execute(
+        """INSERT INTO storage_photos (storage_id, mime, data, hash, created_at)
+           VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(storage_id) DO UPDATE SET
+               mime = excluded.mime, data = excluded.data,
+               hash = excluded.hash, created_at = excluded.created_at""",
+        (sid, mime, dati, impronta),
+    )
+    db.commit()
+    return jsonify({"ok": True, "has_photo": True, "hash": impronta})
 
 
 # ---------------------------------------------------------------- voce
@@ -1545,7 +1700,18 @@ def chores_list():
         voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi, voce["month"]))
 
     giorno = get_profile(db).get("chore_day") or 0
-    piano = igiene.piano(attivita, ultime, oggi, giorno)
+    # il catalogo porta il giorno assegnato: la sezione Routine elenca da qui, non
+    # dai gruppi del piano, e senza il campo non potrebbe mostrare quando tocca
+    giorni = igiene.giorni_settimanali(attivita, giorno)
+    oggi_d = datetime.date.fromisoformat(oggi)
+    for voce in attivita:
+        assegnato = giorni.get(voce["id"])
+        voce["giorno_settimanale"] = assegnato
+        voce["giorno_settimanale_nome"] = (
+            igiene.GIORNI_SETTIMANA[assegnato] if assegnato is not None else None)
+        voce["giorno_settimanale_oggi"] = (
+            assegnato == oggi_d.weekday() if assegnato is not None else False)
+    piano = igiene.piano(attivita, ultime, oggi, giorno, giorni)
     return jsonify({"oggi": oggi, "attivita": attivita, "piano": piano,
                     "attive": sum(1 for v in attivita if v["active"])})
 
