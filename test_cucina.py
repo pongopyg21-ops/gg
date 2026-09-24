@@ -2655,7 +2655,7 @@ def test_lo_strumento_di_ripristino_funziona_da_capo_a_capo(client, monkeypatch,
     """`ripristina_password.py` così come lo esegue l'utente, con `windows\\password.bat`."""
     import ripristina_password
     risposte = iter(["PasswordSmemorata2", "PasswordSmemorata2"])
-    monkeypatch.setattr(ripristina_password.getpass, "getpass", lambda *a, **k: next(risposte))
+    monkeypatch.setattr(ripristina_password, "chiedi_nascosta", lambda *a, **k: next(risposte))
     assert ripristina_password.main() == 0
     assert "Fatto" in capsys.readouterr().out
     assert houses.autentica(CASA_TEST, "PasswordSmemorata2")
@@ -2664,7 +2664,7 @@ def test_lo_strumento_di_ripristino_funziona_da_capo_a_capo(client, monkeypatch,
 def test_lo_strumento_non_cambia_niente_se_le_password_non_coincidono(monkeypatch, capsys):
     import ripristina_password
     risposte = iter(["PrimaPassword11", "SecondaPassword22"])
-    monkeypatch.setattr(ripristina_password.getpass, "getpass", lambda *a, **k: next(risposte))
+    monkeypatch.setattr(ripristina_password, "chiedi_nascosta", lambda *a, **k: next(risposte))
     assert ripristina_password.main() == 1
     assert "non coincidono" in capsys.readouterr().out
     assert not houses.autentica(CASA_TEST, "PrimaPassword11")
