@@ -3,17 +3,22 @@
 Questa cartella serve a far girare l'app su un computer di casa, sempre accesa,
 così il telefono e gli altri dispositivi la trovano sempre allo stesso indirizzo.
 
-Sono tre file:
+Sono cinque file:
 
 | File | A cosa serve |
 | --- | --- |
 | `avvia.bat` | Avvia l'app. La prima volta prepara tutto da solo |
 | `installa.bat` | Fa partire l'app da sola a ogni accesso a Windows |
 | `indirizzo.ps1` | Usato da `avvia.bat`, non serve toccarlo |
+| `dominio.bat` | Attiva l'indirizzo pubblico con HTTPS (vedi *Un indirizzo da fuori casa*) |
+| `dominio.ps1` | Usato da `dominio.bat`, non serve toccarlo |
 
 Sono due passi, nell'ordine scritto. Servono all'incirca dieci minuti, più il tempo
 dei download, che sono due: **Python** (installazione, circa 30 MB) e **l'app**
 (un file ZIP, circa 2 MB). **Git non serve.**
+
+`dominio.bat` è la parte facoltativa: serve solo se vuoi usare l'app **da fuori
+casa** o **dettare a voce dal telefono**. Per usarla in casa basta `avvia.bat`.
 
 ---
 
@@ -31,6 +36,12 @@ visto dove finiscono i file.
    della cartella non conta, puoi anche rinominarla in `Maggiordomo` se preferisci.
    Spostala dove vuoi tenere l'app (per esempio in `C:\`), e **dentro quella
    cartella** troverai la sottocartella `windows`.
+
+   **Non metterla dentro `C:\Windows`, né dentro `C:\Programmi` / `C:\Program
+   Files`.** Sono cartelle protette: Windows impedisce all'app di creare lì il
+   proprio ambiente, e l'avvio si ferma con `WinError 5 Accesso negato`. Se ti
+   succede, non è rotto niente: sposta la cartella in `C:\`, o in *Documenti*, o
+   sul Desktop, e riapri `avvia.bat`. Una posizione comoda e sicura è `C:\gg-gg`.
 
 Da qui in avanti, quando queste istruzioni dicono `windows\avvia.bat`, significa:
 dentro la cartella `gg-gg` (o come l'hai chiamata), la sottocartella `windows`, il
@@ -138,6 +149,102 @@ posso preparare se ti serve.
 
 ---
 
+## L'indirizzo fisso (perché il telefono trovi sempre l'app)
+
+Il router assegna l'indirizzo al computer quando si accende, e può cambiarlo: è il
+motivo per cui un giorno il telefono si collega e il giorno dopo no. Si risolve una
+volta sola, **nel router**, dicendogli di dare sempre lo stesso indirizzo a questo
+computer. Da lì in poi l'indirizzo mostrato da `avvia.bat` non cambia più.
+
+Serve l'indirizzo **MAC** del computer, che è come il router lo riconosce.
+
+1. Apri il **Prompt dei comandi** (cerca "cmd" nel menu Start) e scrivi:
+   `ipconfig /all`
+   Scorri fino alla scheda di rete attiva (quella con "Gateway predefinito"
+   compilato) e cerca **Indirizzo fisico**: è una serie di coppie tipo
+   `A1-B2-C3-D4-E5-F6`. Quello è il MAC. Lo stesso indirizzo si vede anche
+   nell'elenco dei dispositivi collegati del router.
+
+2. Entra nelle impostazioni del router: apri il browser su `http://192.168.1.1`
+   (o `192.168.0.1`; se nessuno dei due risponde, l'indirizzo esatto è il
+   "Gateway predefinito" letto al punto 1) e accedi con le credenziali del router.
+   Se non le hai, sono spesso scritte su un'etichetta sotto il router stesso.
+
+3. Cerca la voce **Prenotazione DHCP** o **DHCP statico** (a volte si chiama
+   "Riserva indirizzo IP", "IP statico locale", "Assegna IP fisso"). Cambia fra i
+   router, ma si trova sempre sotto le impostazioni della rete o del DHCP.
+
+4. Aggiungi una prenotazione usando il MAC del punto 1 e scegli un indirizzo
+   **fuori dall'intervallo** che il router distribuisce da solo, per esempio
+   `192.168.1.50`. Salva.
+
+5. Riavvia il computer (o disattiva e riattiva il Wi-Fi), poi riapri `avvia.bat`:
+   l'indirizzo mostrato è quello prenotato, e da adesso è sempre lo stesso.
+
+**Due avvertenze.** La prima: la prenotazione va fatta **nel router**, non
+impostando un indirizzo fisso dentro Windows. Impostarlo in Windows è più
+complicato e, se l'indirizzo scelto rientra in quelli che il router distribuisce,
+due dispositivi possono ritrovarsi lo stesso indirizzo e nessuno dei due funziona.
+La seconda: dopo la prenotazione conviene togliere l'impostazione manuale, se in
+Windows ne era stata messa una.
+
+**La prima volta che il telefono si collega**, Windows chiede il permesso di
+accettare connessioni: va concesso, altrimenti il telefono non passa. Il rimedio,
+se la richiesta è stata annullata, è nella sezione *Se qualcosa non va* qui sopra.
+
+Anche con l'indirizzo fisso **restano fuori due cose, ed è il browser a
+pretenderlo, non l'app**: dal telefono e da qualunque indirizzo di rete **il
+microfono non funziona** (serve una connessione sicura, e `localhost` è sicuro
+mentre un indirizzo di rete no), e **l'app non è raggiungibile da fuori casa**.
+Per avere tutte e due serve un dominio con HTTPS davanti al computer.
+
+---
+
+## Un indirizzo da fuori casa (con HTTPS)
+
+Servono due cose, e conviene saperle prima di cominciare, perché **Google ha una
+regola che un indirizzo gratuito non soddisfa**:
+
+1. **L'app raggiungibile da fuori casa, con HTTPS.** Si fa con Tailscale: gratuito,
+   e **non tocca il router**.
+2. **L'accesso con Google** richiede invece un **dominio tuo e verificato**: Google
+   non accetta un indirizzo gratuito (`ts.net`, e nemmeno i tunnel gratuiti in
+   genere) come indirizzo di reingresso. Non è una limitazione di questo progetto,
+   è una regola di Google.
+
+Quindi: il passo qui sotto ti dà l'app **da fuori casa e col microfono dal
+telefono** — che è già la parte più utile. L'accesso con Google resta fuori portata
+finché non c'è un dominio tuo.
+
+### Attivare l'indirizzo
+
+1. **Avvia l'app** (`avvia.bat`) e lasciala in esecuzione: l'indirizzo pubblico
+   inoltra su di essa. Senza l'app, l'indirizzo risponde con un errore.
+2. **Installa Tailscale** da <https://tailscale.com/download/windows> e accedi con
+   un account (Google, Microsoft o GitHub vanno bene). È gratuito per un uso
+   personale: non serve pagare.
+3. **Doppio clic su `dominio.bat`.** La prima volta si apre il browser per
+   un'approvazione: va concessa una volta sola. Poi il file stampa l'indirizzo.
+4. Apri quell'indirizzo dal telefono, **anche in un'altra rete** (dati mobili):
+   funziona, ed è HTTPS, quindi **anche il microfono funziona**.
+
+L'indirizzo ha la forma `https://<nome-computer>.<nome-rete>.ts.net` e **non cambia
+più**, anche riavviando il computer: viene attivato in modo permanente, non solo per
+la sessione corrente.
+
+### Due cose da sapere
+
+- **La prima volta l'indirizzo può impiegare fino a dieci minuti** a rispondere
+  ovunque: bisogna aspettare che il nome si propaghi. Se subito dice che non trova
+  il sito, riprova poco dopo.
+- **Da fuori casa il microfono funziona, ma va fermato l'app con la coscienza
+  tranquilla**: la pagina è raggiungibile da chiunque conosca l'indirizzo. La
+  protezione è il nome dell'indirizzo, che è lungo e difficile da indovinare, più
+  la password della casa. Per un'app di famiglia basta, ma non è una fortezza. Se
+  un giorno vuoi qualcosa di più solido, si mette una pagina di accesso davanti.
+
+---
+
 ## La voce neurale (facoltativa)
 
 Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure:
@@ -173,6 +280,13 @@ la finestra, e riprova.
 Apri `avvia.bat` e guarda il messaggio: dice cosa manca. Quasi sempre è Python
 installato senza la spunta *Add python.exe to PATH*: reinstalla spuntandola.
 
+**`WinError 5 Accesso negato`, con un percorso che comincia con `C:\Windows`.**
+La cartella dell'app è stata estratta dentro una cartella protetta da Windows, che
+non permette all'app di creare lì il proprio ambiente. Non si è rotto niente: chiudi
+la finestra, **sposta la cartella dell'app** in `C:\` (o in *Documenti*, o sul
+Desktop) e riapri `avvia.bat`. Vale lo stesso se il percorso contiene `C:\Programmi`
+o `C:\Program Files`.
+
 **Non trovo la cartella `windows` (o `avvia.bat`).**
 Stai guardando fuori dalla cartella dell'app. Deve essere: `gg-gg` (o come l'hai
 chiamata) → dentro → `windows` → dentro → `avvia.bat`. Se `windows` non c'è
@@ -191,7 +305,9 @@ già estratto, puoi farlo sui singoli file dentro la cartella `windows`.
    se hai cliccato *Annulla*, il telefono non passa. Per riabilitarlo: *Pannello
    di controllo → Sistema e sicurezza → Windows Defender Firewall → Consenti
    un'app*, e metti la spunta su Python (sia *Privata* che *Pubblica*).
-3. L'indirizzo del computer può essere cambiato: rileggilo da `avvia.bat`.
+3. L'indirizzo del computer può essere cambiato: rileggilo da `avvia.bat`. Se
+   succede spesso, la cura è la prenotazione nel router descritta in **L'indirizzo
+   fisso** qui sopra: da lì l'indirizzo non cambia più.
 
 **La pagina si apre ma i dati non ci sono.**
 Il database è finito nella cartella sbagliata. Guarda dove hai messo il file
