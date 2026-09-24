@@ -525,14 +525,27 @@ Conseguenze pratiche per chi mette mano al codice:
   sono già elencate per intero nel blocco del mese qui sopra, e ripeterle due volte
   nella stessa schermata confonde invece di aiutare.
 - I comandi vocali stanno in `voice.py` e non nel frontend: il browser si limita a
-  dettare testo con la Web Speech API e a mandarlo a `POST /api/voice`, così la
-  comprensione è testabile senza microfono. `parse()` riconosce gli intenti
-  `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search`,
-  `recipe_add` e restituisce `unknown` quando non capisce. Le unità si aggiungono
-  in `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le destinazioni in
-  `_find_destination`. Una frase senza verbo, destinazione o quantità è rumore di
-  fondo e deve restare `unknown`: il microfono sente anche i discorsi in cucina e
-  le voci inventate in lista sono peggio di un comando non capito.
+  dettare testo (o a registrare l'audio, vedi sotto) e a mandarlo a
+  `POST /api/voice`, così la comprensione è testabile senza microfono. `parse()`
+  riconosce gli intenti `pantry_add`, `shopping_add`, `storage_add`, `term_add`,
+  `recipe_search`, `recipe_add` e restituisce `unknown` quando non capisce. Le unità
+  si aggiungono in `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le
+  destinazioni in `_find_destination`. Una frase senza verbo, destinazione o
+  quantità è rumore di fondo e deve restare `unknown`: il microfono sente anche i
+  discorsi in cucina e le voci inventate in lista sono peggio di un comando non
+  capito.
+- **Le parole di comando non sono alimenti.** Lo stesso guasto delle domande, per
+  un'altra strada: "fammi la spesa" non dice *cosa* comprare, e senza guardia il
+  verbo "fammi" finiva in lista come articolo. I verbi (`fai`, `fammi`, `vedere`,
+  `dammi`...) stanno in `_STOPWORDS`, e **ogni parola della destinazione** viene
+  saltata (`_DEST_TOKENS`), non solo "magazzino" come prima: "aggiungi il latte
+  alla spesa" è "latte", non "latte spesa". Aggiungendo un verbo a `_COMMAND_VERBS`
+  va aggiunto anche qui, altrimenti diventa un alimento.
+- **`fai` e `fammi` sono verbi di creazione ricetta**, come `crea` e `prepara`: è
+  così che si chiede una ricetta parlando ("fai una ricetta di lasagne"). Ma
+  "fammi **vedere**" non crea niente: `_RICETTA_GUARDA` tiene fuori i verbi di
+  consultazione, altrimenti una richiesta di lettura aprirebbe il modulo di una
+  ricetta nuova.
 - **L'ascolto passa dal server, non più dal browser.** La Web Speech API manda
   l'audio ai server di Google, e in molte case quel traffico è bloccato (firewall,
   antivirus, VPN): Chrome risponde `network` e il microfono resta muto senza
@@ -781,11 +794,19 @@ Il sintomo, per riconoscerlo: la pagina è vecchia **solo** in un browser che l'
 già aperta, e ricaricando con forza si aggiorna. Il rimedio immediato per l'utente
 è aggiungere `?v=2` all'indirizzo, che per il browser è una pagina mai vista.
 
-## Il riconoscimento vocale nel browser
+## Il riconoscimento vocale
 
-Il riconoscimento avviene nel client (Web Speech API), non sul server: `voice.py`
-comprende il testo, ma il microfono e la trascrizione sono del browser. Il
-comportamento quindi **cambia fra PC e telefono**:
+Il microfono **registra** e la trascrizione avviene **sul server**
+(`voce_cloud.trascrivi`), non nel browser: la Web Speech API manda l'audio ai
+server di Google, e in molte case quel traffico è bloccato (firewall, antivirus,
+VPN), per cui Chrome risponde `network` e il microfono resta muto senza rimedio.
+Il server invece esce dalla rete. Dettagli e trappole nel capitolo
+«L'ascolto passa dal server» qui sopra. `voice.py` comprende il testo trascritto;
+la comprensione sta sul server perché si prova con dei test, senza microfono.
+
+La Web Speech API resta solo come **ripiego**, quando la chiave non c'è
+(l'endpoint risponde 503). In quel caso il comportamento **cambia fra PC e
+telefono**:
 
 - Chrome e Firefox **non espongono** le voci neurali di Windows (solo Edge, e
   solo su PC). La voce "brutta" da PC è per lo più questo. `voce_cloud` aggira il
@@ -796,7 +817,8 @@ comportamento quindi **cambia fra PC e telefono**:
 Il primo clic su `#mic` chiama `apriVoce()` che chiama `ascolta()` **prima** che
 esista un riconoscimento: lì `voce.rec` è `null`. Chiamare `stop()` su `null`
 solleva un `TypeError` che non passa da nessun `onerror`, quindi il pannello si
-apre ma non ascolta, in silenzio. La guardia è `if (voce.attivo && voce.rec)`.
+apre ma non ascolta, in silenzio. La guardia è `if (voce.attivo && voce.rec)`
+(per il percorso server la guardia analoga è `if (voce.attivo)`).
 
 ## Le domande non sono ordini
 

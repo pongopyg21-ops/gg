@@ -1096,6 +1096,79 @@ def test_voce_senza_nome_chiede_il_modulo_vuoto():
     assert cmd["name"] == ""
 
 
+def test_voce_crea_ricetta_con_i_verbi_di_tutti_i_giorni():
+    """Nessuno dice "crea la ricetta": si dice "fammi una ricetta di lasagne".
+
+    Con i soli verbi "crea/aggiungi/salva" la frase piu' naturale di tutte
+    restava `unknown`, e chi la diceva riceveva "non ho capito" per una cosa
+    chiarissima. "fai" e "fammi" sono verbi di creazione come gli altri.
+    """
+    casi = {
+        "fai una ricetta di lasagne": "lasagne",
+        "fammi una ricetta di carbonara": "carbonara",
+        "mi fai una ricetta di lasagne": "lasagne",
+        "fai la ricetta carbonara": "carbonara",
+        "fammi la ricetta carbonara": "carbonara",
+        "fare una ricetta di pizza": "pizza",
+    }
+    for frase, atteso in casi.items():
+        cmd = voice.parse(frase)
+        assert cmd["intent"] == "recipe_add", frase
+        assert cmd["name"] == atteso, frase
+
+
+def test_voce_fammi_vedere_non_crea_una_ricetta():
+    """"fammi" ora crea ricette, quindi "fammi **vedere**" deve restare fuori.
+
+    Chiedere di vedere una ricetta e vedersi aprire il modulo di una ricetta
+    nuova e' l'errore opposto a quello appena corretto, e altrettanto fastidioso:
+    il verbo di creazione c'e', ma il senso e' un altro.
+    """
+    for frase in ("fammi vedere la ricetta carbonara",
+                  "voglio vedere la ricetta carbonara",
+                  "mi fai leggere la ricetta carbonara"):
+        assert voice.parse(frase)["intent"] != "recipe_add", frase
+
+
+def test_voce_fammi_la_spesa_non_scrive_fammi_in_lista():
+    """Una frase di comando senza alimento non deve produrre un alimento.
+
+    "fammi la spesa" non dice *cosa* comprare: senza questa guardia il verbo
+    finiva in lista come articolo chiamato "fammi", ed era lo stesso guasto di
+    "che cosa c'e' in dispensa" per un'altra strada. Una voce sbagliata in lista
+    resta li' per sempre, quindi meglio non capire.
+    """
+    for frase in ("fammi la spesa", "fai la spesa", "fammi la lista della spesa",
+                  "fai il punto della spesa", "fammi vedere la spesa",
+                  "fammi la dispensa", "fai il magazzino"):
+        cmd = voice.parse(frase)
+        assert cmd["intent"] == "unknown", (frase, cmd)
+
+
+def test_una_frase_senza_alimento_non_tocca_la_lista(client):
+    """Il comportamento vero: dopo "fammi la spesa" la lista resta vuota.
+
+    Provarlo con `voice.parse` dice che la frase non viene capita; provarlo qui
+    dice che il server non ha scritto niente. Sono due cose diverse: la prima
+    puo' essere vera mentre la seconda e' falsa se un ramo a valle indovina.
+    """
+    lista_prima = client.get("/api/shopping").get_json()
+    for frase in ("fammi la spesa", "fai la spesa", "fammi la lista della spesa"):
+        assert client.post("/api/voice", json={"text": frase}).status_code == 422
+    assert client.get("/api/shopping").get_json() == lista_prima
+
+
+def test_voce_la_parola_della_destinazione_non_e_un_alimento():
+    """La destinazione dice *dove*, non *cosa*: non fa parte del nome.
+
+    "il sapone al magazzino" -> "sapone" (non "sapone magazzino"), e in
+    "aggiungi il latte alla spesa" l'articolo e' "latte", non "latte spesa".
+    """
+    assert voice.parse("metti il sapone al magazzino")["name"] == "sapone"
+    assert voice.parse("aggiungi il latte alla spesa")["name"] == "latte"
+    assert voice.parse("metti il latte in lista")["name"] == "latte"
+
+
 def test_voce_ricetta_non_finisce_nella_spesa():
     """Senza il ramo `recipe_add`, "aggiungi la ricetta carbonara" diventava una
     voce di lista della spesa chiamata "ricetta carbonara"."""

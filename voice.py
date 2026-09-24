@@ -126,7 +126,17 @@ _STOPWORDS = {
     "inserire", "segna", "segnami", "ricordami", "ricorda", "voglio", "vorrei",
     "vorrebbe", "vorrebbero", "servirebbe", "servirebbero", "dovrei", "dovremmo",
     "devo", "dobbiamo", "comprare", "comperare", "manca", "mancano", "serve",
-    "servono", "di", "del", "dello", "della", "dei", "degli", "delle", "da",
+    "servono",
+    # la famiglia di "fai": "fammi la spesa" non ha un alimento dentro, e senza
+    # queste il verbo finiva nel nome ("fammi" in lista, "fai il punto" in lista)
+    "fai", "fammi", "fare", "fammelo", "fammela", "fallo", "falla", "falli",
+    "dammi", "dammelo", "dammela", "dacci", "mi", "puoi", "potresti", "prepara",
+    "preparami", "prepari", "preparate",
+    # verbi di consultazione: "fammi vedere la spesa" non ha un alimento, e
+    # "vedere" finiva in lista come se fosse un articolo
+    "vedere", "vedermi", "leggere", "leggermi", "guardare", "mostrare", "mostrami",
+    "elencare", "elencami", "dimmi", "ricordami", "punto", "lista", "elenco",
+    "di", "del", "dello", "della", "dei", "degli", "delle", "da",
     "dal", "dallo", "dalla", "dai", "dagli", "dalle", "a", "al", "allo", "alla",
     "ai", "agli", "alle", "in", "nel", "nello", "nella", "nei", "negli", "nelle",
     "il", "lo", "la", "i", "gli", "le", "e", "ed", "con", "per", "su", "sul",
@@ -150,14 +160,21 @@ _RECIPE_WORDS = {"ricetta", "ricette"}
 _RECIPE_VERBS = {"crea", "creare", "creami", "creo", "nuova", "nuovo", "aggiungi",
                  "aggiungere", "aggiungimi", "salva", "salvare", "inserisci",
                  "inserire", "scrivi", "scrivere", "registra", "registrare",
-                 "prepara", "preparami", "preparare"}
+                 "prepara", "preparami", "preparare", "fai", "fammi", "fare",
+                 "prepari", "preparate"}
+# Parole che chiedono di **vedere** una ricetta, non di scriverla: "fammi vedere
+# la ricetta carbonara" non deve aprire il modulo di una ricetta nuova. Servono
+# perché "fai"/"fammi" ora contano come verbo di creazione, e senza questa
+# guardia una richiesta di consultazione diventerebbe una creazione.
+_RICETTA_GUARDA = {"vedere", "vedermi", "leggere", "guardare", "trovare",
+                   "mostrare", "mostrami", "spiegare", "spiegami", "ripetere"}
 # parole che non fanno parte del nome della ricetta. Volutamente NON contiene
 # le preposizioni: "pasta al forno" e "risotto ai funghi" le preposizioni ce le
 # hanno dentro. Si tolgono invece ai bordi, in `_nome_ricetta`, dove sono
 # avanzi del discorso ("...per la carbonara") e non parte del nome.
 _RECIPE_FILLER = _RECIPE_VERBS | _RECIPE_WORDS | {
     "chiamata", "chiamato", "nome", "intitolata", "come", "tu", "puoi", "potresti",
-    "ho", "voglio", "vorrei",
+    "ho", "voglio", "vorrei", "dammi", "dacci", "mi",
 }
 
 # avanzi attorno al nome di un ingrediente dettato: "500 grammi **di** pasta",
@@ -660,6 +677,7 @@ def parse(text):
     # non crearne una nuova chiamata "ingredienti ...".
     tokens_frase = normalized.split()
     if (_RECIPE_WORDS & set(tokens_frase) and _RECIPE_VERBS & set(tokens_frase)
+            and not _RICETTA_GUARDA & set(tokens_frase)
             and not _find_destination(tokens_frase)[2]
             and not ({"ingredienti", "ingrediente"} & set(tokens_frase))):
         # la coda con le dosi è un elenco di ingredienti, non parte del nome:
@@ -685,12 +703,12 @@ def parse(text):
     dest, dest_idx, explicit, luogo = _find_destination(tokens)
     if dest_idx is not None:
         skip.add(dest_idx)
-    # se la destinazione e' il magazzino per via della parola "magazzino", quella
-    # parola non fa parte del nome ("il sapone al magazzino" -> "sapone")
-    if dest == "storage":
-        for i, tok in enumerate(tokens):
-            if i not in skip and tok in _DEST_TOKENS and _DEST_TOKENS[tok] == "storage":
-                skip.add(i)
+    # ogni parola che dice la destinazione non fa parte del nome: "il sapone al
+    # magazzino" -> "sapone", "fammi la lista della spesa" -> niente (qui non
+    # c'e' nessun alimento, e "lista" finiva in lista)
+    for i, tok in enumerate(tokens):
+        if _DEST_TOKENS.get(tok) == dest:
+            skip.add(i)
 
     # una frase senza verbo di comando, senza destinazione e senza quantità è
     # rumore di fondo o un fraintendimento del riconoscimento, non un comando:
