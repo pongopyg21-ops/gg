@@ -265,15 +265,30 @@ viene chiesta: e' il caso normale.
 
 ## La voce neurale (facoltativa)
 
-Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure:
+Senza fare niente, l'app usa la voce del sistema, che è quella meccanica. Per
+avere la voce naturale Azure, il modo più semplice non richiede file: **si fa
+dalla pagina.**
 
-1. Fai doppio clic su `windows\voce.bat`.
-2. Incolla la chiave, premi Invio, conferma l'area (Invio per `italynorth`).
-3. Riapri l'app.
+1. Apri l'app e tocca il pulsante del microfono.
+2. Se la voce naturale non è ancora configurata, compare una casella **Chiave
+   della voce naturale Azure**: incolla la chiave, scrivi l'area
+   (`italynorth`), e premi **Prova e salva**.
+3. La pagina controlla la chiave con Azure e ti dice se va bene. Se va bene, la
+   salva e la voce naturale è pronta.
 
-Il programma scrive da solo il file `segreto.bat` nella forma giusta: così non
-si sbagliano le virgolette, gli spazi o le maiuscole, che sono la causa più
-comune di "la chiave c'è ma la voce resta quella del sistema".
+Così non c'è nessun file da aprire o modificare: la forma la sceglie l'app, e gli
+errori di virgolette, spazi o maiuscole — la causa più comune di "la chiave c'è
+ma la voce resta quella del sistema" — non sono possibili. La chiave non viene
+mai rimandata al browser: resta sul server, e la pagina mostra solo l'esito.
+
+La chiave la trovi su `portal.azure.com`, nella tua risorsa **Speech**, pagina
+**Chiavi ed endpoint**: sono la chiave 1 (o 2) e l'area.
+
+### Se preferisci farlo da riga di comando
+
+Su Windows c'è anche `windows\voce.bat`, che fa lo stesso chiedendo i valori in
+una finestra: doppio clic, incolla la chiave, Invio, conferma l'area, e riapri
+l'app. Il programma scrive da solo il file `segreto.bat` nella forma giusta.
 
 All'avvio leggerai `Voce neurale Azure attiva`, e nella pagina, sotto **Voce**,
 comparirà la scelta della voce neurale con l'anteprima.

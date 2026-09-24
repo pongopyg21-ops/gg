@@ -1527,6 +1527,42 @@ def voice_command():
     return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
 
 
+@app.route("/api/voce/configura", methods=["POST"])
+def voce_configura():
+    """Prova e salva la chiave della voce neurale.
+
+    Cosi' la chiave non si scrive in un file a mano: si incolla nella pagina, si
+    prova, e se vale viene salvata. Scrivendo a mano, una virgoletta o uno spazio
+    di troppo fanno fallire la sintesi senza dire perche', e sembra che l'app sia
+    guasta.
+
+    La prova viene **prima** del salvataggio: se la chiave non vale, il file
+    resta com'e', invece di sostituire una configurazione che magari funzionava.
+    """
+    if not casa_attiva():
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+
+    data = request.get_json(force=True) or {}
+    chiave_nuova = str(data.get("chiave") or "").strip()
+    regione_nuova = str(data.get("regione") or "").strip()
+    if not chiave_nuova or not regione_nuova:
+        return bad_request("Servono sia la chiave sia l'area")
+
+    ok, messaggio = voce_cloud.verifica(chiave_nuova, regione_nuova)
+    if not ok:
+        return bad_request(messaggio)
+
+    try:
+        voce_cloud.salva_config(chiave_nuova, regione_nuova)
+    except (ValueError, OSError) as err:
+        return bad_request(f"Non sono riuscito a salvare: {err}")
+
+    # l'elenco cambia con la chiave nuova: senza azzerarlo si riuserebbe quello
+    # dell'area precedente, e la pagina mostrerebbe voci che non esistono qui
+    voce_cloud._voci_cache.update({"area": None, "quando": 0.0, "elenco": None})
+    return jsonify({"ok": True, "messaggio": messaggio, "regione": voce_cloud.regione()})
+
+
 @app.route("/api/voce/config")
 def voce_config():
     """Se la voce neurale e' disponibile, e con quali voci.

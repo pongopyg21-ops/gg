@@ -401,6 +401,17 @@
     <p id="voice-avviso" class="voice-avviso"></p>
     <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
     <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
+    <div id="voice-chiave-blocco" class="voice-cloud" hidden>
+      <label class="toggle">Chiave della voce naturale Azure
+        <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
+      </label>
+      <div class="row">
+        <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
+        <button id="voice-chiave-salva" class="primary">Prova e salva</button>
+      </div>
+      <p id="voice-chiave-esito" class="voice-avviso"></p>
+      <p class="voice-avviso">Si configura una volta sola. La chiave resta su questo server e non viene mostrata a chi apre la pagina. La trovi in Azure, pagina "Chiavi ed endpoint" della risorsa Speech.</p>
+    </div>
     <div id="voice-cloud-block" class="voice-cloud" hidden>
       <label class="toggle"><input type="checkbox" id="voice-cloud" checked> Voce neurale (consigliata)</label>
       <label class="toggle">Voce

@@ -618,6 +618,20 @@ tr:last-child td { border-bottom: none; }
   margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted);
 }
 .voice-avviso:empty { display: none; }
+.voice-avviso.err { color: var(--accent-deep); font-weight: 600; }
+.voice-avviso.ok { color: var(--green); font-weight: 600; }
+
+/* casella per mettere la chiave della voce: compare solo quando manca */
+#voice-chiave, #voice-chiave-area {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 8px; padding: 6px 9px; min-height: 34px;
+  max-width: 100%; flex: 1 1 200px;
+}
+#voice-chiave:focus, #voice-chiave-area:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+#voice-chiave-salva { align-self: flex-start; }
 
 /* blocco della voce neurale: visibile solo quando il server ce l'ha */
 .voice-cloud {

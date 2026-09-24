@@ -2527,12 +2527,60 @@ function mostraAvvisoSicurezza() {
 */
 function mostraAvvisoRobotica() {
   const el = $('#voice-avviso-robotica');
+  // la casella per mettere la chiave si vede solo quando la chiave manca:
+  // a voce gia' configurata non serve, e la pagina resta piu' semplice
+  const blocco = $('#voice-chiave-blocco');
+  if (blocco) blocco.hidden = voceCloud.disponibile;
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = 'La voce che senti e\u2019 quella meccanica del sistema: a '
     + 'questo server non e\u2019 stata data la chiave della voce naturale Azure. '
-    + 'Chi lo usa la configura una volta sola (vedi la guida, "La voce neurale").';
+    + 'Si mette qui sotto, una volta sola.';
+}
+
+/** Prova la chiave sul server e, se vale, la salva.
+
+    La prova la fa il server: dal browser non si puo' parlare ad Azure senza
+    esporre la chiave, che e' proprio quello che si vuole evitare.
+*/
+async function salvaChiaveVoce() {
+  const esito = $('#voice-chiave-esito');
+  const chiave = $('#voice-chiave').value.trim();
+  const regione = $('#voice-chiave-area').value.trim();
+  if (!chiave || !regione) {
+    esito.textContent = 'Servono sia la chiave sia l\u2019area.';
+    esito.className = 'voice-avviso err';
+    return;
+  }
+  const bottone = $('#voice-chiave-salva');
+  bottone.disabled = true;
+  esito.textContent = 'Controllo con Azure\u2026';
+  esito.className = 'voice-avviso';
+  try {
+    const r = await fetch('/api/voce/configura', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chiave, regione }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      esito.textContent = d.error || 'Non ha funzionato.';
+      esito.className = 'voice-avviso err';
+      return;
+    }
+    esito.textContent = (d.messaggio || 'Fatto.') + ' La voce naturale \u00e8 pronta.';
+    esito.className = 'voice-avviso ok';
+    $('#voice-chiave').value = '';
+    voceCloud.sentite.clear();
+    await caricaVoceCloud();          // l'elenco delle voci e' cambiato
+    aggiornaElencoVoci();
+  } catch (_e) {
+    esito.textContent = 'Non riesco a parlare con il server. Riprova.';
+    esito.className = 'voice-avviso err';
+  } finally {
+    bottone.disabled = false;
+  }
 }
 
 function chiudiVoce() {
@@ -2549,6 +2597,14 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') chiudiVoce
 $('#voice-examples').addEventListener('click', (e) => {
   const frase = e.target.dataset.say;
   if (frase) eseguiComando(frase);
+});
+
+$('#voice-chiave-salva').addEventListener('click', salvaChiaveVoce);
+$('#voice-chiave-area').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') salvaChiaveVoce();
+});
+$('#voice-chiave').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') salvaChiaveVoce();
 });
 
 // riserva quando il microfono non c'è o ha sentito male: si corregge a mano

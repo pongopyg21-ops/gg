@@ -2744,6 +2744,75 @@ def test_la_pagina_avvisa_se_il_microfono_non_puo_funzionare(client):
     assert "isSecureContext" in js and "mostraAvvisoSicurezza" in js
 
 
+def test_la_pagina_permette_di_mettere_la_chiave(client):
+    """Il file segreto non si apre a mano: la chiave si mette dalla pagina."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="voice-chiave"' in html and 'id="voice-chiave-salva"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "salvaChiaveVoce" in js and "/api/voce/configura" in js
+
+
+def test_l_endpoint_della_chiave_rifiuta_chi_non_e_collegato(anon):
+    r = anon.post("/api/voce/configura", json={"chiave": "x", "regione": "italynorth"})
+    assert r.status_code == 401
+
+
+def test_l_endpoint_della_chiave_rifiuta_valori_mancanti(client):
+    r = client.post("/api/voce/configura", json={"chiave": "", "regione": ""})
+    assert r.status_code == 400
+
+
+def test_una_chiave_non_valida_non_viene_salvata(client, tmp_path, monkeypatch):
+    """La prova viene prima del salvataggio: un errore non deve cancellare una
+    configurazione che funzionava."""
+    primo = tmp_path / "segreto.sh"
+    primo.write_text("export AZURE_SPEECH_KEY='ChiaveBuonaCheFunziona'\nexport AZURE_SPEECH_REGION='italynorth'\n")
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+
+    monkeypatch.setattr(voce_cloud, "verifica", lambda c, r: (False, "Chiave non valida"))
+    r = client.post("/api/voce/configura", json={"chiave": "sbagliata", "regione": "italynorth"})
+    assert r.status_code == 400
+    # il file di prima e' rimasto intatto
+    assert "ChiaveBuonaCheFunziona" in primo.read_text()
+
+
+def test_una_chiave_valida_viene_salvata(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "verifica", lambda c, r: (True, "Chiave valida."))
+    r = client.post("/api/voce/configura", json={"chiave": "ChiaveNuova123", "regione": "ITALYNORTH"})
+    assert r.status_code == 200
+
+    scritto = (tmp_path / "segreto.sh").read_text()
+    assert "ChiaveNuova123" in scritto
+    assert "italynorth" in scritto                  # area resa minuscola
+    assert "ITALYNORTH" not in scritto
+
+
+def test_il_file_salvato_si_rilegge(tmp_path, monkeypatch):
+    """Scritto dall'app e riletto dall'app: e' l'unico giro che conta."""
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    voce_cloud.salva_config("ChiaveDaProva999", "italynorth")
+
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    assert voce_cloud.chiave() == "ChiaveDaProva999"
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_il_file_della_chiave_non_e_leggibile_da_tutti(tmp_path, monkeypatch):
+    """La chiave e' un segreto: il file non deve essere aperto a chiunque."""
+    if os.name == "nt":
+        return                       # i permessi POSIX su Windows non si applicano
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    percorso = voce_cloud.salva_config("ChiaveSegreta123", "italynorth")
+    modo = os.stat(percorso).st_mode & 0o777
+    assert modo == 0o600, f"permessi troppo larghi: {oct(modo)}"
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
