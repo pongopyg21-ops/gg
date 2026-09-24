@@ -53,11 +53,29 @@ _SALE_BYTE = 16
 
 def hash_password(password, iterations=_ITERAZIONI):
     """Restituisce `pbkdf2_sha256$iterazioni$sale$hash`, tutto in una stringa."""
+    password = _pulita(password)
     if not password:
         raise ValueError("La password non può essere vuota")
     sale = secrets.token_bytes(_SALE_BYTE)
     impronta = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), sale, iterations)
     return f"pbkdf2_sha256${iterations}${sale.hex()}${impronta.hex()}"
+
+
+def _pulita(password) -> str:
+    """Toglie gli spazi ai bordi della password.
+
+    Nasce da un accesso impossibile: incollando la password dal telefono o
+    scrivendola con la correzione automatica, resta uno spazio finale. Lo spazio
+    non si vede — nel campo il testo e' nascosto — e il rifiuto e' identico a
+    quello di una password sbagliata, quindi non si capisce cosa correggere.
+
+    Uno spazio ai bordi non e' mai voluto: nessuno sceglie una password che
+    comincia o finisce con uno spazio, mentre il copia-incolla lo aggiunge da
+    solo. Toglierlo dentro le password di casa non cambia le regole per le
+    altre: restano due confronti, `autentica` e `verifica_password`, e quello
+    che conta e' che l'accesso e il salvataggio usino lo stesso.
+    """
+    return (password or "").strip()
 
 
 def verifica_password(password, memorizzata):
@@ -74,7 +92,7 @@ def verifica_password(password, memorizzata):
         atteso = bytes.fromhex(atteso_hex)
     except ValueError:
         return False
-    calcolato = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"), sale, iterazioni)
+    calcolato = hashlib.pbkdf2_hmac("sha256", _pulita(password).encode("utf-8"), sale, iterazioni)
     return hmac.compare_digest(calcolato, atteso)
 
 

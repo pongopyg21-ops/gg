@@ -2743,9 +2743,14 @@ async function entra(evento) {
   const bottone = $('#acc-entra');
   bottone.disabled = true;
   try {
+    // gli spazi ai bordi li toglie anche il server: si tolgono qui perche' il
+    // campo e' nascosto, e uno spazio incollato per sbaglio non si vede
     await api('/api/login', {
       method: 'POST',
-      body: { nome: $('#acc-nome').value, password: $('#acc-password').value },
+      body: {
+        nome: $('#acc-nome').value.trim(),
+        password: $('#acc-password').value.trim(),
+      },
     });
     sessionStorage.removeItem('maggiordomo-errore'); // la sessione e' nuova
     await avviaApp();
@@ -2757,6 +2762,13 @@ async function entra(evento) {
     bottone.disabled = false;
   }
 }
+
+// Rende visibile la password: il campo la nasconde, e su un telefono con la
+// correzione automatica non si nota se una lettera e' cambiata o se e' rimasto
+// uno spazio. Toglierlo dal campo e' l'unico modo di vedere cosa si e' scritto.
+$('#acc-mostra').addEventListener('change', (e) => {
+  $('#acc-password').type = e.target.checked ? 'text' : 'password';
+});
 
 async function creaCasa(evento) {
   evento.preventDefault();

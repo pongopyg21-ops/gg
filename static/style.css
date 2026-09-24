@@ -621,6 +621,13 @@ tr:last-child td { border-bottom: none; }
 .voice-avviso.err { color: var(--accent-deep); font-weight: 600; }
 .voice-avviso.ok { color: var(--green); font-weight: 600; }
 
+/* "mostra la password": piccola, sotto il campo, per non rubare spazio */
+.mostra-password {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 0 0; font-size: 12.5px; color: var(--muted); cursor: pointer;
+}
+.mostra-password input { margin: 0; }
+
 /* casella per mettere la chiave della voce: compare solo quando manca */
 #voice-chiave, #voice-chiave-area {
   font: inherit; font-size: 13.5px; color: var(--ink);

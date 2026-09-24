@@ -63,6 +63,18 @@ def client():
 
 
 @pytest.fixture()
+def casa_test():
+    """La casa di prova registrata, per i test che non passano dalla pagina."""
+    if os.path.exists(REGISTRO):
+        os.remove(REGISTRO)
+    for f in os.listdir(houses.CASE_DIR) if os.path.isdir(houses.CASE_DIR) else []:
+        if f.startswith("case-"):
+            os.remove(os.path.join(houses.CASE_DIR, f))
+    registra_casa()
+    yield {"slug": CASA_TEST, "password": PASSWORD_TEST}
+
+
+@pytest.fixture()
 def anon():
     """Un client senza nessuna casa collegata: per i test dell'accesso."""
     if os.path.exists(REGISTRO):
@@ -2811,6 +2823,40 @@ def test_il_file_della_chiave_non_e_leggibile_da_tutti(tmp_path, monkeypatch):
     percorso = voce_cloud.salva_config("ChiaveSegreta123", "italynorth")
     modo = os.stat(percorso).st_mode & 0o777
     assert modo == 0o600, f"permessi troppo larghi: {oct(modo)}"
+
+
+def test_gli_spazi_ai_bordi_della_password_non_contano(casa_test):
+    """Uno spazio incollato per sbaglio non si vede, e l'errore non lo dice."""
+    for scritta in [PASSWORD_TEST, PASSWORD_TEST + " ", " " + PASSWORD_TEST, "  " + PASSWORD_TEST + "  "]:
+        assert houses.autentica(CASA_TEST, scritta), f"rifiutata: {scritta!r}"
+
+
+def test_una_password_sbagliata_resta_sbagliata(casa_test):
+    """Tollerare gli spazi non deve far entrare chi non sa la password."""
+    for scritta in ["sbagliata", PASSWORD_TEST[:-1], PASSWORD_TEST + "x", ""]:
+        assert not houses.autentica(CASA_TEST, scritta), f"entrata con: {scritta!r}"
+
+
+def test_la_password_salvata_non_tiene_gli_spazi(tmp_path):
+    """Salvata con uno spazio ai bordi, si salva la parte che conta."""
+    registro = str(tmp_path / "houses.db")
+    slug = houses.crea("Casa Spazi", "  PasswordConSpazi  ", percorso=registro)
+    assert houses.autentica(slug, "PasswordConSpazi", percorso=registro)
+    assert houses.autentica(slug, "PasswordConSpazi ", percorso=registro)
+
+
+def test_l_accesso_accetta_la_password_con_spazio_finale(client):
+    """Il giro completo: dalla pagina, con lo spazio che il copia-incolla aggiunge."""
+    r = client.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST + " "})
+    assert r.status_code == 200
+
+
+def test_la_pagina_fa_vedere_la_password(client):
+    """Il campo e' nascosto: senza vederla, uno spazio non si nota."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="acc-mostra"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "acc-mostra" in js and "acc-password" in js
 
 
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
