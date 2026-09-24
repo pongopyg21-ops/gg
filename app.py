@@ -1867,6 +1867,9 @@ def voce_config():
     """
     return jsonify({
         "cloud": voce_cloud.configurato(),
+        # la trascrizione usa la stessa chiave della sintesi: se la voce neurale
+        # e' pronta, lo e' anche l'ascolto, e il microfono puo' passare dal server
+        "ascolto": voce_cloud.configurato(),
         "voci": voce_cloud.elenco_voci(),
         "predefinita": voce_cloud.VOCE_PREDEFINITA,
         "max_caratteri": voce_cloud.MAX_CARATTERI,
@@ -1913,6 +1916,37 @@ def voce_parla():
     # la voce di conferma di un comando non cambia: si puo' riusare per un po'
     risposta.headers["Cache-Control"] = "private, max-age=300"
     return risposta
+
+
+@app.route("/api/voce/ascolta", methods=["POST"])
+def voce_ascolta():
+    """Trascrive una registrazione e restituisce il testo del comando.
+
+    Perche' non direttamente nel browser: la Web Speech API manda l'audio ai
+    server di Google, e in molte case quel traffico e' bloccato (firewall,
+    antivirus, VPN). Il browser risponde "network" e il microfono resta muto
+    senza rimedio. Il server invece esce, quindi la trascrizione si sposta qui:
+    il browser registra e manda i byte, il server parla con Azure.
+
+    Il corpo e' il WAV grezzo (PCM 16 kHz mono), non JSON: e' un file, e
+    infilarlo in base64 lo gonfierebbe di un terzo per nulla.
+
+    Con la chiave assente risponde 503, cosi' il client sa che puo' ripiegare
+    sul riconoscimento del browser invece di mostrare un errore.
+    """
+    if not casa_attiva():
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+
+    audio = request.get_data(cache=False)
+    try:
+        testo = voce_cloud.trascrivi(audio)
+    except voce_cloud.ErroreAscolto as e:
+        # il messaggio e' gia' pensato per l'utente
+        return jsonify({"error": str(e)}), e.stato
+
+    # vuoto vuol dire "non ho sentito nulla": non e' un errore, e il client lo
+    # dice con parole sue. Si distingue dalla frase non capita.
+    return jsonify({"testo": testo})
 
 
 def _preposizione_luogo(luogo):

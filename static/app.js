@@ -2360,7 +2360,7 @@ function speak(text) {
    3. l'anteprima del timbro resta locale. Deve essere immediata, e una chiamata di
       rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
 
-let voceCloud = { disponibile: false, voci: [], sentite: new Map(), avvisato: false };
+let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map(), avvisato: false };
 
 // oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
 const CLOUD_CACHE_MAX = 40;
@@ -2453,6 +2453,9 @@ async function caricaVoceCloud() {
     if (!r.ok) return;
     const d = await r.json();
     voceCloud.disponibile = !!d.cloud;
+    // la trascrizione sul server ha bisogno della stessa chiave della sintesi:
+    // se c'e', il microfono passa di la' invece che dal browser
+    voceCloud.ascolto = !!d.ascolto;
     voceCloud.voci = d.voci || [];
     voceCloud.predefinita = d.predefinita;
     voceCloud.maxCaratteri = d.max_caratteri || 600;
@@ -2566,7 +2569,83 @@ function tentaSuonoApertura() {
   document.addEventListener(ev, tentaSuonoApertura, { once: true });
 });
 
-let voce = { rec: null, attivo: false, ultimo: '' };
+/* ---------- registrazione per il server ----------
+   Il microfono consegna i campioni nell'ordine in cui li ha presi, a blocchi di
+   `ASCOLTO_BLOCCO`. I valori sono tarati su un comando detto a voce: una frase
+   breve, non una dettatura. */
+const ASCOLTO_BLOCCO = 4096;         // campioni per blocco (~93 ms a 44,1 kHz)
+const ASCOLTO_CAMPIONI = 16000;      // quello che vuole il servizio di ascolto
+const ASCOLTO_FINE_MS = 1600;        // silenzio che chiude la frase
+const ASCOLTO_ATTESA_MS = 6000;      // nessuno parla: si chiude
+const ASCOLTO_MAX_MS = 15000;        // tetto, qualunque cosa succeda
+const ASCOLTO_SILENZIO = 0.012;      // sopra questa ampiezza c'è voce
+
+/** Quanto è "forte" un blocco di campioni, per distinguere voce e silenzio.
+    Un picco, non una media: una media su blocchi quasi muti resta a zero anche
+    quando si parla, e il silenzio non finirebbe mai. */
+function ampiezza(campioni) {
+  let massimo = 0;
+  for (let i = 0; i < campioni.length; i++) {
+    const v = campioni[i] < 0 ? -campioni[i] : campioni[i];
+    if (v > massimo) massimo = v;
+  }
+  return massimo;
+}
+
+/** Porta i campioni alla frequenza voluta, mediando i valori vicini.
+
+    Il microfono non consegna sempre 16 kHz: dipende dalla scheda. L'audio breve
+    del servizio ne accetta una sola, quindi si riscrive qui invece di spedire
+    qualcosa che potrebbe non essere letto. */
+function aSediciKhz(campioni, frequenza) {
+  if (!frequenza || frequenza === ASCOLTO_CAMPIONI) return campioni;
+  const rapporto = frequenza / ASCOLTO_CAMPIONI;
+  const quanti = Math.max(1, Math.round(campioni.length / rapporto));
+  const fuori = new Float32Array(quanti);
+  for (let i = 0; i < quanti; i++) {
+    const inizio = Math.floor(i * rapporto);
+    const fine = Math.min(campioni.length, Math.floor((i + 1) * rapporto));
+    let somma = 0;
+    for (let j = inizio; j < fine; j++) somma += campioni[j];
+    fuori[i] = fine > inizio ? somma / (fine - inizio) : (campioni[inizio] || 0);
+  }
+  return fuori;
+}
+
+/** Impacchetta i campioni in un WAV PCM 16 bit mono.
+
+    Il browser sa registrare in webm/opus, ma il servizio di ascolto non lo
+    legge: WAV sì, e i campioni ci sono già in memoria. Scriverne l'intestazione
+    costa poche righe e non aggiunge nessuna libreria. */
+function wavDaCampioni(campioni, frequenza) {
+  const dati = new ArrayBuffer(44 + campioni.length * 2);
+  const vista = new DataView(dati);
+  const scrivi = (pos, testo) => {
+    for (let i = 0; i < testo.length; i++) vista.setUint8(pos + i, testo.charCodeAt(i));
+  };
+  scrivi(0, 'RIFF');
+  vista.setUint32(4, 36 + campioni.length * 2, true);
+  scrivi(8, 'WAVE');
+  scrivi(12, 'fmt ');
+  vista.setUint32(16, 16, true);            // dimensione del blocco "fmt "
+  vista.setUint16(20, 1, true);             // PCM
+  vista.setUint16(22, 1, true);             // un canale
+  vista.setUint32(24, frequenza, true);
+  vista.setUint32(28, frequenza * 2, true); // byte al secondo
+  vista.setUint16(32, 2, true);             // byte per campione
+  vista.setUint16(34, 16, true);            // bit per campione
+  scrivi(36, 'data');
+  vista.setUint32(40, campioni.length * 2, true);
+  for (let i = 0; i < campioni.length; i++) {
+    // il campione può uscire dai limiti e si taglia: senza, il valore avvolge
+    // di segno e la conversione a intero esplode
+    const v = Math.max(-1, Math.min(1, campioni[i]));
+    vista.setInt16(44 + i * 2, Math.round(v * 32767), true);
+  }
+  return new Blob([dati], { type: 'audio/wav' });
+}
+
+let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: null };
 
 function voceStato(msg, tipo = '') {
   const el = $('#voice-status');
@@ -2629,8 +2708,131 @@ async function eseguiComando(testo) {
   }
 }
 
-/** Avvia l'ascolto; se il browser non supporta l'API, si può comunque digitare. */
+/** Avvia l'ascolto: prima dal server, e solo se non c'e' dal browser.
+
+    Il riconoscimento del browser manda l'audio ai server di Google, e in molte
+    case quel traffico e' bloccato (firewall, antivirus, VPN): Chrome risponde
+    "network" e il microfono resta muto senza rimedio. Il server invece esce,
+    quindi si registra qui e si fa trascrivere la'. Il browser si usa solo come
+    ripiego, quando il server non ha la chiave. */
 function ascolta() {
+  // già in ascolto (dal server o dal browser): il clic ferma e fa partire la frase
+  if (voce.attivo) { fermaAscolto(); return; }
+  if (voceCloud.ascolto && ascoltaSulServer()) return;
+  ascoltaDalBrowser();
+}
+
+function fermaAscolto() {
+  if (voce.registratore) { voce.registratore.ferma(); return; }
+  if (voce.attivo && voce.rec) {
+    try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
+  }
+}
+
+/** Registra dal microfono e manda l'audio al server.
+
+    Restituisce `false` se non c'e' modo di registrare qui (microfono negato o
+    API assente): chi chiama ripiega sul riconoscimento del browser. */
+function ascoltaSulServer() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !Ctx) return false;
+
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((flusso) => {
+    const ctx = new Ctx();
+    const sorgente = ctx.createMediaStreamSource(flusso);
+    const nodo = ctx.createScriptProcessor(ASCOLTO_BLOCCO, 1, 1);
+    const pezzi = [];
+    const inizio = Date.now();
+    let parlatoDa = null;      // quando si è cominciata a sentire la voce
+    let ultimoSuono = 0;       // quando si è sentito l'ultimo suono
+    let chiuso = false;
+
+    const chiudi = () => {
+      if (chiuso) return;
+      chiuso = true;
+      try { nodo.disconnect(); } catch (_e) { /* già staccato */ }
+      try { sorgente.disconnect(); } catch (_e) { /* già staccato */ }
+      try { ctx.close(); } catch (_e) { /* già chiuso */ }
+      flusso.getTracks().forEach((t) => t.stop());
+      voce.registratore = null;
+      voce.attivo = false;
+      $('#mic').classList.remove('on');
+    };
+    const termina = () => {
+      if (chiuso) return;
+      chiudi();
+      inviaAscolto(pezzi, ctx.sampleRate);
+    };
+
+    nodo.onaudioprocess = (e) => {
+      if (chiuso) return;
+      const blocco = e.inputBuffer.getChannelData(0);
+      pezzi.push(new Float32Array(blocco));
+      const adesso = Date.now();
+      if (ampiezza(blocco) > ASCOLTO_SILENZIO) {
+        ultimoSuono = adesso;
+        if (parlatoDa === null) parlatoDa = adesso;
+      }
+      // La frase finisce quando si smette di parlare: senza, il microfono
+      // resterebbe aperto finché non lo si chiude a mano.
+      if (parlatoDa !== null && adesso - ultimoSuono > ASCOLTO_FINE_MS) termina();
+      else if (parlatoDa === null && adesso - inizio > ASCOLTO_ATTESA_MS) termina();
+      else if (adesso - inizio > ASCOLTO_MAX_MS) termina();
+    };
+
+    sorgente.connect(nodo);
+    nodo.connect(ctx.destination);   // serve solo perché il nodo elabori
+
+    voce.registratore = { ferma: termina, annulla: chiudi };
+    voce.attivo = true;
+    $('#mic').classList.add('on');
+    voceStato('Ti ascolto…');
+    $('#voice-result').hidden = true;
+    $('#voice-heard').textContent = '…';
+  }).catch(() => {
+    // microfono negato o assente: non è un guasto del server, si ripiega
+    voceStato('Microfono non disponibile: consentilo nelle impostazioni del '
+      + 'browser. Intanto puoi scrivere il comando qui sotto.', 'err');
+    $('#voice-heard').hidden = true;
+    const campo = $('#voice-text');
+    if (campo) campo.focus();
+  });
+  return true;
+}
+
+/** Manda la registrazione al server e usa il testo che torna. */
+function inviaAscolto(pezzi, frequenza) {
+  const totale = pezzi.reduce((n, p) => n + p.length, 0);
+  const uniti = new Float32Array(totale);
+  let pos = 0;
+  pezzi.forEach((p) => { uniti.set(p, pos); pos += p.length; });
+
+  voceStato('Trascrivo…');
+  const wav = wavDaCampioni(aSediciKhz(uniti, frequenza), ASCOLTO_CAMPIONI);
+  fetch('/api/voce/ascolta', {
+    method: 'POST',
+    headers: { 'Content-Type': 'audio/wav' },
+    body: wav,
+  }).then(async (r) => {
+    // 503: il server non ha la chiave. Non è un errore da mostrare, è il
+    // motivo per cui esiste il ripiego sul riconoscimento del browser.
+    if (r.status === 503) { ascoltaDalBrowser(); return; }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      voceStato(d.error || 'Non sono riuscito a trascrivere, riprova.', 'err');
+      return;
+    }
+    const testo = (d.testo || '').trim();
+    if (!testo) { voceStato('Non ho sentito nulla, riprova.'); return; }
+    $('#voice-heard').textContent = testo;
+    eseguiComando(testo);
+  }).catch(() => {
+    voceStato('Non riesco a parlare con il server. Riprova.', 'err');
+  });
+}
+
+/** Il riconoscimento del browser: ripiego quando il server non può trascrivere. */
+function ascoltaDalBrowser() {
   if (!SR) {
     voceStato('Questo browser non sa ascoltare: il riconoscimento vocale c\'è '
       + 'solo su Chrome, Edge e Safari. Qui puoi scrivere il comando qui sotto, '
@@ -2680,7 +2882,7 @@ function ascolta() {
         + 'indirizzo. Apri l\'app da http://localhost o da un indirizzo HTTPS.',
       'no-speech': 'Non ho sentito nulla, riprova.',
       'audio-capture': 'Nessun microfono trovato.',
-      network: 'Il microfono non riesce a raggiungere il servizio di ascolto: '
+      network: 'Il browser non riesce a raggiungere il servizio di ascolto: '
         + 'di solito è un firewall o una VPN che blocca il browser. Intanto '
         + 'scrivi qui sotto: funziona lo stesso.',
       aborted: '',
@@ -2825,6 +3027,7 @@ async function salvaChiaveVoce() {
 }
 
 function chiudiVoce() {
+  if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) voce.rec.stop();
   if (window.speechSynthesis) speechSynthesis.cancel();
   $('#voice').classList.add('hidden');

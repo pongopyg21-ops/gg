@@ -454,6 +454,35 @@ Conseguenze pratiche per chi mette mano al codice:
   `_find_destination`. Una frase senza verbo, destinazione o quantità è rumore di
   fondo e deve restare `unknown`: il microfono sente anche i discorsi in cucina e
   le voci inventate in lista sono peggio di un comando non capito.
+- **L'ascolto passa dal server, non più dal browser.** La Web Speech API manda
+  l'audio ai server di Google, e in molte case quel traffico è bloccato (firewall,
+  antivirus, VPN): Chrome risponde `network` e il microfono resta muto senza
+  rimedio, perché il problema non è nell'app. Il server invece esce, quindi il
+  browser **registra** con `getUserMedia` e manda i byte a `POST /api/voce/ascolta`;
+  a trascrivere è `voce_cloud.trascrivi`, con la stessa chiave della sintesi. La
+  Web Speech API resta come **ripiego**, per quando la chiave non c'è: l'endpoint
+  risponde 503 e il client passa al browser senza mostrare un errore. Il flag
+  `ascolto` in `GET /api/voce/config` decide la strada, e sbagliarlo riporta il
+  microfono al guasto che si vuole evitare. Non "sistemare" la trascrizione nel
+  browser: è il browser che non può, non la sua configurazione.
+- **L'audio breve di Azure accetta due soli formati**: WAV PCM 16 kHz mono, oppure
+  OGG Opus. Il browser produce di suo un webm/opus, che non è fra questi, quindi
+  `wavDaCampioni` (`static/app.js`) scrive l'intestazione WAV a mano — poche righe,
+  nessuna libreria — e `aSediciKhz` porta i campioni a 16 kHz (il microfono non
+  consegna sempre la stessa frequenza). L'endpoint riceve il WAV **grezzo** nel
+  corpo, non in JSON: in base64 crescerebbe di un terzo per nulla. Il test
+  dell'intestazione esegue la funzione vera con node e legge i byte: un test sulle
+  stringhe non accorgerebbe di un byte sbagliato, che il servizio rifiuterebbe con
+  un 400 indistinguibile da un guasto.
+- L'ascolto si ferma **da solo**: dopo ~1,6 s di silenzio, o dopo un tetto di 15 s.
+  Senza, il microfono resterebbe aperto finché non lo si chiude a mano, e la frase
+  non partirebbe mai. La soglia di voce (`ampiezza`) è un **picco**, non una media:
+  una media su blocchi quasi muti resta a zero anche parlando.
+- Un audio senza parlato non è un errore: `trascrivi` restituisce stringa vuota e
+  il client dice "non ho sentito nulla". Solo i guasti veri (chiave, area, rete)
+  sollevano `ErroreAscolto`, altrimenti il ripiego sul browser scatterebbe anche
+  quando non serve. Sotto `MIN_AUDIO_BYTE` non si chiama nemmeno Azure: un
+  microfono aperto per sbaglio non deve costare una chiamata.
 - `recipe_add` è l'unico intento che **non scrive niente**: risponde con
   `open_recipe_form` e il client apre il modulo della ricetta col nome già dentro.
   Una ricetta creata a voce senza ingredienti né preparazione sarebbe una scheda

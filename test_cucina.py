@@ -2879,6 +2879,112 @@ def test_senza_file_ne_chiave_configurato_e_falso(tmp_path, monkeypatch):
     assert not voce_cloud.configurato()
 
 
+def test_il_wav_per_il_server_ha_intestazione_e_campioni_giusti(client):
+    """Il servizio di ascolto legge **solo** WAV PCM 16 kHz mono: un webm del
+    browser verrebbe rifiutato con un 400 che sembra un guasto.
+
+    Si esegue la funzione vera con node e si legge l'intestazione byte per byte:
+    un test sulle stringhe non accorgerebbe di un byte scritto male."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("function wavDaCampioni"):js.index("\n}\n", js.index("function wavDaCampioni")) + 3]
+    prova = blocco + """
+// un'onda semplice: positiva e negativa a campioni alterni
+const campioni = new Float32Array(320);
+for (let i = 0; i < campioni.length; i++) campioni[i] = (i % 2 === 0) ? 0.25 : -0.25;
+const blob = wavDaCampioni(campioni, 16000);
+blob.arrayBuffer().then((buf) => {
+  const v = new DataView(buf);
+  const str = (p, n) => { let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(v.getUint8(p + i)); return s; };
+  console.log(JSON.stringify({
+    riff: str(0, 4), wave: str(8, 4), fmt: str(12, 4), data: str(36, 4),
+    formato: v.getUint16(20, true), canali: v.getUint16(22, true),
+    frequenza: v.getUint32(24, true), bit: v.getUint16(34, true),
+    byteDati: v.getUint32(40, true), totale: buf.byteLength,
+    primoCampione: v.getInt16(44, true), secondoCampione: v.getInt16(46, true),
+  }));
+});
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    assert d["riff"] == "RIFF" and d["wave"] == "WAVE"
+    assert d["fmt"] == "fmt " and d["data"] == "data"
+    assert d["formato"] == 1          # PCM, non compresso
+    assert d["canali"] == 1           # mono
+    assert d["frequenza"] == 16000    # quello che chiede il servizio
+    assert d["bit"] == 16
+    assert d["byteDati"] == 320 * 2   # due byte per campione
+    assert d["totale"] == 44 + 320 * 2
+    # 0,25 e non 0,5: il mezzo esatto si arrotonda in modo diverso fra JS e
+    # Python, e qui non e' quello che si vuole provare
+    assert d["primoCampione"] == round(0.25 * 32767)
+    assert d["secondoCampione"] == round(-0.25 * 32767)
+
+
+def test_il_campione_fuori_scala_non_avvolge_di_segno(client):
+    """Un valore oltre 1 farebbe avvolgere il numero: 1,5 non è "un po' più
+    forte", è un valore negativo. Si taglia al limite."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("function wavDaCampioni"):js.index("\n}\n", js.index("function wavDaCampioni")) + 3]
+    prova = blocco + """
+const campioni = new Float32Array([1.8, -1.9, 0]);
+wavDaCampioni(campioni, 16000).arrayBuffer().then((buf) => {
+  const v = new DataView(buf);
+  console.log([v.getInt16(44, true), v.getInt16(46, true), v.getInt16(48, true)].join(','));
+});
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    assert esito.stdout.strip() == "32767,-32767,0"
+
+
+def test_i_campioni_del_microfono_arrivano_a_16_khz(client):
+    """Il microfono non consegna sempre 16 kHz: l'audio breve ne accetta uno solo,
+    quindi si riscrive. Sbagliare qui manda audio che il servizio non legge."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("const ASCOLTO_CAMPIONI"):js.index("\n}\n", js.index("function aSediciKhz")) + 3]
+    prova = blocco + """
+// 48 kHz -> 16 kHz: un campione ogni tre
+const alti = new Float32Array(48000);
+for (let i = 0; i < alti.length; i++) alti[i] = Math.sin(i / 100);
+const fuori = aSediciKhz(alti, 48000);
+// già a 16 kHz: non si tocca niente
+const stessi = new Float32Array([0.1, 0.2, 0.3]);
+console.log(JSON.stringify({
+  lunghezza: fuori.length, attesa: 16000,
+  intatti: aSediciKhz(stessi, 16000) === stessi,
+}));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    assert d["lunghezza"] == d["attesa"]
+    assert d["intatti"] is True
+
+
+def test_il_microfono_prova_prima_il_server(client):
+    """La strada giusta è il server: è quello che esce dalla rete. Il browser
+    resta il ripiego, per quando la chiave non c'è."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/voce/ascolta" in js
+    assert "ascoltaSulServer" in js and "ascoltaDalBrowser" in js
+    # il dispatcher sceglie il server quando è disponibile
+    assert "if (voceCloud.ascolto && ascoltaSulServer()) return;" in js
+    # e il 503 non è un errore da mostrare: si ripiega sul browser
+    assert "if (r.status === 503) { ascoltaDalBrowser(); return; }" in js
+
+
+def test_la_registrazione_si_ferma_da_sola_fine_frase(client):
+    """Senza la fine automatica il microfono resterebbe aperto finché non lo si
+    chiude a mano, e nessuno lo chiude: la frase non partirebbe mai."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "ASCOLTO_FINE_MS" in js and "ASCOLTO_MAX_MS" in js
+    assert "ultimoSuono" in js
+
+
 def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
     """Senza chiave la voce e' quella del sistema: la pagina deve dirlo."""
     js = client.get("/static/app.js").get_data(as_text=True)
@@ -3268,6 +3374,110 @@ def test_errore_400_suggerisce_di_cambiare_voce(monkeypatch):
     assert "voce" in voce_cloud._spiega_errore(e).lower()
 
 
+# ------------------------------------------------------- trascrizione (ascolto)
+
+class _Ascolto:
+    """Risposta finta di Azure all'audio breve, per non toccare la rete."""
+
+    def __init__(self, corpo: bytes):
+        self._corpo = corpo
+
+    def read(self):
+        return self._corpo
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _con_chiave(monkeypatch):
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "italynorth")
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", True)
+
+
+def test_trascrizione_restituisce_il_testo_riconosciuto(monkeypatch):
+    _con_chiave(monkeypatch)
+    # un WAV finto abbastanza lungo da non essere scartato come silenzio
+    finto = b"\x00" * voce_cloud.MIN_AUDIO_BYTE
+    monkeypatch.setattr(
+        voce_cloud.urllib.request, "urlopen",
+        lambda *a, **k: _Ascolto(json.dumps(
+            {"RecognitionStatus": "Success", "DisplayText": "aggiungi due chili di farina in dispensa"}
+        ).encode()))
+    assert voce_cloud.trascrivi(finto) == "aggiungi due chili di farina in dispensa"
+
+
+def test_trascrizione_manda_wav_16khz_mono(monkeypatch):
+    """Il servizio accetta **solo** WAV PCM 16 kHz: l'intestazione deve dirlo.
+
+    Sbagliarla non da' un errore chiaro: il servizio risponde 400 e sembra un
+    guasto dell'app.
+    """
+    _con_chiave(monkeypatch)
+    viste = {}
+
+    def cattura(richiesta, **_k):
+        viste["headers"] = {c.lower(): v for c, v in richiesta.header_items()}
+        viste["url"] = richiesta.full_url
+        return _Ascolto(json.dumps({"RecognitionStatus": "Success", "DisplayText": "ciao"}).encode())
+
+    monkeypatch.setattr(voce_cloud.urllib.request, "urlopen", cattura)
+    voce_cloud.trascrivi(b"\x00" * voce_cloud.MIN_AUDIO_BYTE)
+
+    assert viste["headers"]["content-type"] == "audio/wav; codecs=audio/pcm; samplerate=16000"
+    assert "language=it-IT" in viste["url"]
+    assert "stt.speech.microsoft.com" in viste["url"]
+
+
+def test_trascrizione_senza_parlato_non_e_un_errore(monkeypatch):
+    """Silenzio o rumore: il servizio dice NoMatch, che non e' un guasto.
+
+    Se diventasse un errore, il client mostrerebbe un guasto al posto di
+    "non ho sentito nulla", e non ripiegherebbe mai sul riconoscimento del
+    browser quando serve davvero.
+    """
+    _con_chiave(monkeypatch)
+    monkeypatch.setattr(
+        voce_cloud.urllib.request, "urlopen",
+        lambda *a, **k: _Ascolto(json.dumps({"RecognitionStatus": "NoMatch"}).encode()))
+    assert voce_cloud.trascrivi(b"\x00" * voce_cloud.MIN_AUDIO_BYTE) == ""
+
+
+def test_trascrizione_audio_troppo_corto_non_chiama_il_servizio(monkeypatch):
+    """Un microfono aperto per sbaglio non deve costare una chiamata."""
+    _con_chiave(monkeypatch)
+
+    def non_chiamare(*a, **k):
+        raise AssertionError("non doveva contattare Azure")
+
+    monkeypatch.setattr(voce_cloud.urllib.request, "urlopen", non_chiamare)
+    assert voce_cloud.trascrivi(b"\x00" * 100) == ""
+
+
+def test_trascrizione_non_configurata_ripiega(monkeypatch):
+    """Senza chiave lo stato e' 503: il client sa che puo' usare il browser."""
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", True)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", "/nonexistent")
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", "/nonexistent")
+    assert not voce_cloud.configurato()
+    with pytest.raises(voce_cloud.ErroreAscolto) as e:
+        voce_cloud.trascrivi(b"\x00" * voce_cloud.MIN_AUDIO_BYTE)
+    assert e.value.stato == 503
+
+
+def test_errore_di_ascolto_401_non_riporta_la_risposta(monkeypatch):
+    """La spiegazione resta un messaggio per l'utente, senza dettagli della risorsa."""
+    import urllib.error
+    e = urllib.error.HTTPError("u", 401, "Unauthorized", {}, None)
+    messaggio = voce_cloud._spiega_errore_ascolto(e)
+    assert "chiave" in messaggio.lower() and "401" not in messaggio
+
+
 def test_la_casella_della_chiave_resta_raggiungibile(client):
     """La chiave vive in un file del workspace, che non e' eterno: quando sparisce
     la voce torna meccanica. Se la casella per rimetterla viene nascosta a voce
@@ -3374,6 +3584,57 @@ def test_endpoint_parla_richiede_accesso(anon):
     r = anon.post("/api/voce/parla", json={"text": "Ciao", "voice": "it-IT-ElsaNeural"})
     assert r.status_code == 401
     assert anon.get("/api/voce/config").status_code == 401
+
+
+def test_endpoint_ascolta_restituisce_il_testo(client, monkeypatch):
+    """Il microfono passa dal server: il browser non deve raggiungere nessun
+    servizio di ascolto, che è quello che gli si blocca dietro firewall e VPN."""
+    _con_chiave(monkeypatch)
+    monkeypatch.setattr(voce_cloud, "trascrivi", lambda audio, **k: "metti il latte nella spesa")
+    r = client.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.status_code == 200
+    assert r.get_json()["testo"] == "metti il latte nella spesa"
+
+
+def test_endpoint_ascolta_distingue_il_silenzio_dalla_frase_non_capita(client, monkeypatch):
+    """Vuoto vuol dire "non ho sentito nulla", ed è diverso da una frase che non
+    è un comando: il client lo dice con parole diverse."""
+    _con_chiave(monkeypatch)
+    monkeypatch.setattr(voce_cloud, "trascrivi", lambda audio, **k: "")
+    r = client.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.status_code == 200
+    assert r.get_json()["testo"] == ""
+
+
+def test_endpoint_ascolta_senza_chiave_dice_al_client_di_ripiegare(client, monkeypatch):
+    """503, non 500: non è un guasto, è una funzione non attivata, e il client
+    usa il riconoscimento del browser senza mostrare un errore."""
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", True)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", "/nonexistent")
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", "/nonexistent")
+    r = client.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.status_code == 503
+
+
+def test_endpoint_ascolta_richiede_accesso(anon):
+    # la stessa chiave della sintesi: non deve essere usabile da chi non è collegato
+    r = anon.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.status_code == 401
+
+
+def test_la_config_dice_al_microfono_di_passare_dal_server(client, monkeypatch):
+    """Il client sceglie la strada del microfono in base a `ascolto`: se la chiave
+    c'è, registra e manda al server; se non c'è, usa il browser. Sbagliare qui
+    riporta il microfono al guasto da firewall che si vuole evitare."""
+    _con_chiave(monkeypatch)
+    assert client.get("/api/voce/config").get_json()["ascolto"] is True
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", "/nonexistent")
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", "/nonexistent")
+    assert client.get("/api/voce/config").get_json()["ascolto"] is False
 
 
 # ------------------------------------------------------------ copia dei dati

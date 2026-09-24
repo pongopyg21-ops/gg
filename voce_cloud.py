@@ -425,6 +425,115 @@ def sintetizza(testo: str, voce: str, rate=1.0, pitch=0.0, stile: str | None = N
     return audio
 
 
+# ---------------------------------------------------------------- ascolto
+# Il riconoscimento vocale del browser (Web Speech API) manda l'audio ai server
+# di Google, e in molte case quel traffico non passa: firewall, antivirus o VPN
+# lo bloccano, e il microfono risponde "network" senza che l'utente possa farci
+# nulla. Il server invece esce bene. Qui la stessa strada della sintesi: il
+# browser registra e manda l'audio, il server lo trascrive con la chiave che
+# resta sua. Il browser cosi' non deve raggiungere nessun servizio di ascolto.
+
+# La REST di Azure per l'audio breve accetta due soli formati: WAV PCM 16 kHz
+# mono, oppure OGG Opus. Il browser produce di suo un webm/opus, che qui non
+# vale, quindi si registra e si riscrive in WAV: nessun formato da convertire
+# (e nessuna dipendenza da installare) se i campioni si prendono alla fonte.
+LINGUA_ASCOLTO = "it-IT"
+
+# Oltre questo non si manda nulla ad Azure: un comando e' una frase, non una
+# registrazione. Il taglio tiene anche il costo e il tempo di risposta noti.
+MAX_AUDIO_BYTE = 1_600_000   # ~50 secondi di WAV 16 kHz mono 16 bit
+
+# Sotto il secondo di parlato non c'e' un comando: si ferma prima della
+# chiamata, cosi' un microfono aperto per sbaglio non costa nulla.
+MIN_AUDIO_BYTE = 4_000
+
+
+class ErroreAscolto(Exception):
+    """Fallimento nella trascrizione cloud.
+
+    `stato` distingue "non configurato" (503, e il client ripiega sul
+    riconoscimento del browser) da un errore vero (400/502) da mostrare.
+    """
+
+    def __init__(self, messaggio: str, stato: int = 502):
+        super().__init__(messaggio)
+        self.stato = stato
+
+
+def _spiega_errore_ascolto(e: urllib.error.HTTPError) -> str:
+    """Messaggio leggibile per gli errori piu' comuni della trascrizione.
+
+    Come per la sintesi, il corpo della risposta non si riporta: puo' contenere
+    dettagli della risorsa che non devono finire nel browser.
+    """
+    if e.code in (401, 403):
+        return "Chiave o area del servizio vocale non valide"
+    if e.code == 400:
+        # l'audio breve ha formati stretti: un 400 qui e' quasi sempre audio
+        # che Azure non sa leggere, non una frase sbagliata
+        return "L'audio non e' in un formato che il servizio sa leggere"
+    if e.code == 413:
+        return "La registrazione e' troppo lunga: dì il comando in una frase breve"
+    if e.code == 429:
+        return "Troppe richieste al servizio vocale: riprova fra poco"
+    return f"Il servizio vocale ha risposto con errore {e.code}"
+
+
+def trascrivi(audio: bytes, lingua: str = LINGUA_ASCOLTO, timeout: float = 15.0) -> str:
+    """Manda una registrazione ad Azure e restituisce il testo riconosciuto.
+
+    Vuoto significa "non ho sentito nulla" — silenzio, rumore, o una frase in
+    un'altra lingua: non e' un errore, ed e' il client a dirlo all'utente. Gli
+    errori veri (chiave, area, formato, rete) sollevano `ErroreAscolto`, cosi'
+    il ripiego sul riconoscimento del browser scatta **solo** quando il cloud
+    non e' disponibile, non quando non si e' capito niente.
+
+    Il WAV che arriva e' PCM 16 kHz mono 16 bit, che e' esattamente il formato
+    dell'audio breve: niente conversione qui.
+    """
+    if not configurato():
+        raise ErroreAscolto("Trascrizione cloud non configurata", stato=503)
+    if not audio:
+        raise ErroreAscolto("Nessun audio da trascrivere", stato=400)
+    if len(audio) < MIN_AUDIO_BYTE:
+        return ""
+    if len(audio) > MAX_AUDIO_BYTE:
+        raise ErroreAscolto("La registrazione e' troppo lunga: dì il comando in una frase breve",
+                            stato=400)
+
+    url = (f"https://{regione()}.stt.speech.microsoft.com/speech/recognition/"
+           f"conversation/cognitiveservices/v1?language={lingua}&format=simple")
+    richiesta = urllib.request.Request(
+        url,
+        data=audio,
+        headers={
+            "Ocp-Apim-Subscription-Key": chiave(),
+            "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+            "Accept": "application/json",
+            "User-Agent": "IlMaggiordomo",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(richiesta, timeout=timeout) as risposta:
+            dati = json.loads(risposta.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise ErroreAscolto(_spiega_errore_ascolto(e),
+                            stato=400 if e.code in (400, 401, 403, 413) else 502)
+    except urllib.error.URLError as e:
+        raise ErroreAscolto(f"Servizio vocale non raggiungibile: {e.reason}", stato=502)
+    except TimeoutError:
+        raise ErroreAscolto("Il servizio vocale non ha risposto in tempo", stato=502)
+
+    stato = str(dati.get("RecognitionStatus") or "")
+    if stato == "Success":
+        return str(dati.get("DisplayText") or "").strip()
+    # NoMatch, InitialSilenceTimeout, BabbleTimeout: si e' sentito poco o niente.
+    # Non e' un guasto del servizio, quindi vuoto e non un errore.
+    return ""
+
+
 def _spiega_errore(e: urllib.error.HTTPError) -> str:
     """Messaggio leggibile per gli errori piu' comuni di Azure.
 
