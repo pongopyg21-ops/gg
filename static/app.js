@@ -2577,13 +2577,21 @@ function ascolta() {
         + 'indirizzo. Apri l\'app da http://localhost o da un indirizzo HTTPS.',
       'no-speech': 'Non ho sentito nulla, riprova.',
       'audio-capture': 'Nessun microfono trovato.',
-      network: 'Il riconoscimento ha bisogno di internet, e ora non risponde. '
-        + 'Puoi scrivere il comando qui sotto.',
+      network: 'Il microfono non riesce a raggiungere il servizio di ascolto: '
+        + 'di solito è un firewall o una VPN che blocca il browser. Intanto '
+        + 'scrivi qui sotto: funziona lo stesso.',
       aborted: '',
     };
     // un annullamento voluto non è un errore da mostrare
     if (e.error === 'aborted') return;
     voceStato(messaggi[e.error] || `Errore nel microfono (${e.error || 'sconosciuto'})`, 'err');
+    // Se il browser non può ascoltare, l'unica strada è scrivere: portare lì il
+    // cursore evita di cercare il campo in fondo al pannello.
+    if (e.error === 'network' || e.error === 'audio-capture'
+        || e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      const campo = $('#voice-text');
+      if (campo) campo.focus();
+    }
   };
   rec.onend = () => {
     voce.attivo = false;
@@ -2639,10 +2647,14 @@ function mostraAvvisoSicurezza() {
 */
 function mostraAvvisoRobotica() {
   const el = $('#voice-avviso-robotica');
-  // la casella per mettere la chiave si vede solo quando la chiave manca:
-  // a voce gia' configurata non serve, e la pagina resta piu' semplice
+  // La casella della chiave resta **sempre** visibile, anche a voce gia'
+  // configurata: la chiave vive in un file su `/workspace`, che sopravvive ai
+  // riavvii dell'ambiente ma non e' eterno, e quando sparisce la voce torna
+  // meccanica senza che si sappia perche'. Nascondendola a voce configurata, il
+  // giorno che serve non si trova piu'. Il costo e' una casella in fondo a un
+  // pannello che si scorre.
   const blocco = $('#voice-chiave-blocco');
-  if (blocco) blocco.hidden = voceCloud.disponibile;
+  if (blocco) blocco.hidden = false;
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;

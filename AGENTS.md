@@ -627,6 +627,26 @@ esattamente il comportamento voluto, non un errore. Prima di concludere che qual
 non è renderizzato, conviene guardare gli elementi interattivi (`browser_get_state`)
 o i dati delle API: se i dati ci sono e i nodi ci sono, il problema è nell'estrattore.
 
+## La chiave Azure non e' eterna, e la casella deve restare in vista
+
+`segreto.sh` vive in `/workspace/project/gg`, che sopravvive ai riavvii
+dell'ambiente ma **non e' eterno**: quando il workspace viene ricreato da capo,
+spariscono la chiave e ogni altro file non versionato, e la voce torna meccanica
+senza che si sappia perche'. E' successo davvero, e la diagnosi e' costata tempo
+proprio perche' nessuno pensa a un file che c'era e non c'e' piu'.
+
+Conseguenza per l'interfaccia: la casella della chiave **non va nascosta** a voce
+configurata, come faceva `mostraAvvisoRobotica`. Nascosta, il giorno che serve non
+si trova piu'. Il costo e' una casella in fondo a un pannello che si scorre.
+
+Non si puo' aggirare mettendo la chiave nei segreti di GitHub e rileggendola da
+sola: il token che questa app ha (quello scritto nel remote, con permessi di push)
+**non puo' leggere i segreti** — `GET /actions/secrets` risponde 403, ed e' anche
+inutile senza la chiave privata del repository, che una scoperta pubblica non ha.
+Il repo e' pubblico, quindi non e' nemmeno un posto dove mettere un segreto. Se un
+domani si vuole la chiave che si rimpiazza da sola, l'ambiente deve fornire un
+token con i permessi di Actions e un posto dove riceverla.
+
 ## La pagina non resta in memoria nel browser
 
 Il server manda `Cache-Control: no-cache, no-store, must-revalidate` su tutto

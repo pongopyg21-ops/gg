@@ -3132,6 +3132,31 @@ def test_errore_400_suggerisce_di_cambiare_voce(monkeypatch):
     assert "voce" in voce_cloud._spiega_errore(e).lower()
 
 
+def test_la_casella_della_chiave_resta_raggiungibile(client):
+    """La chiave vive in un file del workspace, che non e' eterno: quando sparisce
+    la voce torna meccanica. Se la casella per rimetterla viene nascosta a voce
+    configurata, il giorno che serve non si trova piu'. Deve restare visibile."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    # il blocco non deve piu' dipendere dalla disponibilita' della chiave
+    assert "blocco.hidden = voceCloud.disponibile" not in js
+    assert "if (blocco) blocco.hidden = false" in js
+
+
+def test_gli_errori_del_microfono_portano_a_scrivere(client):
+    """Se il browser non puo' ascoltare (rete bloccata, microfono negato), l'unica
+    strada e' scrivere: il campo va messo a fuoco, senza farlo cercare."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "#voice-text" in js
+    assert "campo.focus()" in js
+
+
+def test_il_pannello_mostra_delle_domande_da_provare(client):
+    """Le domande sono una possibilita' nuova: senza un esempio non si scoprono."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'data-say="che cosa c\'è in dispensa"' in html
+    assert 'data-say="quanto sale serve"' in html
+
+
 def test_endpoint_config_con_chiave_non_espone_la_chiave(client, monkeypatch):
     monkeypatch.setenv("AZURE_SPEECH_KEY", "chiave-segreta-di-prova")
     monkeypatch.setenv("AZURE_SPEECH_REGION", "westeurope")

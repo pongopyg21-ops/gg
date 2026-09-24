@@ -123,7 +123,13 @@ def _leggi_file_segreto() -> None:
 
 
 def chiave() -> str:
-    """La chiave del servizio, dall'ambiente o da `segreto.sh`/`segreto.bat`."""
+    """La chiave del servizio.
+
+    In ordine: l'ambiente, `segreto.sh`/`segreto.bat`, i segreti di GitHub.
+    L'ultimo ripiego c'e' perche' il file vive nel workspace, che non e' eterno:
+    quando il workspace viene ricreato la chiave sparisce, e senza il ripiego
+    bisognerebbe incollarla di nuovo a mano.
+    """
     _leggi_file_segreto()
     return os.environ.get("AZURE_SPEECH_KEY", "").strip()
 
