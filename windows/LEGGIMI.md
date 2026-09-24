@@ -249,13 +249,23 @@ la sessione corrente.
 
 Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure:
 
+1. Fai doppio clic su `windows\voce.bat`.
+2. Incolla la chiave, premi Invio, conferma l'area (Invio per `italynorth`).
+3. Riapri l'app.
+
+Il programma scrive da solo il file `segreto.bat` nella forma giusta: così non
+si sbagliano le virgolette, gli spazi o le maiuscole, che sono la causa più
+comune di "la chiave c'è ma la voce resta quella del sistema".
+
+All'avvio leggerai `Voce neurale Azure attiva`, e nella pagina, sotto **Voce**,
+comparirà la scelta della voce neurale con l'anteprima.
+
+### Se preferisci farlo a mano
+
 1. Copia `windows\segreto.esempio.bat` e rinomina la copia in `windows\segreto.bat`.
 2. Apri quel file con il Blocco note e riempi le due righe in fondo con la chiave
    e l'area della tua risorsa Azure (spiegato dentro il file).
 3. Salva e riavvia l'app.
-
-All'avvio leggerai `Voce neurale Azure attiva`, e nella pagina, sotto **Voce**,
-comparirà la scelta della voce neurale con l'anteprima.
 
 **La chiave va in `segreto.bat`, non in `avvia.bat`.** La ragione è semplice: il
 codice sta su GitHub, `avvia.bat` compreso, quindi una chiave lì dentro finirebbe
@@ -265,7 +275,9 @@ mettere nel codice. Nota: il file `segreto.esempio.bat` **non** è escluso, quin
 tua chiave va nel file rinominato (`segreto.bat`), mai nel modello.
 
 Il piano gratuito Azure include 500.000 caratteri al mese, senza scadenza: per un
-uso di casa non si esaurisce.
+uso di casa non si esaurisce. Le voci disponibili sono quelle della tua area: le
+due "HD", per esempio, non esistono in tutte le aree, e l'app mostra solo quelle
+che funzionano davvero.
 
 ---
 
