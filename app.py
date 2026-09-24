@@ -462,11 +462,28 @@ def api_houses():
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json(force=True) or {}
-    casa = houses.per_nome(data.get("nome"))
+    nome = data.get("nome")
+    # chi tenta e' tutto cio' che sta davanti al server: dietro un tunnel l'IP
+    # reale non arriva, quindi si tiene anche il nome provato, cosi' il freno
+    # funziona in ogni caso (vedi `chiavi_tentativi`)
+    indirizzo = request.remote_addr
+
+    attesa = houses.attesa_accesso(indirizzo, nome)
+    if attesa > 0:
+        # si risponde subito, senza far dormire il server: l'attesa e' un
+        # numero, e la decide il browser
+        secondi = int(attesa) + 1
+        return bad_request(
+            f"Troppi tentativi: riprova fra {secondi} second"
+            + ("o" if secondi == 1 else "i"), 429)
+
+    casa = houses.per_nome(nome)
     if not casa or not houses.autentica(casa["slug"], data.get("password")):
+        houses.segnala_fallimento(indirizzo, nome)
         # stesso messaggio per casa inesistente e password sbagliata: dire quale
         # delle due e' errata aiuterebbe a indovinare le case altrui
         return bad_request("Nome o password non corretti", 401)
+    houses.segnala_successo(indirizzo, nome)
     session.clear()
     session["casa"] = casa["slug"]
     session.permanent = True

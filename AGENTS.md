@@ -339,6 +339,32 @@ logger e' `propagate = False`, altrimenti lo stesso errore comparirebbe due volt
 Nei test i fallimenti di proposito si verificano con `caplog` (`logger="app"`):
 si controlla che il messaggio *arrivi nel log*, non che esista una chiamata.
 
+### Tentativi di accesso: un freno, non un muro
+
+Le password sono in PBKDF2 con sale, ma nulla impediva di provarle all'infinito:
+il server ascolta su `0.0.0.0` per farsi raggiungere dal telefono, quindi chi e'
+sulla stessa rete poteva continuare per giorni. Il freno sta in `houses.py`
+(`attesa_accesso`, `segnala_fallimento`, `segnala_successo`): fino a
+`TENTATIVI_LIBERI` errori non si aspetta, poi l'attesa raddoppia (1s, 2s, 4s...)
+fino a `ATTESA_MASSIMA`. Dopo `DIMENTICARE_DOPO` senza errori il contatore si
+azzera da solo.
+
+Le due scelte che contano:
+
+- **Si contano due chiavi, l'indirizzo e il nome provato.** Solo l'indirizzo non
+  basta: dietro un tunnel tutti i dispositivi risultano lo stesso IP e un errore
+  di uno farebbe aspettare gli altri. Solo il nome non basta: chi prova nomi
+  diversi non verrebbe mai fermato. Vince l'attesa piu' lunga.
+- **Nessuna attesa fa dormire il server.** Si risponde subito con `429` e il
+  numero di secondi ("Troppi tentativi: riprova fra 3 secondi"), e aspetta il
+  browser. Un server che dorme tiene occupato un filo, e con `waitress` a 8
+  thread pochi tentativi in parallelo lo farebbero sembrare piantato.
+
+L'accesso riuscito azzera il contatore. Attenzione: **mentre il blocco e' attivo
+anche la password corretta viene respinta**, ed e' voluto — e' tutto il senso del
+freno. I test lo verificano restando sotto la soglia, perche' sopra soglia non si
+puo' passare.
+
 ## Case separate
 
 Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,

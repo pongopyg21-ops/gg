@@ -22,6 +22,8 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
+import time
 import unicodedata
 from contextlib import closing
 
@@ -258,6 +260,104 @@ def autentica(slug, password, percorso=None):
         verifica_password(password or "", hash_password("inesistente"))
         return False
     return verifica_password(password or "", riga["password"])
+
+
+# ------------------------------------------------- tentativi di accesso
+# Le password sono protette bene (PBKDF2 con sale), ma nulla impediva di
+# provarne quante se ne vuole: il server ascolta su `0.0.0.0` per farsi
+# raggiungere dal telefono, quindi chiunque sia sulla stessa rete puo' tentare
+# all'infinito. Le impronte sono lente apposta, e questo gia' rallenta, ma un
+# attacco che continua per giorni prima o poi trova una password debole.
+#
+# Non serve un sistema sofisticato: serve togliere la comodita' del tentativo
+# illimitato. Dopo qualche errore si risponde "aspetta ancora N secondi", e
+# l'attesa raddoppia a ogni errore fino a un tetto. Chi sbaglia la password una
+# volta aspetta un secondo; chi la indovina provando passa la notte su poche
+# decine di tentativi.
+
+TENTATIVI_LIBERI = 3
+ATTESA_BASE = 1.0
+ATTESA_MASSIMA = 30.0
+# Dopo mezz'ora senza errori il contatore si azzera da solo: una password
+# sbagliata di sera non deve far aspettare la mattina dopo.
+DIMENTICARE_DOPO = 30 * 60
+
+_tentativi = {}
+_tentativi_lock = threading.Lock()
+
+
+def _adesso():
+    return time.monotonic()
+
+
+def _pulisci(adesso):
+    """Toglie i contatori vecchi: senza, la memoria cresce a ogni nome provato."""
+    for chiave in [c for c, s in _tentativi.items() if adesso - s["ultimo"] > DIMENTICARE_DOPO]:
+        del _tentativi[chiave]
+
+
+def chiavi_tentativi(indirizzo, nome):
+    """Due contatori per lo stesso tentativo: chi lo fa e per quale casa.
+
+    Uno solo non basterebbe. Contando solo per indirizzo, dietro un tunnel o un
+    port forwarding tutti i dispositivi risultano lo stesso indirizzo, e un
+    errore di uno farebbe aspettare anche gli altri. Contando solo per casa, chi
+    prova nomi diversi non verrebbe mai fermato. Si contano entrambi e vince
+    l'attesa piu' lunga.
+    """
+    nome = (nome or "").strip().lower()
+    chiavi = [f"ip:{indirizzo or '?'}"]
+    if nome:
+        chiavi.append(f"casa:{nome}")
+    return chiavi
+
+
+def attesa_accesso(indirizzo, nome, adesso=None):
+    """Quanti secondi mancano prima di poter riprovare. Zero se si puo' subito.
+
+    Non fa dormire la richiesta: un server che aspetta tiene occupato un filo, e
+    con piu' tentativi in corso i fili finirebbero, cioe' l'app sembrerebbe
+    piantata. Si risponde subito dicendo quanto aspettare.
+    """
+    adesso = adesso if adesso is not None else _adesso()
+    with _tentativi_lock:
+        _pulisci(adesso)
+        attese = [_tentativi[k]["bloccato_fino"] - adesso
+                  for k in chiavi_tentativi(indirizzo, nome) if k in _tentativi]
+    return max([0.0] + attese)
+
+
+def segnala_fallimento(indirizzo, nome, adesso=None):
+    """Registra un tentativo sbagliato e allunga l'attesa per i prossimi."""
+    adesso = adesso if adesso is not None else _adesso()
+    with _tentativi_lock:
+        _pulisci(adesso)
+        for chiave in chiavi_tentativi(indirizzo, nome):
+            stato = _tentativi.setdefault(chiave, {"errori": 0, "ultimo": adesso,
+                                                   "bloccato_fino": 0.0})
+            stato["errori"] += 1
+            stato["ultimo"] = adesso
+            # Si tollerano `TENTATIVI_LIBERI` errori: sbagliare la password un
+            # paio di volte capita a tutti, e far aspettare al primo errore
+            # sarebbe solo fastidioso. Raggiunta la soglia, il tentativo
+            # successivo trova l'attesa, che raddoppia a ogni errore in piu'.
+            oltre = stato["errori"] - TENTATIVI_LIBERI + 1
+            if oltre >= 1:
+                attesa = min(ATTESA_BASE * (2 ** (oltre - 1)), ATTESA_MASSIMA)
+                stato["bloccato_fino"] = adesso + attesa
+
+
+def segnala_successo(indirizzo, nome):
+    """L'accesso riuscito azzera il contatore: e' la password giusta."""
+    with _tentativi_lock:
+        for chiave in chiavi_tentativi(indirizzo, nome):
+            _tentativi.pop(chiave, None)
+
+
+def dimentica_tentativi():
+    """Azzera tutti i contatori. Usata dai test per non dipendere dall'ordine."""
+    with _tentativi_lock:
+        _tentativi.clear()
 
 
 def rinomina(slug, nome, percorso=None):

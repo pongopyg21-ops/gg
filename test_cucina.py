@@ -46,6 +46,9 @@ def percorsi_dei_dati():
     houses.REGISTRY_PATH = REGISTRO
     houses.CASE_DIR = os.path.join(os.path.dirname(DB), "test-case")
     houses.DATA_DIR = os.path.dirname(DB)
+    # i tentativi falliti hanno un contatore per casa e per indirizzo: azzerarlo
+    # qui evita che un test faccia aspettare il successivo
+    houses.dimentica_tentativi()
     yield
 
 
@@ -4328,4 +4331,86 @@ def test_api_copie_non_nomina_le_altre_case(client):
     testo = json.dumps(d, ensure_ascii=False)
     assert "vicina" not in testo.lower()
 
+
+# ---------------------------------------------------- tentativi di accesso
+# Le password sono protette bene, ma si potevano provare all'infinito: il server
+# ascolta su 0.0.0.0 per farsi raggiungere dal telefono, quindi chi e' sulla
+# stessa rete poteva continuare per giorni. Qui si verifica che il freno esista,
+# che non dia fastidio a chi entra davvero e che non si possa aggirare cambiando
+# il nome della casa.
+
+def test_dopo_troppi_errori_la_risposta_dice_di_aspettare(anon):
+    nome, sbagliata = "Casa Test", "sbagliata"
+    # i primi tentativi sono liberi: sbagliare due volte capita, e non deve
+    # diventare un'attesa
+    for _ in range(houses.TENTATIVI_LIBERI):
+        assert anon.post("/api/login", json={"nome": nome, "password": sbagliata}
+                         ).status_code == 401
+
+    r = anon.post("/api/login", json={"nome": nome, "password": sbagliata})
+    assert r.status_code == 429
+    assert "riprova fra" in r.get_json()["error"]
+
+
+def test_il_freno_non_tocca_chi_sa_la_password(anon):
+    """Qualche errore sotto la soglia non deve impedire l'accesso corretto:
+    sbagliare la password due volte capita a tutti."""
+    for _ in range(houses.TENTATIVI_LIBERI - 1):
+        anon.post("/api/login", json={"nome": "Casa Test", "password": "quasi"})
+
+    r = anon.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST})
+    assert r.status_code == 200
+
+
+def test_l_accesso_riuscito_azzera_i_tentativi_sbagliati(anon):
+    """Senza azzerare, gli errori si sommerebbero fra un accesso e l'altro e
+    dopo qualche giorno anche chi entra sempre correttamente troverebbe un freno."""
+    # sotto la soglia: non si viene bloccati, ma il contatore esiste
+    for _ in range(houses.TENTATIVI_LIBERI - 1):
+        anon.post("/api/login", json={"nome": "Casa Test", "password": "no"})
+    assert anon.post("/api/login", json={"nome": "Casa Test",
+                                         "password": PASSWORD_TEST}).status_code == 200
+
+    # azzerato: i prossimi tentativi sono di nuovo liberi. Se non fosse stato
+    # azzerato, il terzo risponderebbe 429 invece di 401
+    for _ in range(houses.TENTATIVI_LIBERI):
+        r = anon.post("/api/login", json={"nome": "Casa Test", "password": "no"})
+        assert r.status_code == 401, r.status_code
+
+
+def test_cambiare_il_nome_non_aggira_l_attesa_ma_solo_il_contatore_per_casa(anon):
+    """Chi prova nomi diversi non deve poter continuare all'infinito: l'attesa
+    per l'indirizzo ferma anche lui, che sia dietro un tunnel o meno."""
+    for _ in range(houses.TENTATIVI_LIBERI + 1):
+        anon.post("/api/login", json={"nome": "Casa Sbagliata", "password": "x"})
+
+    r = anon.post("/api/login", json={"nome": "Casa Test", "password": PASSWORD_TEST})
+    assert r.status_code == 429
+
+
+def test_l_attesa_cresce_e_ha_un_tetto():
+    """Raddoppiare senza limite diventerebbe un blocco di giorni: c'e' un tetto."""
+    adesso = 1000.0
+    attese = []
+    for i in range(houses.TENTATIVI_LIBERI + 6):
+        houses.segnala_fallimento("9.9.9.9", "casa", adesso=adesso + i)
+        attese.append(houses.attesa_accesso("9.9.9.9", "casa", adesso=adesso + i))
+    # i primi due errori restano liberi, il terzo fa gia' aspettare
+    assert attese[0] == 0
+    assert attese[1] == 0
+    assert attese[2] == houses.ATTESA_BASE
+    # e poi raddoppia, fino al tetto
+    assert attese[3] > attese[2]
+    assert attese[-1] <= houses.ATTESA_MASSIMA
+
+
+def test_il_contatore_si_dimentica_col_tempo():
+    """Una password sbagliata di sera non deve far aspettare la mattina dopo."""
+    adesso = 1000.0
+    for _ in range(houses.TENTATIVI_LIBERI + 3):
+        houses.segnala_fallimento("8.8.8.8", "casa", adesso=adesso)
+    assert houses.attesa_accesso("8.8.8.8", "casa", adesso=adesso) > 0
+
+    poi = adesso + houses.DIMENTICARE_DOPO + 1
+    assert houses.attesa_accesso("8.8.8.8", "casa", adesso=poi) == 0
 
