@@ -1195,6 +1195,23 @@ def test_voce_endpoint_cucinato_scala_la_dispensa(client):
     assert dispensa["sugo"] == (200, "g")
 
 
+def test_voce_endpoint_preparato_scala_la_dispensa_come_cucinato(client):
+    """"ho preparato X" deve fare **lo stesso** di "ho cucinato X".
+
+    Sono due modi di dire la stessa cosa, e la frase dell'utente li usa
+    entrambi: se il percorso dell'uno si rompe, l'altro continuerebbe a
+    funzionare e il guasto passerebbe inosservato.
+    """
+    _ricetta_con_ingredienti(client, "risotto ai funghi", [("riso", 300, "g")])
+    client.post("/api/pantry", json={"name": "riso", "quantity": 1, "unit": "kg"})
+
+    r = client.post("/api/voice", json={"text": "ho preparato il risotto ai funghi"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "recipe_cooked"
+    assert r.get_json()["scalati"] == ["riso"]
+    assert client.get("/api/pantry").get_json()[0]["quantity"] == pytest.approx(0.7)
+
+
 def test_voce_endpoint_cucinato_svuota_la_riga_a_zero(client):
     """Una giacenza che arriva a zero si toglie: una riga a zero non e' una scorta."""
     _ricetta_con_ingredienti(client, "minestrone", [("carote", 2, "pz")])
