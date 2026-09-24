@@ -17,6 +17,7 @@ import faq
 import houses
 import igiene
 import magazzino
+import ricette_online
 import units
 import voice
 import voce_cloud
@@ -127,6 +128,7 @@ def migrate(db):
     for col, ddl in (
         ("image", "ALTER TABLE recipes ADD COLUMN image TEXT NOT NULL DEFAULT ''"),
         ("image_credit", "ALTER TABLE recipes ADD COLUMN image_credit TEXT NOT NULL DEFAULT ''"),
+        ("source", "ALTER TABLE recipes ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
     ):
         if col not in have:
             db.execute(ddl)
@@ -719,11 +721,12 @@ def recipes():
             return bad_request("Il nome è obbligatorio")
         image = clean_image(data.get("image"))
         cur = db.execute(
-            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions, image, image_credit)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions, image, image_credit, source)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (name, int(parse_float(data.get("servings"), 2)), data.get("time_minutes") or None,
              data.get("difficulty") or "facile", data.get("instructions") or "",
-             image, (data.get("image_credit") or "").strip() if image else ""),
+             image, (data.get("image_credit") or "").strip() if image else "",
+             (data.get("source") or "").strip()),
         )
         rid = cur.lastrowid
         for it in data.get("items") or []:
@@ -772,7 +775,7 @@ def recipe_detail(rid):
 
     if request.method == "PUT":
         data = request.get_json(force=True) or {}
-        attuale = one(db.execute("SELECT image, image_credit FROM recipes WHERE id = ?", (rid,)))
+        attuale = one(db.execute("SELECT image, image_credit, source FROM recipes WHERE id = ?", (rid,)))
         # la foto si tocca solo se il campo e' presente: un salvataggio parziale
         # (es. solo gli ingredienti) non deve cancellarla
         if "image" in data:
@@ -781,12 +784,14 @@ def recipe_detail(rid):
         else:
             image = attuale["image"]
             credito = attuale["image_credit"]
+        # la fonte segue la stessa regola della foto: si tocca solo se il campo c'e'
+        fonte = (data.get("source") or "").strip() if "source" in data else attuale["source"]
         db.execute(
             """UPDATE recipes SET name = ?, servings = ?, time_minutes = ?, difficulty = ?,
-               instructions = ?, image = ?, image_credit = ? WHERE id = ?""",
+               instructions = ?, image = ?, image_credit = ?, source = ? WHERE id = ?""",
             ((data.get("name") or "").strip(), int(parse_float(data.get("servings"), 2)),
              data.get("time_minutes") or None, data.get("difficulty") or "facile",
-             data.get("instructions") or "", image, credito, rid),
+             data.get("instructions") or "", image, credito, fonte, rid),
         )
         db.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (rid,))
         for it in data.get("items") or []:
@@ -805,6 +810,35 @@ def recipe_detail(rid):
         return jsonify(recipe_full(db, rid))
 
     return jsonify(recipe_full(db, rid))
+
+
+# ------------------------------------------------- ricette da un sito esterno
+# La lettura sta in `ricette_online`: qui si passa solo la richiesta e si
+# traduce l'errore in una frase per l'utente. Nessuna di queste rotte salva
+# niente: la ricetta trovata torna al modulo, e da li' la conferma l'utente.
+
+@app.route("/api/ricette/cerca")
+def ricette_cerca():
+    """Le ricette che il sito esterno trova per il testo cercato."""
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return bad_request("Serve un testo da cercare")
+    try:
+        return jsonify({"sito": ricette_online.SITO, "risultati": ricette_online.cerca(query)})
+    except ricette_online.NonDisponibile as e:
+        return bad_request(str(e), 502)
+
+
+@app.route("/api/ricette/importa")
+def ricette_importa():
+    """Legge una ricetta dal sito e la prepara per il modulo, senza salvarla."""
+    url = (request.args.get("url") or "").strip()
+    if not url:
+        return bad_request("Serve l'indirizzo della ricetta")
+    try:
+        return jsonify(ricette_online.importa(url))
+    except ricette_online.NonDisponibile as e:
+        return bad_request(str(e), 502)
 
 
 # ---------------------------------------------------------------- meal plan

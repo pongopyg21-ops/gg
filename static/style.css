@@ -698,6 +698,17 @@ tr:last-child td { border-bottom: none; }
   padding: 20px; max-width: 640px;
 }
 .hint { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+
+/* risultati della ricerca online: ogni riga e' una ricetta da scegliere */
+.ric-trovate { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ric-trovata {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  text-align: left; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  font: inherit; font-size: 13.5px; cursor: pointer;
+}
+.ric-trovata:hover { border-color: var(--accent); background: var(--accent-soft); }
+.ric-fonte { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .toggle { display: flex; align-items: center; gap: 7px; font-size: 13.5px; cursor: pointer; }
 .section-title {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase;

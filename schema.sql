@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     difficulty   TEXT NOT NULL DEFAULT 'facile',
     instructions TEXT NOT NULL DEFAULT '',
     image        TEXT NOT NULL DEFAULT '',   -- nome file in static/recipes/
-    image_credit TEXT NOT NULL DEFAULT '',   -- autore, licenza e provenienza
+    image_credit TEXT NOT NULL DEFAULT '',   -- autore, licenza e provenienza della foto
+    source       TEXT NOT NULL DEFAULT '',   -- da dove viene la ricetta importata
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

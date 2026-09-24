@@ -313,7 +313,8 @@ async function renderRecipes() {
 }
 
 $('#recipe-search').addEventListener('input', renderRecipes);
-$('#new-recipe').addEventListener('click', () => recipeForm(null));
+// anche dal pulsante si passa dalla scelta: scriverla o cercarla online
+$('#new-recipe').addEventListener('click', () => nuovaRicetta());
 
 $('#recipe-list').addEventListener('click', async (e) => {
   const editId = e.target.dataset.edit;
@@ -381,6 +382,7 @@ async function showRecipeDetail(rid, contesto = {}) {
     <h3 class="detail-sub">Preparazione</h3>
     ${preparazione}
     ${contesto.conflicts?.length ? `<p class="detail-unsafe">⚠️ Contiene: ${contesto.conflicts.map(esc).join(', ')}</p>` : ''}
+    ${r.source ? `<p class="detail-source muted">Fonte: ${esc(r.source)}</p>` : ''}
     <div class="modal-foot">
       ${contesto.onRemove ? '<button id="rd-remove">Rimuovi dal piano</button>' : ''}
       <button class="primary" id="rd-edit">Modifica</button>
@@ -410,6 +412,101 @@ function photoOptions(selezionata) {
   return opts.join('');
 }
 
+/** Prima di aprire il modulo di una ricetta nuova, chiede come farla.
+
+    Scrivere una ricetta a mano e farsela cercare online sono due strade diverse,
+    e il modulo è identico: senza questa domanda l'app imboccherebbe sempre la
+    prima, anche a chi aveva in mente la seconda. La domanda arriva sia dal
+    pulsante «+ Nuova ricetta» sia dalla voce («crea la ricetta carbonara»), che
+    è il caso in cui il nome è già noto: chi lo ha dettato lo ritrova scritto.
+*/
+function nuovaRicetta(nomeIniziale) {
+  const nome = (nomeIniziale || '').trim();
+  showModal('Nuova ricetta', `
+    <p class="hint">${nome ? `«${esc(nome)}»: come vuoi farla?` : 'Come vuoi farla?'}</p>
+    <div class="modal-foot">
+      <button id="ric-scrivi">✍️ La scrivo io</button>
+      <button id="ric-cerca" class="primary">🔎 Cercala online</button>
+    </div>
+  `);
+  $('#ric-scrivi').addEventListener('click', () => recipeForm(null, nome));
+  $('#ric-cerca').addEventListener('click', () => cercaRicettaOnline(nome));
+}
+
+/** Cerca una ricetta online e, scelta quella giusta, apre il modulo compilato.
+
+    Il modulo resta il passaggio obbligato: la ricetta trovata arriva scritta nei
+    campi, ma e' l'utente a salvarla. I dati di un altro sito entrano cosi' in
+    archivio solo dopo un'occhiata, e le dosi storte si correggono prima che
+    finiscano in dispensa. */
+function cercaRicettaOnline(nomeIniziale) {
+  showModal('Cercala online', `
+    <div class="field"><label>Cosa cerco</label>
+      <div class="row">
+        <input id="ric-q" value="${esc(nomeIniziale || '')}" placeholder="per esempio carbonara">
+        <button id="ric-cerca-avvia" class="primary">Cerca</button>
+      </div>
+      <p class="hint">Le ricette arrivano da un sito esterno. Dosi e passi li
+      riporta il sito: controllali prima di salvare.</p>
+    </div>
+    <div id="ric-risultati"></div>
+  `);
+  $('#ric-cerca-avvia').addEventListener('click', () => avviaRicercaRicetta());
+  $('#ric-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') avviaRicercaRicetta(); });
+  if (nomeIniziale) avviaRicercaRicetta();
+}
+
+async function avviaRicercaRicetta() {
+  const q = $('#ric-q').value.trim();
+  const box = $('#ric-risultati');
+  if (!q) return toast('Scrivi cosa cercare');
+  box.innerHTML = '<p class="hint">Cerco…</p>';
+  try {
+    const d = await api(`/api/ricette/cerca?q=${encodeURIComponent(q)}`);
+    if (!d.risultati.length) {
+      box.innerHTML = `<p class="hint">Nessuna ricetta trovata per «${esc(q)}».</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="ric-trovate">${d.risultati.map((r, i) => `
+      <button class="ric-trovata" data-i="${i}">
+        <span>${esc(r.titolo)}</span><span class="ric-fonte">${esc(d.sito)}</span>
+      </button>`).join('')}</div>`;
+    $$('.ric-trovata', box).forEach((b) => b.addEventListener('click', () =>
+      importaRicetta(d.risultati[Number(b.dataset.i)].url)));
+  } catch (err) {
+    box.innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+  }
+}
+
+async function importaRicetta(url) {
+  const box = $('#ric-risultati');
+  box.innerHTML = '<p class="hint">Leggo la ricetta…</p>';
+  try {
+    const r = await api(`/api/ricette/importa?url=${encodeURIComponent(url)}`);
+    recipeForm(null, r.name);
+    // i campi del modulo appena aperto si riempiono con quello che il sito dice
+    $('#r-serv').value = r.servings || 2;
+    $('#r-time').value = r.time_minutes ?? '';
+    $('#r-instr').value = r.instructions || '';
+    $('#r-source').textContent = r.source || '';
+    $('#r-source-field').hidden = !r.source;
+    const rows = $('#ing-rows');
+    rows.innerHTML = '';
+    (r.items.length ? r.items : [{}]).forEach((it) => {
+      const div = document.createElement('div');
+      div.className = 'ing-row';
+      div.innerHTML = `<input placeholder="Ingrediente" value="${esc(it.name || '')}" list="ingredient-list">
+        <input type="number" step="0.1" placeholder="Qtà" value="${it.quantity ?? ''}">
+        <input placeholder="Unità" value="${esc(it.unit || 'pz')}" list="unit-list">`;
+      rows.appendChild(div);
+    });
+    toast('Ricetta importata: controllala e salva');
+  } catch (err) {
+    toast(err.message);
+    box.innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+  }
+}
+
 function recipeForm(recipe, nomeIniziale) {
   const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: [] };
   showModal(recipe ? 'Modifica ricetta' : 'Nuova ricetta', `
@@ -433,6 +530,10 @@ function recipeForm(recipe, nomeIniziale) {
           <button id="r-photo-clear" ${r.image ? '' : 'hidden'}>Togli la foto</button>
         </div>
       </div>
+    </div>
+    <div class="field" id="r-source-field" ${r.source ? '' : 'hidden'}>
+      <label>Fonte</label>
+      <div class="muted" id="r-source">${esc(r.source || '')}</div>
     </div>
     <div class="modal-foot"><button class="primary" id="r-save">Salva</button></div>
   `);
@@ -485,6 +586,7 @@ function recipeForm(recipe, nomeIniziale) {
       instructions: $('#r-instr').value,
       image: $('#r-photo').value,
       image_credit: $('#r-photo-credit').value.trim(),
+      source: $('#r-source').textContent.trim(),
       items,
     };
     if (!body.name) return toast('Il nome è obbligatorio');
@@ -2497,7 +2599,8 @@ async function eseguiComando(testo) {
       chiudiVoce();
       apriSezione('cucina');
       switchTab('recipes');
-      if (typeof recipeForm === 'function') recipeForm(null, res.name || '');
+      // la voce ha gia' il nome: si chiede solo se scriverla o cercarla online
+      if (typeof nuovaRicetta === 'function') nuovaRicetta(res.name || '');
     } else {
       // un comando puo' toccare una scheda di un'altra area (dettare una spesa
       // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la
