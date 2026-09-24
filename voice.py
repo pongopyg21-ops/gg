@@ -160,6 +160,22 @@ _RECIPE_FILLER = _RECIPE_VERBS | _RECIPE_WORDS | {
     "ho", "voglio", "vorrei",
 }
 
+# Una ricetta **cucinata**: "ho cucinato pasta al sugo". Non si crea niente, si
+# scala dalla dispensa quello che e' stato consumato.
+#   Il verbo vuole l'ausiliare al passato ("ho", "avevo", ...). Senza, "pasta
+#   cucinata" e' un participio usato come aggettivo e una frase qualsiasi
+#   ("la pasta cucinata ieri") basterebbe a far sparire mezza dispensa.
+_COOKED_VERBS = {"cucinato", "cucinata", "cucinati", "cucinate",
+                 "preparato", "preparata", "preparati", "preparate",
+                 "cotto", "cotta", "cotti", "cotte"}
+_COOKED_AUSILIARI = {"ho", "hai", "ha", "abbiamo", "avete", "hanno",
+                     "avevo", "avevi", "aveva", "avevamo", "avevate", "avevano"}
+# avanzi di discorso che non fanno parte del nome: si tolgono ai bordi, mai
+# dentro: "pasta al sugo" e "risotto ai funghi" le preposizioni ce le hanno.
+_COOKED_SCARTO = {"oggi", "ieri", "adesso", "ora", "appena", "pure", "anche",
+                  "solo", "per", "cena", "pranzo", "colazione", "poco", "fa",
+                  "di", "da", "a", "in", "su", "con"}
+
 # Le domande non sono ordini.
 # "che cosa c'e' in dispensa" contiene "dispensa" e "c'e'", che sono anche
 # parole di un comando, e senza questo veniva eseguita: l'app rispondeva
@@ -384,6 +400,39 @@ def _nome_ricetta(tokens):
     return " ".join(parole).strip()
 
 
+def _nome_cucinato(tokens):
+    """Nome della ricetta cucinata, dall'ausiliare in poi.
+
+    Si parte dall'ausiliare e si prende tutto quello che segue: cosi' il nome e'
+    quello che si e' detto davvero ("ho cucinato **pasta al sugo**") e non resta
+    incollato un verbo di comando detto prima ("aggiungi", "metti"). I verbi
+    dell'ausiliare in poi non si toccano, perche' fanno parte del nome.
+    """
+    inizio = None
+    i = 0
+    while i < len(tokens):
+        if tokens[i] in _COOKED_AUSILIARI:
+            # l'ausiliare vale solo se il participio segue a breve: "ho mangiato,
+            # poi mi sono preparato" non e' "ho preparato qualcosa"
+            for j in range(i + 1, min(i + 4, len(tokens))):
+                if tokens[j] in _COOKED_VERBS:
+                    inizio = j + 1
+                    break
+            if inizio is not None:
+                break
+        i += 1
+    if inizio is None:
+        return ""
+
+    parole = tokens[inizio:]
+    while parole and (parole[0] in _STOPWORDS or parole[0] in _COOKED_SCARTO
+                      or parole[0] in _RECIPE_WORDS):
+        parole.pop(0)
+    while parole and (parole[-1] in _STOPWORDS or parole[-1] in _COOKED_SCARTO):
+        parole.pop()
+    return " ".join(parole).strip()
+
+
 def _clean_term(text):
     """Termine di allergia: si prova prima la frase intera, poi si divide.
 
@@ -446,7 +495,7 @@ def parse(text):
 
     Ritorna un dizionario con `intent` fra:
     `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search`,
-    `unknown`.
+    `recipe_add`, `recipe_cooked`, `domanda`, `unknown`.
     """
     raw = str(text or "").strip()
     normalized = _norm(raw)
@@ -467,6 +516,16 @@ def parse(text):
         terms = _clean_term(normalized)
         if terms:
             return {**base, "intent": "term_add", "terms": terms}
+
+    # Ricetta cucinata: "ho cucinato pasta al sugo". Va **prima** di `recipe_add`
+    # perche' "ho preparato una ricetta" contiene anche "prepara" + "ricetta":
+    # senza questo ordine una ricetta gia' cucinata aprirebbe il modulo di una
+    # ricetta nuova, che e' l'opposto di quello che serve.
+    tokens_prova = normalized.split()
+    if _COOKED_VERBS & set(tokens_prova) and _COOKED_AUSILIARI & set(tokens_prova):
+        nome = _nome_cucinato(tokens_prova)
+        if nome:
+            return {**base, "intent": "recipe_cooked", "name": nome}
 
     # Creazione di una ricetta: serve un verbo di "nuova" insieme alla parola
     # "ricetta". Prima della ricerca e degli ingredienti, perché "aggiungi la

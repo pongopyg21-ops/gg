@@ -1539,10 +1539,132 @@ def voice_command():
     if cmd["intent"] == "recipe_search":
         return jsonify({**cmd, "message": f"Cerco «{cmd['query']}».", "query": cmd["query"]})
 
+    if cmd["intent"] == "recipe_cooked":
+        return _esegui_cucinato(db, cmd)
+
     if cmd["intent"] == "domanda":
         return _rispondi_domanda(db, cmd)
 
     return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
+
+
+def _ricette_per_nome(db, nome):
+    """Le ricette il cui nome corrisponde a quello detto, dalla piu' precisa.
+
+    Prima l'uguaglianza, poi il nome contenuto: cosi' "pasta al sugo" trova la
+    ricetta esatta anche se ne esiste un'altra che la contiene ("pasta al sugo
+    della nonna"). Senza ordine, un nome corto ne troverebbe due e chiederebbe
+    di scegliere anche quando una sola e' quella giusta.
+    """
+    nome = (nome or "").strip()
+    if not nome:
+        return []
+    esatte = rows(db.execute(
+        "SELECT * FROM recipes WHERE name = ? COLLATE NOCASE ORDER BY name", (nome,)))
+    if esatte:
+        return esatte
+    return rows(db.execute(
+        "SELECT * FROM recipes WHERE name LIKE ? ORDER BY length(name), name",
+        (f"%{nome}%",)))
+
+
+def _consuma_dispensa(db, rid):
+    """Toglie dalla dispensa gli ingredienti di una ricetta cucinata.
+
+    Restituisce `(scalati, mancanti)`: gli ingredienti effettivamente tolti e
+    quelli che la ricetta chiede ma che in dispensa non c'erano (o non
+    bastavano). Il secondo elenco serve alla conferma: dire "fatto" quando meta'
+    degli ingredienti non c'era sarebbe una bugia, e l'utente se ne accorgerebbe
+    solo alla prossima spesa sbagliata.
+
+    Le unita' si confrontano per dimensione, non per nome: una ricetta in grammi
+    scala una dispensa in chili (sono la stessa cosa), mentre grammi e pezzi non
+    si toccano. Una riga che arriva a zero si cancella invece di restare a zero:
+    una giacenza a zero non e' una scorta, e "0 kg" in dispensa confonderebbe.
+    """
+    scalati, mancanti = [], []
+    for it in db.execute(
+        """SELECT ri.quantity, ri.unit, i.id AS ingredient_id, i.name
+           FROM recipe_items ri JOIN ingredients i ON i.id = ri.ingredient_id
+           WHERE ri.recipe_id = ? ORDER BY i.name""",
+        (rid,),
+    ):
+        dim = units.dimension(it["unit"])
+        gruppo = units.group_key(it["unit"])
+        righe = rows(db.execute(
+            "SELECT * FROM pantry WHERE ingredient_id = ?", (it["ingredient_id"],)))
+        compat = [r for r in righe if units.group_key(r["unit"]) == gruppo]
+        if not compat:
+            mancanti.append(it["name"])
+            continue
+
+        # unita' di lavoro: la base della dimensione (g, ml) quando c'e', cosi'
+        # righe in unita' diverse dello stesso ingrediente si sommano; altrimenti
+        # l'unita' stessa (pz, confezione), che non ha conversioni
+        base = units.base_unit(dim) if dim else compat[0]["unit"]
+        if dim:
+            bisogno, _ = units.to_base(it["quantity"], it["unit"])
+            giacenza = sum(units.to_base(r["quantity"], r["unit"])[0] for r in compat)
+        else:
+            bisogno = it["quantity"]
+            giacenza = sum(r["quantity"] for r in compat)
+
+        residuo = min(bisogno, giacenza)
+        for r in compat:
+            if residuo <= 0:
+                break
+            in_base = units.convert(r["quantity"], r["unit"], base) if dim else r["quantity"]
+            tolgo = min(in_base, residuo)
+            nuova = in_base - tolgo
+            if nuova <= 0:
+                db.execute("DELETE FROM pantry WHERE id = ?", (r["id"],))
+            else:
+                ripristino = units.convert(nuova, base, r["unit"]) if dim else nuova
+                db.execute(
+                    "UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
+                    (ripristino, r["id"]))
+            residuo -= tolgo
+
+        if giacenza <= 0 or bisogno > giacenza:
+            mancanti.append(it["name"])
+        else:
+            scalati.append(it["name"])
+
+    delete_orphan_ingredients(db)
+    return scalati, mancanti
+
+
+def _esegui_cucinato(db, cmd):
+    """"Ho cucinato X": cerca la ricetta e scala la dispensa di quello che serve."""
+    nome = cmd["name"]
+    trovate = _ricette_per_nome(db, nome)
+    if not trovate:
+        return jsonify({**cmd, "message": f"Non ho una ricetta «{nome}». "
+                        "Se l'hai appena aggiunta, completa prima il modulo.",
+                        "reload": []})
+    if len(trovate) > 1:
+        elenco = ", ".join(r["name"] for r in trovate[:5])
+        return jsonify({**cmd, "message": f"Ho piu' ricette che somigliano a «{nome}»: "
+                        f"{elenco}. Dimmi il nome per intero.", "reload": []})
+
+    ricetta = trovate[0]
+    scalati, mancanti = _consuma_dispensa(db, ricetta["id"])
+    rebuild_shopping(db)
+    db.commit()
+
+    if not scalati and not mancanti:
+        testo = f"«{ricetta['name']}» non ha ingredienti: non c'e' niente da scalare."
+    elif not scalati:
+        testo = (f"Dispensa invariata: per «{ricetta['name']}» non c'era niente "
+                 f"({', '.join(mancanti)}).")
+    else:
+        testo = (f"Fatto. Scalato dalla dispensa per «{ricetta['name']}»: "
+                 f"{', '.join(scalati)}.")
+        if mancanti:
+            testo += f" In dispensa non bastava: {', '.join(mancanti)}."
+    return jsonify({**cmd, "recipe": ricetta["name"], "scalati": scalati,
+                    "mancanti": mancanti, "message": testo,
+                    "reload": ["pantry", "shopping"]})
 
 
 def _righe_che_contengono(righe, cerca, campi):

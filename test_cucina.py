@@ -1131,6 +1131,142 @@ def test_voce_endpoint_ricetta_senza_nome(client):
     assert r.get_json()["open_recipe_form"] is True
 
 
+def test_voce_ricetta_cucinata_riconosce_il_nome():
+    """"ho cucinato/preparato X" e' una ricetta consumata, non una da creare."""
+    casi = {
+        "ho cucinato pasta al sugo": "pasta al sugo",
+        "ho preparato pasta al sugo": "pasta al sugo",
+        "ho cucinato la pasta al sugo": "pasta al sugo",
+        "ho cotto le lasagne": "lasagne",
+        "avevo preparato il risotto ai funghi": "risotto ai funghi",
+        "ho cucinato pasta al sugo oggi": "pasta al sugo",
+        "ho preparato una ricetta per la carbonara": "carbonara",
+    }
+    for frase, atteso in casi.items():
+        cmd = voice.parse(frase)
+        assert cmd["intent"] == "recipe_cooked", frase
+        assert cmd["name"] == atteso, frase
+
+
+def test_voce_cucinato_non_e_una_ricetta_da_creare():
+    """Il ramo cucinato sta prima di `recipe_add`: "ho preparato una ricetta"
+    aprirebbe altrimenti il modulo di una ricetta nuova."""
+    assert voice.parse("ho preparato una ricetta per la carbonara")["intent"] != "recipe_add"
+    # l'imperativo resta una creazione: e' il participio passato a cambiare tutto
+    assert voice.parse("prepara una ricetta per la carbonara")["intent"] == "recipe_add"
+    assert voice.parse("prepara la ricetta carbonara")["intent"] == "recipe_add"
+
+
+def test_voce_cucinato_non_riconosce_frasi_generiche():
+    """Senza indicare cosa si e' cucinato, o con un participio aggettivale, non
+    si scala niente: e' un comando che tocca la dispensa, va riconosciuto bene."""
+    for frase in ("ho preparato la cena", "ho mangiato la pasta",
+                  "la pasta cucinata ieri", "ho cotto"):
+        assert voice.parse(frase)["intent"] != "recipe_cooked", frase
+
+
+def _ricetta_con_ingredienti(client, nome, ingredienti):
+    """Crea una ricetta passando dall'API, come farebbe il modulo."""
+    r = client.post("/api/recipes", json={
+        "name": nome,
+        "items": [{"name": n, "quantity": q, "unit": u} for n, q, u in ingredienti],
+    })
+    assert r.status_code == 201
+    return r.get_json()["id"]
+
+
+def test_voce_endpoint_cucinato_scala_la_dispensa(client):
+    """Il caso della richiesta: pasta e sugo in dispensa, si cucina "pasta al
+    sugo" e le quantita' degli ingredienti si sottraggono."""
+    _ricetta_con_ingredienti(client, "pasta al sugo",
+                             [("pasta", 500, "g"), ("sugo", 300, "g")])
+    client.post("/api/pantry", json={"name": "pasta", "quantity": 1, "unit": "kg"})
+    client.post("/api/pantry", json={"name": "sugo", "quantity": 500, "unit": "g"})
+
+    r = client.post("/api/voice", json={"text": "ho cucinato pasta al sugo"})
+    assert r.status_code == 200
+    dati = r.get_json()
+    assert dati["intent"] == "recipe_cooked"
+    assert dati["scalati"] == ["pasta", "sugo"]
+
+    dispensa = {v["name"]: (v["quantity"], v["unit"]) for v in client.get("/api/pantry").get_json()}
+    # 1 kg - 500 g = 500 g, e la riga resta in chili: e' l'unita' scelta dall'utente
+    assert dispensa["pasta"] == (0.5, "kg")
+    assert dispensa["sugo"] == (200, "g")
+
+
+def test_voce_endpoint_cucinato_svuota_la_riga_a_zero(client):
+    """Una giacenza che arriva a zero si toglie: una riga a zero non e' una scorta."""
+    _ricetta_con_ingredienti(client, "minestrone", [("carote", 2, "pz")])
+    client.post("/api/pantry", json={"name": "carote", "quantity": 2, "unit": "pz"})
+
+    client.post("/api/voice", json={"text": "ho cucinato il minestrone"})
+    assert client.get("/api/pantry").get_json() == []
+
+
+def test_voce_endpoint_cucinato_non_bastava(client):
+    """Se in dispensa non basta, si dice: dire "fatto" sarebbe una bugia."""
+    _ricetta_con_ingredienti(client, "torta", [("farina", 500, "g"), ("zucchero", 200, "g")])
+    client.post("/api/pantry", json={"name": "farina", "quantity": 100, "unit": "g"})
+
+    dati = client.post("/api/voice", json={"text": "ho cucinato la torta"}).get_json()
+    assert "farina" in dati["mancanti"]
+    assert "farina" not in dati["scalati"]
+    # la farina c'era ma non bastava: si scala quello che c'e', non si va sotto zero
+    dispensa = {v["name"]: v["quantity"] for v in client.get("/api/pantry").get_json()}
+    assert "farina" not in dispensa
+
+
+def test_voce_endpoint_cucinato_unita_incompatibili_non_si_toccano(client):
+    """Grammi e pezzi non si convertono: la giacenza resta, l'ingrediente manca."""
+    _ricetta_con_ingredienti(client, "uova sode", [("uova", 4, "pz")])
+    client.post("/api/pantry", json={"name": "uova", "quantity": 300, "unit": "g"})
+
+    dati = client.post("/api/voice", json={"text": "ho cucinato uova sode"}).get_json()
+    assert dati["scalati"] == []
+    assert dati["mancanti"] == ["uova"]
+    dispensa = {v["name"]: v["quantity"] for v in client.get("/api/pantry").get_json()}
+    assert dispensa["uova"] == 300
+
+
+def test_voce_endpoint_cucinato_ricetta_inesistente(client):
+    """Una ricetta che non c'e' non deve toccare la dispensa."""
+    client.post("/api/pantry", json={"name": "farina", "quantity": 1, "unit": "kg"})
+    r = client.post("/api/voice", json={"text": "ho cucinato pasta al sugo"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "recipe_cooked"
+    assert client.get("/api/pantry").get_json()[0]["quantity"] == 1
+
+
+def test_voce_endpoint_cucinato_nome_ambiguo_chiede(client):
+    """Due ricette che somigliano: si chiede il nome per intero invece di
+    scegliere a caso e scalare la dispensa sbagliata."""
+    _ricetta_con_ingredienti(client, "pasta al sugo", [("pasta", 500, "g")])
+    _ricetta_con_ingredienti(client, "pasta al sugo della nonna", [("pasta", 500, "g")])
+    client.post("/api/pantry", json={"name": "pasta", "quantity": 2, "unit": "kg"})
+
+    dati = client.post("/api/voice", json={"text": "ho cucinato pasta al sugo"}).get_json()
+    # il nome esatto esiste: vince, e la dispensa si scala
+    assert dati["scalati"] == ["pasta"]
+
+    dati = client.post("/api/voice", json={"text": "ho cucinato pasta"}).get_json()
+    assert "Dimmi il nome per intero" in dati["message"]
+    assert "scalati" not in dati
+
+
+def test_voce_endpoint_cucinato_rimette_in_lista_quello_consumato(client):
+    """Quello che si e' consumato torna da comprare: la lista segue la dispensa."""
+    rid = _ricetta_con_ingredienti(client, "pasta al sugo", [("pasta", 500, "g")])
+    # la scorta copre esattamente il fabbisogno del piano: la lista e' vuota
+    client.post("/api/pantry", json={"name": "pasta", "quantity": 500, "unit": "g"})
+    client.post("/api/plan", json={"date": date.today().isoformat(), "meal": "cena", "recipe_id": rid})
+    assert {v["name"] for v in client.get("/api/shopping").get_json()} == set()
+
+    client.post("/api/voice", json={"text": "ho cucinato pasta al sugo"})
+    # dopo averla consumata la scorta non copre piu' il fabbisogno: torna in lista
+    assert {v["name"] for v in client.get("/api/shopping").get_json()} == {"pasta"}
+
+
 def test_voce_frase_non_compresa():
     assert voice.parse("")["intent"] == "unknown"
     assert voice.parse("   ")["intent"] == "unknown"
