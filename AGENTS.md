@@ -713,3 +713,32 @@ node: verifica il comportamento vero, non la presenza delle stringhe.
 La tabella della dispensa diventa schede sotto i 560px e le etichette di colonna
 arrivano da `data-label`. L'icona non ha `data-label`, e non deve averlo: sta
 **dentro** la cella dell'ingrediente, che l'etichetta ce l'ha già.
+
+## Ricette cercate su un sito esterno
+
+`ricette_online.py` legge le ricette da GialloZafferano, per conto dell'utente.
+Sta a parte perché è l'unico pezzo che dipende da un sito che non controlliamo:
+se cambia la grafica o l'indirizzo, si sostituisce questo solo modulo.
+
+La ricetta si prende dal **dato strutturato** JSON-LD (`schema.org/Recipe`) che il
+sito pubblica per i motori di ricerca: ha nome, dosi e passi già separati, quindi
+non si indovina nulla dalla pagina. La foto non si scarica mai.
+
+Tre trappole, tutte già pagate:
+
+- **`RobotFileParser.read()` scarica con lo user agent "Python-urllib/..."**, che
+  GialloZafferano respinge con un 403. Il parser legge il 403 come "vietato a
+  tutti" e nessuna pagina risulta più leggibile. Il `robots.txt` va scaricato a
+  mano con il nostro UA (`_apri`) e passato a `parse()`. Se il `robots.txt` non si
+  legge si **procede**: non poterlo leggere non è un divieto.
+- **La fonte non è il credito della foto.** Il campo `image_credit` esiste solo
+  insieme a una foto (`if image else ""`): una ricetta importata non ha foto,
+  quindi la provenienza spariva al salvataggio. La fonte ha una colonna sua,
+  `source`, che si salva sempre.
+- **Il sito vieta gli agenti AI** (GPTBot, ClaudeBot...) nel `robots.txt`.
+  Leggere per conto dell'utente non li riguarda, ma è bene saperlo prima di
+  allargare l'uso.
+
+I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte col
+JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
+
