@@ -1,0 +1,14 @@
+{
+  "name": "Il Maggiordomo",
+  "short_name": "Maggiordomo",
+  "description": "La mente del maggiordomo, le tue braccia ed il tuo gusto.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f8fa",
+  "theme_color": "#4fb3e8",
+  "icons": [
+    { "src": "/static/icons/icona.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/static/icons/icona-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/static/icons/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

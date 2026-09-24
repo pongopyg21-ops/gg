@@ -24,6 +24,47 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add('hidden'), 2400);
 }
 
+/* Riduce una foto scelta dall'utente prima di mandarla al server.
+   La riduzione sta qui e non sul server per non aggiungere una libreria di
+   elaborazione immagini alle dipendenze: chi installa l'app deve poter
+   fotografare una scatola senza scaricare Pillow. Un lato oltre ~1280 px e un
+   JPEG di qualita' 0.82 bastano per riconoscere una confezione sullo schermo di
+   un telefono, e tengono il database leggero.
+
+   Restituisce un data URL. Le foto gia' piccole, e i PNG con trasparenza, si
+   convertono lo stesso in JPEG: e' il formato che il server accetta senza
+   dubbi, e un ritaglio di trasparenza su una foto di scatole non serve. */
+function riduciFoto(file, maxLato = 1280) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('image/')) {
+      return reject(new Error('Scegli un file immagine'));
+    }
+    const lettore = new FileReader();
+    lettore.onerror = () => reject(new Error('Non riesco a leggere la foto'));
+    lettore.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Il file non sembra un\'immagine'));
+      img.onload = () => {
+        // niente ingrandimenti: una foto piccola resta piccola
+        const scala = Math.min(1, maxLato / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scala));
+        const h = Math.max(1, Math.round(img.height * scala));
+        const tela = document.createElement('canvas');
+        tela.width = w; tela.height = h;
+        const ctx = tela.getContext('2d');
+        // il JPEG non ha trasparenza: senza fondo bianco le zone trasparenti
+        // diventerebbero nere
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(tela.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = lettore.result;
+    };
+    lettore.readAsDataURL(file);
+  });
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fmtDay = (d) => d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -68,7 +109,10 @@ async function applicaPasti(n) {
    a un'area (`data-section`): aprendo un'area si mostrano solo le sue, così
    le aree restano separate invece di mischiarsi in un'unica barra piena di voci. */
 const SEZIONI = {
-  cucina:   { titolo: '\u{1F373} Cucina',   prima: 'plan' },
+  // La Cucina porta l'icona dell'app (la bandiera col cielo sereno) invece di
+  // un'emoji: e' l'area principale e la si riconosce a colpo d'occhio. Le altre
+  // tengono la loro, che le distingue meglio di un simbolo unico.
+  cucina:   { titolo: 'Cucina',   icona: '/static/icons/icona.svg', prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
@@ -77,8 +121,13 @@ const SEZIONI = {
 function apriSezione(nome) {
   const cfg = SEZIONI[nome];
   if (!cfg) return;
-  $('#app-title').textContent = cfg.titolo;
-  $('#app-title').dataset.sezione = nome;
+  const titolo = $('#app-title');
+  if (cfg.icona) {
+    titolo.innerHTML = `<img class="icona-titolo" src="${cfg.icona}" alt="" aria-hidden="true">${esc(cfg.titolo)}`;
+  } else {
+    titolo.textContent = cfg.titolo;
+  }
+  titolo.dataset.sezione = nome;
   document.title = `${cfg.titolo} · Il Maggiordomo`;
   // solo le schede dell'area aperta
   $$('#tabs button').forEach((b) => {
@@ -709,7 +758,18 @@ function renderOggi() {
       <ul class="ch-todo">${elenco.map(choreRiga).join('')}</ul>`;
   };
 
-  $('#ch-oggi').innerHTML = testa
+  // la settimana distribuita: mostra che le settimanali non sono tutte oggi, ed
+  // e' il modo per sapere in che giorno tocca ognuna
+  const settimana = `
+    <div class="ch-week" title="Come sono distribuite le attività della settimana">
+      ${p.settimana.map((g) => `
+        <div class="ch-week-day${g.oggi ? ' oggi' : ''}${g.minuti ? '' : ' vuoto'}">
+          <span class="ch-week-nome">${esc(g.nome.slice(0, 3))}</span>
+          <span class="ch-week-min">${g.minuti ? durata(g.minuti) : '—'}</span>
+        </div>`).join('')}
+    </div>`;
+
+  $('#ch-oggi').innerHTML = testa + settimana
     + blocco('Ogni giorno', p.gruppi.quotidiane)
     + blocco('Ogni settimana', p.gruppi.settimanali);
 
@@ -731,8 +791,14 @@ function renderOggi() {
 }
 
 /* Una riga di attività da spuntare. `timer` abilita il pulsante del tempo:
-   ha senso solo dove la scadenza conta. */
-function choreRiga(v, timer = true) {
+   ha senso solo dove la scadenza conta. `giorno` aggiunge il giorno assegnato,
+   per le settimanali: la riga ha gia' cinque colonne fisse, quindi il giorno
+   entra nella colonna dello stato invece di aggiungerne una sesta, che sul
+   telefono non entrerebbe. */
+function choreRiga(v, timer = true, giorno = false) {
+  const quando = giorno && v.giorno_settimanale_nome
+    ? (v.giorno_settimanale_oggi ? 'oggi' : `tocca ${v.giorno_settimanale_nome}`)
+    : quandoDetto(v);
   return `
     <li class="ch-row${v.fatto_oggi ? ' done' : ''}" data-chore="${v.id}">
       <button class="ch-check" data-done="${v.id}" title="${v.fatto_oggi ? 'Fatta oggi, clicca per annullare' : 'Segna come fatta'}">
@@ -740,24 +806,27 @@ function choreRiga(v, timer = true) {
       </button>
       <span class="ch-name">${esc(v.name)}</span>
       <span class="ch-area">${esc(v.area)}</span>
-      <span class="ch-when">${esc(quandoDetto(v))}</span>
+      <span class="ch-when${giorno ? ' ch-giorno' : ''}">${esc(quando)}</span>
       <span class="ch-min">${durata(v.minutes)}</span>
       ${timer && !v.fatto_oggi
         ? `<button class="ch-clock" data-timer="${v.id}" title="Cronometra">⏱</button>` : ''}
     </li>`;
 }
 
-/* --- routine: il catalogo di quotidiane e settimanali --- */
+/* --- routine: il catalogo di quotidiane e settimanali ---
+   Le settimanali portano il giorno assegnato accanto al nome: la distribuzione
+   sui giorni e' invisibile senza, e una voce che non tocca oggi sembrerebbe
+   sparita dall'elenco invece che spostata. */
 function renderRoutine() {
   const di = (f) => chDati.attivita.filter((v) => v.active && v.frequency === f);
-  const sezione = (titolo, elenco, nota) => `
+  const sezione = (titolo, elenco, nota, giorno) => `
     <div class="ch-block">
       <h4 class="ch-sub">${esc(titolo)} <span class="ch-hint">${esc(nota)}</span></h4>
-      <ul class="ch-todo">${elenco.map((v) => choreRiga(v, v.frequency === 'settimanale')).join('')}</ul>
+      <ul class="ch-todo">${elenco.map((v) => choreRiga(v, true, giorno)).join('')}</ul>
     </div>`;
   $('#ch-routine').innerHTML =
-    sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine') +
-    sezione('Ogni settimana', di('settimanale'), 'il livello costante di igiene');
+    sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine', false) +
+    sezione('Ogni settimana', di('settimanale'), 'uno o due al giorno, non tutte insieme', true);
 }
 
 /* --- calendario dell'anno: un mese per riga, con il suo focus ---
@@ -1152,6 +1221,8 @@ async function renderMagazzino() {
   $('#st-list').innerHTML = magazzinoDati.map((v) => `
     <article class="storage-card ${v.low ? 'low' : ''}" data-id="${v.id}">
       <div class="storage-head">
+        ${v.has_photo ? `<img class="storage-thumb" src="${esc(v.photo_url)}" alt=""
+             loading="lazy" data-act="edit" title="Vedi la foto">` : ''}
         <div class="storage-main">
           <h3 class="storage-name">${esc(v.name)}</h3>
           <div class="storage-meta">
@@ -1228,10 +1299,48 @@ function apriStorageForm(v) {
     </div>
     <div class="field"><label>Note</label>
       <input id="stf-notes" value="${esc(v ? v.notes : '')}" placeholder="Es. scaffale in alto, marca X"></div>
+    <div class="field"><label>Foto</label>
+      <div class="photo-field">
+        <img id="stf-photo-img" ${v && v.has_photo ? `src="${esc(v.photo_url)}"` : 'hidden'} alt="">
+        <div class="photo-controls">
+          <input id="stf-photo-file" type="file" accept="image/*">
+          <button type="button" id="stf-photo-del">Togli la foto</button>
+          <span class="hint">Serve a riconoscere la scatola. La foto si rimpicciolisce da sola.</span>
+        </div>
+      </div>
+    </div>
     <div class="modal-foot">
       <button id="stf-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
       <button id="stf-cancel">Annulla</button>
     </div>`);
+
+  // la foto si tiene a parte finche' non si salva: prima della creazione la
+  // voce non ha un id, e la foto si aggancia all'id. `fotoScelta` e' il data URL
+  // gia' ridotto, `fotoDaTogliere` dice di cancellare quella che c'era.
+  let fotoScelta = '';
+  let fotoDaTogliere = false;
+  const anteprima = $('#stf-photo-img');
+  const mostraFoto = (src) => {
+    if (src) { anteprima.src = src; anteprima.hidden = false; }
+    else { anteprima.removeAttribute('src'); anteprima.hidden = true; }
+  };
+
+  $('#stf-photo-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      fotoScelta = await riduciFoto(file);
+      fotoDaTogliere = false;
+      mostraFoto(fotoScelta);
+    } catch (err) { toast(err.message); }
+  });
+
+  $('#stf-photo-del').addEventListener('click', () => {
+    fotoScelta = '';
+    fotoDaTogliere = Boolean(v && v.has_photo);
+    $('#stf-photo-file').value = '';
+    mostraFoto('');
+  });
 
   $('#stf-cancel').addEventListener('click', hideModal);
   $('#stf-save').addEventListener('click', async () => {
@@ -1246,8 +1355,19 @@ function apriStorageForm(v) {
     };
     if (!corpo.name) return toast('Inserisci un nome');
     try {
-      if (v) await api(`/api/storage/${v.id}`, { method: 'PUT', body: corpo });
-      else await api('/api/storage', { method: 'POST', body: corpo });
+      let id;
+      if (v) {
+        await api(`/api/storage/${v.id}`, { method: 'PUT', body: corpo });
+        id = v.id;
+      } else {
+        const creata = await api('/api/storage', { method: 'POST', body: corpo });
+        id = creata.id;
+      }
+      // la foto si manda dopo la voce: prima non ci sarebbe un id a cui
+      // agganciarla. Se il salvataggio della voce riesce e la foto no, la voce
+      // resta comunque: meglio aver perso la foto che l'inserimento.
+      if (fotoScelta) await api(`/api/storage/${id}/photo`, { method: 'POST', body: { image: fotoScelta } });
+      else if (fotoDaTogliere) await api(`/api/storage/${id}/photo`, { method: 'DELETE' });
       hideModal();
       toast(v ? 'Voce salvata' : 'Voce aggiunta');
       renderMagazzino();

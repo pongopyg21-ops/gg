@@ -353,7 +353,13 @@ button:focus-visible {
 }
 .card .meta { font-size: 12px; color: var(--muted); letter-spacing: .01em; }
 .card .ings { font-size: 12.5px; color: var(--muted); }
-.card .actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; }
+/* I quattro pulsanti non entrano in una scheda da 250px: senza il ritorno a
+   capo l'ultimo ("Elimina") sporgeva fuori dalla scheda e finiva sul testo
+   accanto. Vanno a capo e le righe restano allineate a destra. */
+.card .actions {
+  display: flex; flex-wrap: wrap; justify-content: flex-end;
+  gap: 6px; margin-top: auto; padding-top: 10px;
+}
 .card .actions button { font-size: 12px; padding: 5px 10px; }
 
 /* Foto: piena larghezza della scheda, proporzione fissa 3:2 e ritaglio
@@ -694,12 +700,16 @@ tr:last-child td { border-bottom: none; }
 .report-row.unsafe .ing { color: var(--accent-deep); }
 .report-row .tags { color: var(--muted); }
 
-/* ---------- comparse morbide ---------- */
+/* ---------- comparse morbide ----------
+   `backwards` e non `both`: con `both` l'animazione continuerebbe a imporre
+   `transform: none` anche dopo la fine, e il sollevamento al passaggio del
+   mouse non si vedrebbe piu'. Con `backwards` invece lo stato iniziale vale
+   durante l'attesa e alla fine l'elemento torna alle sue regole normali. */
 @keyframes rise {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
-.tab.active .card, .tab.active .day, .tab.active .shop-group { animation: rise .3s ease-out both; }
+.tab.active .card, .tab.active .day, .tab.active .shop-group { animation: rise .3s ease-out backwards; }
 .tab.active .card:nth-child(2), .tab.active .day:nth-child(2) { animation-delay: .03s; }
 .tab.active .card:nth-child(3), .tab.active .day:nth-child(3) { animation-delay: .06s; }
 .tab.active .card:nth-child(4), .tab.active .day:nth-child(4) { animation-delay: .09s; }
@@ -741,6 +751,24 @@ tr:last-child td { border-bottom: none; }
   border-radius: 999px; font-size: 12px; font-weight: 600;
 }
 
+/* la settimana distribuita: sette caselle, una per giorno, con il tempo delle
+   settimanali. Serve a far vedere che non sono tutte oggi, che e' il punto del
+   cambiamento: senza, l'utente vede solo che oggi ha meno roba e non sa perche'. */
+.ch-week {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 6px; margin-top: 14px;
+}
+.ch-week-day {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 4px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface);
+}
+.ch-week-day.oggi { border-color: var(--accent); background: var(--accent-soft); }
+.ch-week-day.vuoto { opacity: .5; }
+.ch-week-nome { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+.ch-week-day.oggi .ch-week-nome { color: var(--accent-deep); font-weight: 600; }
+.ch-week-min { font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 .ch-sub {
   font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
   margin: 22px 0 8px; color: var(--ink);
@@ -777,6 +805,8 @@ tr:last-child td { border-bottom: none; }
   white-space: nowrap;
 }
 .ch-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* il giorno assegnato a una settimanale: si legge come stato, non come scadenza */
+.ch-when.ch-giorno { color: var(--accent-deep); }
 .ch-min { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ch-clock {
   width: 28px; height: 28px; padding: 0; font-size: 13px;
@@ -889,11 +919,161 @@ tr:last-child td { border-bottom: none; }
 }
 .ghost:hover { border-color: var(--line-strong); color: var(--ink); background: var(--surface); }
 
+ /* ============================================================
+   ICONA, MOVIMENTO E VITA DELLA PAGINA
+   Le animazioni stanno tutte qui, in fondo, per due motivi: si vedono
+   insieme e si spengono insieme. Quello che si muove e' decorazione —
+   nessuna informazione dipende da un'animazione, quindi chi ha chiesto
+   al sistema meno movimento (in fondo a questo blocco) non perde nulla.
+   ============================================================ */
+
+/* L'icona della casa accanto al nome, nei due titoli. */
+.con-icona { display: flex; align-items: center; gap: 12px; }
+.icona-app {
+  width: 2em; height: 2em; border-radius: 22%;
+  /* un filo di ombra stacca l'icona dallo sfondo chiaro senza appesantirla */
+  box-shadow: 0 6px 18px -10px rgba(11, 110, 143, .55);
+}
+
+/* La stessa icona nella scheda della Cucina, al posto dell'emoji. */
+.icona-sezione img { width: 34px; height: 34px; border-radius: 22%; display: block; }
+
+/* L'icona nella testata dell'area. */
+.icona-titolo {
+  width: 1.1em; height: 1.1em; border-radius: 22%;
+  vertical-align: -0.16em; margin-right: 8px;
+}
+
+/* ---------- cielo di sfondo ----------
+   Un cielo sereno che si muove lentissimo dietro i contenuti. Sta su `body`
+   con `fixed`: cosi' non si sposta scorrendo, e resta identico in ogni area.
+   Le nuvole sono due sfumature bianche che scorrono in orizzontale; il cielo
+   resta dietro a tutto (z-index negativo) e sotto le schede, che sono opache. */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 0%, rgba(255, 255, 255, .85), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 75% 10%, rgba(255, 255, 255, .7), transparent 60%),
+    linear-gradient(180deg, #cdeafb 0%, var(--paper) 45%, var(--paper) 100%);
+  animation: cielo-respira 24s ease-in-out infinite;
+}
+@keyframes cielo-respira {
+  0%, 100% { background-position: 0 0, 0 0, 0 0; }
+  50%      { background-position: 3% 2%, -4% 3%, 0 0; }
+}
+
+/* Nuvole che attraversano lo schermo, lentissime e appena visibili: l'effetto
+   e' "il cielo vive", non "guarda la nuvola". */
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  background:
+    radial-gradient(ellipse 160px 34px at 10% 12%, #fff, transparent 70%),
+    radial-gradient(ellipse 220px 40px at 55% 26%, #fff, transparent 72%);
+  animation: nuvole 90s linear infinite;
+}
+@keyframes nuvole {
+  from { transform: translateX(-8%); }
+  to   { transform: translateX(108%); }
+}
+
+/* ---------- schede delle aree ----------
+   Entrano una dopo l'altra (ritardo a scaletta) e si sollevano al passaggio:
+   il gesto e' quello di un pulsante di un gioco, non di un link. */
+.home-card {
+  position: relative; overflow: hidden;
+  animation: carta-entra .45s cubic-bezier(.2, .8, .25, 1) backwards;
+}
+.home-card:nth-child(1) { animation-delay: .04s; }
+.home-card:nth-child(2) { animation-delay: .12s; }
+.home-card:nth-child(3) { animation-delay: .20s; }
+.home-card:nth-child(4) { animation-delay: .28s; }
+@keyframes carta-entra {
+  from { opacity: 0; transform: translateY(18px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+.home-card:hover .home-emoji { transform: translateY(-4px) rotate(-6deg); }
+.home-emoji { transition: transform .25s cubic-bezier(.2, .8, .25, 1); display: inline-block; }
+
+/* Il lampo che attraversa la scheda al passaggio del mouse: una riga chiara
+   che scorre da sinistra a destra. Solo al passaggio, non da sola. */
+.home-card::after {
+  content: "";
+  position: absolute; top: 0; bottom: 0; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+  transform: translateX(-160%) skewX(-14deg);
+  pointer-events: none;
+}
+.home-card:hover::after { animation: lampo .85s ease-out; }
+@keyframes lampo {
+  to { transform: translateX(320%) skewX(-14deg); }
+}
+
+/* Il picchetto "Apri →" scivola in avanti: suggerisce di entrare. */
+.home-go { transition: transform .22s ease; display: inline-block; }
+.home-card:hover .home-go { transform: translateX(6px); }
+
+/* ---------- titoli che arrivano ---------- */
+.home-hero h1, .accesso-box h1 { animation: titolo-entra .55s cubic-bezier(.2, .8, .25, 1) both; }
+@keyframes titolo-entra {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: none; }
+}
+.home-kicker, .home-lead { animation: sale .6s ease-out both; }
+.home-kicker { animation-delay: .1s; }
+.home-lead:nth-of-type(1) { animation-delay: .18s; }
+.home-lead:nth-of-type(2) { animation-delay: .24s; }
+.home-warning { animation: sale .6s ease-out .3s both; }
+@keyframes sale {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- righe che rispondono al tocco ---------- */
+.card { transition: transform .16s ease, box-shadow .16s ease; }
+.card:hover { transform: translateY(-2px); }
+
+/* ---------- il microfono chiama ---------- */
+/* Un anello che pulsa quando non e' in ascolto: invita a parlare. Si ferma
+   durante l'ascolto, perche' li' c'e' gia' il battito di `mic-pulse`. */
+.home-mic { animation: invito 3.4s ease-in-out infinite; }
+.home-mic:hover { animation-play-state: paused; }
+@keyframes invito {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(11, 110, 143, .0); }
+  50%      { box-shadow: 0 0 0 10px rgba(11, 110, 143, .12); }
+}
+
+/* ---------- i pulsanti "premi" ---------- */
+.primary, .home-mic, .mic, .home-fab { will-change: transform; }
+.primary:active, button:active { transform: scale(.97); }
+button { transition: transform .12s ease; }
+
+/* ---------- conteggio che sale ---------- */
+/* I numeri grossi delle schede (minuti, conteggi) entrano salendo: e' il gesto
+   dei punteggi nei giochi. */
+.day-min, .stat-num, .home-stat { display: inline-block; animation: numero-su .5s ease-out both; }
+@keyframes numero-su {
+  from { opacity: 0; transform: translateY(8px) scale(.9); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- i giorni del piano ---------- */
+.shop-group { animation: rise .35s ease-out backwards; }
+
+/* ---------- striscia della settimana ---------- */
+.ch-week { animation: sale .45s ease-out both; }
+
+/* Chi ha chiesto al sistema meno movimento non vede nulla muoversi: le
+   animazioni qui sopra sono tutte decorazione, quindi spegnerle non toglie
+   nessuna informazione. Vale anche per lo sfondo e le nuvole. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important; transition: none !important;
   }
+  body::after { display: none; }
 }
+
 
 @media (max-width: 900px) {
   .plan-grid { grid-template-columns: repeat(2, 1fr); }
@@ -1009,7 +1189,6 @@ tr:last-child td { border-bottom: none; }
   }
   /* la foto del dettaglio deve combaciare con la spaziatura ridotta del modale */
   .detail-photo { margin: -18px -16px 14px; border-radius: 15px 15px 0 0; }
-  .card .actions { flex-wrap: wrap; }
   /* il pulsante di conferma resta visibile anche se il modulo e' lungo */
   .modal-foot {
     position: sticky; bottom: calc(-1 * max(16px, env(safe-area-inset-bottom)));
@@ -1057,6 +1236,11 @@ tr:last-child td { border-bottom: none; }
   .ch-hero { padding: 18px 16px; }
   .ch-hero-num strong { font-size: 34px; }
   .ch-hero-time { text-align: left; }
+  /* sette caselle non stanno nello schermo: il tempo scende sotto il giorno, e
+     l'abbreviazione a tre lettere basta a riconoscere il giorno */
+  .ch-week { gap: 3px; }
+  .ch-week-day { padding: 6px 2px; border-radius: 8px; }
+  .ch-week-min { font-size: 10.5px; }
   .ch-row {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     row-gap: 3px; padding: 11px 2px;
@@ -1156,6 +1340,16 @@ tr:last-child td { border-bottom: none; }
 
 .storage-head { display: flex; align-items: center; gap: 12px; }
 .storage-main { flex: 1; min-width: 0; }
+
+/* La miniatura della foto di una voce: e' quello che permette di riconoscere la
+   scatola senza aprire la scheda. Cliccarla apre la modifica, dove si vede
+   grande. */
+.storage-thumb {
+  width: 54px; height: 54px; flex: none; object-fit: cover;
+  border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--accent-soft); cursor: pointer;
+}
+.storage-thumb:hover { border-color: var(--accent); }
 .storage-name {
   margin: 0; font-family: var(--font-display); font-size: 16.5px;
   font-weight: 600; color: var(--ink); word-break: break-word;

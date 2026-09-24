@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Il Maggiordomo</title>
+<!-- L'icona: la bandiera svizzera col cielo sereno. `apple-touch-icon` e' quella
+     che il telefono usa quando si aggiunge l'app alla schermata iniziale, ed e'
+     per questo che il PNG esiste accanto all'SVG: iOS non legge gli SVG.
+     `theme-color` colora la barra del browser col celeste dell'icona. -->
+<link rel="icon" href="/static/icons/icona.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icons/icona-512.png" type="image/png" sizes="512x512">
+<link rel="apple-touch-icon" href="/static/icons/icona-180.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#4fb3e8">
+<meta name="apple-mobile-web-app-title" content="Il Maggiordomo">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -13,7 +23,7 @@
 <section id="accesso" class="accesso hidden">
   <div class="accesso-box">
     <p class="home-kicker">Benvenuto</p>
-    <h1>Il Maggiordomo</h1>
+    <h1 class="con-icona"><img class="icona-app" src="/static/icons/icona.svg" alt="" aria-hidden="true">Il Maggiordomo</h1>
     <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
     <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
 
@@ -62,7 +72,7 @@
 <section id="home" class="home hidden">
   <header class="home-hero">
     <p class="home-kicker">Benvenuto</p>
-    <h1>Il Maggiordomo</h1>
+    <h1 class="con-icona"><img class="icona-app" src="/static/icons/icona.svg" alt="" aria-hidden="true">Il Maggiordomo</h1>
     <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
     <p class="home-lead home-mission">Progetti, informazioni e diritti, ma soprattutto
       doveri dello stare a casa.</p>
@@ -76,7 +86,7 @@
   </div>
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
-      <span class="home-emoji">🍳</span>
+      <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/icona.svg" alt=""></span>
       <span class="home-name">Cucina</span>
       <span class="home-desc">Piano pasti, ricette, dispensa e lista della spesa,
         con i comandi vocali per quando hai le mani occupate.</span>
