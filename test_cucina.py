@@ -2879,6 +2879,99 @@ def test_le_immagini_dei_dati_restano_in_memoria(client):
     assert "no-cache" in r.headers.get("Cache-Control", "")
 
 
+def test_una_domanda_non_diventa_un_ordine(client):
+    """La frase che assomiglia di piu' a un comando e' una domanda: contiene un
+    luogo ("dispensa") e un verbo ("c'e'"). Eseguita, scriveva in dispensa una
+    voce chiamata "che cosa c'e in dispensa", e la voce sbagliata resta li'."""
+    prima = len(client.get("/api/pantry").get_json())
+    r = client.post("/api/voice", json={"text": "che cosa c'è in dispensa"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "domanda"
+    assert len(client.get("/api/pantry").get_json()) == prima
+
+
+def test_una_domanda_su_un_alimento_ne_dice_la_quantita(client):
+    """ "quanto sale serve" e' la domanda piu' naturale che ci sia: deve
+    rispondere, non finire in lista della spesa."""
+    client.post("/api/pantry", json={"name": "Sale", "quantity": 1, "unit": "cucchiaino"})
+    r = client.post("/api/voice", json={"text": "quanto sale serve"})
+    assert r.status_code == 200
+    assert "Sale" in r.get_json()["message"]
+    lista = client.get("/api/shopping").get_json()
+    assert not any("sale" in i["name"].lower() and "serve" in i["name"].lower() for i in lista)
+
+
+def test_una_domanda_senza_risposta_non_inventa_niente(client):
+    r = client.post("/api/voice", json={"text": "che cosa c'è in dispensa"})
+    assert r.status_code == 200
+    assert "vuot" in r.get_json()["message"].lower()
+
+
+def test_un_ordine_resta_un_ordine(client):
+    """Le domande non devono rubare il posto ai comandi veri."""
+    r = client.post("/api/voice", json={"text": "aggiungi due chili di farina in dispensa"})
+    assert r.get_json()["intent"] == "pantry_add"
+    r = client.post("/api/voice", json={"text": "segna il pane da comprare"})
+    assert r.get_json()["intent"] == "shopping_add"
+
+
+def test_le_domande_su_ricette_e_pulizie_rispondono(client):
+    r = client.post("/api/voice", json={"text": "quante ricette ho"})
+    assert r.status_code == 200 and r.get_json()["intent"] == "domanda"
+    assert "ricett" in r.get_json()["message"].lower()
+    r = client.post("/api/voice", json={"text": "quali pulizie devo fare"})
+    assert r.status_code == 200 and r.get_json()["intent"] == "domanda"
+
+
+def test_il_microfono_non_si_rompe_al_primo_clic(client):
+    """Il primo clic apre il pannello e arriva ad `ascolta()` senza nessun
+    riconoscimento avviato. Chiamare `stop()` su niente sollevava un errore
+    invisibile e il microfono restava muto: era il guasto da PC."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "voce.attivo && voce.rec" in js
+    assert "if (voce.attivo) { voce.rec.stop(); return; }" not in js
+
+
+def test_la_dispensa_mostra_un_icona_per_alimento(client):
+    """Un'icona dice a colpo d'occhio di cosa si tratta, prima di leggerlo."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "iconaAlimento" in js and "icona-alimento" in js
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert "pantry-table" in html
+
+
+def test_le_icone_degli_alimenti_sono_scelte_bene(client):
+    """Le parole corte non devono entrare dentro le altre: "te" sta in
+    "detersivo", e il detersivo non e' una bevanda."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("const ICONE_CATEGORIA"):js.index("\n}\n", js.index("function iconaAlimento")) + 3]
+    prova = blocco + """
+const casi = [
+  ['Farina 00', 'Pane e Cereali', '🌾'],
+  ['Passata di pomodoro', 'Dispensa', '🍅'],
+  ['Aglio', 'Frutta e Verdura', '🧄'],
+  ['Parmigiano', 'Latticini', '🧀'],
+  ['Guanciale', 'Carne e Pesce', '🥓'],
+  ['Tonno', 'Carne e Pesce', '🐟'],
+  ['Detersivo piatti', 'Altro', '🧴'],
+  ['Detergente', 'Altro', '🧴'],
+  ['Te nero', 'Bevande', '🍵'],
+  ['Pile stilo', 'Altro', '🔋'],
+  ['Cosa mai vista', 'Altro', '📦'],
+];
+let esiti = [];
+for (const [n, c, atteso] of casi) {
+  const avuto = iconaAlimento(n, c);
+  esiti.push(`${avuto === atteso ? 'ok' : 'NO'} ${n} -> ${avuto} (atteso ${atteso})`);
+}
+console.log(esiti.join('\\n'));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    assert "NO " not in esito.stdout, esito.stdout
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})

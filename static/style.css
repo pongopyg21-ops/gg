@@ -656,6 +656,15 @@ tr:last-child td { border-bottom: none; }
 }
 #voice-cloud-voice:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* icona accanto a un alimento: la mangiamo prima di leggerla */
+.riga-alimento { display: inline-flex; align-items: center; gap: 9px; }
+.icona-alimento {
+  font-size: 19px; line-height: 1; flex: 0 0 auto;
+  /* la larghezza fissa tiene allineate le scritte anche se l'emoji e' piu' larga */
+  width: 22px; text-align: center;
+}
+.nome-alimento { vertical-align: middle; }
+
 /* ---------- allergie e intolleranze ---------- */
 .banner {
   background: var(--accent-soft); border: 1px solid #c3dce8;

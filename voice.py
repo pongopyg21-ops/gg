@@ -160,6 +160,94 @@ _RECIPE_FILLER = _RECIPE_VERBS | _RECIPE_WORDS | {
     "ho", "voglio", "vorrei",
 }
 
+# Le domande non sono ordini.
+# "che cosa c'e' in dispensa" contiene "dispensa" e "c'e'", che sono anche
+# parole di un comando, e senza questo veniva eseguita: l'app rispondeva
+# "Fatto. Che cosa c'e in dispensa, 1 pz" e **scriveva quella voce in dispensa**.
+# Una domanda a cui si risponde sbagliando e' peggio di una domanda senza
+# risposta: la voce di troppo resta li' per sempre.
+#
+# L'avvio e' una parola interrogativa **all'inizio** della frase: cosi' non
+# colpisce "metti il sale, che serve" o "vorrei sapere se c'e' il latte", dove
+# la frase resta un comando. "quanto" da solo non basta ("quanto sale serve"
+# e' una domanda, ma "quanto sale" senza verbo sarebbe ambiguo) e viene
+# accoppiato alle parole che seguono.
+_DOMANDA_AVVIO = re.compile(
+    r"^(che|cosa|cos|quale|quali|quanti|quante|quanto|quanta|dove|come|chi"
+    r"|mi (?:dici|sai dire|chiedo|domando)|dimmi|dimmelo|sai|sapresti|sapete"
+    r"|(?:vorrei|voglio|volevo|potrei|puoi|potresti) (?:sapere|sapendo|dirmi|saper)"
+    r"|hai|avete|avremmo|c'e|ci sono|si puo|si possono)\b")
+
+# con quale parte dell'app ha a che fare la domanda: decide cosa cercare
+_DOMANDA_LUOGHI = {
+    "pantry": {"dispensa", "dispense", "cantina", "ripostiglio"},
+    "shopping": {"spesa", "lista", "carrello", "supermercato", "mercato", "negozio"},
+    "storage": {"magazzino", "garage", "soffitta", "solaio", "box", "taverna",
+                "provviste", "scorte", "balcone", "terrazzo", "bagno"},
+    "recipes": {"ricetta", "ricette", "cucina", "mangiare", "cucinare", "piatto",
+                "piatti", "pranzo", "cena"},
+    "chores": {"pulizia", "pulizie", "faccende", "casa", "lavare", "pulire"},
+    "profile": {"profilo", "allergia", "allergie", "intolleranza", "intolleranze",
+                "restrizioni"},
+}
+
+
+def _domanda(normalized):
+    """Cosa vuole sapere una domanda: la parte dell'app e l'argomento cercato.
+
+    Ritorna `(area, argomento)`, con area `None` se non si capisce dove
+    guardare: in quel caso e' meglio non rispondere che rispondere a caso.
+    """
+    if not _DOMANDA_AVVIO.match(normalized):
+        return None, ""
+    tokens = normalized.split()
+    for area, parole in _DOMANDA_LUOGHI.items():
+        if parole & set(tokens):
+            # le parole della domanda non fanno parte di cio' che si cerca:
+            # "che cosa c'e' in dispensa" cerca il vuoto, non "dispensa"
+            resto = [t for t in tokens if t not in parole and t not in _PAROLE_DOMANDA]
+            return area, " ".join(resto).strip()
+
+    # Nessun luogo detto, ma la domanda parla di un alimento: "quanto sale
+    # serve", "hai il latte", "c'e' la farina". La risposta sta in dispensa.
+    # Senza questo, "quanto sale serve" finiva in lista della spesa: una
+    # domanda eseguita come ordine, che e' il modo peggiore di sbagliare.
+    resto = [t for t in tokens if t not in _PAROLE_DOMANDA]
+    if resto and _DOMANDA_DI_ALIMENTO & set(tokens):
+        return "pantry", " ".join(resto).strip()
+    return None, ""
+
+
+# domande su un alimento senza dire dove: la risposta e' in dispensa.
+# Sono parole intere e possono stare anche a meta' frase: "vorrei sapere se
+# c'e' il latte" e' una domanda quanto "c'e' il latte".
+_DOMANDA_DI_ALIMENTO = {"quanto", "quanta", "quanti", "quante", "hai", "avete",
+                        "avremmo", "c'e", "ce"}
+
+
+# parole della domanda stessa: non sono ne' il luogo ne' cio' che si cerca
+#   "c'e" resta una parola intera: `_norm` non toglie l'apostrofo, quindi il
+#   token e' "c'e", e senza questa voce "che cosa c'e' in dispensa" cercava la
+#   stringa "c'e" in dispensa e rispondeva "non c'e' c'e' in dispensa".
+_PAROLE_DOMANDA = {
+    "che", "cosa", "cos", "quale", "quali", "quanto", "quanta", "quanti", "quante",
+    "dove", "come", "chi", "c", "e", "ce", "c'e", "ci", "sono", "in", "nel", "nello",
+    "nella", "nei", "negli", "nelle", "il", "lo", "la", "i", "gli", "le", "di",
+    "del", "dello", "della", "dei", "degli", "delle", "da", "dal", "dalla", "a",
+    "al", "allo", "alla", "ai", "agli", "alle", "su", "sul", "sullo", "sulla",
+    "per", "con", "ho", "hai", "abbiamo", "avete", "avremmo", "manca", "mancano",
+    "serve", "servono", "rimasto", "rimasti", "rimasta", "rimaste", "ancora",
+    "dentro", "fuori", "adesso", "ora", "oggi", "casa", "mia", "mio", "miei",
+    "mie", "sto", "stanno", "puo", "puoi", "posso", "potrei", "dirmi",
+    "dimmi", "sai", "sapresti", "si", "no", "tutto", "tutta", "tutti", "tutte",
+    "qualcosa", "niente", "nulla", "un", "una", "uno", "piu", "meno", "molto",
+    "poco", "davvero", "esattamente", "scusa", "scusami", "perfavore", "grazie",
+    "devo", "deve", "dobbiamo", "dovrei", "dovremmo", "fare", "faccio", "fatto",
+    "sapere", "sapendo", "chiedo", "chiedere", "chiedevo", "se", "forse",
+    "invece", "anche", "solo", "proprio", "qui", "qua", "li", "la",
+    "vorrei", "voglio", "volevo", "potrei", "potresti", "sapendo",
+}
+
 
 def _norm(text):
     """Minuscolo, senza accenti e senza punteggiatura; l'apostrofo resta."""
@@ -366,6 +454,14 @@ def parse(text):
     if not normalized:
         return base
 
+    # Le domande vengono **prima** di tutto il resto: sono la frase che, senza
+    # questo ramo, assomiglia di piu' a un comando e fa piu' danno ("che cosa
+    # c'e' in dispensa" veniva scritta in dispensa). Un ordine vero non inizia
+    # con una parola interrogativa, quindi qui non si perde nessun comando.
+    area, argomento = _domanda(normalized)
+    if area:
+        return {**base, "intent": "domanda", "area": area, "query": argomento}
+
     # allergie e intolleranze: un termine per il profilo
     if re.search(r"\b(allergi\w*|intolleran\w*|restrizion\w*)\b", normalized):
         terms = _clean_term(normalized)
@@ -453,3 +549,7 @@ def parse(text):
         "unit": unit,
         "explicit": explicit,
     }
+
+# "che" non fa parte del nome di un alimento: "metti il sale, che serve" e'
+# "sale" e basta. Si toglie solo quando e' una parola a se'.
+_STOPWORDS = _STOPWORDS | {"che"}

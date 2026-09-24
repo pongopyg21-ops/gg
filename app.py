@@ -1539,7 +1539,130 @@ def voice_command():
     if cmd["intent"] == "recipe_search":
         return jsonify({**cmd, "message": f"Cerco «{cmd['query']}».", "query": cmd["query"]})
 
+    if cmd["intent"] == "domanda":
+        return _rispondi_domanda(db, cmd)
+
     return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
+
+
+def _righe_che_contengono(righe, cerca, campi):
+    """Le righe in cui uno dei campi contiene il testo cercato.
+
+    Senza argomento si restituisce tutto: "che cosa c'e' in dispensa" vuole
+    l'elenco, non una ricerca. Il confronto e' senza maiuscole e per parte di
+    parola: "pomodor" trova "Pomodori pelati".
+    """
+    if not cerca:
+        return list(righe)
+    cerca = cerca.lower()
+    return [r for r in righe
+            if any(cerca in str(r[c] or "").lower() for c in campi)]
+
+
+def _rispondi_domanda(db, cmd):
+    """Risponde a una domanda invece di eseguirla.
+
+    Il testo della risposta viene letto ad alta voce, quindi e' una frase in
+    italiano, non un elenco di dati: chi ascolta deve capire senza guardare.
+    """
+    area = cmd.get("area")
+    cerca = (cmd.get("query") or "").strip()
+    resta = "Puoi chiedere: «che cosa c'è in dispensa», «quanto sale serve»."
+
+    if area == "pantry":
+        # la dispensa tiene il nome nell'ingrediente: la tabella pantry ha solo
+        # la quantita' e l'unita', unite per `ingredient_id`
+        righe = _righe_che_contengono(
+            db.execute(
+                """SELECT i.name, p.quantity, p.unit
+                   FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
+                   ORDER BY i.name"""),
+            cerca, ["name"])
+        if not righe:
+            testo = (f"Non c'è {cerca} in dispensa." if cerca
+                     else "La dispensa è vuota.")
+            return jsonify({**cmd, "message": testo, "reload": []})
+        if cerca:
+            r = righe[0]
+            testo = f"In dispensa ci sono {units.format_quantity(r['quantity'])} {r['unit']} di {r['name']}."
+        else:
+            pezzi = [f"{r['name']} {units.format_quantity(r['quantity'])} {r['unit']}"
+                     for r in righe[:6]]
+            testo = f"In dispensa: {', '.join(pezzi)}"
+            if len(righe) > 6:
+                testo += f", e altre {len(righe) - 6} voci"
+            testo += "."
+        return jsonify({**cmd, "message": testo, "reload": []})
+
+    if area == "shopping":
+        righe = _righe_che_contengono(
+            db.execute("SELECT name, quantity, unit FROM shopping ORDER BY name"),
+            cerca, ["name"])
+        if not righe:
+            testo = (f"{cerca.capitalize()} non è in lista." if cerca
+                     else "La lista della spesa è vuota.")
+            return jsonify({**cmd, "message": testo, "reload": []})
+        pezzi = [f"{r['name']} {units.format_quantity(r['quantity'])} {r['unit']}"
+                 for r in righe[:6]]
+        testo = f"In lista: {', '.join(pezzi)}"
+        if len(righe) > 6:
+            testo += f", e altre {len(righe) - 6} voci"
+        return jsonify({**cmd, "message": testo + ".", "reload": []})
+
+    if area == "storage":
+        righe = _righe_che_contengono(
+            db.execute("SELECT name, quantity, unit, place FROM storage ORDER BY name"),
+            cerca, ["name"])
+        if not righe:
+            testo = (f"{cerca.capitalize()} non è in magazzino." if cerca
+                     else "Il magazzino è vuoto.")
+            return jsonify({**cmd, "message": testo, "reload": []})
+        pezzi = [f"{r['name']} {units.format_quantity(r['quantity'])} {r['unit']} ({r['place']})"
+                 for r in righe[:5]]
+        testo = f"In magazzino: {', '.join(pezzi)}"
+        if len(righe) > 5:
+            testo += f", e altre {len(righe) - 5} voci"
+        return jsonify({**cmd, "message": testo + ".", "reload": ["magazzino"]})
+
+    if area == "recipes":
+        if cerca:
+            righe = _righe_che_contengono(
+                db.execute("SELECT name FROM recipes ORDER BY name"), cerca, ["name"])
+            if righe:
+                nomi = ", ".join(r["name"] for r in righe[:5])
+                return jsonify({**cmd, "intent": "recipe_search", "query": cerca,
+                                "message": f"Ho trovato: {nomi}.", "reload": []})
+        n = one(db.execute("SELECT COUNT(*) AS n FROM recipes"))["n"]
+        testo = (f"Non ho ricette con {cerca}. Ne hai {n} in tutto." if cerca
+                 else f"Hai {n} ricette.")
+        return jsonify({**cmd, "message": testo, "reload": []})
+
+    if area == "chores":
+        # le scadenze non si salvano: si ricavano dall'ultima volta fatta
+        oggi = _oggi(db)
+        ultime = _ultime(db)
+        attivita = rows(db.execute("SELECT * FROM chores WHERE active = 1 ORDER BY name"))
+        for voce in attivita:
+            voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]),
+                                        oggi, voce["month"]))
+        da_fare = [v for v in attivita if v.get("scaduta")]
+        if not da_fare:
+            return jsonify({**cmd, "message": "Non c'è nessuna pulizia in ritardo.",
+                            "reload": ["igiene"]})
+        nomi = ", ".join(v["name"] for v in da_fare[:5])
+        testo = f"Pulizie da fare: {nomi}"
+        if len(da_fare) > 5:
+            testo += f", e altre {len(da_fare) - 5}"
+        return jsonify({**cmd, "message": testo + ".", "reload": ["igiene"]})
+
+    if area == "profile":
+        lista = get_profile(db)["restriction_list"]
+        testo = (f"Nel profilo ci sono: {', '.join(lista)}." if lista
+                 else "Nel profilo non c'è nessuna allergia o intolleranza.")
+        return jsonify({**cmd, "message": testo, "reload": []})
+
+    # domanda senza un posto chiaro dove guardare: meglio dirlo che rispondere a caso
+    return jsonify({**cmd, "message": "Non ho capito la domanda. " + resta, "reload": []})
 
 
 @app.route("/api/voce/configura", methods=["POST"])

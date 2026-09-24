@@ -500,16 +500,103 @@ function recipeForm(recipe, nomeIniziale) {
 }
 
 /* ---------- DISPENSA ---------- */
+
+/* Icone degli alimenti.
+   Un'icona dice a colpo d'occhio di cosa si tratta: in una lista lunga si
+   riconosce "farina" dal simbolo prima ancora di leggerlo. Non c'e' un'icona
+   per ogni alimento possibile, quindi si cerca per parola e si ripiega sulla
+   categoria: meglio l'icona della categoria che nessuna icona.
+   Le voci sono in minuscolo e l'ordine conta: "olio di semi" deve trovare
+   "olio" prima di "semi". */
+const ICONE_CATEGORIA = {
+  'Frutta e Verdura': '🥬',
+  'Carne e Pesce': '🥩',
+  'Latticini': '🧀',
+  'Dispensa': '🫙',
+  'Pane e Cereali': '🌾',
+  'Bevande': '🥤',
+  'Dolci': '🍰',
+  'Surgelati': '❄️',
+  'Altro': '📦',
+};
+
+const ICONE_PAROLA = [
+  ['farina', '🌾'], ['pasta', '🍝'], ['spaghett', '🍝'], ['lasagn', '🍝'],
+  ['penne', '🍝'], ['rigaton', '🍝'], ['fusill', '🍝'], ['tagliatell', '🍝'],
+  ['riso', '🍚'], ['risotto', '🍚'], ['pane', '🍞'], ['pancarr', '🍞'],
+  ['grissin', '🥖'], ['cracker', '🥖'], ['polenta', '🌽'], ['mais', '🌽'],
+  ['pomodor', '🍅'], ['passata', '🍅'], ['pelati', '🍅'], ['concentrat', '🥫'],
+  ['aglio', '🧄'], ['cipoll', '🧅'], ['scalogn', '🧅'], ['patat', '🥔'],
+  ['carota', '🥕'], ['zucchin', '🥒'], ['cetriol', '🥒'], ['melanzan', '🍆'],
+  ['peperon', '🫑'], ['insalat', '🥬'], ['spinac', '🥬'], ['verz', '🥬'],
+  ['cavol', '🥬'], ['broccol', '🥦'], ['fungh', '🍄'], ['limon', '🍋'],
+  ['arancia', '🍊'], ['mela', '🍎'], ['pera', '🍐'], ['banan', '🍌'],
+  ['fragol', '🍓'], ['uva', '🍇'], ['pesca', '🍑'], ['anguria', '🍉'],
+  ['basilic', '🌿'], ['prezzemol', '🌿'], ['rosmarin', '🌿'], ['salvia', '🌿'],
+  ['timo', '🌿'], ['origano', '🌿'], ['menta', '🌿'], ['alloro', '🌿'],
+  ['olio', '🫒'], ['oliv', '🫒'], ['aceto', '🧴'],
+  ['sale', '🧂'], ['pepe', '🧂'], ['spezi', '🧂'], ['curcuma', '🧂'],
+  ['zenzero', '🧂'], ['noce moscata', '🧂'], ['zafferan', '🧂'],
+  ['zuccher', '🍬'], ['miele', '🍯'], ['marmellat', '🍯'], ['confettur', '🍯'],
+  ['cioccolat', '🍫'], ['cacao', '🍫'], ['biscott', '🍪'], ['dolc', '🍰'],
+  ['torta', '🍰'], ['lievit', '🥐'],
+  ['uov', '🥚'], ['latte', '🥛'], ['burro', '🧈'], ['panna', '🥛'],
+  ['yogurt', '🥛'], ['formagg', '🧀'], ['parmigian', '🧀'], ['pecorin', '🧀'],
+  ['mozzarell', '🧀'], ['ricott', '🧀'], ['gorgonzol', '🧀'], ['grana', '🧀'],
+  ['manzo', '🥩'], ['macinat', '🥩'], ['carne', '🥩'], ['pollo', '🍗'],
+  ['tacchino', '🍗'], ['salsicc', '🥓'], ['guancial', '🥓'], ['pancett', '🥓'],
+  ['prosciutt', '🥓'], ['salame', '🥓'], ['speck', '🥓'], ['bresaol', '🥓'],
+  ['pesce', '🐟'], ['tonno', '🐟'], ['salmone', '🐟'], ['merluzz', '🐟'],
+  ['gamber', '🦐'], ['vongol', '🦪'], ['cozze', '🦪'], ['calamar', '🦑'],
+  ['brodo', '🥣'], ['legum', '🫘'], ['fagiol', '🫘'], ['ceci', '🫘'],
+  ['lenticch', '🫘'], ['pisell', '🫛'], ['frutta secca', '🥜'], ['mandorl', '🥜'],
+  ['noci', '🥜'], ['nocciol', '🥜'], ['arachid', '🥜'], ['pinol', '🥜'],
+  ['acqua', '💧'], ['vino', '🍷'], ['birra', '🍺'], ['succo', '🧃'],
+  ['caffe', '☕'], ['caffè', '☕'], ['tisana', '🍵'],
+  ['gelato', '🍨'], ['surgelat', '❄️'],
+  ['sapone', '🧼'], ['deter', '🧴'], ['candeggina', '🧴'],
+  ['shampoo', '🧴'], ['spugna', '🧽'], ['carta igienic', '🧻'],
+  ['scotch', '📎'], ['pile', '🔋'], ['lampadin', '💡'], ['candela', '🕯️'],
+  ['irrigator', '🚿'], ['attrez', '🔧'], ['vite', '🔩'], ['chiod', '🔨'],
+];
+
+/* Parole che valgono solo da sole, mai dentro un'altra.
+   "te" sta dentro "de-te-rsivo" e "de-te-rgente": cercandolo come parte di una
+   parola, il detersivo prendeva l'icona della tazza di te'. Da sole invece
+   servono: "te" e "te nero" sono bevande. Qui la ricerca e' sulla parola intera,
+   tutto il resto sulla parte di parola ("pomodor" trova "pomodori"). */
+const ICONE_PAROLA_INTERA = ['te', 'tè', 'the'].map(
+  (p) => [new RegExp(`(^|[^a-zàèéìòù])${p}([^a-zàèéìòù]|$)`, 'i'), '🍵'],
+);
+
+/** L'icona di un alimento: per parola del nome, altrimenti per categoria. */
+function iconaAlimento(nome, categoria) {
+  const n = (nome || '').toLowerCase();
+  // prima le parole che valgono da sole, poi quelle che valgono anche in parte
+  for (const [espressione, icona] of ICONE_PAROLA_INTERA) {
+    if (espressione.test(n)) return icona;
+  }
+  for (const [parola, icona] of ICONE_PAROLA) {
+    if (n.includes(parola)) return icona;
+  }
+  return ICONE_CATEGORIA[categoria] || '📦';
+}
+
 async function renderPantry() {
   const items = await api('/api/pantry');
   const q = $('#pantry-search').value.toLowerCase();
   const list = items.filter((i) => i.name.toLowerCase().includes(q));
   $('#pantry-table tbody').innerHTML = list.map((i) => `
     <tr>
-      <td data-label="Ingrediente">${esc(i.name)}</td>
+      <td data-label="Ingrediente">
+        <span class="riga-alimento">
+          <span class="icona-alimento" aria-hidden="true">${iconaAlimento(i.name, i.category)}</span>
+          <span class="nome-alimento">${esc(i.name)}</span>
+        </span>
+      </td>
       <td data-label="Categoria">${esc(i.category)}</td>
       <td data-label="Quantità"><input type="number" step="0.1" value="${i.quantity}" data-qty="${i.id}" class="qty-cell"> ${esc(i.unit)}</td>
-      <td><button data-del="${i.id}">🗑</button></td>
+      <td><button data-del="${i.id}" title="Togli dalla dispensa" aria-label="Togli ${esc(i.name)} dalla dispensa">🗑</button></td>
     </tr>`).join('') || '<tr><td colspan="4">Dispensa vuota</td></tr>';
 }
 
@@ -2442,24 +2529,37 @@ async function eseguiComando(testo) {
 /** Avvia l'ascolto; se il browser non supporta l'API, si può comunque digitare. */
 function ascolta() {
   if (!SR) {
-    voceStato("Questo browser non supporta il riconoscimento vocale: scrivi il comando qui sotto.", 'err');
+    voceStato('Questo browser non sa ascoltare: il riconoscimento vocale c\'è '
+      + 'solo su Chrome, Edge e Safari. Qui puoi scrivere il comando qui sotto, '
+      + 'e funziona lo stesso.', 'err');
     $('#voice-heard').hidden = true;
     return;
   }
-  if (voce.attivo) { voce.rec.stop(); return; }
+  // Il primo clic apre il pannello e arriva qui: non c'e' ancora nessun
+  // riconoscimento da fermare. Chiamare `stop()` su `null` solleva un errore che
+  // nessuno vede, e il microfono resta muto senza dire perche': era il motivo per
+  // cui sul PC non succedeva nulla, mentre dal telefono (dove il riconoscimento
+  // parte dal secondo clic in poi) sembrava tutto a posto.
+  if (voce.attivo && voce.rec) {
+    try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
+    return;
+  }
 
-  voce.rec = new SR();
-  voce.rec.lang = 'it-IT';
-  voce.rec.interimResults = true;
-  voce.rec.continuous = false;
+  const rec = new SR();
+  voce.rec = rec;
+  voce.finale = '';
+  rec.lang = 'it-IT';
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
 
-  voce.rec.onstart = () => {
+  rec.onstart = () => {
     voce.attivo = true;
     $('#mic').classList.add('on');
     voceStato('Ti ascolto…');
     $('#voice-result').hidden = true;
   };
-  voce.rec.onresult = (e) => {
+  rec.onresult = (e) => {
     let parziale = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const r = e.results[i];
@@ -2470,24 +2570,36 @@ function ascolta() {
     }
     $('#voice-heard').textContent = (voce.finale || parziale).trim() || '…';
   };
-  voce.rec.onerror = (e) => {
+  rec.onerror = (e) => {
     const messaggi = {
       'not-allowed': 'Microfono non autorizzato: consentilo nelle impostazioni del browser.',
+      'service-not-allowed': 'Il browser non concede il riconoscimento vocale da questo '
+        + 'indirizzo. Apri l\'app da http://localhost o da un indirizzo HTTPS.',
       'no-speech': 'Non ho sentito nulla, riprova.',
       'audio-capture': 'Nessun microfono trovato.',
-      network: 'Riconoscimento non disponibile senza connessione.',
+      network: 'Il riconoscimento ha bisogno di internet, e ora non risponde. '
+        + 'Puoi scrivere il comando qui sotto.',
+      aborted: '',
     };
-    voceStato(messaggi[e.error] || 'Errore nel microfono', 'err');
+    // un annullamento voluto non è un errore da mostrare
+    if (e.error === 'aborted') return;
+    voceStato(messaggi[e.error] || `Errore nel microfono (${e.error || 'sconosciuto'})`, 'err');
   };
-  voce.rec.onend = () => {
+  rec.onend = () => {
     voce.attivo = false;
     $('#mic').classList.remove('on');
     const testo = (voce.finale || '').trim();
     voce.finale = '';
     if (testo) eseguiComando(testo);
-    else voceStato('Nessun comando riconosciuto');
+    else if ($('#voice-status').dataset.tipo !== 'err') voceStato('Nessun comando riconosciuto, riprova.');
   };
-  try { voce.rec.start(); } catch (_e) { /* già in ascolto */ }
+  try {
+    rec.start();
+  } catch (err) {
+    voce.attivo = false;
+    // due clic rapidi arrivano qui: il riconoscimento era già partito
+    voceStato('Il microfono è già in ascolto: parla, oppure riprova fra un istante.', 'err');
+  }
 }
 
 function apriVoce() {

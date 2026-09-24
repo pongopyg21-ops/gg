@@ -626,3 +626,70 @@ popolato può sembrare vuoto, e `<details>` chiusi non mostrano il contenuto —
 esattamente il comportamento voluto, non un errore. Prima di concludere che qualcosa
 non è renderizzato, conviene guardare gli elementi interattivi (`browser_get_state`)
 o i dati delle API: se i dati ci sono e i nodi ci sono, il problema è nell'estrattore.
+
+## La pagina non resta in memoria nel browser
+
+Il server manda `Cache-Control: no-cache, no-store, must-revalidate` su tutto
+tranne le risposte che scelgono da sole la loro scadenza (le foto delle voci, la
+voce di conferma di un comando). Prima non lo faceva, e una modifica alla pagina
+restava invisibile nel browser **per giorni**: sembrava che l'app non fosse stata
+aggiornata, mentre il server serviva già la versione nuova. Si cercava un guasto
+che non c'era.
+
+Il sintomo, per riconoscerlo: la pagina è vecchia **solo** in un browser che l'ha
+già aperta, e ricaricando con forza si aggiorna. Il rimedio immediato per l'utente
+è aggiungere `?v=2` all'indirizzo, che per il browser è una pagina mai vista.
+
+## Il riconoscimento vocale nel browser
+
+Il riconoscimento avviene nel client (Web Speech API), non sul server: `voice.py`
+comprende il testo, ma il microfono e la trascrizione sono del browser. Il
+comportamento quindi **cambia fra PC e telefono**:
+
+- Chrome e Firefox **non espongono** le voci neurali di Windows (solo Edge, e
+  solo su PC). La voce "brutta" da PC è per lo più questo. `voce_cloud` aggira il
+  problema quando la chiave Azure è configurata dalla pagina.
+- `SR` può essere `undefined` (Firefox lo è sempre stato). Il controllo va fatto
+  prima di costruire il riconoscimento, dicendo all'utente cosa scrivere invece.
+
+Il primo clic su `#mic` chiama `apriVoce()` che chiama `ascolta()` **prima** che
+esista un riconoscimento: lì `voce.rec` è `null`. Chiamare `stop()` su `null`
+solleva un `TypeError` che non passa da nessun `onerror`, quindi il pannello si
+apre ma non ascolta, in silenzio. La guardia è `if (voce.attivo && voce.rec)`.
+
+## Le domande non sono ordini
+
+`voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa
+c'è in dispensa" contiene un luogo ("dispensa") e un verbo ("c'è"), quindi veniva
+eseguita e scriveva in dispensa una voce chiamata "che cosa c'e" — e quella voce
+sbagliata resta lì per sempre. Una domanda risposta male è peggio di una domanda
+senza risposta.
+
+L'avvio è una parola interrogativa **all'inizio** (`_DOMANDA_AVVIO`): così "metti
+il sale, che serve" resta un comando. "vorrei sapere se c'è il latte" e "dimmi
+quante ricette ho" sono domande, quindi la regex copre anche le forme di cortesia.
+La risposta si costruisce in `_rispondi_domanda` (`app.py`) e viene **letta ad
+alta voce**: è una frase in italiano, non un elenco di dati.
+
+Attenzione ai nomi delle colonne, che non sono quelli che si indovinano: `pantry`
+**non ha** una colonna `name` (il nome sta in `ingredients`, unito per
+`ingredient_id`), `chores` **non ha** `title`/`done`/`next_due` ma `name` e
+`active`, e la scadenza si ricava con `igiene.scadenza()` come fa `/api/chores`.
+Indovinarli dà un `OperationalError` a runtime, non un errore di sintassi.
+
+## Icone degli alimenti in dispensa
+
+`iconaAlimento()` in `app.js`: prima le parole che valgono solo da sole
+(`ICONE_PAROLA_INTERA`, es. "te"), poi le parti di parola, infine la categoria.
+L'ordine delle liste conta — la prima che trova vince.
+
+Due trappole, entrambe già costate un giro di prove: **"te" sta dentro
+"de-te-rsivo"** e "de-te-rgente", quindi senza il confronto sulla parola intera il
+detersivo prendeva la tazza di tè; e le voci vanno dalla più specifica alla più
+generica, altrimenti "olio di semi" trova "semi" prima di "olio". Il test
+`test_le_icone_degli_alimenti_sono_scelte_bene` estrae le funzioni e le esegue con
+node: verifica il comportamento vero, non la presenza delle stringhe.
+
+La tabella della dispensa diventa schede sotto i 560px e le etichette di colonna
+arrivano da `data-label`. L'icona non ha `data-label`, e non deve averlo: sta
+**dentro** la cella dell'ingrediente, che l'etichetta ce l'ha già.
