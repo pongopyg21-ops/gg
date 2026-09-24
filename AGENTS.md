@@ -315,6 +315,30 @@ Vale la pena perche' il log finisce in un file e non in un terminale: senza
 `flush=True` quell'annuncio resterebbe invisibile finche' il processo non muore,
 cioe' proprio quando servirebbe leggerlo.
 
+### Errori: sempre in italiano, e con una traccia nel log
+
+C'e' un gestore di errori di riserva: `app._errore_imprevisto` registra
+l'eccezione con `app.logger.exception` e risponde in italiano, e
+`app._errore_http` fa lo stesso per i codici previsti (404, 405, 413...). Prima
+non c'era niente: l'utente vedeva la pagina di Flask **in inglese** — e
+l'interfaccia e' tutta in italiano — e nel log non restava traccia di cosa fosse
+successo, quindi un guasto era irripetibile.
+
+Due regole:
+
+- **L'API risponde JSON, la pagina risponde HTML.** Un chiamante dell'API si
+  aspetta `{error: ...}`: mandargli l'HTML della pagina lo farebbe rompere con un
+  errore di analisi al posto del messaggio. La distinzione e' su `request.path`.
+- **Il testo e' breve e senza il nome dell'eccezione ne' la traccia.** Quella
+  resta nel log; sulla pagina confonderebbe e basta.
+
+`app._prepara_log()` manda tutto su `stderr`, che `avvia.sh` raccoglie gia' in
+`server.log`: un secondo file di log sarebbe un posto in piu' da guardare. Il
+logger e' `propagate = False`, altrimenti lo stesso errore comparirebbe due volte.
+
+Nei test i fallimenti di proposito si verificano con `caplog` (`logger="app"`):
+si controlla che il messaggio *arrivi nel log*, non che esista una chiamata.
+
 ## Case separate
 
 Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,

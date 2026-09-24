@@ -3,6 +3,7 @@ import io
 import base64
 import binascii
 import hashlib
+import logging
 import secrets
 import re
 import sqlite3
@@ -13,6 +14,7 @@ from contextlib import closing
 import datetime
 
 from flask import Flask, g, jsonify, request, send_file, send_from_directory, session
+from werkzeug.exceptions import HTTPException
 
 import allergens
 import copie
@@ -52,12 +54,93 @@ def _non_tenere_in_memoria(risposta):
 app.secret_key = houses.secret_key()
 
 
+def _prepara_log():
+    """Il log del server: quando e cosa e' andato storto, con l'ora.
+
+    Senza, un errore resta solo nella pagina che l'utente ha visto per un
+    attimo; nel file non c'e' niente da leggere dopo. Si scrive su `stderr`
+    perche' `avvia.sh` lo raccoglie gia' in `server.log`: un secondo file di log
+    sarebbe un posto in piu' da guardare.
+    """
+    gestore = logging.StreamHandler()
+    gestore.setFormatter(logging.Formatter("%(asctime)s  %(levelname)s  %(message)s",
+                                           datefmt="%Y-%m-%d %H:%M:%S"))
+    app.logger.handlers.clear()
+    app.logger.addHandler(gestore)
+    app.logger.setLevel(logging.INFO)
+    # senza questo il logger di Flask passa la mano a quello di radice, che
+    # riscrive lo stesso errore una seconda volta nel file
+    app.logger.propagate = False
+
+
+_prepara_log()
 # Il biscotto di sessione dura a lungo: l'utente scrive nome e password una volta
 # sola, poi resta collegato anche riaprendo il browser giorni dopo.
 app.config.update(PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=365),
                   SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax")
 
+
+def _messaggio_errore(status):
+    """Il testo che l'utente legge quando qualcosa va storto.
+
+    Flask, lasciato solo, risponde con una pagina in inglese ("Internal Server
+    Error", "Not Found"): qui l'interfaccia e' tutta in italiano, e un errore in
+    un'altra lingua e' la cosa che disorienta di piu' proprio nel momento
+    peggiore. Si sceglie un testo breve e comprensibile, senza il nome
+    dell'eccezione ne' la traccia: quella resta nel log, non sulla pagina.
+    """
+    if status == 401:
+        return "Non sei collegato a nessuna casa."
+    if status == 403:
+        return "Questa operazione non è consentita."
+    if status == 404:
+        return "Non ho trovato quello che cercavi."
+    if status in (405, 406):
+        return "Questa operazione non è prevista qui."
+    if status == 413:
+        return "Quello che hai inviato è troppo grande."
+    if 400 <= status < 500:
+        return "La richiesta non è valida."
+    return "Qualcosa è andato storto. Riprova; se continua, guarda il log del server."
+
+
+@app.errorhandler(HTTPException)
+def _errore_http(errore):
+    """Gli errori previsti (404, 405, 413...) rispondono in italiano.
+
+    L'API risponde con JSON, la pagina con una pagina HTML: chi chiama l'API si
+    aspetta `{error: ...}`, e mandargli l'HTML della pagina lo farebbe rompere
+    nel modo peggiore, cioe' con un errore di analisi al posto del messaggio.
+    """
+    status = errore.code or 500
+    messaggio = _messaggio_errore(status)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": messaggio}), status
+    return (f"<html lang='it'><head><meta charset='utf-8'>"
+            f"<title>{messaggio}</title></head>"
+            f"<body style='font:16px system-ui;padding:2rem'>"
+            f"<h1>{messaggio}</h1>"
+            f"<p><a href='/'>Torna all'app</a></p></body></html>"), status
+
+
+@app.errorhandler(Exception)
+def _errore_imprevisto(errore):
+    """Un guasto non previsto si registra nel log e si dice all'utente in italiano.
+
+    Prima non c'era nessun gestore: l'utente vedeva la pagina di Flask in
+    inglese, e nel log non restava traccia di cosa fosse successo. Con piu' case
+    e piu' database un guasto senza traccia e' un guasto irripetibile.
+    """
+    app.logger.exception("Errore non previsto su %s %s", request.method, request.path)
+    messaggio = _messaggio_errore(500)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": messaggio}), 500
+    return (f"<html lang='it'><head><meta charset='utf-8'>"
+            f"<title>{messaggio}</title></head>"
+            f"<body style='font:16px system-ui;padding:2rem'>"
+            f"<h1>{messaggio}</h1>"
+            f"<p><a href='/'>Torna all'app</a></p></body></html>"), 500
 
 # Quanti pasti al giorno e quali. L'utente sceglie il numero nel primo passo
 # dell'onboarding, e da lì derivano i pasti mostrati nel piano e accettati

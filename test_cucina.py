@@ -4129,6 +4129,68 @@ def test_salvataggio_parziale_non_cancella_la_fonte(client):
     assert risposta.get_json()["source"] == "Fonte originale"
 
 
+# ---------------------------------------------------- errori in italiano
+# Un errore in inglese, o una pagina bianca senza spiegazione, e' la cosa che
+# disorienta di piu' nel momento peggiore. Qui si verifica che l'utente legga
+# sempre una frase italiana, e che l'API riceva JSON (non l'HTML della pagina)
+# perche' chi chiama l'API si aspetta un campo `error`.
+
+def test_l_api_risponde_in_italiano_quando_qualcosa_si_rompe(client, monkeypatch):
+    def esplode():
+        raise RuntimeError("guasto improvviso")
+
+    monkeypatch.setattr(app_module.houses, "elenco", esplode)
+
+    r = client.get("/api/houses")
+    assert r.status_code == 500
+    assert r.is_json, r.data
+    testo = r.get_json()["error"]
+    assert "andato storto" in testo
+    # il testo e' quello che legge l'utente: in italiano, e senza il nome
+    # dell'eccezione ne' la traccia, che confonderebbero e basta
+    assert "RuntimeError" not in testo
+    assert "Traceback" not in testo
+
+
+def test_un_guasto_non_previsto_finisce_nel_log(client, monkeypatch, caplog):
+    """Senza traccia nel log, un guasto resta irripetibile: si vede solo la
+    pagina che l'utente ha visto per un attimo."""
+    def esplode():
+        raise RuntimeError("guasto da ritrovare nel log")
+
+    monkeypatch.setattr(app_module.houses, "elenco", esplode)
+
+    with caplog.at_level("ERROR", logger="app"):
+        client.get("/api/houses")
+
+    assert "guasto da ritrovare nel log" in caplog.text, caplog.text
+
+
+def test_una_pagina_inesistente_si_spiega_in_italiano(client):
+    """Fuori dall'API si risponde con una pagina, sempre in italiano."""
+    r = client.get("/pagina-che-non-esiste")
+    assert r.status_code == 404
+    testo = r.get_data(as_text=True)
+    assert "Non ho trovato" in testo
+    assert "Not Found" not in testo
+
+
+def test_un_indirizzo_api_inesistente_risponde_json(client):
+    """L'API non deve rispondere l'HTML della pagina: chi la chiama si aspetta
+    `{error: ...}` e riceverebbe un errore di analisi al posto del messaggio."""
+    r = client.get("/api/rotta-che-non-esiste")
+    assert r.status_code == 404
+    assert r.is_json, r.data
+    assert "error" in r.get_json()
+
+
+def test_il_metodo_sbagliato_si_spiega_in_italiano(anon):
+    r = anon.delete("/api/login")
+    assert r.status_code == 405
+    assert r.is_json
+    assert "prevista" in r.get_json()["error"]
+
+
 # ------------------------------------------------------- copie automatiche
 # Il pulsante "Scarica una copia" salva solo chi si ricorda di premerlo. Le copie
 # automatiche sono la rete di sicurezza che non dipende dalla memoria: la prima
