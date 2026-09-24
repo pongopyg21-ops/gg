@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 from contextlib import closing
 from datetime import date
 
@@ -14,6 +15,7 @@ os.environ["CUCINA_DB"] = DB
 
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
+import copie  # noqa: E402
 import houses  # noqa: E402
 import igiene  # noqa: E402
 import units  # noqa: E402
@@ -24,9 +26,27 @@ import voce_cloud  # noqa: E402
 REGISTRO = os.path.join(os.path.dirname(DB), "test-houses.db")
 houses.REGISTRY_PATH = REGISTRO
 houses.CASE_DIR = os.path.join(os.path.dirname(DB), "test-case")
+# Anche i dati: senza questo le copie automatiche finirebbero nella cartella
+# vera dell'app, e i test lascerebbero file che non hanno creato loro.
+houses.DATA_DIR = os.path.dirname(DB)
 
 CASA_TEST = "casa-test"
 PASSWORD_TEST = "password-di-prova"
+
+
+@pytest.fixture(autouse=True)
+def percorsi_dei_dati():
+    """Rimette i percorsi dei dati nel temporaneo prima di ogni test.
+
+    Un test ricarica `houses` per provare `MAGGIORDOMO_DATA`: al ritorno il
+    modulo ha di nuovo i percorsi accanto al codice, e i test successivi
+    creerebbero case e copie nei dati veri dell'app. Rimettendoli qui, l'esito
+    non dipende dall'ordine in cui i test vengono eseguiti.
+    """
+    houses.REGISTRY_PATH = REGISTRO
+    houses.CASE_DIR = os.path.join(os.path.dirname(DB), "test-case")
+    houses.DATA_DIR = os.path.dirname(DB)
+    yield
 
 
 def registra_casa(nome="Casa Test", password=PASSWORD_TEST, db_path=None):
@@ -50,6 +70,7 @@ def client():
         os.remove(REGISTRO)
     if os.path.exists(DB):
         os.remove(DB)
+    copie.svuota()
     for f in os.listdir(houses.CASE_DIR) if os.path.isdir(houses.CASE_DIR) else []:
         if f.startswith("case-"):
             os.remove(os.path.join(houses.CASE_DIR, f))
@@ -4106,4 +4127,143 @@ def test_salvataggio_parziale_non_cancella_la_fonte(client):
     risposta = client.put(f"/api/recipes/{ric['id']}", json={
         "name": "Nome cambiato", "servings": 3, "instructions": "", "items": ric["items"]})
     assert risposta.get_json()["source"] == "Fonte originale"
+
+
+# ------------------------------------------------------- copie automatiche
+# Il pulsante "Scarica una copia" salva solo chi si ricorda di premerlo. Le copie
+# automatiche sono la rete di sicurezza che non dipende dalla memoria: la prima
+# deve esistere subito, altrimenti un server appena installato non ne ha nessuna
+# proprio quando serve. Qui si verifica il comportamento vero: che la copia sia
+# un database riapribile, che non si accumulino all'infinito e che una casa non
+# veda le copie dell'altra.
+
+def test_la_copia_e_un_database_riapribile_con_i_dati_dentro(client):
+    """Non basta che il file esista: deve essere un database che l'app riapre."""
+    client.post("/api/shopping", json={"name": "Sedano per la copia", "qty": 3})
+
+    scritte = copie.fai_copie()
+    assert len(scritte) == 1, scritte
+
+    with closing(sqlite3.connect(scritte[0])) as copiato:
+        trovato = copiato.execute(
+            "SELECT COUNT(*) FROM shopping_items WHERE name LIKE '%Sedano per la copia%'"
+        ).fetchone()[0]
+    assert trovato == 1
+
+
+def test_la_prima_copia_arriva_subito_anche_col_server_appena_acceso(client):
+    """Se la prima copia aspettasse un giorno, chi installa l'app oggi non
+    avrebbe nessuna copia per un giorno intero."""
+    copie.svuota()
+    assert copie.elenco(CASA_TEST)["quante"] == 0
+
+    app_module._giro_di_copie()
+
+    assert copie.elenco(CASA_TEST)["quante"] == 1
+
+
+def test_non_si_accumulano_oltre_il_limite(client):
+    """La cartella non deve crescere senza fine su una macchina accesa per mesi."""
+    import datetime as _dt
+
+    # copie forzate con orari diversi: due copie nello stesso secondo avrebbero
+    # lo stesso nome e la seconda sovrascriverebbe la prima invece di sommarsi
+    for i in range(copie.QUANTE + 4):
+        copie.copia_casa(CASA_TEST, quando=_dt.datetime.now() + _dt.timedelta(minutes=i))
+
+    assert copie.elenco(CASA_TEST)["quante"] == copie.QUANTE
+
+
+def test_una_casa_non_tocca_le_copie_dell_altra(client):
+    """Le copie stanno separate per casa: chi ne cancella una non deve poter
+    toccare lo spazio dell'altra."""
+    altra = houses.crea("Casa Vicina", "password-vicina")
+    app_module.init_db(houses.db_path(altra), con_ricettario=True)
+
+    copie.fai_copie()
+
+    assert copie.elenco(CASA_TEST)["quante"] == 1
+    assert copie.elenco(altra)["quante"] == 1
+    # ognuna nel suo spazio, e nessun file condiviso
+    assert copie._copie_di(CASA_TEST)[0] != copie._copie_di(altra)[0]
+
+
+def test_il_giro_automatico_non_ricopia_una_casa_gia_copiata(client):
+    """Il giro gira ogni ora ma la copia e' giornaliera: senza questo salto
+    una casa avrebbe ventiquattro copie al giorno e la cartella si riempirebbe."""
+    app_module._giro_di_copie()
+    prima = copie._copie_di(CASA_TEST)
+
+    scritto = copie.fai_copie(forse=True)
+
+    assert scritto == [], scritto
+    assert copie._copie_di(CASA_TEST) == prima
+
+
+def test_una_copia_fallita_non_lascia_un_file_a_meta(client, monkeypatch):
+    """Il file provvisorio non deve restare nella cartella: verrebbe contato
+    come copia valida al giro dopo, e la copia piu' recente sarebbe rotta.
+
+    Si imita il caso vero: SQLite crea il file appena si connette, quindi un
+    guasto durante la scrittura lascia un file a meta' che senza pulizia
+    resterebbe li' col nome di una copia buona.
+    """
+    vero = sqlite3.connect
+    chiamate = []
+
+    class Finta:
+        def backup(self, *_a):
+            raise sqlite3.OperationalError("disco pieno")
+
+        def close(self):
+            pass
+
+    class FintoSqlite:
+        """Visto solo da `copie`: patching il modulo vero toccherebbe anche il
+        registro delle case, che deve continuare a funzionare."""
+        Error = sqlite3.Error
+
+        @staticmethod
+        def connect(percorso, *a, **k):
+            chiamate.append(percorso)
+            if len(chiamate) == 1:
+                # la sorgente e' quella che fallisce durante la copia, quindi il
+                # destinatario e' un file vero: e' proprio il file a meta' che la
+                # pulizia deve togliere
+                return Finta()
+            return vero(percorso)
+
+    monkeypatch.setattr(copie, "sqlite3", FintoSqlite)
+    with pytest.raises(sqlite3.OperationalError):
+        copie.copia_casa(CASA_TEST)
+
+    cartella = os.path.join(copie.cartella(), CASA_TEST)
+    avanzi = os.listdir(cartella) if os.path.isdir(cartella) else []
+    assert avanzi == [], avanzi
+
+
+def test_api_copie_dice_quante_ce_ne_sono(client):
+    """L'utente deve poter vedere che le copie ci sono, senza cercare sul disco."""
+    app_module._giro_di_copie()
+    d = client.get("/api/copie").get_json()
+    assert d["quante"] == 1
+    assert d["conservate"] == copie.QUANTE
+    assert d["ultima"], d
+
+
+def test_api_copie_richiede_accesso(anon):
+    assert anon.get("/api/copie").status_code == 401
+
+
+def test_api_copie_non_nomina_le_altre_case(client):
+    """Il conteggio e' della sola casa collegata: le altre non si nominano."""
+    altra = houses.crea("Casa Vicina", "password-vicina")
+    app_module.init_db(houses.db_path(altra), con_ricettario=True)
+    app_module._giro_di_copie()
+
+    d = client.get("/api/copie").get_json()
+    assert d["quante"] == 1
+    testo = json.dumps(d, ensure_ascii=False)
+    assert "vicina" not in testo.lower()
+
 

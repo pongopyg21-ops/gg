@@ -5,6 +5,8 @@ __pycache__/
 *.db.riserva-*
 *.riserva
 *.riserva-*
+# le copie automatiche contengono i database: mai in git
+copie/
 server.log
 .venv/
 .avvia.pid

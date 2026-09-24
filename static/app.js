@@ -1801,6 +1801,7 @@ async function renderProfile() {
   favoritesPicker(favBox, recipesCache, profile.favorite_ids || [], (ids) => saveFavorites(ids));
 
   await renderReport(declared);
+  await mostraCopie();
 }
 
 // riepilogo: quali ingredienti in uso contengono un allergene riconosciuto
@@ -1884,6 +1885,26 @@ $('#pf-backup').addEventListener('click', () => {
   window.location.href = '/api/backup';
   toast('Preparo la copia dei dati...');
 });
+
+/* Le copie automatiche si dicono nel Profilo, dove si parla dei dati: senza
+   questa riga l'utente vedrebbe solo il pulsante per scaricarle e crederebbe
+   di non averne nessuna. Se la richiesta fallisce non si dice niente: e' una
+   informazione in piu', non una cosa per cui valga la pena mostrare un errore. */
+async function mostraCopie() {
+  const box = $('#pf-copie');
+  if (!box) return;
+  try {
+    const d = await api('/api/copie');
+    if (!d.quante) {
+      box.textContent = 'La prima copia automatica arriva tra poco: il server la '
+        + 'prende da solo ogni giorno senza che tu debba chiederla.';
+      return;
+    }
+    const quando = d.ultima ? `L'ultima è del ${esc(d.ultima)}.` : '';
+    box.innerHTML = `Il server ne tiene una al giorno, in automatico: `
+      + `adesso ce ne sono <strong>${d.quante}</strong> (tiene le ultime ${d.conservate}). ${quando}`;
+  } catch { /* niente: e' un'informazione in piu', non un errore da mostrare */ }
+}
 
 /* ---------- ricette preferite ---------- */
 

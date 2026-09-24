@@ -6,6 +6,8 @@ import hashlib
 import secrets
 import re
 import sqlite3
+import threading
+import time
 import zipfile
 from contextlib import closing
 import datetime
@@ -13,6 +15,7 @@ import datetime
 from flask import Flask, g, jsonify, request, send_file, send_from_directory, session
 
 import allergens
+import copie
 import faq
 import houses
 import igiene
@@ -47,11 +50,14 @@ def _non_tenere_in_memoria(risposta):
         risposta.headers["Expires"] = "0"
     return risposta
 app.secret_key = houses.secret_key()
+
+
 # Il biscotto di sessione dura a lungo: l'utente scrive nome e password una volta
 # sola, poi resta collegato anche riaprendo il browser giorni dopo.
 app.config.update(PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=365),
                   SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax")
+
 
 # Quanti pasti al giorno e quali. L'utente sceglie il numero nel primo passo
 # dell'onboarding, e da lì derivano i pasti mostrati nel piano e accettati
@@ -342,6 +348,22 @@ def api_backup():
         as_attachment=True,
         download_name=f"maggiordomo-{slug}-{datetime.date.today().isoformat()}.zip",
     )
+
+
+@app.route("/api/copie")
+def api_copie():
+    """Le copie automatiche di questa casa: quante, quanto pesano, quando l'ultima.
+
+    Serve a rendere visibile una cosa che altrimenti l'utente non sa: che esiste
+    gia' una copia anche senza averla chiesta. Il numero delle copie e la data
+    sono della **sola casa collegata**: le altre non si nominano.
+    """
+    slug = casa_attiva()
+    if not slug:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+
+    file = copie.elenco(slug)
+    return jsonify({"attive": True, **file})
 
 
 @app.route("/api/houses")
@@ -2381,6 +2403,39 @@ def migra_case():
     print("=" * 64 + "\n")
 
 
+def _giro_di_copie():
+    """Un giro di copie, senza far cadere il server se qualcosa va storto.
+
+    Gira in un thread a parte: una copia non deve far aspettare una richiesta,
+    e un errore di disco non deve diventare un errore visibile all'utente che
+    stava solo guardando la dispensa. L'eccezione si stampa nel log e basta.
+    """
+    try:
+        copie.fai_copie(forse=True)
+    except Exception as err:                      # noqa: BLE001 - non deve risalire
+        print(f"Copie automatiche non riuscite: {err}", flush=True)
+
+
+def avvia_copie_automatiche():
+    """Fa una copia all'avvio e poi ne tenta una ogni tanto, in sottofondo.
+
+    Il primo giro parte **subito dopo l'avvio**, non dopo un giorno: un server
+    appena installato non ha ancora nessuna copia, ed e' proprio la prima che
+    serve. I giri successivi non copiano a vuoto, perche' `fai_copie` salta le
+    case la cui copia e' gia' recente.
+
+    Il filo e' un demone: non deve tenere in vita il processo quando il server
+    viene fermato.
+    """
+    def ciclo():
+        _giro_di_copie()
+        while True:
+            time.sleep(3600)
+            _giro_di_copie()
+
+    threading.Thread(target=ciclo, name="copie-automatiche", daemon=True).start()
+
+
 def avvia():
     """Avvia il server.
 
@@ -2427,4 +2482,5 @@ def avvia():
 if __name__ == "__main__":
     migra_case()
     init_db()
+    avvia_copie_automatiche()
     avvia()

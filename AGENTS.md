@@ -255,6 +255,35 @@ Tre vincoli, in ordine di importanza:
 Lato client il download e' un semplice `window.location.href`, non una `fetch`: il
 browser deve trattarlo come file da scaricare, con il suo nome e la sua finestrella.
 
+### Copie automatiche (`copie.py`)
+
+Il pulsante salva solo chi si ricorda di premerlo, quindi esiste anche una copia
+che non si deve chiedere: **una al giorno, le ultime sette**, in `copie/<slug>/`
+dentro `DATA_DIR`. `app.avvia_copie_automatiche()` ne fa una subito all'avvio e
+poi ci riprova ogni ora; `copie.fai_copie(forse=True)` salta le case la cui copia
+e' gia' recente, quindi le ore passano senza produrre copie inutili.
+
+Tre cose che sembrano dettagli e non lo sono:
+
+- **Il primo giro parte subito.** Se la prima copia aspettasse un giorno, un
+  server appena installato non avrebbe nessuna copia proprio nel momento in cui
+  serve. Un test lo verifica.
+- **Scrittura atomica.** La copia si fa su `<nome>.tmp` e si rinomina solo a
+  lavoro finito. Un file a meta' col nome di una copia buona e' la trappola
+  peggiore: la si crede valida fino al giorno in cui serve.
+- **Il thread non deve far cadere il server.** `_giro_di_copie()` cattura tutto e
+  scrive nel log: un disco pieno non deve diventare un errore visibile a chi
+  stava solo guardando la dispensa.
+
+`GET /api/copie` dice quante ce ne sono e quando e' l'ultima, **della sola casa
+collegata**, e il Profilo lo mostra sotto il pulsante del salvataggio. Senza quella
+riga l'utente vedrebbe solo il pulsante e crederebbe di non avere nessuna copia.
+
+Nei test la cartella delle copie va isolata come il registro: `houses.DATA_DIR`
+puntato al temporaneo, altrimenti i test scrivono nei dati veri dell'app. La
+fixture `percorsi_dei_dati` (autouse) rimette a posto i percorsi prima di ogni
+test, perche' un test ricarica `houses` e al ritorno li riporta accanto al codice.
+
 ## Percorsi dei dati
 
 `MAGGIORDOMO_DATA` sposta tutti i dati (registro, `case/` e database storico)

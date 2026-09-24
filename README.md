@@ -416,6 +416,9 @@ Per una casa con più dispositivi in modo stabile conviene una **macchina sempre
 | GET | `/api/voce/config` | Se la voce neurale cloud è attiva e quali voci offre. Non espone la chiave. Richiede l'accesso |
 | POST | `/api/voce/parla` | Restituisce l'audio MP3 di `{text, voice, rate, pitch}` dalla voce neurale. 503 se non configurata, 400 su voce o testo non validi. Richiede l'accesso |
 | GET | `/api/backup` | Scarica i dati della **casa collegata** (ZIP col database e un `LEGGIMI.txt`). Non include il registro né le altre case. Richiede l'accesso |
+| GET | `/api/copie` | Quante copie automatiche esistono per la **casa collegata**, quante se ne conservano e quando è stata presa l'ultima. Richiede l'accesso |
+
+Oltre al pulsante "Scarica una copia dei dati", il server ne prende **una al giorno in automatico** (le ultime sette, in `copie/<casa>/`): una copia che si deve ricordare di chiedere è una copia che non c'è nel momento in cui serve. Il Profilo dice quante ce ne sono e quando è stata presa l'ultima.
 
 Tutte le API tranne quelle di accesso richiedono una sessione e rispondono **401** senza: la pagina iniziale, i file statici e le rotte qui sopra dell'accesso sono le uniche pubbliche. Il controllo sta in un `before_request` unico (`app.py`), non su ogni rotta, perché dimenticarsene una significherebbe esporre una casa.
 
