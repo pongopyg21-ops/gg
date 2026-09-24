@@ -420,16 +420,21 @@ function photoOptions(selezionata) {
     pulsante «+ Nuova ricetta» sia dalla voce («crea la ricetta carbonara»), che
     è il caso in cui il nome è già noto: chi lo ha dettato lo ritrova scritto.
 */
-function nuovaRicetta(nomeIniziale) {
+function nuovaRicetta(nomeIniziale, ingredientiIniziali) {
   const nome = (nomeIniziale || '').trim();
+  const ingredienti = ingredientiIniziali || [];
   showModal('Nuova ricetta', `
     <p class="hint">${nome ? `«${esc(nome)}»: come vuoi farla?` : 'Come vuoi farla?'}</p>
+    ${ingredienti.length ? `<p class="hint">Gli ingredienti che hai detto sono già
+      nel modulo: ${ingredienti.map((i) => esc(i.name)).join(', ')}.</p>` : ''}
     <div class="modal-foot">
       <button id="ric-scrivi">✍️ La scrivo io</button>
       <button id="ric-cerca" class="primary">🔎 Cercala online</button>
     </div>
   `);
-  $('#ric-scrivi').addEventListener('click', () => recipeForm(null, nome));
+  // scrivendola a mano si ritrovano le dosi appena dette; cercandola online no,
+  // perché gli ingredienti arrivano dal sito e sostituirebbero quelli
+  $('#ric-scrivi').addEventListener('click', () => recipeForm(null, nome, ingredienti));
   $('#ric-cerca').addEventListener('click', () => cercaRicettaOnline(nome));
 }
 
@@ -507,8 +512,8 @@ async function importaRicetta(url) {
   }
 }
 
-function recipeForm(recipe, nomeIniziale) {
-  const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: [] };
+function recipeForm(recipe, nomeIniziale, ingredientiIniziali) {
+  const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: ingredientiIniziali || [] };
   showModal(recipe ? 'Modifica ricetta' : 'Nuova ricetta', `
     <div class="field"><label>Nome</label><input id="r-name" value="${esc(r.name)}"></div>
     <div class="row" style="margin-bottom:12px">
@@ -542,9 +547,11 @@ function recipeForm(recipe, nomeIniziale) {
   const addRow = (it = { name: '', quantity: '', unit: 'pz' }) => {
     const div = document.createElement('div');
     div.className = 'ing-row';
-    div.innerHTML = `<input placeholder="Ingrediente" value="${esc(it.name)}" list="ingredient-list">
-      <input type="number" step="0.1" placeholder="Qtà" value="${it.quantity}">
-      <input placeholder="Unità" value="${esc(it.unit)}" list="unit-list">`;
+    // gli ingredienti dettati possono non avere unità ("4 uova"): il campo
+    // vuoto verrebbe scritto "null" e l'utente vedrebbe un valore inventato
+    div.innerHTML = `<input placeholder="Ingrediente" value="${esc(it.name || '')}" list="ingredient-list">
+      <input type="number" step="0.1" placeholder="Qtà" value="${it.quantity ?? ''}">
+      <input placeholder="Unità" value="${esc(it.unit || 'pz')}" list="unit-list">`;
     rowsBox.appendChild(div);
   };
   (r.items.length ? r.items : [{}]).forEach(addRow);
@@ -2678,8 +2685,9 @@ async function eseguiComando(testo) {
       chiudiVoce();
       apriSezione('cucina');
       switchTab('recipes');
-      // la voce ha gia' il nome: si chiede solo se scriverla o cercarla online
-      if (typeof nuovaRicetta === 'function') nuovaRicetta(res.name || '');
+      // la voce ha già il nome (ed eventuali ingredienti con le dosi): si
+      // chiede solo se scriverla a mano o cercarla online
+      if (typeof nuovaRicetta === 'function') nuovaRicetta(res.name || '', res.items || []);
     } else {
       // un comando puo' toccare una scheda di un'altra area (dettare una spesa
       // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la

@@ -1561,12 +1561,17 @@ def voice_command():
     if cmd["intent"] == "recipe_add":
         # Non si crea una ricetta vuota: una ricetta senza ingredienti e senza
         # procedimento non serve a nessuno e resterebbe li' a sporcare l'elenco.
-        # Si apre invece il modulo gia' compilato col nome, cosi' la voce fa il
-        # lavoro noioso (trovare la scheda, aprire il modulo, scrivere il nome) e
-        # l'utente aggiunge ingredienti e preparazione.
+        # Si apre invece il modulo gia' compilato con quello che si e' detto
+        # (nome ed eventuali ingredienti con le dosi), cosi' la voce fa il lavoro
+        # noioso e l'utente aggiunge la preparazione.
+        ingredienti = cmd.get("items") or []
         if not cmd["name"]:
             return jsonify({**cmd, "open_recipe_form": True,
                             "message": "Apro il modulo per la nuova ricetta."})
+        if ingredienti:
+            return jsonify({**cmd, "open_recipe_form": True,
+                            "message": f"Nuova ricetta: {cmd['name']}, con "
+                                       f"{len(ingredienti)} ingredienti. Completa la preparazione."})
         return jsonify({**cmd, "open_recipe_form": True,
                         "message": f"Nuova ricetta: {cmd['name']}. Completa ingredienti e preparazione."})
 

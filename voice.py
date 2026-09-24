@@ -160,6 +160,17 @@ _RECIPE_FILLER = _RECIPE_VERBS | _RECIPE_WORDS | {
     "ho", "voglio", "vorrei",
 }
 
+# avanzi attorno al nome di un ingrediente dettato: "500 grammi **di** pasta",
+# "**e** 300 grammi di pomodoro". Non contiene le preposizioni che possono far
+# parte di un nome ("passata di pomodoro", "olio di oliva"): si tolgono solo ai
+# bordi, e lì sono avanzi del discorso.
+_INGREDIENTE_SCARTO = {
+    "di", "del", "dello", "della", "dei", "degli", "delle", "da", "dal", "dallo",
+    "dalla", "a", "al", "allo", "alla", "ai", "agli", "alle", "in", "nel",
+    "con", "e", "ed", "circa", "un", "uno", "una", "il", "lo", "la", "i", "gli",
+    "le", "mezzo", "mezza", "meta",
+}
+
 # Una ricetta **cucinata**: "ho cucinato pasta al sugo". Non si crea niente, si
 # scala dalla dispensa quello che e' stato consumato.
 #   Il verbo vuole l'ausiliare al passato ("ho", "avevo", ...). Senza, "pasta
@@ -383,7 +394,7 @@ def _clean_name(tokens, skip):
                     else p for p in parole if p).strip()
 
 
-def _nome_ricetta(tokens):
+def _nome_ricetta(tokens, ingredienti_da=None):
     """Nome della ricetta dettata, o '' se la frase non ne contiene uno.
 
     I riempitivi si tolgono da tutta la frase, non solo ai bordi come per gli
@@ -391,13 +402,125 @@ def _nome_ricetta(tokens):
     mezzo e le parole di comando sono sparse. Articoli e preposizioni invece si
     tolgono solo ai bordi: dentro il nome sono parte di esso ("pasta al forno"),
     fuori sono avanzi di discorso ("una ricetta **per la** carbonara").
+
+    `ingredienti_da` è l'indice da cui comincia l'elenco degli ingredienti
+    dettati: il nome finisce lì, altrimenti le dosi finirebbero nel titolo.
     """
+    if ingredienti_da is not None:
+        tokens = tokens[:ingredienti_da]
     parole = [t for t in tokens if t not in _RECIPE_FILLER]
     while parole and parole[0] in _STOPWORDS:
         parole.pop(0)
     while parole and parole[-1] in _STOPWORDS:
         parole.pop()
     return " ".join(parole).strip()
+
+
+def _numero_con_unita(tokens, i):
+    """True se in `tokens[i]` c'è un numero con l'unità attaccata ("500 grammi").
+
+    L'unità è ciò che distingue una dose da una cifra dentro un nome: "torta 7
+    vasetti" è un titolo, "500 grammi di pasta" è un ingrediente.
+    """
+    trovato = _number_at(tokens, i)
+    if not trovato:
+        return False
+    _, usati = trovato
+    dopo = i + usati
+    if dopo < len(tokens) and tokens[dopo] in _UNIT_TOKENS:
+        return True
+    return i > 0 and tokens[i - 1] in _UNIT_TOKENS
+
+
+def _nome_da_ingredienti(tokens):
+    """Indice dove finisce il nome della ricetta e comincia l'elenco, o None.
+
+    Due segnali, nell'ordine:
+
+    1. la congiunzione "con" seguita da un numero ("con 4 uova"): è la forma con
+       cui si detta un elenco, anche quando la dose è contata e non pesata;
+    2. un numero con l'unità ("500 grammi"), che vale anche senza "con".
+
+    Il solo numero non basta: "crea la ricetta torta 7 vasetti" è un titolo, non
+    un elenco, e senza questo la ricetta si chiamerebbe "torta".
+    """
+    for i in range(len(tokens) - 1):
+        if tokens[i] == "con" and _number_at(tokens, i + 1):
+            return i
+    for i in range(len(tokens)):
+        if _numero_con_unita(tokens, i):
+            if i > 0 and tokens[i - 1] == "con":
+                return i - 1
+            return i
+    return None
+
+
+def _ingredienti_da_dettato(tokens):
+    """Ingredienti dettati in coda a una frase di ricetta.
+
+    "con 500 grammi di pasta e 300 grammi di pomodoro" -> due ingredienti con le
+    loro dosi. Si spezza sulla congiunzione "e" e si legge la quantità con
+    `_extract_amount`: quello che resta, ripulito, è il nome dell'ingrediente.
+
+    Senza questa lettura le dosi finivano tutte dentro il **nome** della ricetta
+    ("pasta al forno con 500 grammi di pasta e 300 grammi di pomodoro"): la voce
+    dichiarava di creare una ricetta e ne creava una con un titolo assurdo.
+    """
+    elenco = []
+    pezzo = []
+    for tok in tokens + ["e"]:
+        if tok == "e":
+            elenco += _ingredienti_del_pezzo(pezzo)
+            pezzo = []
+        else:
+            pezzo.append(tok)
+    return elenco
+
+
+def _ingredienti_del_pezzo(pezzo):
+    """Uno o più ingredienti da un tratto di frase, spezzando sui numeri nuovi.
+
+    La virgola della dettatura ("guanciale, 4 uova") arriva qui senza virgola,
+    quindi un numero che apre dopo un ingrediente già completo è un ingrediente
+    nuovo. "pasta 500 grammi" invece resta uno solo: lì il numero completa
+    l'ingrediente appena detto, non ne apre un altro.
+    """
+    fuori = []
+    corrente = []
+    for tok in pezzo:
+        trovato = _number_at([tok], 0)
+        deja_completo = corrente and _extract_amount(corrente)[0] is not None
+        nuovo_numero = trovato and tok not in _UNIT_TOKENS
+        unita_prima = bool(corrente) and corrente[-1] in _UNIT_TOKENS
+        if deja_completo and nuovo_numero and not unita_prima:
+            fuori.append(corrente)
+            corrente = [tok]
+        else:
+            corrente.append(tok)
+    if corrente:
+        fuori.append(corrente)
+
+    elenco = []
+    for gruppo in fuori:
+        nome, quantita, unita = _ingrediente_singolo(gruppo)
+        if nome:
+            elenco.append({"name": nome, "quantity": quantita, "unit": unita})
+    return elenco
+
+
+def _ingrediente_singolo(pezzo):
+    """(nome, quantità, unità) da un pezzo di elenco, tipo "500 grammi di pasta"."""
+    quantita, unita, consumati = _extract_amount(pezzo)
+    skip = set(consumati)
+    parole = [t for i, t in enumerate(pezzo) if i not in skip]
+    while parole and parole[0] in _INGREDIENTE_SCARTO:
+        parole.pop(0)
+    while parole and parole[-1] in _INGREDIENTE_SCARTO:
+        parole.pop()
+    # l'articolo resta attaccato all'apostrofo, come per gli altri ingredienti
+    nome = " ".join(p.split("'", 1)[1] if p.startswith(("l'", "un'", "d'")) and len(p) > 2
+                    else p for p in parole if p).strip()
+    return nome, quantita, unita
 
 
 def _nome_cucinato(tokens):
@@ -539,8 +662,14 @@ def parse(text):
     if (_RECIPE_WORDS & set(tokens_frase) and _RECIPE_VERBS & set(tokens_frase)
             and not _find_destination(tokens_frase)[2]
             and not ({"ingredienti", "ingrediente"} & set(tokens_frase))):
-        nome = _nome_ricetta(tokens_frase)
-        return {**base, "intent": "recipe_add", "name": nome}
+        # la coda con le dosi è un elenco di ingredienti, non parte del nome:
+        # senza separarla, il titolo della ricetta diventava "pasta al forno con
+        # 500 grammi di pasta e 300 grammi di pomodoro"
+        inizio_ingredienti = _nome_da_ingredienti(tokens_frase)
+        nome = _nome_ricetta(tokens_frase, inizio_ingredienti)
+        ingredienti = (_ingredienti_da_dettato(tokens_frase[inizio_ingredienti:])
+                       if inizio_ingredienti is not None else [])
+        return {**base, "intent": "recipe_add", "name": nome, "items": ingredienti}
 
     # ricerca fra le ricette
     match = re.search(r"\b(cerca|cercami|cercare|mostrami|trova)\b", normalized)

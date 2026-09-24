@@ -496,6 +496,19 @@ Conseguenze pratiche per chi mette mano al codice:
   Il nome si ripulisce in `_nome_ricetta`, che toglie i riempitivi ovunque ma
   articoli e preposizioni solo ai bordi: dentro il nome sono parte di esso
   ("pasta al forno", "risotto ai funghi"), fuori sono avanzi di discorso.
+- **Chi detta una ricetta detta anche gli ingredienti, e le dosi non sono il
+  titolo.** "crea la ricetta pasta al forno con 500 grammi di pasta" senza la
+  separazione diventava una ricetta **chiamata** "pasta al forno con 500 grammi di
+  pasta": la voce sembrava aver capito, mentre l'unica cosa utile — gli
+  ingredienti — finiva nel nome e andava persa. `_nome_da_ingredienti` decide dove
+  finisce il nome e `_ingredienti_da_dettato` legge le dosi, che il client
+  precompila nelle righe del modulo. Il segnale è **il numero con l'unità** oppure
+  "con" + un numero: il solo numero non basta, altrimenti "crea la ricetta torta 7
+  vasetti" diventerebbe una ricetta chiamata "torta". La virgola che si scriverebbe
+  dettando ("guanciale, 4 uova") **non arriva** dal riconoscimento vocale, quindi
+  un numero che apre dopo un ingrediente già completo vale come ingrediente nuovo.
+  Cercando online gli ingredienti dettati non si usano: arrivano dal sito e
+  sostituirebbero quelli.
 - **La dispensa non è il magazzino.** La dispensa si confronta con le ricette, il
   magazzino no: confonderli scrive un detergente in una lista di ingredienti, che è
   il motivo per cui `storage` è una tabella a parte. `_find_destination` decide in

@@ -1114,6 +1114,71 @@ def test_voce_ricetta_nel_carrello_resta_una_destinazione():
     assert voice.parse("aggiungi la ricetta nel carrello")["intent"] == "unknown"
 
 
+def test_voce_ricetta_legge_gli_ingredienti_dettati():
+    """Chi detta una ricetta dice anche cosa ci va, e le dosi non devono finire
+    nel nome.
+
+    Prima finivano tutte nel titolo: "crea la ricetta pasta al forno con 500
+    grammi di pasta e 300 grammi di pomodoro" diventava una ricetta chiamata
+    così, dosi comprese. Il modulo si apriva con quel titolo assurdo e la voce
+    sembrava aver capito, mentre l'unica cosa utile — gli ingredienti — andava
+    persa."""
+    cmd = voice.parse("crea la ricetta pasta al forno con 500 grammi di pasta e 300 grammi di pomodoro")
+    assert cmd["intent"] == "recipe_add"
+    assert cmd["name"] == "pasta al forno"
+    assert cmd["items"] == [{"name": "pasta", "quantity": 500, "unit": "g"},
+                            {"name": "pomodoro", "quantity": 300, "unit": "g"}]
+
+
+def test_voce_ricetta_ingredienti_contati_senza_unita():
+    """"4 uova" è una dose anche senza unità di misura."""
+    cmd = voice.parse("crea la ricetta carbonara con 4 uova")
+    assert cmd["name"] == "carbonara"
+    assert cmd["items"] == [{"name": "uova", "quantity": 4, "unit": None}]
+
+
+def test_voce_ricetta_virgola_dettata_separa_gli_ingredienti():
+    """Le virgole non arrivano dal riconoscimento vocale: "guanciale, 4 uova"
+    è "guanciale 4 uova", e il numero apre un ingrediente nuovo."""
+    cmd = voice.parse("nuova ricetta carbonara con 200 grammi di guanciale, 4 uova e 100 grammi di pecorino")
+    assert cmd["name"] == "carbonara"
+    assert [i["name"] for i in cmd["items"]] == ["guanciale", "uova", "pecorino"]
+    assert [i["quantity"] for i in cmd["items"]] == [200, 4, 100]
+
+
+def test_voce_ricetta_senza_dosi_resta_solo_il_nome():
+    """Un nome con un numero dentro non è un elenco di ingredienti.
+
+    "torta 7 vasetti" è il nome di una torta: senza l'unità di misura o il "con",
+    un numero non basta a dire che comincia l'elenco, altrimenti la ricetta si
+    chiamerebbe "torta"."""
+    cmd = voice.parse("crea la ricetta torta 7 vasetti")
+    assert cmd["name"] == "torta 7 vasetti"
+    assert cmd["items"] == []
+
+
+def test_voce_ricetta_gli_ingredienti_non_sono_un_nome_di_ricetta():
+    """Gli ingredienti dettati restano fuori dal nome, ma senza dosi non c'è
+    niente da separare: il nome resta quello che si è detto."""
+    cmd = voice.parse("crea la ricetta pasta al forno con la pasta e il pomodoro")
+    assert cmd["name"] == "pasta al forno con la pasta e il pomodoro"
+    assert cmd["items"] == []
+
+
+def test_voce_endpoint_ricetta_riporta_gli_ingredienti(client):
+    """Il modulo deve poterli precompilare: la risposta li porta con sé."""
+    r = client.post("/api/voice",
+                    json={"text": "crea la ricetta pasta al forno con 500 grammi di pasta e 300 grammi di pomodoro"})
+    d = r.get_json()
+    assert d["open_recipe_form"] is True
+    assert d["name"] == "pasta al forno"
+    assert d["items"] == [{"name": "pasta", "quantity": 500, "unit": "g"},
+                          {"name": "pomodoro", "quantity": 300, "unit": "g"}]
+    # il messaggio dice che gli ingredienti ci sono: altrimenti sembra che la
+    # voce abbia aperto un modulo vuoto
+    assert "2" in d["message"]
+
+
 def test_voce_endpoint_crea_ricetta_apre_il_modulo(client):
     r = client.post("/api/voice", json={"text": "crea la ricetta pasta al forno"})
     assert r.status_code == 200
@@ -3231,8 +3296,75 @@ console.log(esiti.join('\\n'));
     assert "NO " not in esito.stdout, esito.stdout
 
 
+def test_la_voce_porta_gli_ingredienti_nel_modulo(client):
+    """Gli ingredienti dettati arrivano davvero nel modulo, non solo nella risposta.
+
+    Si esegue la funzione vera con node: un test sulle stringhe non accorgerebbe
+    di un `nuovaRicetta(res.name)` che si dimentica il secondo argomento, e il
+    modulo si aprirebbe vuoto mentre i test del server restano verdi.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function nuovaRicetta")
+    blocco = js[inizio:js.index("\n}\n", inizio) + 3]
+    prova = """
+const finte = [];
+let chiamataRecipeForm = null;
+global.showModal = (titolo, corpo) => { global._corpo = corpo; };
+global.$ = (sel) => ({ addEventListener: (ev, fn) => finte.push([sel, fn]) });
+global.esc = (s) => String(s ?? '');
+global.recipeForm = (...args) => { chiamataRecipeForm = args; };
+global.cercaRicettaOnline = () => {};
+""" + blocco + """
+const ingredienti = [{ name: 'pasta', quantity: 500, unit: 'g' }];
+nuovaRicetta('pasta al forno', ingredienti);
+const esiti = [];
+esiti.push((global._corpo.includes('pasta') ? 'ok' : 'NO') + ' ingredienti annunciati');
+finte.find(([sel]) => sel === '#ric-scrivi')[1]();
+esiti.push((chiamataRecipeForm && chiamataRecipeForm[0] === null
+  && chiamataRecipeForm[1] === 'pasta al forno'
+  && chiamataRecipeForm[2] === ingredienti ? 'ok' : 'NO') + ' ingredienti passati al modulo');
+console.log(esiti.join('\\n'));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    assert "NO " not in esito.stdout, esito.stdout
+
+
+def test_le_righe_degli_ingredienti_dettati_si_precompilano(client):
+    """Le dosi dette finiscono nei campi giusti, e chi non ha unità non scrive
+    "null".
+
+    Si esegue `addRow` vero con node su un documento finto: un test sulle
+    stringhe non vedrebbe un `value="null"` nel campo dell'unità, che l'utente
+    leggerebbe come un dato inventato dall'app."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("const rowsBox = $('#ing-rows');")
+    blocco = js[inizio:js.index("\n  (r.items.length", inizio)]
+    prova = """
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const righe = [];
+global.document = { createElement: () => ({ set innerHTML(v) { this._html = v; }, appendChild: () => {} }) };
+global.$ = () => ({ appendChild: (div) => righe.push(div._html) });
+""" + blocco + """
+addRow({ name: 'pasta', quantity: 500, unit: 'g' });
+addRow({ name: 'uova', quantity: 4, unit: null });
+const esiti = [];
+esiti.push((righe[0].includes('value="pasta"') && righe[0].includes('value="500"')
+  && righe[0].includes('value="g"') ? 'ok' : 'NO') + ' dose completa');
+esiti.push((righe[1].includes('value="uova"') && righe[1].includes('value="4"')
+  && !righe[1].includes('null') ? 'ok' : 'NO') + ' unita assente senza null');
+esiti.push((righe[1].includes('value="pz"') ? 'ok' : 'NO') + ' unita predefinita');
+console.log(esiti.join('\\n'));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    assert "NO " not in esito.stdout, esito.stdout
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
-    """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
     houses.elimina("casa-a")
     info = anon.get("/api/session").get_json()
