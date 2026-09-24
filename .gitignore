@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 *.db
+*.db.riserva
+*.db.riserva-*
+*.riserva
+*.riserva-*
 server.log
 .venv/
 .avvia.pid
