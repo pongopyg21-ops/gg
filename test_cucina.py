@@ -2607,6 +2607,69 @@ def test_lo_slug_non_ammette_percorsi():
         houses.db_path("../../etc/passwd")
 
 
+def test_reimposta_password_entra_senza_quella_vecchia(client):
+    """Chi perde la password deve poter rientrare: e' il caso che conta."""
+    vecchia = "PasswordPersa123"
+    assert not houses.autentica(CASA_TEST, vecchia)      # quella del test e' un'altra
+    with closing(sqlite3.connect(REGISTRO)) as db:
+        db.execute("UPDATE houses SET password = ? WHERE slug = ?",
+                   (houses.hash_password(vecchia), CASA_TEST))
+        db.commit()
+    assert houses.autentica(CASA_TEST, vecchia)
+
+    houses.reimposta_password(CASA_TEST, "NuovaPassword456")
+    assert houses.autentica(CASA_TEST, "NuovaPassword456")
+    assert not houses.autentica(CASA_TEST, vecchia)      # la vecchia smette di valere
+
+    # e dalla porta principale funziona: e' quello che serve davvero
+    r = client.post("/api/login", json={"nome": "Casa Test", "password": "NuovaPassword456"})
+    assert r.status_code == 200
+
+
+def test_reimposta_password_non_cancella_i_dati(client):
+    """Il motivo per cui si usa: rientrare e ritrovare tutto."""
+    client.post("/api/recipes", json={"name": "Carbonara di prova"})
+    prima = len(client.get("/api/recipes").get_json())
+
+    houses.reimposta_password(CASA_TEST, "PasswordNuova1")
+
+    client.post("/api/login", json={"nome": "Casa Test", "password": "PasswordNuova1"})
+    dopo = len(client.get("/api/recipes").get_json())
+    assert dopo == prima and prima >= 1
+
+
+def test_reimposta_password_rifiuta_quella_corta():
+    with pytest.raises(ValueError):
+        houses.reimposta_password(CASA_TEST, "abc")
+    with pytest.raises(ValueError):
+        houses.reimposta_password(CASA_TEST, "")
+
+
+def test_reimposta_password_non_crea_case_inesistenti():
+    with pytest.raises(ValueError):
+        houses.reimposta_password("casa-che-non-esiste", "PasswordLunga1")
+    assert not houses.esiste("casa-che-non-esiste")
+
+
+def test_lo_strumento_di_ripristino_funziona_da_capo_a_capo(client, monkeypatch, capsys):
+    """`ripristina_password.py` così come lo esegue l'utente, con `windows\\password.bat`."""
+    import ripristina_password
+    risposte = iter(["PasswordSmemorata2", "PasswordSmemorata2"])
+    monkeypatch.setattr(ripristina_password.getpass, "getpass", lambda *a, **k: next(risposte))
+    assert ripristina_password.main() == 0
+    assert "Fatto" in capsys.readouterr().out
+    assert houses.autentica(CASA_TEST, "PasswordSmemorata2")
+
+
+def test_lo_strumento_non_cambia_niente_se_le_password_non_coincidono(monkeypatch, capsys):
+    import ripristina_password
+    risposte = iter(["PrimaPassword11", "SecondaPassword22"])
+    monkeypatch.setattr(ripristina_password.getpass, "getpass", lambda *a, **k: next(risposte))
+    assert ripristina_password.main() == 1
+    assert "non coincidono" in capsys.readouterr().out
+    assert not houses.autentica(CASA_TEST, "PrimaPassword11")
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     """Se la casa sparisce mentre la sessione e' aperta, si torna all'accesso."""
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})

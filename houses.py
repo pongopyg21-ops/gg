@@ -261,6 +261,23 @@ def cambia_password(slug, vecchia, nuova, percorso=None):
         db.commit()
 
 
+def reimposta_password(slug, nuova, percorso=None):
+    """Mette una password nuova **senza chiedere quella vecchia**.
+
+    Serve a chi la password l'ha persa: nel registro c'e' solo l'impronta, quindi
+    non si puo' recuperare, si puo' solo sostituire. Non e' una scorciatoia per
+    l'app: li' la vecchia resta obbligatoria (`cambia_password`). Chi ha accesso
+    ai file ha gia' i dati, quindi togliere il controllo non apre niente di nuovo.
+    """
+    if not nuova or len(nuova) < 4:
+        raise ValueError("La nuova password deve avere almeno 4 caratteri")
+    if not esiste(slug, percorso):
+        raise ValueError(f"La casa \"{slug}\" non esiste")
+    with closing(_connect_registro(percorso)) as db:
+        db.execute("UPDATE houses SET password = ? WHERE slug = ?", (hash_password(nuova), slug))
+        db.commit()
+
+
 def elimina(slug, percorso=None):
     """Toglie la casa dal registro. Il file del database resta su disco.
 

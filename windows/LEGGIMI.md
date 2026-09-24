@@ -245,6 +245,24 @@ la sessione corrente.
 
 ---
 
+## Se ho perso la password della casa
+
+La password **non si recupera**: nel registro c'e' solo l'impronta, non la
+password. Si puo' pero' metterne una nuova, e non serve quella vecchia:
+
+1. Fai doppio clic su `windows\password.bat`.
+2. Guarda l'elenco delle case e i dati di ciascuna (quante ricette, quanto pesa):
+   e' il controllo che stai per agire sulla casa giusta.
+3. Scrivi la password nuova due volte.
+
+I dati non si toccano: ricette, dispensa e magazzino restano dove sono. Cambia
+una sola riga nel registro.
+
+Se la password vecchia la ricordi, si cambia invece dall'app, e li' la vecchia
+viene chiesta: e' il caso normale.
+
+---
+
 ## La voce neurale (facoltativa)
 
 Senza fare niente, l'app usa la voce del sistema. Per la voce neurale Azure:
