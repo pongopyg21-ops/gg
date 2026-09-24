@@ -3278,10 +3278,40 @@ def test_la_casella_della_chiave_resta_raggiungibile(client):
     assert "blocco.hidden = voceCloud.disponibile" not in js
     # si apre da solo proprio quando la chiave manca, che e' il caso in cui serve
     assert "dettagli.open = !voceCloud.disponibile" in js
-    # e sta **prima** degli esempi e dei menu della voce: in fondo al pannello
-    # non si trovava, ed e' il motivo per cui e' stato spostato
-    assert html.index("voice-chiave-dettagli") < html.index("voice-examples")
-    assert html.index("voice-chiave-dettagli") < html.index("voice-cloud-block")
+    # e sta nella scheda Voce della FAQ, non nel pannello del microfono
+    assert 'id="voice-chiave-dettagli"' in html
+    assert html.index('id="tab-voce"') < html.index('id="voice-chiave-dettagli"')
+    assert html.index('id="tab-voce"') < html.index('id="voice-cloud-block"')
+
+
+def test_le_impostazioni_della_voce_stanno_nella_faq(client):
+    """Le impostazioni (timbro, voce di sistema, voce neurale, chiave) sono scelte
+    che si fanno una volta: nel pannello del microfono intralciavano chi voleva
+    solo dare un comando. Stanno nella scheda Voce della FAQ."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    voce = html.index('id="tab-voce"')
+    for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
+                  'id="voice-ting"', 'id="voice-chiave-dettagli"'):
+        assert html.index(pezzo) > voce, pezzo
+    # il pannello del microfono resta ai comandi: l'ascolto, il testo, il ripeti
+    inizio = html.index('id="voice"')
+    pannello = html[inizio:]
+    for pezzo in ('id="voice-text"', 'id="voice-retry"', 'id="voice-heard"'):
+        assert pezzo in pannello, pezzo
+    # e nessuna impostazione e' rimasta dentro il pannello
+    for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
+                  'id="voice-ting"', 'id="voice-chiave-dettagli"'):
+        assert pezzo not in pannello, pezzo
+
+
+def test_il_pannello_del_microfono_rimanda_alla_faq_per_la_chiave(client):
+    """Senza la chiave la voce e' meccanica: il pannello del microfono, che e' dove
+    l'utente la sente, deve dire dove si mette invece di lasciarla cercare."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="voice-chiave-manca"' in html
+    assert "FAQ" in html[html.index('id="voice-chiave-manca"'):html.index('id="voice-chiave-manca"') + 400]
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "voice-chiave-manca" in js
 
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):

@@ -2652,23 +2652,29 @@ function mostraAvvisoRobotica() {
   // riavvii dell'ambiente ma non e' eterno, e quando sparisce la voce torna
   // meccanica senza che si sappia perche'. Nascondendola a voce configurata, il
   // giorno che serve non si trova piu'.
-  //   Sta in alto come riquadro apribile, e si apre **da sola** quando la chiave
-  //   manca: e' il caso in cui serve, e chi ha la chiave in mano deve vedere
-  //   subito dove incollarla. A voce configurata resta chiusa, ed e' li' se serve.
+  //   E' un riquadro apribile nella scheda Voce della FAQ, e si apre **da solo**
+  //   quando la chiave manca: e' il caso in cui serve, e chi ha la chiave in mano
+  //   deve vedere subito dove incollarla. A voce configurata resta chiuso.
+  // Le impostazioni stanno nella FAQ, non nel pannello del microfono: qui resta
+  // solo un rimando, e solo quando manca la chiave. Nascondere del tutto
+  // l'avviso farebbe cercare un guasto che non c'e', perche' l'app funziona —
+  // le manca solo la voce naturale.
   const dettagli = $('#voice-chiave-dettagli');
   const titolo = $('#voice-chiave-titolo');
   if (dettagli) dettagli.open = !voceCloud.disponibile;
   if (titolo) {
     titolo.textContent = voceCloud.disponibile
-      ? 'Voce naturale Azure: impostata (cambia la chiave)'
-      : 'Voce naturale Azure: imposta la chiave';
+      ? 'Chiave impostata (cambiala da qui)'
+      : 'Imposta la chiave della voce naturale';
   }
+  const rimando = $('#voice-chiave-manca');
+  if (rimando) rimando.hidden = voceCloud.disponibile;
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = 'La voce che senti e\u2019 quella meccanica del sistema: a '
     + 'questo server non e\u2019 stata data la chiave della voce naturale Azure. '
-    + 'Apri il riquadro qui sopra e incolla la chiave.';
+    + 'La chiave si imposta in FAQ \u2192 Voce.';
 }
 
 /** Prova la chiave sul server e, se vale, la salva.

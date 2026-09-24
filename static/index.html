@@ -135,6 +135,7 @@
   <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
+  <button data-tab="voce" data-section="faq">🗣 Voce</button>
 </nav>
 
 <main>
@@ -321,6 +322,74 @@
     <div id="faq-count" class="faq-count"></div>
     <div id="faq-list"></div>
   </section>
+
+  <!-- IMPOSTAZIONI DELLA VOCE — le scelte che si fanno una volta e non si
+       toccano più: timbro, voce di sistema, voce neurale, suono, chiave Azure.
+       Stanno nella FAQ e non nel pannello del microfono, che si apre per dare un
+       comando: lì queste opzioni erano d'intralcio a chi voleva solo parlare. -->
+  <section id="tab-voce" class="tab">
+    <h3 class="section-title">Voce di conferma</h3>
+    <div class="panel">
+      <div class="field">
+        <label>Timbro</label>
+        <div class="row">
+          <select id="voice-pick">
+            <option value="chiara">Chiara · femminile</option>
+            <option value="profonda">Profonda · maschile</option>
+            <option value="calda">Calda · pacata</option>
+          </select>
+          <label class="toggle"><input type="checkbox" id="voice-speak" checked> Conferma a voce</label>
+        </div>
+        <p class="hint">Il timbro è una preferenza: la voce concreta dipende da
+        quelle installate sul dispositivo, e il nome vero compare accanto a ciascuna.</p>
+      </div>
+      <div class="field">
+        <label>Voce di sistema</label>
+        <select id="voice-all"><option value="">Automatica (secondo il timbro)</option></select>
+        <p id="voice-avviso" class="voice-avviso"></p>
+      </div>
+      <div class="field">
+        <label class="toggle"><input type="checkbox" id="voice-ting" checked> Suono all'avvio</label>
+      </div>
+    </div>
+
+    <h3 class="section-title">Voce naturale Azure</h3>
+    <div class="panel">
+      <p class="hint">La voce neurale non dipende da cosa è installato sul
+      dispositivo: suona uguale sul computer e sul telefono. Serve una risorsa
+      «Speech» di Azure.</p>
+      <div id="voice-cloud-block" class="voice-cloud" hidden>
+        <label class="toggle"><input type="checkbox" id="voice-cloud" checked> Voce neurale (consigliata)</label>
+        <label class="toggle">Voce
+          <select id="voice-cloud-voice"></select>
+        </label>
+        <p class="voice-avviso">Voce naturale su tutti i dispositivi, dalla rete. Se non c'è connessione si sente la voce del sistema.</p>
+      </div>
+      <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
+      <!-- La chiave resta raggiungibile anche a voce configurata: vive in un file
+           sul workspace, che non è eterno, e quando sparisce la voce torna
+           meccanica. Nascosta, il giorno che serve non si trova più. -->
+      <details id="voice-chiave-dettagli" class="voice-cloud">
+        <summary id="voice-chiave-titolo">Imposta la chiave</summary>
+        <div id="voice-chiave-blocco">
+          <label class="toggle">Chiave
+            <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
+          </label>
+          <div class="row">
+            <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
+            <button id="voice-chiave-salva" class="primary">Prova e salva</button>
+          </div>
+          <p id="voice-chiave-esito" class="voice-avviso"></p>
+          <p class="voice-avviso">La chiave e l’area le trovi nella pagina «Chiavi
+          ed endpoint» della risorsa: la chiave è una delle due stringhe lunghe
+          che finiscono con «=», l’area è il nome della località (per esempio
+          <em>italynorth</em>). La chiave resta su questo server e non viene
+          mostrata a chi apre la pagina. Se un aggiornamento dell’app la cancella,
+          la voce torna meccanica: si rimette da qui.</p>
+        </div>
+      </details>
+    </div>
+  </section>
 </main>
 </div>
 
@@ -370,23 +439,11 @@
       <button id="voice-close" class="icon">✕</button>
     </div>
     <p id="voice-heard" class="voice-heard">Parla ora: ad esempio «aggiungi due chili di farina in dispensa».</p>
-    <!-- La chiave della voce naturale. Sta in alto e aperta quando la chiave
-         manca, richiusa quando c'è: in fondo al pannello non si trovava, e chi
-         aveva la chiave in mano non sapeva dove metterla. -->
-    <details id="voice-chiave-dettagli" class="voice-cloud">
-      <summary id="voice-chiave-titolo">Voce naturale Azure: imposta la chiave</summary>
-      <div id="voice-chiave-blocco">
-        <label class="toggle">Chiave
-          <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
-        </label>
-        <div class="row">
-          <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
-          <button id="voice-chiave-salva" class="primary">Prova e salva</button>
-        </div>
-        <p id="voice-chiave-esito" class="voice-avviso"></p>
-        <p class="voice-avviso">Serve una risorsa «Speech» di Azure. La chiave e l’area le trovi nella pagina «Chiavi ed endpoint» della risorsa: la chiave è una delle due stringhe lunghe che finiscono con «=», l’area è il nome della località (per esempio <em>italynorth</em>). La chiave resta su questo server e non viene mostrata a chi apre la pagina. Se un aggiornamento dell’app la cancella, la voce torna meccanica: si rimette da qui.</p>
-      </div>
-    </details>
+    <p id="voice-chiave-manca" class="voice-avviso" hidden>
+      La voce che senti è quella meccanica del sistema: la voce naturale non è
+      configurata. La chiave si mette in <strong>FAQ → Voce</strong>.
+    </p>
+    <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
     <div id="voice-examples" class="voice-examples">
       <button type="button" class="voice-ex" data-say="aggiungi due chili di farina in dispensa">«aggiungi due chili di farina in dispensa»</button>
       <button type="button" class="voice-ex" data-say="metti mezzo litro di latte nella spesa">«metti mezzo litro di latte nella spesa»</button>
@@ -404,32 +461,6 @@
       <button id="voice-send">Invia</button>
     </div>
     <div class="voice-foot">
-      <label class="toggle">Voce
-        <select id="voice-pick">
-          <option value="chiara">Chiara · femminile</option>
-          <option value="profonda">Profonda · maschile</option>
-          <option value="calda">Calda · pacata</option>
-        </select>
-      </label>
-      <label class="toggle"><input type="checkbox" id="voice-speak" checked> Conferma a voce</label>
-    </div>
-    <div class="voice-foot voice-voices">
-      <label class="toggle">Voce di sistema
-        <select id="voice-all"><option value="">Automatica (secondo il timbro)</option></select>
-      </label>
-    </div>
-    <p id="voice-avviso" class="voice-avviso"></p>
-    <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
-    <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
-    <div id="voice-cloud-block" class="voice-cloud" hidden>
-      <label class="toggle"><input type="checkbox" id="voice-cloud" checked> Voce neurale (consigliata)</label>
-      <label class="toggle">Voce
-        <select id="voice-cloud-voice"></select>
-      </label>
-      <p class="voice-avviso">Voce naturale su tutti i dispositivi, dalla rete. Se non c'è connessione si sente la voce del sistema.</p>
-    </div>
-    <div class="voice-foot">
-      <label class="toggle"><input type="checkbox" id="voice-ting" checked> Suono all'avvio</label>
       <span class="spacer"></span>
       <button id="voice-retry" class="primary">🔁 Ripeti</button>
     </div>
