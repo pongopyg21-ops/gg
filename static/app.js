@@ -2647,20 +2647,28 @@ function mostraAvvisoSicurezza() {
 */
 function mostraAvvisoRobotica() {
   const el = $('#voice-avviso-robotica');
-  // La casella della chiave resta **sempre** visibile, anche a voce gia'
+  // La casella della chiave resta **sempre** raggiungibile, anche a voce gia'
   // configurata: la chiave vive in un file su `/workspace`, che sopravvive ai
   // riavvii dell'ambiente ma non e' eterno, e quando sparisce la voce torna
   // meccanica senza che si sappia perche'. Nascondendola a voce configurata, il
-  // giorno che serve non si trova piu'. Il costo e' una casella in fondo a un
-  // pannello che si scorre.
-  const blocco = $('#voice-chiave-blocco');
-  if (blocco) blocco.hidden = false;
+  // giorno che serve non si trova piu'.
+  //   Sta in alto come riquadro apribile, e si apre **da sola** quando la chiave
+  //   manca: e' il caso in cui serve, e chi ha la chiave in mano deve vedere
+  //   subito dove incollarla. A voce configurata resta chiusa, ed e' li' se serve.
+  const dettagli = $('#voice-chiave-dettagli');
+  const titolo = $('#voice-chiave-titolo');
+  if (dettagli) dettagli.open = !voceCloud.disponibile;
+  if (titolo) {
+    titolo.textContent = voceCloud.disponibile
+      ? 'Voce naturale Azure: impostata (cambia la chiave)'
+      : 'Voce naturale Azure: imposta la chiave';
+  }
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;
   el.textContent = 'La voce che senti e\u2019 quella meccanica del sistema: a '
     + 'questo server non e\u2019 stata data la chiave della voce naturale Azure. '
-    + 'Si mette qui sotto, una volta sola.';
+    + 'Apri il riquadro qui sopra e incolla la chiave.';
 }
 
 /** Prova la chiave sul server e, se vale, la salva.

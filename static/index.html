@@ -370,6 +370,23 @@
       <button id="voice-close" class="icon">✕</button>
     </div>
     <p id="voice-heard" class="voice-heard">Parla ora: ad esempio «aggiungi due chili di farina in dispensa».</p>
+    <!-- La chiave della voce naturale. Sta in alto e aperta quando la chiave
+         manca, richiusa quando c'è: in fondo al pannello non si trovava, e chi
+         aveva la chiave in mano non sapeva dove metterla. -->
+    <details id="voice-chiave-dettagli" class="voice-cloud">
+      <summary id="voice-chiave-titolo">Voce naturale Azure: imposta la chiave</summary>
+      <div id="voice-chiave-blocco">
+        <label class="toggle">Chiave
+          <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
+        </label>
+        <div class="row">
+          <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
+          <button id="voice-chiave-salva" class="primary">Prova e salva</button>
+        </div>
+        <p id="voice-chiave-esito" class="voice-avviso"></p>
+        <p class="voice-avviso">Serve una risorsa «Speech» di Azure. La chiave e l’area le trovi nella pagina «Chiavi ed endpoint» della risorsa: la chiave è una delle due stringhe lunghe che finiscono con «=», l’area è il nome della località (per esempio <em>italynorth</em>). La chiave resta su questo server e non viene mostrata a chi apre la pagina. Se un aggiornamento dell’app la cancella, la voce torna meccanica: si rimette da qui.</p>
+      </div>
+    </details>
     <div id="voice-examples" class="voice-examples">
       <button type="button" class="voice-ex" data-say="aggiungi due chili di farina in dispensa">«aggiungi due chili di farina in dispensa»</button>
       <button type="button" class="voice-ex" data-say="metti mezzo litro di latte nella spesa">«metti mezzo litro di latte nella spesa»</button>
@@ -404,17 +421,6 @@
     <p id="voice-avviso" class="voice-avviso"></p>
     <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
     <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
-    <div id="voice-chiave-blocco" class="voice-cloud" hidden>
-      <label class="toggle">Chiave della voce naturale Azure
-        <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
-      </label>
-      <div class="row">
-        <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
-        <button id="voice-chiave-salva" class="primary">Prova e salva</button>
-      </div>
-      <p id="voice-chiave-esito" class="voice-avviso"></p>
-      <p class="voice-avviso">Serve una risorsa «Speech» di Azure. La chiave e l’area le trovi nella pagina «Chiavi ed endpoint» della risorsa: la chiave è una delle due stringhe lunghe che finiscono con «=», l’area è il nome della località (per esempio <em>italynorth</em>). La chiave resta su questo server e non viene mostrata a chi apre la pagina. Se un aggiornamento dell’app la cancella, la voce torna meccanica: si rimette da qui.</p>
-    </div>
     <div id="voice-cloud-block" class="voice-cloud" hidden>
       <label class="toggle"><input type="checkbox" id="voice-cloud" checked> Voce neurale (consigliata)</label>
       <label class="toggle">Voce

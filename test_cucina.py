@@ -3137,9 +3137,15 @@ def test_la_casella_della_chiave_resta_raggiungibile(client):
     la voce torna meccanica. Se la casella per rimetterla viene nascosta a voce
     configurata, il giorno che serve non si trova piu'. Deve restare visibile."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    # il blocco non deve piu' dipendere dalla disponibilita' della chiave
+    html = client.get("/static/index.html").get_data(as_text=True)
+    # il riquadro non deve mai essere nascosto perche' la chiave c'e' gia'
     assert "blocco.hidden = voceCloud.disponibile" not in js
-    assert "if (blocco) blocco.hidden = false" in js
+    # si apre da solo proprio quando la chiave manca, che e' il caso in cui serve
+    assert "dettagli.open = !voceCloud.disponibile" in js
+    # e sta **prima** degli esempi e dei menu della voce: in fondo al pannello
+    # non si trovava, ed e' il motivo per cui e' stato spostato
+    assert html.index("voice-chiave-dettagli") < html.index("voice-examples")
+    assert html.index("voice-chiave-dettagli") < html.index("voice-cloud-block")
 
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):
