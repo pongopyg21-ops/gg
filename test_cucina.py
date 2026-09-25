@@ -3268,73 +3268,41 @@ def test_la_pagina_avvisa_se_il_microfono_non_puo_funzionare(client):
     assert "isSecureContext" in js and "mostraAvvisoSicurezza" in js
 
 
-def test_la_pagina_permette_di_mettere_la_chiave(client):
-    """Il file segreto non si apre a mano: la chiave si mette dalla pagina."""
+def test_la_pagina_non_gestisce_la_chiave(client):
+    """La chiave si configura **prima** di avviare l'app, non dall'utente in FAQ.
+
+    Un campo chiave nella pagina significherebbe che l'app puo' scrivere il
+    segreto: chi apre la pagina potrebbe cambiarlo, e la chiave finirebbe in una
+    richiesta HTTP. Il posto giusto e' accanto al programma, fuori da git.
+    """
     html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'id="voice-chiave"' in html and 'id="voice-chiave-salva"' in html
+    assert 'id="voice-chiave"' not in html
+    assert 'id="voice-chiave-salva"' not in html
+    assert 'id="voice-chiave-dettagli"' not in html
     js = client.get("/static/app.js").get_data(as_text=True)
-    assert "salvaChiaveVoce" in js and "/api/voce/configura" in js
+    assert "salvaChiaveVoce" not in js
+    assert "/api/voce/configura" not in js
 
 
-def test_l_endpoint_della_chiave_rifiuta_chi_non_e_collegato(anon):
-    r = anon.post("/api/voce/configura", json={"chiave": "x", "regione": "italynorth"})
-    assert r.status_code == 401
+def test_l_endpoint_che_salvava_la_chiave_non_esiste_piu(client):
+    """Senza la rotta non c'e' modo di scrivere il segreto via HTTP: la chiave
+    entra solo dal file o dall'ambiente, prima dell'avvio."""
+    r = client.post("/api/voce/configura", json={"chiave": "x", "regione": "italynorth"})
+    assert r.status_code in (404, 405), r.status_code
 
 
-def test_l_endpoint_della_chiave_rifiuta_valori_mancanti(client):
-    r = client.post("/api/voce/configura", json={"chiave": "", "regione": ""})
-    assert r.status_code == 400
-
-
-def test_una_chiave_non_valida_non_viene_salvata(client, tmp_path, monkeypatch):
-    """La prova viene prima del salvataggio: un errore non deve cancellare una
-    configurazione che funzionava."""
-    primo = tmp_path / "segreto.sh"
-    primo.write_text("export AZURE_SPEECH_KEY='ChiaveBuonaCheFunziona'\nexport AZURE_SPEECH_REGION='italynorth'\n")
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-
-    monkeypatch.setattr(voce_cloud, "verifica", lambda c, r: (False, "Chiave non valida"))
-    r = client.post("/api/voce/configura", json={"chiave": "sbagliata", "regione": "italynorth"})
-    assert r.status_code == 400
-    # il file di prima e' rimasto intatto
-    assert "ChiaveBuonaCheFunziona" in primo.read_text()
-
-
-def test_una_chiave_valida_viene_salvata(client, tmp_path, monkeypatch):
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "verifica", lambda c, r: (True, "Chiave valida."))
-    r = client.post("/api/voce/configura", json={"chiave": "ChiaveNuova123", "regione": "ITALYNORTH"})
-    assert r.status_code == 200
-
-    scritto = (tmp_path / "segreto.sh").read_text()
-    assert "ChiaveNuova123" in scritto
-    assert "italynorth" in scritto                  # area resa minuscola
-    assert "ITALYNORTH" not in scritto
-
-
-def test_il_file_salvato_si_rilegge(tmp_path, monkeypatch):
-    """Scritto dall'app e riletto dall'app: e' l'unico giro che conta."""
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
-    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
-    voce_cloud.salva_config("ChiaveDaProva999", "italynorth")
-
-    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
-    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
-    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
-    assert voce_cloud.chiave() == "ChiaveDaProva999"
-    assert voce_cloud.regione() == "italynorth"
-
-
-def test_il_file_della_chiave_non_e_leggibile_da_tutti(tmp_path, monkeypatch):
-    """La chiave e' un segreto: il file non deve essere aperto a chiunque."""
-    if os.name == "nt":
-        return                       # i permessi POSIX su Windows non si applicano
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-    percorso = voce_cloud.salva_config("ChiaveSegreta123", "italynorth")
-    modo = os.stat(percorso).st_mode & 0o777
-    assert modo == 0o600, f"permessi troppo larghi: {oct(modo)}"
+def test_il_pannello_del_microfono_dice_di_configurare_prima(client):
+    """Senza la chiave la voce e' meccanica, e il pannello del microfono e' dove
+    l'utente la sente: deve dire **dove** si mette, e non mandarlo in una pagina
+    che non la chiede piu'."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="voice-chiave-manca"' in html
+    inizio = html.index('id="voice-chiave-manca"')
+    avviso = html[inizio:inizio + 400]
+    assert "prima di avviare" in avviso
+    assert "FAQ" not in avviso
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "voice-chiave-manca" in js
 
 
 def test_gli_spazi_ai_bordi_della_password_non_contano(casa_test):
@@ -3644,6 +3612,30 @@ def test_testo_vuoto_rifiutato(monkeypatch):
     assert e.value.stato == 400
 
 
+def test_la_chiave_messa_a_monte_accende_la_voce(client, tmp_path, monkeypatch):
+    """Il giro completo della configurazione preventiva: si scrive il file
+    segreto accanto all'app **prima** dell'avvio, e l'app lo trova da sola.
+
+    E' l'unico modo in cui la chiave entra: non c'e' una rotta che la scriva, e
+    non c'e' un campo nella pagina. Se questo giro si rompesse, la voce
+    tornerebbe meccanica senza che l'utente abbia modo di rimediare.
+    """
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+    (tmp_path / "segreto.sh").write_text(
+        "export AZURE_SPEECH_KEY='ChiaveMessaPrima'\n"
+        "export AZURE_SPEECH_REGION='italynorth'\n")
+
+    d = client.get("/api/voce/config").get_json()
+    assert d["cloud"] is True
+    assert d["ascolto"] is True            # la stessa chiave serve al microfono
+    # e la chiave continua a non comparire nella risposta
+    assert "ChiaveMessaPrima" not in json.dumps(d)
+
+
 def test_endpoint_config_senza_chiave(client, monkeypatch):
     monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
     monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
@@ -3815,22 +3807,6 @@ def test_errore_di_ascolto_401_non_riporta_la_risposta(monkeypatch):
     assert "chiave" in messaggio.lower() and "401" not in messaggio
 
 
-def test_la_casella_della_chiave_resta_raggiungibile(client):
-    """La chiave vive in un file del workspace, che non e' eterno: quando sparisce
-    la voce torna meccanica. Se la casella per rimetterla viene nascosta a voce
-    configurata, il giorno che serve non si trova piu'. Deve restare visibile."""
-    js = client.get("/static/app.js").get_data(as_text=True)
-    html = client.get("/static/index.html").get_data(as_text=True)
-    # il riquadro non deve mai essere nascosto perche' la chiave c'e' gia'
-    assert "blocco.hidden = voceCloud.disponibile" not in js
-    # si apre da solo proprio quando la chiave manca, che e' il caso in cui serve
-    assert "dettagli.open = !voceCloud.disponibile" in js
-    # e sta nella scheda Voce della FAQ, non nel pannello del microfono
-    assert 'id="voice-chiave-dettagli"' in html
-    assert html.index('id="tab-voce"') < html.index('id="voice-chiave-dettagli"')
-    assert html.index('id="tab-voce"') < html.index('id="voice-cloud-block"')
-
-
 def test_le_impostazioni_della_voce_stanno_nella_faq(client):
     """Le impostazioni (timbro, voce di sistema, voce neurale, chiave) sono scelte
     che si fanno una volta: nel pannello del microfono intralciavano chi voleva
@@ -3838,7 +3814,7 @@ def test_le_impostazioni_della_voce_stanno_nella_faq(client):
     html = client.get("/static/index.html").get_data(as_text=True)
     voce = html.index('id="tab-voce"')
     for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
-                  'id="voice-ting"', 'id="voice-chiave-dettagli"'):
+                  'id="voice-ting"'):
         assert html.index(pezzo) > voce, pezzo
     # il pannello del microfono resta ai comandi: l'ascolto, il testo, il ripeti
     inizio = html.index('id="voice"')
@@ -3847,18 +3823,8 @@ def test_le_impostazioni_della_voce_stanno_nella_faq(client):
         assert pezzo in pannello, pezzo
     # e nessuna impostazione e' rimasta dentro il pannello
     for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
-                  'id="voice-ting"', 'id="voice-chiave-dettagli"'):
+                  'id="voice-ting"'):
         assert pezzo not in pannello, pezzo
-
-
-def test_il_pannello_del_microfono_rimanda_alla_faq_per_la_chiave(client):
-    """Senza la chiave la voce e' meccanica: il pannello del microfono, che e' dove
-    l'utente la sente, deve dire dove si mette invece di lasciarla cercare."""
-    html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'id="voice-chiave-manca"' in html
-    assert "FAQ" in html[html.index('id="voice-chiave-manca"'):html.index('id="voice-chiave-manca"') + 400]
-    js = client.get("/static/app.js").get_data(as_text=True)
-    assert "voice-chiave-manca" in js
 
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):

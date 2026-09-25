@@ -147,7 +147,7 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 | `PORT` | Porta del server | 12000 |
 | `CUCINA_DB` | Percorso del database della prima casa | `cucina.db` |
 
-Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository: non c'è un file di configurazione da riempire, proprio per non rischiare di versionarlo.
+Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in `segreto.sh` accanto a `app.py` (escluso da git, modello in `segreto.esempio.sh`): l'app lo legge da sola, così non vanno riesportate a ogni avvio. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
 
 In questo ambiente la chiave va registrata fra i **segreti della conversazione** (non scritta in un file): il sistema la esporta come variabile d'ambiente prima di ogni comando, quindi `./avvia.sh` la trova e il container la ritrova anche dopo essere stato ricreato. Il nome della variabile deve coincidere esattamente con `AZURE_SPEECH_KEY`, altrimenti il codice non la vede.
 
@@ -778,25 +778,29 @@ esattamente il comportamento voluto, non un errore. Prima di concludere che qual
 non è renderizzato, conviene guardare gli elementi interattivi (`browser_get_state`)
 o i dati delle API: se i dati ci sono e i nodi ci sono, il problema è nell'estrattore.
 
-## La chiave Azure non e' eterna, e la casella deve restare in vista
+## La chiave Azure si configura prima di avviare, non dall'app
 
-`segreto.sh` vive in `/workspace/project/gg`, che sopravvive ai riavvii
-dell'ambiente ma **non e' eterno**: quando il workspace viene ricreato da capo,
-spariscono la chiave e ogni altro file non versionato, e la voce torna meccanica
-senza che si sappia perche'. E' successo davvero, e la diagnosi e' costata tempo
-proprio perche' nessuno pensa a un file che c'era e non c'e' piu'.
+La chiave entra **solo** dall'ambiente o da `segreto.sh`/`segreto.bat` accanto
+all'app, prima dell'avvio. Non esiste una rotta che la salvi e nella pagina non
+c'e' nessun campo che la chieda: l'app non deve poter riscrivere il proprio
+segreto, e la chiave non deve passare da una richiesta HTTP. Un pannello "incolla
+qui la chiave" e' stato rimosso apposta, insieme a `POST /api/voce/configura`,
+`voce_cloud.salva_config` e `voce_cloud.verifica`.
 
-Conseguenza per l'interfaccia: la casella della chiave **non va nascosta** a voce
-configurata, come faceva `mostraAvvisoRobotica`. Nascosta, il giorno che serve non
-si trova piu'. Il costo e' una casella in fondo a un pannello che si scorre.
+Cosa resta al suo posto: `voce_cloud._leggi_file_segreto` legge il file **da
+sola** quando l'ambiente non ha la chiave, e `avvia.sh` legge `segreto.sh` per
+**dirlo** all'avvio (`stato_voce`). E' quello il momento in cui ci si accorge che
+manca qualcosa: senza, la voce torna meccanica senza che si sappia perche'.
 
-Non si puo' aggirare mettendo la chiave nei segreti di GitHub e rileggendola da
-sola: il token che questa app ha (quello scritto nel remote, con permessi di push)
-**non puo' leggere i segreti** — `GET /actions/secrets` risponde 403, ed e' anche
-inutile senza la chiave privata del repository, che una scoperta pubblica non ha.
-Il repo e' pubblico, quindi non e' nemmeno un posto dove mettere un segreto. Se un
-domani si vuole la chiave che si rimpiazza da sola, l'ambiente deve fornire un
-token con i permessi di Actions e un posto dove riceverla.
+`segreto.sh` vive accanto all'app, che in questo ambiente e' `/workspace/...`:
+sopravvive ai riavvii ma **non e' eterno**, e quando il workspace viene ricreato
+sparisce. Per questo all'avvio lo stato della voce si stampa sempre: e' la
+diagnosi che evita di cercare nell'app un problema che sta in un file assente.
+
+Il repository e' pubblico, quindi la chiave non ci entra in nessuna forma. Non si
+puo' nemmeno metterla nei segreti di GitHub e rileggerla da sola: il token di
+questa app non ha i permessi di Actions, e comunque un repo pubblico non e' un
+posto per un segreto.
 
 ## La pagina non resta in memoria nel browser
 

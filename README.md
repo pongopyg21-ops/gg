@@ -224,7 +224,9 @@ Usa **Azure Speech** di Microsoft, con le voci ufficiali italiane (`it-IT-Isabel
 
 #### Attivarla
 
-Serve una risorsa Azure Speech (il piano gratuito basta per provarla). Poi due variabili d'ambiente, prima di avviare:
+Serve una risorsa Azure Speech (il piano gratuito basta per provarla). La chiave si configura **prima di avviare l'app**, e non dall'interfaccia: un campo chiave nella pagina significherebbe che l'app può scrivere il segreto, e chi apre la pagina potrebbe cambiarlo.
+
+Due variabili d'ambiente, prima di avviare:
 
 ```bash
 export AZURE_SPEECH_KEY="la-tua-chiave"
@@ -232,7 +234,15 @@ export AZURE_SPEECH_REGION="westeurope"     # l'area della risorsa
 ./avvia.sh
 ```
 
-Con le due variabili presenti il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. All'avvio lo script lo dice, così non si cerca nell'app un problema che sta in una variabile non passata:
+Oppure, per non riesportarle a ogni avvio, in un file `segreto.sh` accanto a `app.py` (escluso da git; l'esempio è in `segreto.esempio.sh`). L'app legge quel file da sola quando l'ambiente non ha già la chiave:
+
+```bash
+# segreto.sh
+export AZURE_SPEECH_KEY="la-tua-chiave"
+export AZURE_SPEECH_REGION="westeurope"
+```
+
+Con la chiave presente il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. All'avvio lo script lo dice, così non si cerca nell'app un problema che sta in una variabile non passata:
 
 ```
 Server attivo su http://127.0.0.1:12000/ (pid 3380)
@@ -246,6 +256,8 @@ Se la chiave c'è ma è sbagliata, o l'area non è quella della risorsa, l'app *
 #### La chiave resta sul server
 
 La chiave **non arriva mai al browser**. Il client chiede l'audio a `/api/voce/parla`, il server parla con Azure e restituisce solo l'MP3. È il motivo per cui la rotta sta sul server invece di chiamare Azure dal client: una chiave nel browser la legge chiunque apra gli strumenti di sviluppo, e da lì chiunque può consumare il credito. Di conseguenza le due rotte vocali **richiedono l'accesso**: senza password rispondono 401 e non consumano nulla.
+
+La chiave **non si scrive dall'app**: entra solo dall'ambiente o da `segreto.sh`, prima dell'avvio. Non esiste una rotta che la salvi, e nella pagina non c'è nessun campo che la chieda. Così l'app non può mai riscrivere il proprio segreto, e la chiave non passa da una richiesta HTTP.
 
 #### Costo e consumo
 

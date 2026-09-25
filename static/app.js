@@ -3222,78 +3222,15 @@ function mostraAvvisoSicurezza() {
 */
 function mostraAvvisoRobotica() {
   const el = $('#voice-avviso-robotica');
-  // La casella della chiave resta **sempre** raggiungibile, anche a voce gia'
-  // configurata: la chiave vive in un file su `/workspace`, che sopravvive ai
-  // riavvii dell'ambiente ma non e' eterno, e quando sparisce la voce torna
-  // meccanica senza che si sappia perche'. Nascondendola a voce configurata, il
-  // giorno che serve non si trova piu'.
-  //   E' un riquadro apribile nella scheda Voce della FAQ, e si apre **da solo**
-  //   quando la chiave manca: e' il caso in cui serve, e chi ha la chiave in mano
-  //   deve vedere subito dove incollarla. A voce configurata resta chiuso.
-  // Le impostazioni stanno nella FAQ, non nel pannello del microfono: qui resta
-  // solo un rimando, e solo quando manca la chiave. Nascondere del tutto
-  // l'avviso farebbe cercare un guasto che non c'e', perche' l'app funziona —
-  // le manca solo la voce naturale.
-  const dettagli = $('#voice-chiave-dettagli');
-  const titolo = $('#voice-chiave-titolo');
-  if (dettagli) dettagli.open = !voceCloud.disponibile;
-  if (titolo) {
-    titolo.textContent = voceCloud.disponibile
-      ? 'Chiave impostata (cambiala da qui)'
-      : 'Imposta la chiave della voce naturale';
-  }
   const rimando = $('#voice-chiave-manca');
   if (rimando) rimando.hidden = voceCloud.disponibile;
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;
-  el.textContent = 'La voce che senti e\u2019 quella meccanica del sistema: a '
-    + 'questo server non e\u2019 stata data la chiave della voce naturale Azure. '
-    + 'La chiave si imposta in FAQ \u2192 Voce.';
-}
-
-/** Prova la chiave sul server e, se vale, la salva.
-
-    La prova la fa il server: dal browser non si puo' parlare ad Azure senza
-    esporre la chiave, che e' proprio quello che si vuole evitare.
-*/
-async function salvaChiaveVoce() {
-  const esito = $('#voice-chiave-esito');
-  const chiave = $('#voice-chiave').value.trim();
-  const regione = $('#voice-chiave-area').value.trim();
-  if (!chiave || !regione) {
-    esito.textContent = 'Servono sia la chiave sia l\u2019area.';
-    esito.className = 'voice-avviso err';
-    return;
-  }
-  const bottone = $('#voice-chiave-salva');
-  bottone.disabled = true;
-  esito.textContent = 'Controllo con Azure\u2026';
-  esito.className = 'voice-avviso';
-  try {
-    const r = await fetch('/api/voce/configura', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chiave, regione }),
-    });
-    const d = await r.json();
-    if (!r.ok) {
-      esito.textContent = d.error || 'Non ha funzionato.';
-      esito.className = 'voice-avviso err';
-      return;
-    }
-    esito.textContent = (d.messaggio || 'Fatto.') + ' La voce naturale \u00e8 pronta.';
-    esito.className = 'voice-avviso ok';
-    $('#voice-chiave').value = '';
-    voceCloud.sentite.clear();
-    await caricaVoceCloud();          // l'elenco delle voci e' cambiato
-    aggiornaElencoVoci();
-  } catch (_e) {
-    esito.textContent = 'Non riesco a parlare con il server. Riprova.';
-    esito.className = 'voice-avviso err';
-  } finally {
-    bottone.disabled = false;
-  }
+  el.textContent = 'La voce che senti \u00e8 quella meccanica del sistema: a '
+    + 'questo server non \u00e8 stata data la chiave della voce naturale Azure. '
+    + 'La chiave si imposta prima di avviare l\u2019app, accanto al programma '
+    + '(segreto.sh, o le variabili AZURE_SPEECH_KEY e AZURE_SPEECH_REGION).';
 }
 
 function chiudiVoce() {
@@ -3322,14 +3259,6 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') chiudiVoce
 $('#voice-examples').addEventListener('click', (e) => {
   const frase = e.target.dataset.say;
   if (frase) eseguiComando(frase);
-});
-
-$('#voice-chiave-salva').addEventListener('click', salvaChiaveVoce);
-$('#voice-chiave-area').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') salvaChiaveVoce();
-});
-$('#voice-chiave').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') salvaChiaveVoce();
 });
 
 // riserva quando il microfono non c'è o ha sentito male: si corregge a mano

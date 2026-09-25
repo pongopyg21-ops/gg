@@ -369,28 +369,6 @@
         <p class="voice-avviso">Voce naturale su tutti i dispositivi, dalla rete. Se non c'è connessione si sente la voce del sistema.</p>
       </div>
       <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
-      <!-- La chiave resta raggiungibile anche a voce configurata: vive in un file
-           sul workspace, che non è eterno, e quando sparisce la voce torna
-           meccanica. Nascosta, il giorno che serve non si trova più. -->
-      <details id="voice-chiave-dettagli" class="voice-cloud">
-        <summary id="voice-chiave-titolo">Imposta la chiave</summary>
-        <div id="voice-chiave-blocco">
-          <label class="toggle">Chiave
-            <input id="voice-chiave" type="password" placeholder="incolla qui la chiave" autocomplete="off">
-          </label>
-          <div class="row">
-            <input id="voice-chiave-area" placeholder="area (per esempio italynorth)" autocomplete="off">
-            <button id="voice-chiave-salva" class="primary">Prova e salva</button>
-          </div>
-          <p id="voice-chiave-esito" class="voice-avviso"></p>
-          <p class="voice-avviso">La chiave e l’area le trovi nella pagina «Chiavi
-          ed endpoint» della risorsa: la chiave è una delle due stringhe lunghe
-          che finiscono con «=», l’area è il nome della località (per esempio
-          <em>italynorth</em>). La chiave resta su questo server e non viene
-          mostrata a chi apre la pagina. Se un aggiornamento dell’app la cancella,
-          la voce torna meccanica: si rimette da qui.</p>
-        </div>
-      </details>
     </div>
   </section>
 </main>
@@ -444,7 +422,8 @@
     <p id="voice-heard" class="voice-heard">Parla ora: ad esempio «aggiungi due chili di farina in dispensa».</p>
     <p id="voice-chiave-manca" class="voice-avviso" hidden>
       La voce che senti è quella meccanica del sistema: la voce naturale non è
-      configurata. La chiave si mette in <strong>FAQ → Voce</strong>.
+      configurata. La chiave si imposta <strong>prima di avviare l'app</strong>,
+      accanto al programma, e non da qui.
     </p>
     <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
     <div id="voice-examples" class="voice-examples">

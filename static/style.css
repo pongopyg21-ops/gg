@@ -645,18 +645,6 @@ tr:last-child td { border-bottom: none; }
 }
 .mostra-password input { margin: 0; }
 
-/* casella per mettere la chiave della voce: compare solo quando manca */
-#voice-chiave, #voice-chiave-area {
-  font: inherit; font-size: 13.5px; color: var(--ink);
-  background: var(--surface); border: 1px solid var(--line-strong);
-  border-radius: 8px; padding: 6px 9px; min-height: 34px;
-  max-width: 100%; flex: 1 1 200px;
-}
-#voice-chiave:focus, #voice-chiave-area:focus {
-  outline: 2px solid var(--accent); outline-offset: 1px;
-}
-#voice-chiave-salva { align-self: flex-start; }
-
 /* blocco della voce neurale: visibile solo quando il server ce l'ha */
 .voice-cloud {
   margin-top: 12px; padding-top: 12px;
@@ -666,24 +654,6 @@ tr:last-child td { border-bottom: none; }
 .voice-cloud[hidden] { display: none; }
 .voice-cloud .toggle { flex-wrap: wrap; max-width: 100%; }
 
-/* La chiave della voce naturale: un riquadro apribile, non una casella persa in
-   fondo al pannello. Il titolo deve leggersi come qualcosa su cui si puo'
-   cliccare, e il riquadro aperto deve staccarsi dal resto. */
-#voice-chiave-dettagli {
-  margin-top: 10px; padding-top: 0; border-top: 0;
-  border: 1px solid var(--line-strong); border-radius: 10px;
-  background: var(--surface); padding: 0 12px;
-}
-#voice-chiave-dettagli[open] { padding-bottom: 12px; }
-#voice-chiave-dettagli > summary {
-  cursor: pointer; font-weight: 600; padding: 10px 0;
-  list-style-position: inside;
-}
-#voice-chiave-dettagli > summary:hover { color: var(--accent-ink); }
-#voice-chiave-dettagli > summary:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px;
-}
-#voice-chiave-blocco { display: flex; flex-direction: column; gap: 9px; }
 #voice-cloud-voice {
   font: inherit; font-size: 13.5px; color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-strong);
