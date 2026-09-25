@@ -31,37 +31,39 @@ DB_FILE="${CUCINA_DB:-$BASE_DIR/cucina.db}"
 PYTHON="${PYTHON:-python3}"
 
 # --- voce neurale ---------------------------------------------------------
-# La chiave puo' stare in `segreto.sh` accanto all'app invece che nell'ambiente:
-# e' anzi il modo normale, perche' cosi' non va riesportata a ogni avvio. L'app
-# quel file lo legge da sola, quindi qui si legge per **dirlo** — e per dire il
-# vero: guardando solo l'ambiente, un `./avvia.sh status` con la chiave nel file
-# rispondeva "voce del sistema", e chi l'aveva appena messa credeva di aver
-# sbagliato qualcosa.
+# La chiave puo' stare in un file accanto all'app invece che nell'ambiente: e'
+# anzi il modo normale, perche' cosi' non va riesportata a ogni avvio. L'app
+# quel file lo legge da sola (`voce_cloud`), quindi qui non si legge niente: si
+# **chiede** all'app quali valori ha trovato, e si dice il vero.
 #
-# Le due variabili sono gli stessi valori che legge `voce_cloud.chiave()`: nota
-# che `export AZURE_SPEECH_KEY=...` basta, perche' l'assegnazione diventa una
-# variabile d'ambiente della shell corrente.
+# Perche' non si rilegge il file anche in bash: le forme di file sono piu' d'una
+# (`segreto.txt` di testo semplice, `segreto.sh` a script, `segreto.bat` su
+# Windows) e riscrivere qui il riconoscimento significherebbe due logiche da
+# tenere allineate. Quando divergono, lo stato all'avvio mente: e' proprio il
+# caso che questo pezzo di script esiste per evitare. Una sola fonte di verita',
+# quella dell'app.
 #
-# Solo `segreto.sh`: `segreto.bat` ha la sintassi di Windows (`set "NOME=..."`)
-# e in bash non assegnerebbe niente, quindi nominarlo qui darebbe l'illusione di
-# averlo letto. Su Windows il file lo legge l'app, che ha il suo interprete.
-leggi_segreto() {
-  local file="$BASE_DIR/segreto.sh"
-  [ -f "$file" ] || return 0
-  # `set -a` esporta tutto quello che viene assegnato: e' quello che serve,
-  # perche' l'app legge l'ambiente e non le variabili della shell.
-  set -a
-  . "$file" 2>/dev/null
-  set +a
-}
+# Solo lettura: `voce_cloud.chiave()` e `regione()` non scrivono niente e non
+# parlano con la rete. Se l'interprete non c'e' ancora (prima `./avvia.sh` non
+# ha preparato la venv), si ripiega sulle sole variabili d'ambiente.
 
 stato_voce() {
-  if [ -n "${AZURE_SPEECH_KEY:-}" ] && [ -n "${AZURE_SPEECH_REGION:-}" ]; then
-    verde "  voce neurale Azure attiva (area: $AZURE_SPEECH_REGION)"
-  elif [ -n "${AZURE_SPEECH_KEY:-}" ] || [ -n "${AZURE_SPEECH_REGION:-}" ]; then
+  local py="$VENV_PYTHON" esito chiave regione
+  [ -x "$py" ] || py="$SYS_PYTHON"
+  esito="$(cd "$BASE_DIR" && "$py" -c \
+    'import voce_cloud as v; print(v.chiave()); print(v.regione())' 2>/dev/null)"
+  chiave="$(printf '%s\n' "$esito" | sed -n '1p')"
+  regione="$(printf '%s\n' "$esito" | sed -n '2p')"
+  # l'interprete non ha risposto: si guarda l'ambiente, che e' la seconda fonte
+  [ -n "$chiave" ] || chiave="${AZURE_SPEECH_KEY:-}"
+  [ -n "$regione" ] || regione="${AZURE_SPEECH_REGION:-}"
+
+  if [ -n "$chiave" ] && [ -n "$regione" ]; then
+    verde "  voce neurale Azure attiva (area: $regione)"
+  elif [ -n "$chiave" ] || [ -n "$regione" ]; then
     giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
   else
-    echo "  voce: quella del sistema (per la voce neurale: AZURE_SPEECH_KEY e AZURE_SPEECH_REGION)"
+    echo "  voce: quella del sistema (per la voce neurale: chiave e area in segreto.txt)"
   fi
 }
 
@@ -310,10 +312,10 @@ testa() {
 }
 
 case "${1:-avvia}" in
-  avvia|start)   leggi_segreto; avvia ;;
+  avvia|start)   avvia ;;
   stop)          ferma ;;
-  restart)       leggi_segreto; ferma && avvia ;;
-  status|stato)  leggi_segreto; stato ;;
+  restart)       ferma && avvia ;;
+  status|stato)  stato ;;
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
   test|tests)    testa ;;
   -h|--help|help)

@@ -234,13 +234,16 @@ export AZURE_SPEECH_REGION="westeurope"     # l'area della risorsa
 ./avvia.sh
 ```
 
-Oppure, per non riesportarle a ogni avvio, in un file `segreto.sh` accanto a `app.py` (escluso da git; l'esempio è in `segreto.esempio.sh`). L'app legge quel file da sola quando l'ambiente non ha già la chiave:
+Oppure, per non riesportarle a ogni avvio, in un file di testo `segreto.txt` accanto a `app.py` (escluso da git; il modello è in `segreto.esempio.txt`):
 
-```bash
-# segreto.sh
-export AZURE_SPEECH_KEY="la-tua-chiave"
-export AZURE_SPEECH_REGION="westeurope"
 ```
+chiave: la-tua-chiave
+area: westeurope
+```
+
+Il file può anche essere chiamato solo `segreto`, senza estensione, e le due righe possono essere scritte in modo ancora più semplice: se una riga è una parola minuscola è l'area, altrimenti è la chiave. Senza `export` e senza virgolette da mettere al posto giusto, la forma sbagliata — la causa più comune di «la chiave c'è ma la voce resta meccanica» — non è più possibile. L'app legge il file da sola quando l'ambiente non ha già la chiave.
+
+Se hai già un `segreto.sh` o un `segreto.bat`, funzionano ancora.
 
 Con la chiave presente il pannello vocale mostra il blocco **Voce neurale**, e la conferma arriva da lì. All'avvio lo script lo dice, così non si cerca nell'app un problema che sta in una variabile non passata:
 
@@ -257,7 +260,7 @@ Se la chiave c'è ma è sbagliata, o l'area non è quella della risorsa, l'app *
 
 La chiave **non arriva mai al browser**. Il client chiede l'audio a `/api/voce/parla`, il server parla con Azure e restituisce solo l'MP3. È il motivo per cui la rotta sta sul server invece di chiamare Azure dal client: una chiave nel browser la legge chiunque apra gli strumenti di sviluppo, e da lì chiunque può consumare il credito. Di conseguenza le due rotte vocali **richiedono l'accesso**: senza password rispondono 401 e non consumano nulla.
 
-La chiave **non si scrive dall'app**: entra solo dall'ambiente o da `segreto.sh`, prima dell'avvio. Non esiste una rotta che la salvi, e nella pagina non c'è nessun campo che la chieda. Così l'app non può mai riscrivere il proprio segreto, e la chiave non passa da una richiesta HTTP.
+La chiave **non si scrive dall'app**: entra solo dall'ambiente o da `segreto.txt`, prima dell'avvio. Non esiste una rotta che la salvi, e nella pagina non c'è nessun campo che la chieda. Così l'app non può mai riscrivere il proprio segreto, e la chiave non passa da una richiesta HTTP.
 
 #### Costo e consumo
 
@@ -479,8 +482,9 @@ tipici (permesso del firewall, microfono dal telefono), stanno in
 
 Chi preferisce Git parte da `git clone` + `git checkout gg`: il branch di lavoro è
 **`gg`**, perché `main` è indietro e non contiene nemmeno `windows/`. La chiave
-Azure, se la usi, va in `windows\segreto.bat` (escluso da git) e non in
-`avvia.bat`: il repository è pubblico, e una chiave nel codice finirebbe online.
+Azure, se la usi, va in `segreto.txt` (escluso da git; su Windows anche
+`windows\segreto.bat`) e non in `avvia.bat`: il repository è pubblico, e una chiave
+nel codice finirebbe online.
 
 Tre cose da sapere prima:
 

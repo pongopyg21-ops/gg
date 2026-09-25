@@ -1,0 +1,25 @@
+# Chiave della voce neurale Azure — modello
+#
+# Copia questo file, chiamalo `segreto.txt` (o semplicemente `segreto`) e metti
+# i tuoi valori al posto di quelli qui sotto. Poi riavvia l'app.
+#
+# Perché un file di testo e non uno script: qui non c'è sintassi da rispettare.
+# Niente `export`, niente virgolette, niente comandi: si scrive il valore e
+# basta. È l'errore più comune — una virgoletta o uno spazio di troppo — quello
+# che fa dire «la chiave c'è ma la voce resta meccanica», e con questo file non
+# può succedere.
+#
+# Il file è escluso da git: la chiave resta su questo computer. Il modello che
+# stai leggendo, invece, sta su GitHub, quindi non metterci la chiave vera.
+#
+# Dove trovare i due valori: su portal.azure.com, nella tua risorsa «Speech»,
+# pagina «Chiavi ed endpoint».
+#   - la chiave è una delle due stringhe lunghe (Chiave 1 o Chiave 2)
+#   - l'area è la località, in minuscolo e senza spazi: italynorth, westeurope…
+#
+# Le due righe possono anche essere scritte senza etichetta: se la riga è una
+# parola minuscola è l'area, altrimenti è la chiave. Ma con l'etichetta è più
+# chiaro.
+
+chiave: incolla-qui-la-chiave
+area: italynorth

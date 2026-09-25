@@ -3149,6 +3149,97 @@ def test_senza_file_ne_chiave_configurato_e_falso(tmp_path, monkeypatch):
     assert not voce_cloud.configurato()
 
 
+# ------------------------------------------- il segreto in un file di testo
+# Il file di testo semplice esiste per togliere di mezzo la sintassi: senza
+# `export` e senza virgolette, l'errore che fa dire "la chiave c'e' ma la voce
+# resta meccanica" non si puo' piu' commettere. Questi test coprono le forme
+# che si scrivono davvero, non la presenza di una stringa nel codice.
+
+def _con_segreto(tmp_path, monkeypatch, testo, nome_file="segreto.txt"):
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+    (tmp_path / nome_file).write_text(testo)
+
+
+def test_il_segreto_si_scrive_in_un_file_di_testo(tmp_path, monkeypatch):
+    """`chiave: valore` e `area: valore`: due righe, niente sintassi."""
+    _con_segreto(tmp_path, monkeypatch, "chiave: ChiaveDiProva123456\narea: italynorth\n")
+
+    assert voce_cloud.chiave() == "ChiaveDiProva123456"
+    assert voce_cloud.regione() == "italynorth"
+    assert voce_cloud.configurato()
+
+
+def test_il_segreto_accetta_le_etichette_che_vengono_naturali(tmp_path, monkeypatch):
+    """Chi scrive il file non deve sapere i nomi delle variabili."""
+    _con_segreto(tmp_path, monkeypatch, "Chiave: ChiaveDiProva123456\nRegione: italynorth\n")
+
+    assert voce_cloud.chiave() == "ChiaveDiProva123456"
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_il_segreto_funziona_anche_con_i_due_valori_nudi(tmp_path, monkeypatch):
+    """Il file piu' semplice possibile: due righe e basta, prima la chiave.
+    L'area e' una parola minuscola, la chiave no: la forma dice cos'e' ciascuna."""
+    _con_segreto(tmp_path, monkeypatch, "AbCdEf1234567890xyz\nitalynorth\n")
+
+    assert voce_cloud.chiave() == "AbCdEf1234567890xyz"
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_il_segreto_nudo_riconosce_l_area_dopo_la_chiave_e_viceversa(tmp_path, monkeypatch):
+    """L'ordine non deve contare: chi scrive il file puo' mettere prima l'area."""
+    _con_segreto(tmp_path, monkeypatch, "italynorth\nAbCdEf1234567890xyz\n")
+
+    assert voce_cloud.chiave() == "AbCdEf1234567890xyz"
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_una_riga_di_testo_libero_non_diventa_la_chiave(tmp_path, monkeypatch):
+    """Il file puo' contenere una spiegazione scritta a mano: le righe con spazi
+    non sono ne' chiave ne' area, e non devono finire nell'ambiente."""
+    _con_segreto(tmp_path, monkeypatch,
+                 "Questa e' la chiave della voce, non copiarla in giro\n"
+                 "chiave: ChiaveDiProva123456\narea: italynorth\n")
+
+    assert voce_cloud.chiave() == "ChiaveDiProva123456"
+    assert voce_cloud.regione() == "italynorth"
+
+
+def test_il_file_senza_estensione_funziona_come_il_txt(tmp_path, monkeypatch):
+    """Si possa chiamare `segreto.txt` o solo `segreto`: e' lo stesso."""
+    _con_segreto(tmp_path, monkeypatch,
+                 "chiave: ChiaveDiProva123456\narea: italynorth\n", nome_file="segreto")
+
+    assert voce_cloud.chiave() == "ChiaveDiProva123456"
+
+
+def test_l_ambiente_vince_anche_sul_file_di_testo(tmp_path, monkeypatch):
+    """Chi esporta la chiave a mano comanda, come per `segreto.sh`."""
+    _con_segreto(tmp_path, monkeypatch, "chiave: DalFile\narea: italynorth\n")
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "DallAmbiente")
+
+    assert voce_cloud.chiave() == "DallAmbiente"
+
+
+def test_il_file_di_esempio_non_contiene_una_chiave_vera():
+    """Il modello sta su GitHub: se ci finisse una chiave vera sarebbe pubblica.
+    Deve contenere solo il segnaposto, e il file vero deve restare escluso."""
+    modello = open("segreto.esempio.txt", encoding="utf-8").read()
+    assert "incolla-qui-la-chiave" in modello
+
+    import subprocess
+    fuori = subprocess.run(["git", "check-ignore", "-q", "segreto.txt"],
+                           cwd=voce_cloud.BASE_DIR, capture_output=True).returncode == 0
+    dentro = subprocess.run(["git", "check-ignore", "-q", "segreto.esempio.txt"],
+                            cwd=voce_cloud.BASE_DIR, capture_output=True).returncode == 0
+    assert fuori, "segreto.txt (la chiave vera) deve essere escluso da git"
+    assert not dentro, "il modello deve essere versionato"
+
+
 def test_il_wav_per_il_server_ha_intestazione_e_campioni_giusti(client):
     """Il servizio di ascolto legge **solo** WAV PCM 16 kHz mono: un webm del
     browser verrebbe rifiutato con un 400 che sembra un guasto.

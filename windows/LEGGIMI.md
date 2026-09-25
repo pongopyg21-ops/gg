@@ -303,12 +303,17 @@ che funzionano davvero.
 
 ### Se l'app gira sul server (non su Windows)
 
-La stessa cosa si fa con `segreto.sh`, nella cartella dell'app:
+Nella cartella dell'app si usa un file di testo, `segreto.txt`:
 
-1. Copia `segreto.esempio.sh` e rinominalo `segreto.sh`.
-2. Apri il file e togli il cancelletto alle due righe in fondo, mettendo la
-   chiave e l'area.
+1. Copia `segreto.esempio.txt` e rinomina la copia `segreto.txt`.
+2. Apri il file e scrivi la chiave e l'area al posto dei segnaposto:
+   `chiave: ...` e `area: italynorth`.
 3. Riavvia l'app.
+
+Non c'è sintassi da rispettare: niente `export`, niente virgolette. Il file può
+anche chiamarsi solo `segreto`, senza estensione, e le due righe si possono
+scrivere senza etichetta (una parola tutta minuscola è l'area, l'altra è la
+chiave). Restano validi anche `segreto.sh` e `segreto.bat` per chi li ha già.
 
 Non serve esportare niente a mano: l'app legge il file da sola. È lo stesso
 meccanismo di `segreto.bat`, e la ragione è la stessa — senza, ogni riavvio

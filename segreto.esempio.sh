@@ -1,6 +1,10 @@
 # Copia questo file, chiamalo `segreto.sh`, togli il cancelletto alle due righe
 # in fondo e metti i tuoi valori. Poi riavvia l'app.
 #
+# C'e' un modo piu' semplice: un file di testo `segreto.txt`, senza `export` ne'
+# virgolette da mettere al posto giusto — vedi `segreto.esempio.txt`. Questo
+# script resta per chi lo usa gia'.
+#
 # Perche' cosi': `segreto.sh` e' escluso da git, `avvia.sh` no. La chiave deve
 # stare qui, altrimenti finisce su GitHub insieme al codice.
 #

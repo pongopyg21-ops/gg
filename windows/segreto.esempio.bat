@@ -1,6 +1,10 @@
 @echo off
 REM Copia questo file e chiamalo `segreto.bat`, poi riempi le due righe in fondo.
 REM
+REM C'e' un modo piu' semplice anche qui: un file di testo `segreto.txt` nella
+REM cartella dell'app, senza virgolette da mettere al posto giusto. Questo file
+REM resta per chi usa gia' la forma a script.
+REM
 REM Perche' cosi': `segreto.bat` e' escluso da git, `avvia.bat` no. La chiave deve
 REM stare nel primo, altrimenti finisce su GitHub insieme al codice.
 

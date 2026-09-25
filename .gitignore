@@ -18,3 +18,7 @@ windows/segreto.bat
 
 # la chiave della voce anche sul server (avvia.sh), non solo su Windows
 segreto.sh
+
+# il file di testo semplice, in tutte le sue forme
+segreto.txt
+segreto

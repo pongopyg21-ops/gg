@@ -74,14 +74,32 @@ PITCH_MIN, PITCH_MAX = -50, 50  # in percentuale
 
 _FILE_LETTI = False
 
+# Etichette che si scrivono naturalmente in un file di testo, ricondotte al nome
+# vero della variabile: chi scrive `chiave: ...` non deve sapere come si chiama.
+_NOMI_CHIAVE = {
+    "chiave": "AZURE_SPEECH_KEY",
+    "key": "AZURE_SPEECH_KEY",
+    "azure_speech_key": "AZURE_SPEECH_KEY",
+    "area": "AZURE_SPEECH_REGION",
+    "regione": "AZURE_SPEECH_REGION",
+    "region": "AZURE_SPEECH_REGION",
+    "azure_speech_region": "AZURE_SPEECH_REGION",
+}
+
 
 def _leggi_file_segreto() -> None:
     """Se l'ambiente non ha la chiave, la cerca in un file accanto all'app.
 
-    Due forme, perche' i sistemi sono due: `segreto.bat` su Windows (lo crea
+    Quattro nomi, perche' i modi di scriverla sono piu' d'uno: `segreto.txt`
+    (testo semplice: `chiave: valore`, o la chiave nuda su una riga), `segreto`
+    senza estensione, e le due forme a script `segreto.bat` su Windows (lo crea
     `windows\\voce.bat`) e `segreto.sh` sul server, dove l'app parte da
-    `avvia.sh`. Il file sta fuori da git, quindi la chiave non finisce nel
+    `avvia.sh`. I file stanno fuori da git, quindi la chiave non finisce nel
     codice.
+
+    Il testo semplice e' il modo piu' facile da sbagliare meno: non c'e' sintassi
+    di shell, quindi virgolette, `export` e spazi non si possono mettere male —
+    ed e' proprio l'errore che fa dire "la chiave c'e' ma la voce resta meccanica".
 
     Serve perche' altrimenti la chiave andrebbe esportata a mano a ogni avvio:
     chi riavvia l'app dovrebbe ricordarsene, e un riavvio senza chiave fa
@@ -93,10 +111,10 @@ def _leggi_file_segreto() -> None:
     _FILE_LETTI = True
 
     cartelle = [BASE_DIR, DATA_DIR]
-    nomi = ["segreto.sh", "segreto.bat"]
+    nomi = ["segreto.txt", "segreto", "segreto.sh", "segreto.bat"]
     for cartella in dict.fromkeys(cartelle):
-        for nome in nomi:
-            percorso = os.path.join(cartella, nome)
+        for nome_file in nomi:
+            percorso = os.path.join(cartella, nome_file)
             if not os.path.exists(percorso):
                 continue
             try:
@@ -107,18 +125,31 @@ def _leggi_file_segreto() -> None:
                 riga = riga.strip()
                 if not riga or riga.startswith(("#", "REM ", "rem ", "@")):
                     continue
+                # Tre forme convivono: `NOME=valore` (sh e bat), `chiave: valore`
+                # (file di testo scritto a mano) e il valore nudo su una riga.
                 m = re.match(
-                    r"(?:set\s+\"?|export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+                    r"(?:set\s+\"?|export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*"
                     r"(?:\"([^\"]*)\"|'([^']*)'|(.*))$", riga)
-                if not m:
+                if m:
+                    nome_var = _NOMI_CHIAVE.get(m.group(1).lower(), m.group(1))
+                    valore = (m.group(2) or m.group(3) or m.group(4) or "").strip()
+                    # in `set "NOME=valore"` la virgoletta sta solo all'inizio;
+                    # se il valore ne porta una in coda, e' quella di chiusura
+                    valore = valore.rstrip('"').strip()
+                elif " " not in riga and riga.isprintable():
+                    # riga senza etichetta: la forma dice quale valore e'. L'area
+                    # e' una parola minuscola (`italynorth`), la chiave no: e'
+                    # lunga e mescola cifre e lettere. Cosi' due righe nude —
+                    # prima la chiave, poi l'area, o viceversa — funzionano
+                    # comunque, ed e' il file piu' semplice da scrivere.
+                    nome_var = ("AZURE_SPEECH_REGION"
+                                if re.fullmatch(r"[a-z]{3,24}", riga)
+                                else "AZURE_SPEECH_KEY")
+                    valore = riga.strip("'\"")
+                else:
                     continue
-                nome = m.group(1)
-                valore = (m.group(2) or m.group(3) or m.group(4) or "").strip()
-                # in `set "NOME=valore"` la virgoletta sta solo all'inizio;
-                # se il valore ne porta una in coda, e' quella di chiusura
-                valore = valore.rstrip('"').strip()
-                if nome.startswith("AZURE_SPEECH_") and valore and not os.environ.get(nome):
-                    os.environ[nome] = valore
+                if nome_var.startswith("AZURE_SPEECH_") and valore and not os.environ.get(nome_var):
+                    os.environ[nome_var] = valore
 
 
 def chiave() -> str:

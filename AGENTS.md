@@ -147,7 +147,7 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 | `PORT` | Porta del server | 12000 |
 | `CUCINA_DB` | Percorso del database della prima casa | `cucina.db` |
 
-Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in `segreto.sh` accanto a `app.py` (escluso da git, modello in `segreto.esempio.sh`): l'app lo legge da sola, così non vanno riesportate a ogni avvio. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
+Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in un **file di testo** `segreto.txt` (o `segreto`, senza estensione) accanto a `app.py`, escluso da git, modello in `segreto.esempio.txt`. Forme accettate: `chiave: valore` / `chiave=valore` / `export chiave=valore` / il valore nudo su una riga — una parola tutta minuscola è l'area, il resto è la chiave, quindi l'ordine delle due righe non conta. Le etichette possono essere `chiave`/`area` (o `key`/`region`, `regione`). Restano validi anche `segreto.sh` e `segreto.bat` per chi li ha già. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
 
 In questo ambiente la chiave va registrata fra i **segreti della conversazione** (non scritta in un file): il sistema la esporta come variabile d'ambiente prima di ogni comando, quindi `./avvia.sh` la trova e il container la ritrova anche dopo essere stato ricreato. Il nome della variabile deve coincidere esattamente con `AZURE_SPEECH_KEY`, altrimenti il codice non la vede.
 
@@ -184,8 +184,8 @@ cose con gli strumenti di Windows.
 - `windows\avvia.bat` — prepara l'ambiente (una venv separata, `.venv-win`, cosi'
   non si confonde con quella POSIX), installa le dipendenze, avvia il server e
   mostra i due indirizzi.
-- `windows\segreto.esempio.bat` — modello da copiare in `windows\segreto.bat` per
-  la chiave Azure.
+- `segreto.esempio.txt` — modello della chiave Azure in testo semplice, da copiare
+  in `segreto.txt` (c'e' anche `windows\segreto.esempio.bat` per la forma a script).
 - `windows\installa.bat` — registra un'**attivita' pianificata** che parte
   all'accesso e riavvia se cade.
 - `windows\indirizzo.ps1` — trova l'indirizzo di rete.
@@ -780,19 +780,22 @@ o i dati delle API: se i dati ci sono e i nodi ci sono, il problema è nell'estr
 
 ## La chiave Azure si configura prima di avviare, non dall'app
 
-La chiave entra **solo** dall'ambiente o da `segreto.sh`/`segreto.bat` accanto
-all'app, prima dell'avvio. Non esiste una rotta che la salvi e nella pagina non
-c'e' nessun campo che la chieda: l'app non deve poter riscrivere il proprio
-segreto, e la chiave non deve passare da una richiesta HTTP. Un pannello "incolla
-qui la chiave" e' stato rimosso apposta, insieme a `POST /api/voce/configura`,
-`voce_cloud.salva_config` e `voce_cloud.verifica`.
+La chiave entra **solo** dall'ambiente o da un file accanto all'app
+(`segreto.txt`, `segreto`, `segreto.sh`, `segreto.bat`), prima dell'avvio. Non
+esiste una rotta che la salvi e nella pagina non c'e' nessun campo che la chieda:
+l'app non deve poter riscrivere il proprio segreto, e la chiave non deve passare
+da una richiesta HTTP. Un pannello "incolla qui la chiave" e' stato rimosso
+apposta, insieme a `POST /api/voce/configura`, `voce_cloud.salva_config` e
+`voce_cloud.verifica`.
 
-Cosa resta al suo posto: `voce_cloud._leggi_file_segreto` legge il file **da
-sola** quando l'ambiente non ha la chiave, e `avvia.sh` legge `segreto.sh` per
-**dirlo** all'avvio (`stato_voce`). E' quello il momento in cui ci si accorge che
-manca qualcosa: senza, la voce torna meccanica senza che si sappia perche'.
+Cosa resta al suo posto: `voce_cloud._leggi_file_segreto` legge i file **da
+sola** quando l'ambiente non ha la chiave, e `avvia.sh` lo stato lo **chiede
+all'app** (`stato_voce` chiama `voce_cloud.chiave()`/`regione()`) invece di
+riparsare i file in bash. Il riconoscimento delle forme sta in un posto solo:
+quando due copie divergono, lo stato all'avvio mente — ed e' proprio il caso che
+`stato_voce` esiste per evitare.
 
-`segreto.sh` vive accanto all'app, che in questo ambiente e' `/workspace/...`:
+`segreto.txt` vive accanto all'app, che in questo ambiente e' `/workspace/...`:
 sopravvive ai riavvii ma **non e' eterno**, e quando il workspace viene ricreato
 sparisce. Per questo all'avvio lo stato della voce si stampa sempre: e' la
 diagnosi che evita di cercare nell'app un problema che sta in un file assente.
