@@ -3361,6 +3361,91 @@ console.log(JSON.stringify({
     assert "voceStato(messaggioMicrofono(e.error, voceCloud.ascolto), 'err');" in js
 
 
+def _decisione_js(client, casi):
+    """Esegue la decisione dell'ascolto continuo sul codice vero.
+
+    `decisioneContinuo` e' pura apposta: si prova senza microfono, senza DOM e
+    senza attese. E' la regola che decide se un comando parte, e va provata come
+    si comporterebbe davvero.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("const VERBI_COMANDO")
+    fine = js.index("\n}\n", js.index("function decisioneContinuo")) + 3
+    blocco = js[inizio:fine]
+    prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def test_dopo_dimmi_il_comando_si_dice_senza_ripetere_la_sveglia(client):
+    """Il dialogo naturale, ed era rotto: si chiama "maggiordomo", lui risponde
+    "Dimmi.", e la frase successiva è il comando — senza ripetere la sveglia.
+
+    Prima il ciclo pretendeva di nuovo la sveglia anche lì: il comando veniva
+    ignorato **in silenzio**, che è il peggior modo di fallire. Qui si verifica
+    che dentro la finestra il comando parta.
+    """
+    d = _decisione_js(client, """{
+      // la sveglia da sola apre la finestra, non esegue
+      soloSveglia: decisioneContinuo('Maggiordomo.', true, '', false),
+      // il comando detto subito dopo, senza sveglia: deve partire
+      dopoDimmi: decisioneContinuo('metti il latte nella spesa', false, '', true),
+      // e deve partire anche una domanda, che è un comando come gli altri
+      domanda: decisioneContinuo("che cosa c'è in dispensa", false, '', true),
+    }""")
+    assert d["soloSveglia"]["azione"] == "chiedi"
+    assert d["dopoDimmi"] == {"azione": "esegui", "comando": "metti il latte nella spesa"}
+    assert d["domanda"]["azione"] == "esegui"
+
+
+def test_fuori_dalla_finestra_la_sveglia_serve_di_nuovo(client):
+    """La finestra è a tempo, non per sempre.
+
+    Senza questo limite, una volta chiamato l'assistente ogni frase di casa
+    diventerebbe un ordine: "il maggiordomo prepara la cena", detto a tavola,
+    scriverebbe in dispensa.
+    """
+    d = _decisione_js(client, """{
+      fuoriFinestra: decisioneContinuo('metti il latte nella spesa', false, '', false),
+      chiacchiera: decisioneContinuo('il maggiordomo prepara la cena', false, '', true),
+      nonComando: decisioneContinuo('oggi c\\u00e8 il sole', false, '', true),
+    }""")
+    assert d["fuoriFinestra"]["azione"] == "ignora"
+    # anche dentro la finestra, una frase che non è un ordine resta fuori
+    assert d["chiacchiera"]["azione"] == "ignora"
+    assert d["nonComando"]["azione"] == "ignora"
+
+
+def test_una_chiacchiera_dopo_dimmi_non_diventa_un_ordine(client):
+    """Il rischio della finestra: una volta chiamato l'assistente, il discorso di
+    casa che segue non deve trasformarsi in un ordine.
+
+    "il maggiordomo prepara la cena", detto a tavola dopo un "Dimmi.", scriverebbe
+    in dispensa. Il criterio è lo stesso della sveglia: la parola che apre la
+    frase decide."""
+    d = _decisione_js(client, """{
+      chiacchiera: decisioneContinuo('il maggiordomo prepara la cena', false, '', true),
+      discorso: decisioneContinuo('oggi viene mia madre a pranzo', false, '', true),
+      // invece una frase che apre con un numero è una dose, e vale
+      dose: decisioneContinuo('due chili di farina', false, '', true),
+    }""")
+    assert d["chiacchiera"]["azione"] == "ignora"
+    assert d["discorso"]["azione"] == "ignora"
+    assert d["dose"]["azione"] == "esegui"
+
+
+def test_la_sveglia_con_il_comando_esegue_senza_finestra(client):
+    """Il caso più comune: "maggiordomo, metti il latte". Non serve nessuna
+    finestra, il comando è nella frase stessa."""
+    d = _decisione_js(client, """{
+      insieme: decisioneContinuo('Maggiordomo, metti il latte nella spesa', true,
+                                 'metti il latte nella spesa', false),
+    }""")
+    assert d["insieme"] == {"azione": "esegui", "comando": "metti il latte nella spesa"}
+
+
 def test_il_microfono_prova_prima_il_server(client):
     """La strada giusta è il server: è quello che esce dalla rete. Il browser
     resta il ripiego, per quando la chiave non c'è."""

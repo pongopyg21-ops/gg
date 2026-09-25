@@ -2705,8 +2705,13 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 // solo dopo la parola di sveglia. `continuo` e' l'intenzione dell'utente,
 // `sospeso` dice che in questo momento l'assistente sta parlando e non deve
 // ascoltare se stesso (si sentirebbe, si riconoscerebbe e ripartirebbe da solo).
-let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0 };
+let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0 };
 const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
+// Quanto resta aperta la finestra dopo "Dimmi.": il comando si dice subito dopo,
+// senza ripetere la sveglia. E' un tempo, non uno stato senza fine, perche' una
+// volta che l'assistente ha chiamato, il discorso di casa che segue non deve
+// diventare un ordine.
+const ATTESA_COMANDO_MS = 10000;
 // Tetto alla pausa: se il browser non dice mai che la voce ha finito, il
 // microfono deve riaccendersi lo stesso. Una conferma dura pochi secondi.
 const TETTO_VOCE_MS = 20000;
@@ -3065,6 +3070,7 @@ function fermaAscoltoContinuo() {
   ascoltoContinuo.continuo = false;
   ascoltoContinuo.ciclo += 1;      // invalida il ciclo in corso
   ascoltoContinuo.sospeso = false;
+  ascoltoContinuo.inAttesa = 0;    // la finestra di "Dimmi." non sopravvive
   if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) {
     try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
@@ -3108,6 +3114,115 @@ function parlaPoi(testo, poi) {
   voce.tempoVoce = setTimeout(riprendi, TETTO_VOCE_MS);
 }
 
+/** Il verbo che apre un comando, quando non serve ripetere la sveglia.
+
+    Dopo "Dimmi." la frase non e' rivolta all'app nel senso consueto, ma e' la
+    continuazione di una conversazione che l'utente ha aperto chiamandola. Si
+    accetta solo se *comincia* con un verbo d'azione o un numero: cosi' "il
+    maggiordomo prepara la cena", che e' una chiacchiera, resta fuori anche in
+    questa finestra. Non e' una seconda comprensione: e' lo stesso criterio
+    della sveglia, la parola che apre la frase decide se e' un ordine. */
+const VERBI_COMANDO = [
+  'aggiungi', 'metti', 'togli', 'rimuovi', 'cancella', 'elimina', 'compra',
+  'segna', 'spunta', 'svuota', 'finisci', 'ho', 'abbiamo', 'prepara', 'preparo',
+  'cucina', 'cucino', 'fatto', 'crea', 'inventa', 'salva', 'cerca', 'trova',
+  'mostra', 'dimmi', 'quanto', 'quale', 'che', 'come', 'quando', 'dove',
+  'posso', 'serve', 'manca', 'ci', 'sono', 'mangio', 'bevo', 'pulisci',
+  'pulito', 'lava', 'lavare', 'cambia', 'modifica', 'aggiorna', 'porta',
+];
+
+/** I numeri a parole che aprono una dose ("due chili di farina"). Riconoscerli
+    serve perche' la dose non ha verbo, e senza questo "Dimmi." seguito dalla
+    dose resterebbe senza effetto. */
+const NUMERI_A_PAROLE = [
+  'un', 'una', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette',
+  'otto', 'nove', 'dieci', 'mezzo', 'mezza', 'unpo', 'qualche', 'paio',
+];
+
+/** Minuscolo, senza accenti e senza punteggiatura. */
+function _normalizza(testo) {
+  return String(testo || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,;:!?()"«»]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/** Questa frase e' il comando che segue un "Dimmi."?
+
+    Non serve la sveglia: e' l'assistente ad aver chiesto di parlare. Ma non si
+    accetta qualunque frase, altrimenti il discorso di casa che segue un
+    "Dimmi." diventerebbe un ordine. */
+function sembraComando(testo) {
+  const parole = _normalizza(testo).split(' ').filter(Boolean);
+  if (!parole.length) return false;
+  // una dose e' un comando anche senza verbo ("due chili di farina"): la si
+  // riconosce dal numero, a cifre o a parole
+  if (/^\d/.test(parole[0]) || NUMERI_A_PAROLE.includes(parole[0])) return true;
+  return VERBI_COMANDO.includes(parole[0]);
+}
+
+/** Apre la finestra in cui il comando si dice **senza** ripetere la sveglia.
+
+    Serve al dialogo naturale: si chiama "maggiordomo", lui risponde "Dimmi.", e
+    la frase successiva e' il comando. Pretendere di nuovo la sveglia qui
+    significa ignorare in silenzio proprio quello che l'utente ha appena detto.
+
+    E' a tempo, non per sempre: passata la finestra si torna a chiedere la
+    sveglia, altrimenti una volta chiamato l'assistente ogni frase di casa
+    diventerebbe un ordine. */
+function attendeComando() {
+  ascoltoContinuo.inAttesa = Date.now() + ATTESA_COMANDO_MS;
+}
+
+/** La finestra dopo "Dimmi." e' ancora aperta? */
+function inAttesaComando() {
+  return ascoltoContinuo.inAttesa > 0 && Date.now() < ascoltoContinuo.inAttesa;
+}
+
+/** Decide cosa fare di una frase trascritta nell'ascolto continuo.
+
+    Pura apposta: e' la regola che decide se un comando parte, e una regola cosi'
+    va provata senza dover simulare microfono, DOM e tempo. Restituisce
+    `{azione, comando}`: `chiedi` = era solo la sveglia, si risponde "Dimmi.";
+    `esegui` = c'e' un comando; `ignora` = frase non rivolta all'app. */
+function decisioneContinuo(testo, sveglia, resto, inAttesa) {
+  if (sveglia) {
+    const comando = (resto || '').trim();
+    if (comando) return { azione: 'esegui', comando };
+    return { azione: 'chiedi', comando: '' };
+  }
+  const frase = (testo || '').trim();
+  // senza sveglia un comando vale **solo** dentro la finestra aperta da "Dimmi."
+  if (inAttesa && frase && sembraComando(frase)) {
+    return { azione: 'esegui', comando: frase };
+  }
+  return { azione: 'ignora', comando: '' };
+}
+
+/** Applica la decisione: un solo posto per entrambi i percorsi, server e
+    ripiego. Due copie della regola sarebbero libere di divergere — ed e' proprio
+    la regola che decide se un comando parte. */
+function valutaFrase(testo, sveglia, resto, riparti) {
+  const d = decisioneContinuo(testo, sveglia, resto, inAttesaComando());
+  if (d.azione === 'esegui') {
+    ascoltoContinuo.inAttesa = 0;
+    $('#voice-heard').textContent = d.comando;
+    eseguiComandoContinuo(d.comando, riparti);
+    return;
+  }
+  if (d.azione === 'chiedi') {
+    // chiamato e basta: si risponde, e la frase successiva e' il comando.
+    // La finestra si apre **prima** di parlare, cosi' e' gia' aperta quando la
+    // voce tace e il microfono riprende.
+    voceStato('Sì?');
+    attendeComando();
+    parlaPoi('Dimmi.', riparti);
+    return;
+  }
+  // frase non rivolta all'app: si tace, che e' il punto dell'ascolto continuo
+  riparti();
+}
+
 /** Un giro: registra una frase, decide se era per l'app, e si richiama. */
 function cicloAscoltoContinuo() {
   if (!ascoltoContinuo.continuo) return;
@@ -3130,20 +3245,7 @@ function cicloAscoltoContinuo() {
     }
     const testo = (d.testo || '').trim();
     if (!testo) { ancora(); return; }
-    if (d.sveglia) {
-      const comando = (d.resto || '').trim();
-      voceStato('Sì?');
-      if (!comando) {
-        // chiamato e basta: si risponde, e si aspetta il comando
-        parlaPoi('Dimmi.', ancora);
-        return;
-      }
-      $('#voice-heard').textContent = comando;
-      eseguiComandoContinuo(comando, ancora);
-      return;
-    }
-    // frase non rivolta all'app: si tace, che e' il punto dell'ascolto continuo
-    ancora();
+    valutaFrase(testo, !!d.sveglia, d.resto, ancora);
   };
 
   if (voceCloud.ascolto && ascoltaSulServer(esito)) return;
@@ -3163,26 +3265,28 @@ function cicloAscoltoDalBrowser(mio) {
   rec.continuous = false;
   rec.maxAlternatives = 1;
   const valido = () => mio === ascoltoContinuo.ciclo && ascoltoContinuo.continuo;
+  const riparti = () => { if (valido()) setTimeout(cicloAscoltoContinuo, 250); };
+  // onresult e onend arrivano entrambi, nell'ordine che decide il browser. Il
+  // primo che parla decide, l'altro non deve far ripartire un secondo ciclo:
+  // altrimenti il microfono si apre due volte e i due giri si annullano a
+  // vicenda, lasciando l'ascolto acceso ma sordo.
+  let deciso = false;
   rec.onresult = (e) => {
     const testo = (e.results[0] && e.results[0][0] ? e.results[0][0].transcript : '').trim();
-    if (!testo || !valido()) return;
+    if (!testo || !valido() || deciso) return;
+    deciso = true;
     api('/api/voce/sveglia', { method: 'POST', body: { text: testo } }).then((d) => {
       if (!valido()) return;
-      if (d.sveglia && (d.resto || '').trim()) {
-        $('#voice-heard').textContent = d.resto.trim();
-        eseguiComandoContinuo(d.resto.trim(), () => setTimeout(cicloAscoltoContinuo, 250));
-      } else {
-        setTimeout(cicloAscoltoContinuo, 250);
-      }
-    }).catch(() => setTimeout(cicloAscoltoContinuo, 250));
+      valutaFrase(testo, !!d.sveglia, d.resto, riparti);
+    }).catch(riparti);
   };
   rec.onerror = (e) => {
     if (e.error === 'aborted') return;
     // il browser non arriva al servizio di ascolto: si prova comunque a
     // ripartire, perche' un errore di rete puo' essere momentaneo
-    setTimeout(cicloAscoltoContinuo, 1200);
+    riparti();
   };
-  rec.onend = () => { if (valido()) setTimeout(cicloAscoltoContinuo, 300); };
+  rec.onend = () => { if (!deciso) riparti(); };
   try { rec.start(); } catch (_e) { setTimeout(cicloAscoltoContinuo, 600); }
 }
 

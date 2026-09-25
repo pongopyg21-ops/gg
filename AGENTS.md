@@ -878,6 +878,31 @@ Chiudere il pannello **non** spegne l'ascolto continuo: è acceso apposta, e il
 pulsante `#mic` (classe `.sempre`) e la spia `#voice-sempre-spia` sono l'unico
 segno che il microfono sta ancora ascoltando.
 
+### Dopo "Dimmi." il comando non ripete la sveglia
+
+C'era un buco silenzioso proprio nel dialogo naturale: si chiama "maggiordomo",
+lui risponde "Dimmi.", e la frase successiva è il comando — ma il ciclo
+pretendeva di nuovo la sveglia, quindi il comando veniva **ignorato in
+silenzio**. La trascrizione era perfetta: era la logica del ciclo a scartare la
+frase.
+
+Dopo un "Dimmi." si apre una finestra a tempo (`attendeComando`, 10 s) in cui
+una frase senza sveglia è un comando. Non è aperta per sempre: altrimenti, una
+volta chiamato l'assistente, ogni discorso di casa diventerebbe un ordine — "il
+maggiordomo prepara la cena" detto a tavola scriverebbe in dispensa. La frase
+deve aprirsi con un verbo d'azione o un numero (`sembraComando`, `NUMERI_A_PAROLE`
+per le dosi senza verbo come "due chili di farina").
+
+La decisione sta in `decisioneContinuo`, **pura** apposta: è la regola che decide
+se un comando parte, e va provata senza microfono, DOM e attese. `valutaFrase` la
+applica, e la usano **entrambi** i percorsi (server e ripiego del browser): due
+copie della regola sarebbero libere di divergere.
+
+Nel ripiego del browser `onresult` e `onend` arrivano entrambi: il primo che
+parla decide, l'altro non deve far ripartire un secondo ciclo, altrimenti il
+microfono si apre due volte e i due giri si annullano a vicenda — restando
+acceso ma sordo.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa
