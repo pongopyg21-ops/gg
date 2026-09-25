@@ -3326,6 +3326,41 @@ console.log(JSON.stringify({
     assert d["intatti"] is True
 
 
+def test_il_browser_bloccato_ma_senza_chiave_suggerisce_la_chiave(client):
+    """Il caso che l'utente ha davanti: Chrome risponde "network" e il server non
+    ha la chiave Azure, quindi non puo' trascrivere al posto del browser.
+
+    Il messaggio non puo' limitarsi a "scrivi qui sotto": la chiave Azure e' la
+    soluzione vera al blocco, e va detta proprio allora. Si esegue la funzione
+    con node, cosi' il test verifica **quale** messaggio esce, non che una frase
+    sia scritta nel file.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("function messaggioMicrofono"):
+                 js.index("\n}\n", js.index("function messaggioMicrofono")) + 3]
+    prova = blocco + """
+console.log(JSON.stringify({
+  senzaChiave: messaggioMicrofono('network', false),
+  conChiave: messaggioMicrofono('network', true),
+  negato: messaggioMicrofono('not-allowed', false),
+}));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    # senza chiave: si dice che la chiave sposta la trascrizione sul server
+    assert "chiave" in d["senzaChiave"].lower()
+    assert "server" in d["senzaChiave"].lower()
+    # con la chiave gia' attiva quel consiglio non ha senso: non va ripetuto
+    assert "chiave" not in d["conChiave"].lower()
+    # gli altri errori non si toccano
+    assert "autorizzato" in d["negato"].lower()
+    # e la funzione dev'essere quella che l'errore del microfono usa davvero:
+    # verificata da sola non servirebbe a niente se restasse scollegata
+    assert "voceStato(messaggioMicrofono(e.error, voceCloud.ascolto), 'err');" in js
+
+
 def test_il_microfono_prova_prima_il_server(client):
     """La strada giusta è il server: è quello che esce dalla rete. Il browser
     resta il ripiego, per quando la chiave non c'è."""

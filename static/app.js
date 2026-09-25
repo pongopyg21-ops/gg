@@ -2962,20 +2962,9 @@ function ascoltaDalBrowser() {
     $('#voice-heard').textContent = (voce.finale || parziale).trim() || '…';
   };
   rec.onerror = (e) => {
-    const messaggi = {
-      'not-allowed': 'Microfono non autorizzato: consentilo nelle impostazioni del browser.',
-      'service-not-allowed': 'Il browser non concede il riconoscimento vocale da questo '
-        + 'indirizzo. Apri l\'app da http://localhost o da un indirizzo HTTPS.',
-      'no-speech': 'Non ho sentito nulla, riprova.',
-      'audio-capture': 'Nessun microfono trovato.',
-      network: 'Il browser non riesce a raggiungere il servizio di ascolto: '
-        + 'di solito è un firewall o una VPN che blocca il browser. Intanto '
-        + 'scrivi qui sotto: funziona lo stesso.',
-      aborted: '',
-    };
     // un annullamento voluto non è un errore da mostrare
     if (e.error === 'aborted') return;
-    voceStato(messaggi[e.error] || `Errore nel microfono (${e.error || 'sconosciuto'})`, 'err');
+    voceStato(messaggioMicrofono(e.error, voceCloud.ascolto), 'err');
     // Se il browser non può ascoltare, l'unica strada è scrivere: portare lì il
     // cursore evita di cercare il campo in fondo al pannello.
     if (e.error === 'network' || e.error === 'audio-capture'
@@ -2999,6 +2988,41 @@ function ascoltaDalBrowser() {
     // due clic rapidi arrivano qui: il riconoscimento era già partito
     voceStato('Il microfono è già in ascolto: parla, oppure riprova fra un istante.', 'err');
   }
+}
+
+/** Il messaggio da mostrare quando il microfono del browser non parte.
+
+    Sta in una funzione a parte perche' "network" ha due letture diverse: se il
+    server sa gia' trascrivere, l'ascolto passa di la' e all'utente basta
+    scrivere; se il server **non** ha la chiave, quella e' la vera soluzione al
+    blocco che sta vedendo — firewall o VPN che tagliano fuori i server di
+    Google — e va detta adesso, non dopo.
+
+    Non e' un dettaglio di messaggistica: senza questa seconda lettura, chi ha il
+    browser bloccato e la chiave non configurata vede solo "scrivi qui sotto" e
+    non sa che l'app avrebbe potuto ascoltare lo stesso. */
+function messaggioMicrofono(errore, serverAscolta) {
+  const messaggi = {
+    'not-allowed': 'Microfono non autorizzato: consentilo nelle impostazioni del browser.',
+    'service-not-allowed': 'Il browser non concede il riconoscimento vocale da questo '
+      + 'indirizzo. Apri l\'app da http://localhost o da un indirizzo HTTPS.',
+    'no-speech': 'Non ho sentito nulla, riprova.',
+    'audio-capture': 'Nessun microfono trovato.',
+    aborted: '',
+  };
+  if (errore === 'network' && !serverAscolta) {
+    return 'Il browser non riesce a raggiungere il servizio di ascolto: di solito '
+      + 'è un firewall, un antivirus o una VPN. Con la chiave della voce naturale '
+      + 'Azure la trascrizione la fa il server, che non è bloccato: la chiave si '
+      + 'imposta accanto al programma, prima di avviare l\'app. Intanto scrivi qui '
+      + 'sotto: funziona lo stesso.';
+  }
+  if (errore === 'network') {
+    return 'Il browser non riesce a raggiungere il servizio di ascolto: di solito '
+      + 'è un firewall o una VPN che blocca il browser. Intanto scrivi qui sotto: '
+      + 'funziona lo stesso.';
+  }
+  return messaggi[errore] || `Errore nel microfono (${errore || 'sconosciuto'})`;
 }
 
 function apriVoce() {
