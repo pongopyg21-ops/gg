@@ -2078,9 +2078,31 @@ def voce_ascolta():
         # il messaggio e' gia' pensato per l'utente
         return jsonify({"error": str(e)}), e.stato
 
-    # vuoto vuol dire "non ho sentito nulla": non e' un errore, e il client lo
+    # L'ascolto continuo deve sapere se la frase era rivolta all'app: la
+    # trascrizione e la sveglia viaggiano insieme, cosi' il client non deve
+    # indovinare da solo con una seconda comprensione che puo' divergere.
+    # Vuoto vuol dire "non ho sentito nulla": non e' un errore, e il client lo
     # dice con parole sue. Si distingue dalla frase non capita.
-    return jsonify({"testo": testo})
+    svegliato, resto = voice.sveglia(testo)
+    return jsonify({"testo": testo, "sveglia": svegliato, "resto": resto})
+
+
+@app.route("/api/voce/sveglia", methods=["POST"])
+def voce_sveglia():
+    """Dice se una frase contiene la parola di sveglia, **senza eseguire nulla**.
+
+    Serve all'ascolto continuo quando la trascrizione la fa il browser: in quel
+    caso il client ha gia' il testo e deve solo sapere se era rivolto all'app.
+    Mandarlo a `/api/voice` sarebbe sbagliato, perche' quello esegue il comando:
+    in ascolto continuo si sentono anche le frasi che non c'entrano, e
+    eseguirle tutte sarebbe il contrario di quello che serve.
+    """
+    if not casa_attiva():
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+
+    data = request.get_json(force=True) or {}
+    svegliato, resto = voice.sveglia(data.get("text"))
+    return jsonify({"sveglia": svegliato, "resto": resto})
 
 
 def _preposizione_luogo(luogo):

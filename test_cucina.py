@@ -4610,3 +4610,95 @@ def test_la_chiave_nel_file_dopo_uno_vuoto(tmp_path, monkeypatch):
     assert voce_cloud.chiave() == "DalBat"
 
 
+# ---------------------------------------------------------------- sveglia
+# La parola di sveglia in stile "hey Google": il microfono resta aperto e il
+# comando parte solo quando si chiama l'assistente. La comprensione sta sul
+# server, cosi' si verifica qui senza microfono.
+
+def test_la_sveglia_si_riconosce_all_inizio():
+    """Il caso normale: si chiama l'assistente e si dice il comando."""
+    svegliato, resto = voice.sveglia("maggiordomo aggiungi il latte in dispensa")
+    assert svegliato
+    assert resto == "aggiungi il latte in dispensa"
+
+
+def test_la_sveglia_tollera_i_saluti_e_le_storpiature():
+    """Il riconoscimento vocale sbaglia i nomi propri, e "maggiordomo" non e'
+    una parola comune: se non si accettano le forme vicine, l'assistente
+    sembra sordo proprio mentre lo si chiama."""
+    for frase in ("hey maggiordomo metti il sale",
+                  "ehi maggiordomo, metti il sale",
+                  "ok magiordomo metti il sale",
+                  "ciao maggiordomo metti il sale"):
+        svegliato, resto = voice.sveglia(frase)
+        assert svegliato, frase
+        assert resto == "metti il sale", frase
+
+
+def test_la_sveglia_vale_solo_all_inizio_della_frase():
+    """Chi parla d'altro non deve far partire un comando: la sveglia e'
+    l'invocazione, non una parola qualsiasi della frase."""
+    for frase in ("il maggiordomo prepara la cena",
+                  "chiama il maggiordomo",
+                  "metti il maggiordomo nella lista"):
+        svegliato, _ = voice.sveglia(frase)
+        assert not svegliato, frase
+
+
+def test_senza_sveglia_il_testo_resta_intatto():
+    """Fuori dall'ascolto continuo la sveglia non deve toccare il comando:
+    "metti il latte" resta quello che era."""
+    svegliato, resto = voice.sveglia("metti il latte nella spesa")
+    assert not svegliato
+    assert resto == "metti il latte nella spesa"
+
+
+def test_la_sveglia_si_toglie_anche_dal_comando_scritto(client):
+    """Il comando "maggiordomo aggiungi il latte" vale anche scritto a mano nel
+    campo di testo, non solo detto a voce: la stessa frase in tutti e due i modi."""
+    r = client.post("/api/voice", json={"text": "maggiordomo aggiungi il latte in dispensa"})
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["intent"] == "pantry_add"
+    assert d["name"] == "latte"
+
+
+def test_l_endpoint_sveglia_non_esegue_il_comando(client):
+    """In ascolto continuo si sentono anche le frasi che non c'entrano: l'endpoint
+    dice solo se era per l'app. Eseguirlo scriverebbe in dispensa ogni frase
+    detta in cucina."""
+    r = client.post("/api/voce/sveglia", json={"text": "maggiordomo aggiungi il latte in dispensa"})
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["sveglia"] is True
+    assert d["resto"] == "aggiungi il latte in dispensa"
+    # niente e' stato eseguito: la dispensa e' vuota
+    assert client.get("/api/pantry").get_json() == []
+
+
+def test_l_endpoint_sveglia_richiede_accesso(anon):
+    r = anon.post("/api/voce/sveglia", json={"text": "maggiordomo aggiungi il latte"})
+    assert r.status_code == 401
+
+
+def test_l_ascolto_dice_se_la_frase_conteneva_la_sveglia(client, monkeypatch):
+    """La trascrizione e il riconoscimento della sveglia viaggiano insieme: e' la
+    stessa comprensione, e il client non deve indovinare da solo."""
+    _con_chiave(monkeypatch)
+    monkeypatch.setattr(voce_cloud, "trascrivi", lambda audio, **k: "maggiordomo c'e' il latte?")
+    r = client.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["sveglia"] is True
+    # la punteggiatura non serve a un comando: e' la stessa normalizzazione di
+    # `parse`, ed e' il motivo per cui il resto non porta il punto interrogativo
+    assert d["resto"] == "c'e' il latte"
+
+
+def test_l_ascolto_di_una_frase_comune_non_sveglia(client, monkeypatch):
+    _con_chiave(monkeypatch)
+    monkeypatch.setattr(voce_cloud, "trascrivi", lambda a, **k: "che bella giornata oggi")
+    r = client.post("/api/voce/ascolta", data=b"\x00" * 100, content_type="audio/wav")
+    assert r.get_json()["sveglia"] is False
+
+

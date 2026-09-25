@@ -301,6 +301,46 @@ def _norm(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+# La parola di sveglia, per l'ascolto continuo in stile "hey Google": il
+# microfono resta aperto e il comando parte solo quando si chiama l'assistente.
+#
+# Due cose non ovvie, entrambe costate una prova:
+#   1. le forme d'esordio ("hey", "ehi", "ok", "ciao") sono opzionali e si
+#      accettano da sole: "hey maggiordomo" e' come si chiama davvero, e senza
+#      questo il riconoscimento sembra sordo proprio mentre lo si chiama;
+#   2. la sveglia vale **solo all'inizio**, e questo e' cio' che distingue un
+#      comando da una frase qualunque: "il maggiordomo prepara la cena" e' una
+#      conversazione, non un ordine. Un "maggiordomo" a meta' frase non deve far
+#      partire niente, altrimenti in cucina si eseguono le chiacchiere.
+_SVEGLIA_ESORDI = r"(?:hey|hei|ehi|ok|okay|ciao|allora|su|dai)?"
+# "magiordomo" e "maggiordomo" (una 'g'): il riconoscimento sbaglia i nomi
+# propri, e questo non e' un nome comune. Accettare solo la forma esatta
+# significa non essere mai chiamati.
+_SVEGLIA_NOMI = r"(?:maggiordomo|magiordomo|maggiodomo|maggiordom)"
+_SVEGLIA_AVVIO = re.compile(
+    rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_NOMI}\b[\s,]*")
+
+
+def sveglia(text):
+    """Riconosce la parola di sveglia e ritorna `(svegliato, resto)`.
+
+    `resto` e' la frase senza la sveglia: "maggiordomo aggiungi il latte" da'
+    `("aggiungi il latte")`, che e' il comando vero. Se la sveglia non c'e',
+    `resto` e' il testo normalizzato intatto: fuori dall'ascolto continuo la
+    frase vale come sempre.
+    """
+    normalized = _norm(text)
+    m = _SVEGLIA_AVVIO.match(normalized)
+    if not m:
+        return False, normalized
+    return True, normalized[m.end():].strip()
+
+
+def senza_sveglia(text):
+    """La sola frase, senza la parola di sveglia (per comodita' dei chiamanti)."""
+    return sveglia(text)[1]
+
+
 def _number_at(tokens, i):
     """(valore, token consumati) se all'indice i inizia un numero, altrimenti None.
 
@@ -638,7 +678,9 @@ def parse(text):
     `recipe_add`, `recipe_cooked`, `domanda`, `unknown`.
     """
     raw = str(text or "").strip()
-    normalized = _norm(raw)
+    # L'ascolto continuo detta la sveglia insieme al comando: qui si toglie una
+    # volta sola, cosi' ogni ramo sotto vede la frase che conta davvero.
+    _, normalized = sveglia(raw)
     base = {"intent": "unknown", "text": raw}
     if not normalized:
         return base
