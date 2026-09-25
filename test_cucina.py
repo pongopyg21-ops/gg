@@ -4830,6 +4830,39 @@ def test_hey_gg_accensione_automatica_solo_se_gia_concessa(client):
         assert d[caso] is False, caso
 
 
+def _cenno_js(client, casi):
+    """Esegue `cennoDiRicevuto` sul codice vero. Anche questa e' una regola pura:
+    decide se l'assistente parla quando ha capito, e va provata come regola, non
+    con un microfono e una voce attorno."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function cennoDiRicevuto")
+    fine = js.index("\n}\n", inizio) + 3
+    blocco = js[inizio:fine]
+    prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def test_il_cenno_di_ricevuto_solo_quando_c_e_un_comando(client):
+    """Chi dice "Hey GG, metti il latte" aspetta un cenno: senza, fra la frase e
+    l'esito passano i secondi della trascrizione e non sa se e' stato sentito.
+    Ma il cenno vale **solo** per un comando: chiamare e basta riceve gia'
+    "Dimmi.", e una frase ignorata non merita risposta, altrimenti l'ascolto
+    continuo risponde a tutto e diventa insopportabile."""
+    d = _cenno_js(client, """{
+      comando: cennoDiRicevuto('esegui'),
+      chiamata: cennoDiRicevuto('chiedi'),
+      ignorata: cennoDiRicevuto('ignora'),
+      niente: cennoDiRicevuto()
+    }""")
+    assert d["comando"].strip(), "un comando deve avere un cenno"
+    assert d["chiamata"] == '', "chiamare e basta riceve gia' Dimmi."
+    assert d["ignorata"] == '', "una frase ignorata non merita risposta"
+    assert d["niente"] == ''
+
+
 def _deve_accendere_accesso_js(client, casi):
     """Esegue `deveAccendereDopoAccesso` sul codice vero. Stessa idea
     dell'altra: la regola dell'avvio all'accesso si prova come regola."""

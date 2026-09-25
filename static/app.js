@@ -3423,12 +3423,58 @@ function cicloAscoltoDalBrowser(mio) {
     prima che il microfono riprenda, altrimenti l'assistente risente se stesso. */
 async function eseguiComandoContinuo(comando, riprendi) {
   const riparti = riprendiDopoLaVoce(riprendi);
+  // il cenno esce **subito**, mentre il comando si esegue, e l'esito aspetta che
+  // abbia finito: dette insieme, la seconda mangerebbe la prima
+  await parlaEAttendi(cennoDiRicevuto('esegui'));
   try {
     await eseguiComando(comando);
   } finally {
     if (!$('#voice-speak').checked) { riparti(); return; }
     voce.tempoVoce = setTimeout(riparti, TETTO_VOCE_MS);
   }
+}
+
+/** Dice una frase e aspetta che la voce taccia.
+
+    Serve a mettere due frasi **in fila** senza sovrapporle: il cenno di
+    "ricevuto" e poi l'esito. `speak` da solo non basta: la sintesi del browser
+    annulla quello che sta dicendo, e il cloud suona un audio per volta, quindi
+    dette insieme la seconda mangerebbe la prima. */
+function parlaEAttendi(testo) {
+  return new Promise((risolvi) => {
+    if (!$('#voice-speak').checked) { risolvi(); return; }
+    const precedente = voce.aFineParlato;
+    let fatto = false;
+    const fine = () => {
+      if (fatto) return;
+      fatto = true;
+      clearTimeout(tetto);
+      voce.aFineParlato = precedente;
+      risolvi();
+    };
+    // tetto: se la sintesi non annuncia mai la fine, non si resta appesi
+    const tetto = setTimeout(fine, TETTO_VOCE_MS);
+    voce.aFineParlato = fine;
+    speak(testo);
+  });
+}
+
+/** Cosa dire appena un comando e' riconosciuto: il cenno che dice "ricevuto".
+
+    Senza, fra la fine della frase e l'esito passano i secondi della trascrizione
+    e dell'esecuzione, e chi ha parlato non sa se e' stato sentito: nella cucina
+    con le mani occupate lo si dice di nuovo, e il secondo tentativo si somma al
+    primo. Un cenno breve chiude quel silenzio.
+
+    "Comandi" e non "Ok": e' la risposta del maggiordomo, e fa il paio con
+    "Dimmi." — due frasi diverse per due casi diversi, cosi' si sente a orecchio
+    se l'assistente ha preso un ordine o ha solo risposto alla chiamata.
+
+    Solo per un comando: chiamare e basta riceve gia' "Dimmi.", e una frase
+    ignorata non merita risposta (rispondere a tutto e' il contrario
+    dell'ascolto continuo). */
+function cennoDiRicevuto(azione) {
+  return azione === 'esegui' ? 'Comandi.' : '';
 }
 
 /** Il pallino del microfono dice se l'ascolto continuo e' acceso. */

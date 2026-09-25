@@ -976,6 +976,33 @@ La spia `#voice-sempre-spia` distingue i tre stati: "● in ascolto", "⏸ in pa
 (sto parlando)", "⏸ tocca lo schermo una volta", così non dice "in ascolto"
 quando non lo è.
 
+### Il cenno "Comandi.": chi parla deve sapere di essere stato sentito
+
+Quando il comando arriva **insieme** alla sveglia ("Hey GG, metti il latte"),
+l'app non risponde subito: fra la frase e l'esito passano i secondi della
+trascrizione e dell'esecuzione. In quel silenzio chi ha parlato non sa se è stato
+sentito, e in cucina, con le mani occupate, lo dice di nuovo — e il secondo
+tentativo si somma al primo.
+
+Il cenno chiude quel silenzio: un "Comandi." breve, subito, prima dell'esito.
+Sta in `cennoDiRicevuto(azione)`, **puro**, e vale **solo** per `esegui`:
+
+- chiamare e basta riceve già "Dimmi.", e due frasi per lo stesso caso
+  confonderebbero;
+- una frase ignorata non merita risposta: rispondere a tutto è il contrario
+  dell'ascolto continuo, che deve tacere sul discorso di casa.
+
+"Dimmi." per la chiamata e "Comandi." per l'ordine sono due frasi diverse per due
+casi diversi: a orecchio si sente se l'assistente ha preso un ordine o ha solo
+risposto.
+
+Le due frasi vanno dette **in fila**, non insieme: `parlaEAttendi` aspetta che la
+voce taccia prima di lasciar dire l'esito. `speak` da solo non basta, perché la
+sintesi del browser annulla quello che sta dicendo e la voce neurale suona un
+audio per volta — dette insieme, la seconda mangerebbe la prima. Anche qui c'è un
+tetto (`TETTO_VOCE_MS`): se la sintesi non annuncia mai la fine, non si resta
+appesi.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa
