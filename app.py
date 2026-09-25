@@ -193,7 +193,14 @@ def get_db():
         # meno di un millisecondo, e un promemoria in memoria mentirebbe nel
         # caso che conta, cioe' quando qualcuno rimette al suo posto una copia
         # dei dati.
-        init_db(percorso)
+        #
+        # `con_ricettario` solo quando il file nasce adesso: un database
+        # esistente con zero ricette puo' essere una scelta dell'utente (le ha
+        # cancellate tutte), e riseminarlo gliele rimetterebbe contro la sua
+        # volonta'. Ma una casa il cui file manca va seminata subito, altrimenti
+        # l'utente entra e non ha nessuna ricetta da scegliere per il piano.
+        init_db(percorso, con_ricettario=not os.path.exists(percorso)
+                or os.path.getsize(percorso) == 0)
         g.db = sqlite3.connect(percorso)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
@@ -2479,6 +2486,28 @@ def api_house_password():
     return jsonify({"ok": True})
 
 
+def _database_ha_dati(percorso):
+    """True se il database contiene qualcosa scritto dall'utente.
+
+    Non basta guardare le ricette: c'e' chi usa l'app solo per le FAQ (la
+    password del Wi-Fi) o solo per la dispensa, e scartare il suo file perche'
+    non ha ricette renderebbe irraggiungibili dei dati veri. `chores` non conta:
+    le voci delle pulizie le semina lo schema, quindi sono piene anche in un
+    file creato dal nulla.
+    """
+    tabelle = ("recipes", "pantry", "shopping_items", "faq", "storage",
+               "projects", "meal_plan", "favorites", "chore_log", "ingredients", "profile")
+    try:
+        with closing(sqlite3.connect(f"file:{percorso}?mode=ro", uri=True)) as db:
+            for tabella in tabelle:
+                if db.execute(f"SELECT 1 FROM {tabella} LIMIT 1").fetchone():
+                    return True
+            return False
+    except sqlite3.Error:
+        # un file illeggibile non e' un database vuoto: vale la pena tenerlo
+        return True
+
+
 def migra_case():
     """La prima casa raccoglie il database che c'era prima delle case.
 
@@ -2492,6 +2521,15 @@ def migra_case():
     if houses.elenco():
         return
     if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+        return
+    # Un database con lo schema ma **senza nessun dato** non e' il lavoro di
+    # mesi: e' il guscio vuoto che l'avvio creava dal nulla. Adottarlo darebbe
+    # all'utente una casa "Casa" senza niente dentro.
+    #
+    # Il controllo e' sicuro proprio perche' qui il registro e' vuoto: per
+    # svuotare il database servirebbe una casa, e una casa nel registro lo
+    # renderebbe non vuoto. Quindi "nessun dato" qui significa "mai usato".
+    if not _database_ha_dati(DB_PATH):
         return
     password = secrets.token_urlsafe(9)
     houses.registra(houses.STORICA, "Casa", password, db_file=os.path.basename(DB_PATH))
@@ -2579,8 +2617,21 @@ def avvia():
         app.run(host=host, port=porta, debug=False, threaded=True)
 
 
+def prepara_database_storico():
+    """Migra il database storico all'avvio, se c'e' gia'.
+
+    Non si crea dal nulla: un file vuoto verrebbe scambiato al riavvio
+    successivo per il ricettario di mesi e adottato come casa "Casa" senza
+    niente dentro. Se serve davvero, lo crea `get_db()` alla prima richiesta,
+    gia' col ricettario di partenza. Cio' che esiste, invece, va migrato
+    subito: e' il ricettario di mesi.
+    """
+    if os.path.exists(DB_PATH):
+        init_db()
+
+
 if __name__ == "__main__":
     migra_case()
-    init_db()
+    prepara_database_storico()
     avvia_copie_automatiche()
     avvia()

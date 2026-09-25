@@ -399,6 +399,23 @@ Conseguenze pratiche per chi mette mano al codice:
 - **La casa storica** (`slug` `casa`) è il `cucina.db` di prima: `houses.migra_case()`
   la registra al primo avvio e stampa la password una volta sola. Il registro tiene
   il percorso in `db_file`, vuoto per le case normali.
+- **Una casa nasce sempre col ricettario, anche se il file era sparito.** `get_db()`
+  passa `con_ricettario=True` quando il database va creato adesso (file assente o
+  vuoto). Senza, una casa registrata il cui file manca — ripristino parziale,
+  copia rimessa nel posto sbagliato — si ricreava vuota, e l'utente non aveva
+  nessuna ricetta da scegliere nel piano pasti. Il seme però non si rifà su un
+  database esistente con zero ricette: quello è uno stato voluto da chi le ha
+  cancellate, e ripopolarlo sarebbe un dispetto.
+- **`migra_case()` scarta il `cucina.db` vuoto.** Un file con lo schema ma senza
+  nessun dato non è il lavoro di mesi: `app.prepara_database_storico()` evita di
+  crearlo dal nulla quando non c'è nessuna casa, e `migra_case()` non adotta un
+  guscio vuoto (`_database_ha_dati`). Era una trappola in due tempi: primo avvio
+  creava `cucina.db`, secondo avvio lo registrava come casa "Casa" senza niente
+  dentro. Il controllo su "qualche dato" e non "qualche ricetta" è voluto: c'è
+  chi usa l'app solo per le FAQ, e scartare il suo file lo lascerebbe senza
+  accesso. `chores` è escluso dal controllo perché le voci le semina lo schema.
+  Il controllo è sicuro perché lì il registro è vuoto per costruzione: per
+  svuotare il database servirebbe una casa, e una casa lo renderebbe non vuoto.
 - **Nei test** il registro e la cartella delle case sono deviati su una cartella
   temporanea (`houses.REGISTRY_PATH`, `houses.CASE_DIR` in `test_cucina.py`), così i
   test non toccano il `houses.db` vero. La fixture `client` collega la casa di prova

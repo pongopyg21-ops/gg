@@ -2855,6 +2855,97 @@ def test_case_separate_per_dispensa_e_spesa(anon):
     assert not any(v["name"] == "Farina" for v in anon.get("/api/pantry").get_json())
 
 
+def test_una_casa_col_database_mancante_nasce_col_ricettario(anon, casa_test):
+    """Una casa registrata ma rimasta senza file non deve nascere vuota.
+
+    Il caso reale: il file del database non c'e' (ripristino parziale, file
+    spostato, copia rimessa nel posto sbagliato). La prima richiesta lo ricrea,
+    e ricrearlo vuoto lascia l'utente senza nessuna ricetta da scegliere nel
+    piano pasti: proprio il punto da cui scriveva per chiedere aiuto.
+    """
+    houses.registra("casa-spoglia", "Casa Spoglia", "prova1234")
+    percorso = houses.db_path("casa-spoglia")
+    assert not os.path.exists(percorso)
+
+    anon.post("/api/login", json={"nome": "Casa Spoglia", "password": "prova1234"})
+    ricette = anon.get("/api/recipes").get_json()
+    assert len(ricette) > 10, "una casa ricreata da zero deve avere il ricettario"
+
+
+def test_una_casa_esistente_senza_ricette_non_viene_riseminata(anon):
+    """Se l'utente cancella tutte le ricette, non devono tornare da sole.
+
+    La tentazione e' di seminare ogni volta che le ricette sono zero, ma zero e'
+    uno stato legittimo: chi ha svuotato il ricettario non deve ritrovarselo
+    pieno al riavvio successivo.
+    """
+    anon.post("/api/houses", json={"nome": "Casa Vuota", "password": "aaaa"})
+    for r in anon.get("/api/recipes").get_json():
+        anon.delete(f"/api/recipes/{r['id']}")
+    assert anon.get("/api/recipes").get_json() == []
+
+    # una richiesta successiva non deve ripopolare il database
+    assert anon.get("/api/recipes").get_json() == []
+
+
+def test_avvio_non_crea_un_database_storico_vuoto(tmp_path, monkeypatch):
+    """L'avvio non deve lasciare un `cucina.db` fantasma da adottare.
+
+    Era una trappola in due tempi: il primo avvio creava un `cucina.db` vuoto,
+    e al secondo `migra_case()` lo scambiava per il ricettario di mesi e
+    registrava una casa "Casa" senza niente dentro.
+    """
+    import importlib
+    monkeypatch.setenv("MAGGIORDOMO_DATA", str(tmp_path))
+    monkeypatch.delenv("CUCINA_DB", raising=False)
+    importlib.reload(houses)
+    importlib.reload(app_module)
+    try:
+        # macchina nuova: nessun registro, nessun cucina.db
+        app_module.migra_case()
+        app_module.prepara_database_storico()
+        assert not os.path.exists(app_module.DB_PATH), \
+            "l'avvio ha creato un database storico dal nulla"
+        assert houses.elenco() == []
+
+        # il secondo avvio non deve trovare nulla da adottare
+        app_module.migra_case()
+        assert houses.elenco() == [], "un guscio vuoto e' stato adottato come casa"
+    finally:
+        monkeypatch.delenv("MAGGIORDOMO_DATA", raising=False)
+        importlib.reload(houses)
+        importlib.reload(app_module)
+
+
+def test_una_casa_storica_senza_ricette_ma_con_dati_viene_adottata(tmp_path, monkeypatch):
+    """Chi usa l'app solo per le FAQ non deve perdere l'accesso ai suoi dati.
+
+    Scartare il database perche' non ha ricette renderebbe irraggiungibile il
+    lavoro di chi teneva solo la password del Wi-Fi: "nessun dato" e' un
+    criterio piu' largo di "nessuna ricetta".
+    """
+    import importlib
+    monkeypatch.setenv("MAGGIORDOMO_DATA", str(tmp_path))
+    monkeypatch.delenv("CUCINA_DB", raising=False)
+    importlib.reload(houses)
+    importlib.reload(app_module)
+    try:
+        app_module.init_db(str(tmp_path / "cucina.db"))
+        with closing(sqlite3.connect(str(tmp_path / "cucina.db"))) as con:
+            con.execute("INSERT INTO faq (category, question, answer) "
+                        "VALUES ('wifi', 'Fastweb', 'segreta')")
+            con.commit()
+
+        app_module.migra_case()
+
+        assert houses.elenco(), "una casa con dati dentro e' stata scartata"
+        assert houses.elenco()[0]["slug"] == houses.STORICA
+    finally:
+        monkeypatch.delenv("MAGGIORDOMO_DATA", raising=False)
+        importlib.reload(houses)
+        importlib.reload(app_module)
+
+
 def test_una_casa_nuova_nasce_col_ricettario(anon):
     """Le case nuove non partono vuote: hanno il ricettario italiano di partenza."""
     anon.post("/api/houses", json={"nome": "Casa Nuova", "password": "cccc"})
