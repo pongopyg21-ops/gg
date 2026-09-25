@@ -932,23 +932,31 @@ L'ancora all'**inizio** è ciò che separa un richiamo dal discorso: "il nonno G
 arriva alle otto" non fa partire niente. Il prezzo onesto è che "I giorni scorsi
 ho comprato il pane" farebbe partire un "Dimmi." una volta, senza eseguire nulla.
 
-### L'accensione automatica: si accende da sola solo se il permesso c'è già
+### L'accensione automatica: all'accesso parte subito, al ricaricamento solo se il permesso c'è già
 
-"Hey GG" senza pulsante: dopo la prima accensione il microfono si riapre da solo
-a ogni avvio (`accendiAscoltoContinuoDaSolo`, chiamata da `init` dopo
-`caricaVoceCloud`).
+"Hey GG" senza pulsante: l'ascolto si apre da solo, e ci sono **due strade**, con
+regole diverse perché diverso è ciò che si può dare per scontato.
 
-La regola sta in `deveAccendereDaSolo`, **pura** apposta, e le tre condizioni
-sono tutte necessarie: la preferenza salvata (`localStorage.ascoltoContinuo`,
-scritta al click del pulsante, `'1'` acceso e `'0'` spento), il permesso già
-`granted`, e il server che sa trascrivere (`voceCloud.ascolto`).
+1. **All'accesso** (`accendiAscoltoDopoAccesso`, chiamata da `init` quando
+   `appenaEntrato` è vero). Il click su "Entra" **è** il gesto che il browser
+   pretende: il microfono si può chiedere e l'audio è sbloccato. Quindi qui non
+   serve il permesso già concesso — serve solo che l'utente non l'abbia spento
+   **esplicitamente** (`'0'`): un valore assente è una prima volta, e all'accesso
+   la prima volta parte. Chi l'ha spento dal pannello non se lo ritrova acceso.
+   La regola sta in `deveAccendereDopoAccesso`, pura apposta.
+2. **Al ricaricamento** (`accendiAscoltoContinuoDaSolo`). Non c'è nessun gesto
+   attorno, quindi vale la regola più stretta: `deveAccendereDaSolo` richiede
+   preferenza `'1'`, permesso già `granted` **e** il server che sa trascrivere.
 
-Due trappole:
+La preferenza si scrive al click del pulsante (`'1'`/`'0'`) e anche quando
+l'ascolto parte all'accesso (`'1'`): senza, al ricaricamento successivo non
+ripartirebbe, perché il gesto non c'è più.
 
-- **Il permesso non si chiede senza un tocco.** Con `prompt` o `denied` il
-  browser non lo dà: si aprirebbe solo un avviso bloccato. Per questo si legge
-  `permissions.query` e non si tenta a fondo. La prima volta serve comunque un
-  tocco, e non è aggirabile.
+Tre trappole:
+
+- **Il permesso non si chiede senza un tocco.** Al ricaricamento, con `prompt` o
+  `denied` il browser non lo dà: si aprirebbe solo un avviso bloccato. Per questo
+  si legge `permissions.query` e non si tenta a fondo.
 - **Un `AudioContext` nasce "suspended" finché la pagina non riceve un gesto**,
   e un contesto sospeso non riceve un campione solo: l'app direbbe "ti ascolto"
   senza sentire. Il controllo va fatto sul contesto **vero**, quello del
@@ -956,6 +964,10 @@ Due trappole:
   il suo stato, e sbloccarne uno non sblocca l'altro. Se resta bloccato, la
   frase `{bloccato: true}` porta ad `attendeUnGesto`, che chiede un tocco sulla
   pagina e poi riparte.
+- **`appenaEntrato` distingue i due casi.** È una variabile di modulo che vale
+  `true` solo nel giro di `avviaApp` subito dopo il login: senza, `init`
+  tratterebbe l'accesso come un ricaricamento e l'ascolto non partirebbe proprio
+  quando l'utente se lo aspetta.
 
 `resume()` può non risolversi **mai** senza gesto: va sempre atteso con un tetto
 (`Promise.race`), altrimenti l'avvio dell'app resta appeso per sempre.

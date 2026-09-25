@@ -28,6 +28,14 @@ DA_PROVARE = [
     "Ok GiGi metti il latte",
     "Ciao GG metti il latte",
     "Ehi maggiordomo metti il latte",
+    # dette in fretta, i due "gi" si fondono: servono a fissare cosa rende il
+    # riconoscitore quando la sveglia e' tutta attaccata
+    "Hey Gi metti il latte",
+    "Ehi Gi metti il latte",
+    "Eigi metti il latte",
+    "Aigi metti il latte",
+    "Hey G G metti il latte",
+    "Ehi G G metti il latte",
 ]
 
 

@@ -2707,6 +2707,11 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 // ascoltare se stesso (si sentirebbe, si riconoscerebbe e ripartirebbe da solo).
 let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
                         avvioAuto: false, attesaGesto: false, togliGesto: null };
+// Vero solo per l'accesso appena fatto: distingue "sono appena entrato" (c'e' il
+// gesto del click) da "ho ricaricato la pagina" (gesto assente). Senza questa
+// distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
+// l'utente si aspetta di trovarlo acceso.
+let appenaEntrato = false;
 const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
 // Quanto resta aperta la finestra dopo "Dimmi.": il comando si dice subito dopo,
 // senza ripetere la sveglia. E' un tempo, non uno stato senza fine, perche' una
@@ -3085,21 +3090,41 @@ function avviaAscoltoContinuo() {
   cicloAscoltoContinuo();
 }
 
-/** Accende l'ascolto continuo senza premere il pulsante, cosi' "Hey GG" basta a
-    chiamare l'assistente. Tre condizioni, tutte necessarie:
+/** La regola dell'avvio dopo il **ricaricamento**, senza gesto attorno: si
+    accende da sola solo se il browser ha gia' concesso il microfono.
 
-    - l'utente l'ha acceso almeno una volta (`localStorage`), e non l'ha spento;
-    - il browser ha **gia'** concesso il microfono (`permissions.query`). Il
-      permesso non si puo' chiedere senza un tocco: senza questo controllo si
-      aprirebbe un avviso di sistema all'avvio, che il browser blocca comunque;
-    - il server sa trascrivere. Il ripiego sul browser non parte da solo:
-      il riconoscimento del browser senza un tocco non e' affidabile, e li'
-      l'accensione resta un gesto dell'utente.
+    Pura apposta: e' la condizione che decide se il microfono si apre da solo, e
+    va provata senza permessi veri, senza localStorage e senza microfono.
+    `resume()` su un contesto mai toccato puo' restare appeso, quindi qui non si
+    tenta nemmeno: senza il permesso gia' dato non c'e' niente da sbloccare, solo
+    un avviso di sistema che il browser blocca comunque.
 
-    La prima volta serve comunque un tocco, e non e' un limite aggirabile: e' il
-    browser che pretende un gesto per dare il microfono. Dopo, non piu'. */
+    - `preferenza === '1'`: l'utente l'ha acceso almeno una volta e non l'ha
+      spento. Accendersi la prima volta, senza che nessuno l'abbia chiesto,
+      sarebbe invadente;
+    - `permesso === 'granted'`: il permesso non si chiede senza un tocco;
+    - `saAscoltare`: senza la chiave la trascrizione la farebbe il browser, e li'
+      l'avvio da solo non e' affidabile: resta un gesto. */
 function deveAccendereDaSolo(preferenza, permesso, saAscoltare) {
   return preferenza === '1' && permesso === 'granted' && !!saAscoltare;
+}
+
+/** La regola dell'avvio **all'accesso**, dove il gesto c'e' gia'.
+
+    Chi ha appena premuto "Entra" ha gia' dato al browser il gesto che serve: il
+    microfono si puo' chiedere e l'audio e' sbloccato. Quindi qui l'ascolto parte
+    **appena si entra**, senza aspettare che qualcuno lo accenda a mano: e'
+    proprio il momento in cui l'utente se lo aspetta acceso.
+
+    Si rispetta solo uno spegnimento **esplicito** (`'0'`, dal pulsante nel
+    pannello): chi l'ha spento non se lo ritrova acceso. Un valore assente e' una
+    prima volta, e all'accesso la prima volta parte — l'accesso e' un gesto
+    dell'utente, non un avvio silenzioso.
+
+    Senza la chiave (`saAscoltare` falso) non si tenta: la trascrizione la
+    farebbe il browser, e li' l'avvio da solo non e' affidabile. */
+function deveAccendereDopoAccesso(preferenza, saAscoltare) {
+  return preferenza !== '0' && !!saAscoltare;
 }
 
 async function accendiAscoltoContinuoDaSolo() {
@@ -3113,6 +3138,21 @@ async function accendiAscoltoContinuoDaSolo() {
   if (!deveAccendereDaSolo(localStorage.getItem('ascoltoContinuo'),
                            permesso, voceCloud.ascolto)) return;
   ascoltoContinuo.avvioAuto = true;   // si prova una volta sola, non a ogni ciclo
+  avviaAscoltoContinuo();
+  voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
+}
+
+/** L'avvio subito dopo l'accesso: il gesto del click su "Entra" e' ancora
+    valido, quindi il microfono si puo' aprire davvero.
+
+    L'accensione si ricorda (`'1'`): al prossimo ricaricamento non c'e' nessun
+    gesto, e senza la memoria l'ascolto non ripartirebbe. */
+function accendiAscoltoDopoAccesso() {
+  if (ascoltoContinuo.continuo || ascoltoContinuo.avvioAuto) return;
+  if (!deveAccendereDopoAccesso(localStorage.getItem('ascoltoContinuo'),
+                                voceCloud.ascolto)) return;
+  localStorage.setItem('ascoltoContinuo', '1');
+  ascoltoContinuo.avvioAuto = true;
   avviaAscoltoContinuo();
   voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
 }
@@ -3633,6 +3673,10 @@ async function entra(evento) {
       },
     });
     sessionStorage.removeItem('maggiordomo-errore'); // la sessione e' nuova
+    // il click su "Entra" e' un gesto dell'utente: vale come il tocco che il
+    // browser pretende per dare il microfono, e permette all'ascolto di partire
+    // subito, senza un secondo tocco
+    appenaEntrato = true;
     await avviaApp();
   } catch (e) {
     mostraErrore('#acc-errore', e.message || 'Nome o password non corretti');
@@ -3709,7 +3753,13 @@ async function init() {
   if (window.speechSynthesis) speechSynthesis.addEventListener?.('voiceschanged', caricaVoci);
   // la voce neurale si annuncia da sola se il server ce l'ha: è una richiesta
   // sola all'avvio, e serve a sapere se mostrare il blocco nel pannello
-  caricaVoceCloud().then(accendiAscoltoContinuoDaSolo);
+  caricaVoceCloud().then(() => {
+    // subito dopo l'accesso il gesto del click vale ancora: l'ascolto parte li',
+    // senza chiedere un secondo tocco. Al ricaricamento il gesto non c'e', e
+    // vale la regola piu' stretta (permesso gia' concesso)
+    if (appenaEntrato) { appenaEntrato = false; accendiAscoltoDopoAccesso(); }
+    else accendiAscoltoContinuoDaSolo();
+  });
   await renderPlan();
   // il timer delle pulizie continua a contare anche dopo un ricaricamento: se
   // era attivo, la barra va rimessa subito

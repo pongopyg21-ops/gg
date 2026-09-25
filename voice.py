@@ -316,7 +316,7 @@ def _norm(text):
 # ("Ai giorni"), "e i" ("E i giorni") e "giorgio". Sono opzionali — li si puo'
 # dire o omettere — e da soli non bastano: serve sempre il nome dopo.
 _SVEGLIA_ESORDI = (r"(?:hey|hei|ehi|ok|okay|ciao|allora|su|dai"
-                   r"|ai|ei|e\s+i|giorgio|george)?")
+                   r"|ai|ei|e\s+i|aili|giorgio|george)?")
 # "magiordomo" e "maggiordomo" (una 'g'): il riconoscimento sbaglia i nomi
 # propri, e questo non e' un nome comune. Accettare solo la forma esatta
 # significa non essere mai chiamati.
@@ -324,15 +324,22 @@ _SVEGLIA_NOMI = r"(?:maggiordomo|magiordomo|maggiodomo|maggiordom)"
 
 # Il secondo modo di chiamare, "Hey GG". Le forme accettate qui **non sono
 # indovinate**: sono quelle che il trascrittore di Azure rende davvero, misurate
-# sintetizzando la frase e rileggendo cosa torna indietro. "Hey GG" finisce in
-# "Ai giorni" (o "E i giorni"), "Hey Gi Gi" in "Ai GG", "Hey Gigi" in "Gigi".
+# sintetizzando la frase e rileggendo cosa torna indietro (vedi
+# `misura_sveglia.py`). "Hey GG" finisce in "Ai giorni" (o "E i giorni"), "Hey Gi
+# Gi" in "Ai GG", "Hey Gigi" in "Gigi".
+#
+# Il nome da solo non basta a coprirle tutte: detto in fretta, "GG" torna
+# "Aigi", "Eiji", "Ai g", "AIG", "Aili Gigi". Sono tutte nella lista, perche'
+# ognuna e' una chiamata che altrimenti resta senza risposta.
 #
 # Restano tutte ancorate all'**inizio**: e' l'ancora, non la forma, a evitare
 # che il discorso di casa accenda l'assistente. "il nonno Gigi arriva alle
 # otto" non comincia con la sveglia, e non fa partire niente. Il prezzo e' che
 # "I giorni scorsi ho comprato il pane" la farebbe partire: l'assistente
 # risponderebbe "Dimmi." una volta, senza eseguire nulla.
-_SVEGLIA_GG = (r"(?:aigigi|ai\s+gg|ai\s+gi\s+gi|gigi|gi\s+gi|gg|giorni"
+_SVEGLIA_GG = (r"(?:aigigi|aigi|aige|aig|eigi|eiji|egiggi|aili"
+               r"|ai\s+gg|ai\s+g|ai\s+gi\s+gi"
+               r"|gigi|gi\s+gi|gi|gg|g|giorni"
                r"|giorgio|george)")
 _SVEGLIA_AVVIO_MAGGIORDOMO = re.compile(
     rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_NOMI}\b[\s,]*")

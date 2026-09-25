@@ -4830,6 +4830,40 @@ def test_hey_gg_accensione_automatica_solo_se_gia_concessa(client):
         assert d[caso] is False, caso
 
 
+def _deve_accendere_accesso_js(client, casi):
+    """Esegue `deveAccendereDopoAccesso` sul codice vero. Stessa idea
+    dell'altra: la regola dell'avvio all'accesso si prova come regola."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function deveAccendereDopoAccesso")
+    fine = js.index("\n}\n", inizio) + 3
+    blocco = js[inizio:fine]
+    prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def test_hey_gg_ascolto_parte_all_accesso(client):
+    """Entrando, l'ascolto parte subito, senza doverlo accendere a mano: il click
+    su "Entra" e' il gesto che il browser pretende. Un valore assente e' una
+    prima volta, e all'accesso parte; solo uno spegnimento esplicito lo tiene
+    spento. Senza la chiave non parte, perche' la trascrizione la farebbe il
+    browser e li' l'avvio da solo non e' affidabile."""
+    d = _deve_accendere_accesso_js(client, """{
+      primaVolta: deveAccendereDopoAccesso(null, true),
+      giaAcceso: deveAccendereDopoAccesso('1', true),
+      spentoDallUtente: deveAccendereDopoAccesso('0', true),
+      senzaChiave: deveAccendereDopoAccesso('1', false),
+      senzaChiavePrimaVolta: deveAccendereDopoAccesso(null, false)
+    }""")
+    assert d["primaVolta"] is True, "all'accesso la prima volta deve partire"
+    assert d["giaAcceso"] is True
+    assert d["spentoDallUtente"] is False, "chi l'ha spento non se lo ritrova acceso"
+    assert d["senzaChiave"] is False
+    assert d["senzaChiavePrimaVolta"] is False
+
+
 def test_hey_gg_sveglia_l_assistente():
     """Il secondo modo di chiamare, "Hey GG". Le forme accettate non sono
     indovinate: sono quelle che il trascrittore di Azure rende davvero, misurate
@@ -4849,6 +4883,17 @@ def test_hey_gg_sveglia_l_assistente():
         ("Ai Gigi, metti il latte", "metti il latte"),
         ("Ciao giorni, metti il latte", "metti il latte"),
         ("E i, maggiordomo, metti il latte", "metti il latte"),
+        # dette in fretta, il riconoscitore non sente due "gi": sente una parola
+        # sola. "Aigi", "Eiji", "Ai g", "AIG", "Aili Gigi" sono tutte in
+        # `misura_sveglia.py`, e senza di loro la chiamata resta senza risposta
+        ("Aigi, metti il latte", "metti il latte"),
+        ("Eiji, metti il latte", "metti il latte"),
+        ("Eigi, metti il latte", "metti il latte"),
+        ("Aige, metti il latte", "metti il latte"),
+        ("Ai g metti il latte", "metti il latte"),
+        ("AIG, metti il latte", "metti il latte"),
+        ("Aili Gigi, metti il latte", "metti il latte"),
+        ("Egiggi, metti il latte", "metti il latte"),
     ):
         svegliato, resto = voice.sveglia(frase)
         assert svegliato, frase
@@ -4871,7 +4916,17 @@ def test_hey_gg_non_sveglia_il_discorso_di_casa():
                   "metti il latte nella spesa",
                   "oggi il tempo e' bello",
                   "il maggiordomo prepara la cena",
-                  "chiama Gigi per favore"):
+                  "chiama Gigi per favore",
+                  # forme brevi ("g", "gi", "aig") accettate per la sveglia: qui
+                  # non sono all'inizio, e non devono accendere nulla. E' il
+                  # confine che rende sicure le forme corte, e va tenuto stretto
+                  "giro le pulizie",
+                  "gita fuori porta",
+                  "giornale sul tavolo",
+                  "gesso",
+                  "gelato in freezer",
+                  "aiuto in cucina",
+                  "e i piatti sono pronti"):
         svegliato, _ = voice.sveglia(frase)
         assert not svegliato, frase
 
