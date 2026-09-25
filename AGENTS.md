@@ -837,6 +837,40 @@ solleva un `TypeError` che non passa da nessun `onerror`, quindi il pannello si
 apre ma non ascolta, in silenzio. La guardia è `if (voce.attivo && voce.rec)`
 (per il percorso server la guardia analoga è `if (voce.attivo)`).
 
+## L'ascolto continuo e la parola di sveglia
+
+Perché a cicli e non un microfono davvero sempre aperto: l'audio breve di Azure
+accetta registrazioni di poche decine di secondi, non un flusso continuo. Si
+registra una frase, si manda, si guarda se conteneva la sveglia, e si riparte.
+
+La sveglia si riconosce **sul server** (`voice.sveglia`, usata da
+`/api/voce/ascolta` che restituisce `sveglia` e `resto`, e dal nuovo
+`/api/voce/sveglia` che classifica **senza eseguire**). Il motivo è lo stesso
+della trascrizione: una logica sola vale sia per il server sia per il ripiego
+sul browser, invece di una seconda copia libera di divergere. E
+`/api/voce/sveglia` non esegue perché in ascolto continuo si sentono anche le
+frasi che non c'entrano: mandarle a `/api/voice` scriverebbe in dispensa ogni
+discorso.
+
+Tre trappole, tutte costate una prova:
+
+- **La sveglia vale solo all'inizio.** "il maggiordomo prepara la cena" è una
+  conversazione, non un ordine. Un "maggiordomo" a metà frase non deve far
+  partire niente.
+- **Il riconoscimento sbaglia i nomi propri.** Si accettano gli esordi
+  ("hey/ehi/ok/ciao") e le storpiature del nome ("magiordomo"): la forma esatta
+  da sola vuol dire non essere mai chiamati.
+- **Mentre l'app parla, il microfono va sospeso** (`riprendiDopoLaVoce`,
+  `voce.aFineParlato`). Senza, la risposta letta ad alta voce rientra dal
+  microfono e l'app si risponde da sola, in un ciclo infinito. C'è anche un
+  tetto di sicurezza (`TETTO_VOCE_MS = 20000`): `onend` della sintesi non arriva
+  in tutti i browser, e senza il tetto l'ascolto resterebbe fermo per sempre con
+  l'aria di essere acceso.
+
+Chiudere il pannello **non** spegne l'ascolto continuo: è acceso apposta, e il
+pulsante `#mic` (classe `.sempre`) e la spia `#voice-sempre-spia` sono l'unico
+segno che il microfono sta ancora ascoltando.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa
