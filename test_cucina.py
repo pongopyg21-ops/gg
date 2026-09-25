@@ -4792,6 +4792,100 @@ def test_la_sveglia_vale_solo_all_inizio_della_frase():
         assert not svegliato, frase
 
 
+def _deve_accendere_js(client, casi):
+    """Esegue `deveAccendereDaSolo` sul codice vero.
+
+    E' pura apposta: decide se il microfono si apre da solo, e una regola cosi'
+    non va provata con permessi finti e un microfono vero attorno.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function deveAccendereDaSolo")
+    fine = js.index("\n}\n", inizio) + 3
+    blocco = js[inizio:fine]
+    prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def test_hey_gg_accensione_automatica_solo_se_gia_concessa(client):
+    """Il microfono si apre da solo solo quando tutte e tre le condizioni ci sono.
+    Ognuna da sola non basta, ed e' quello che questo test fissa: se ne cadesse
+    una, l'app aprirebbe il microfono senza permesso o contro la volonta'."""
+    d = _deve_accendere_js(client, """{
+      tutte: deveAccendereDaSolo('1', 'granted', true),
+      maiAcceso: deveAccendereDaSolo('0', 'granted', true),
+      maiAccesoNulla: deveAccendereDaSolo(null, 'granted', true),
+      spentoDallUtente: deveAccendereDaSolo('0', 'granted', true),
+      permessoDaChiedere: deveAccendereDaSolo('1', 'prompt', true),
+      permessoNegato: deveAccendereDaSolo('1', 'denied', true),
+      statoIgnoto: deveAccendereDaSolo('1', '', true),
+      senzaChiave: deveAccendereDaSolo('1', 'granted', false)
+    }""")
+    assert d["tutte"] is True
+    for caso in ("maiAcceso", "maiAccesoNulla", "spentoDallUtente",
+                 "permessoDaChiedere", "permessoNegato", "statoIgnoto",
+                 "senzaChiave"):
+        assert d[caso] is False, caso
+
+
+def test_hey_gg_sveglia_l_assistente():
+    """Il secondo modo di chiamare, "Hey GG". Le forme accettate non sono
+    indovinate: sono quelle che il trascrittore di Azure rende davvero, misurate
+    sintetizzando la frase. Se si accettasse solo la forma scritta "hey gg",
+    l'assistente non risponderebbe mai a chi lo chiama a voce."""
+    for frase, comando in (
+        ("Ai giorni metti il latte nella spesa", "metti il latte nella spesa"),
+        ("E i giorni aggiungi due chili di farina", "aggiungi due chili di farina"),
+        ("Ai GG metti il latte", "metti il latte"),
+        ("Ehi Gigi, metti il latte", "metti il latte"),
+        ("Ok Gigi metti il latte", "metti il latte"),
+        ("Ciao Gigi metti il latte", "metti il latte"),
+        ("Aigigi metti il latte", "metti il latte"),
+        ("Giorni, che cosa c'e' in dispensa", "che cosa c'e' in dispensa"),
+        # queste sono uscite da `misura_sveglia.py`, non dalla fantasia: sono le
+        # forme che il trascrittore rende per "Hey Gi Gi" e per "Ehi GG"
+        ("Ai Gigi, metti il latte", "metti il latte"),
+        ("Ciao giorni, metti il latte", "metti il latte"),
+        ("E i, maggiordomo, metti il latte", "metti il latte"),
+    ):
+        svegliato, resto = voice.sveglia(frase)
+        assert svegliato, frase
+        assert resto == comando, frase
+
+
+def test_hey_gg_da_solo_chiama_senza_comando():
+    """Chiamato e basta: si risponde "Dimmi." e si aspetta. Il resto vuoto e'
+    quello che dice al ciclo di non eseguire nulla."""
+    svegliato, resto = voice.sveglia("Ai giorni")
+    assert svegliato
+    assert resto == ""
+
+
+def test_hey_gg_non_sveglia_il_discorso_di_casa():
+    """L'ancora all'inizio e' cio' che separa un richiamo dal discorso: "il nonno
+    Gigi arriva alle otto" non deve accendere l'assistente, altrimenti in cucina
+    si eseguono le chiacchiere."""
+    for frase in ("il nonno Gigi arriva alle otto",
+                  "metti il latte nella spesa",
+                  "oggi il tempo e' bello",
+                  "il maggiordomo prepara la cena",
+                  "chiama Gigi per favore"):
+        svegliato, _ = voice.sveglia(frase)
+        assert not svegliato, frase
+
+
+def test_hey_gg_vale_anche_scritto(client):
+    """La stessa frase vale scritta a mano nel campo di testo, non solo detta:
+    un modo solo per tutti e due i canali."""
+    r = client.post("/api/voice", json={"text": "Ai giorni metti il latte nella spesa"})
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["intent"] == "shopping_add"
+    assert d["name"] == "latte"
+
+
 def test_senza_sveglia_il_testo_resta_intatto():
     """Fuori dall'ascolto continuo la sveglia non deve toccare il comando:
     "metti il latte" resta quello che era."""

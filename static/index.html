@@ -84,6 +84,8 @@
       <span class="mic-icon">🎙</span>
       <span>Parla al maggiordomo</span>
     </button>
+    <p class="home-voice-hint">Acceso l'ascolto continuo, basta dire «Hey GG» e il
+      comando: niente da premere. Si accende dal pannello 🎙, la prima volta.</p>
   </div>
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
@@ -438,13 +440,14 @@
       <button type="button" class="voice-ex" data-say="quanto sale serve">«quanto sale serve»</button>
     </div>
     <!-- Ascolto continuo: il microfono resta acceso e i comandi partono alla
-         parola "maggiordomo". Si accende da qui e resta acceso anche a pannello
-         chiuso, perche' serve proprio quando le mani sono occupate. -->
+         parola "Hey GG". Si accende da qui la prima volta (il browser pretende
+         un tocco per dare il microfono), poi si riaccende da solo a ogni avvio. -->
     <div id="voice-sempre-blocco" class="voice-sempre">
       <button id="voice-sempre" class="primary" type="button">🟢 Ascolto continuo</button>
-      <p class="hint">Con l'ascolto continuo di' «maggiordomo» e poi il comando:
-      «maggiordomo, metti il latte nella spesa». Resta in ascolto anche a pannello
-      chiuso, finché non lo spegni da qui.</p>
+      <p class="hint">Con l'ascolto continuo di' «Hey GG» e poi il comando:
+      «Hey GG, metti il latte nella spesa» (va bene anche «maggiordomo»). Resta in
+      ascolto anche a pannello chiuso, finché non lo spegni da qui. La prima volta
+      premi questo pulsante: dopo si riaccende da solo a ogni avvio.</p>
       <p id="voice-sempre-spia" class="voice-avviso"></p>
     </div>
     <p id="voice-result" class="voice-result" hidden></p>

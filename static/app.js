@@ -2705,7 +2705,8 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 // solo dopo la parola di sveglia. `continuo` e' l'intenzione dell'utente,
 // `sospeso` dice che in questo momento l'assistente sta parlando e non deve
 // ascoltare se stesso (si sentirebbe, si riconoscerebbe e ripartirebbe da solo).
-let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0 };
+let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
+                        avvioAuto: false, attesaGesto: false, togliGesto: null };
 const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
 // Quanto resta aperta la finestra dopo "Dimmi.": il comando si dice subito dopo,
 // senza ripetere la sveglia. E' un tempo, non uno stato senza fine, perche' una
@@ -2821,8 +2822,25 @@ function ascoltaSulServer(alTesto) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !Ctx) return false;
 
-  navigator.mediaDevices.getUserMedia({ audio: true }).then((flusso) => {
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(async (flusso) => {
     const ctx = new Ctx();
+    // Il browser tiene l'audio sospeso finche' la pagina non riceve un gesto, e
+    // un contesto sospeso non riceve un solo campione: senza questo controllo
+    // l'app direbbe "ti ascolto" senza sentire. Non e' un guasto: e' il primo
+    // avvio dopo un ricaricamento, e si risolve con un tocco (vedi
+    // `attendeUnGesto`). Il tetto a `resume` serve perche' puo' non risolversi.
+    if (ctx.state !== 'running') {
+      await Promise.race([
+        ctx.resume(),
+        new Promise((r) => setTimeout(r, 1200)),
+      ]);
+      if (ctx.state !== 'running') {
+        try { ctx.close(); } catch (_e) { /* non era aperto */ }
+        flusso.getTracks().forEach((t) => t.stop());
+        if (alTesto) alTesto({ bloccato: true });
+        return;
+      }
+    }
     const sorgente = ctx.createMediaStreamSource(flusso);
     const nodo = ctx.createScriptProcessor(ASCOLTO_BLOCCO, 1, 1);
     const pezzi = [];
@@ -3039,7 +3057,7 @@ function apriVoce() {
   // con l'ascolto continuo acceso il microfono sta gia' girando: avviarne uno
   // singolo lo sovrapporrebbe, e due registrazioni insieme non si capiscono
   if (ascoltoContinuo.continuo) {
-    voceStato('Ascolto continuo acceso: di\' «maggiordomo…»', 'ok');
+    voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
     return;
   }
   $('#voice-heard').textContent = "Parla ora: ad esempio «aggiungi due chili di farina in dispensa».";
@@ -3062,8 +3080,69 @@ function apriVoce() {
 function avviaAscoltoContinuo() {
   ascoltoContinuo.continuo = true;
   ascoltoContinuo.sospeso = false;
+  ascoltoContinuo.avvioAuto = false;
   aggiornaSpiaAscolto();
   cicloAscoltoContinuo();
+}
+
+/** Accende l'ascolto continuo senza premere il pulsante, cosi' "Hey GG" basta a
+    chiamare l'assistente. Tre condizioni, tutte necessarie:
+
+    - l'utente l'ha acceso almeno una volta (`localStorage`), e non l'ha spento;
+    - il browser ha **gia'** concesso il microfono (`permissions.query`). Il
+      permesso non si puo' chiedere senza un tocco: senza questo controllo si
+      aprirebbe un avviso di sistema all'avvio, che il browser blocca comunque;
+    - il server sa trascrivere. Il ripiego sul browser non parte da solo:
+      il riconoscimento del browser senza un tocco non e' affidabile, e li'
+      l'accensione resta un gesto dell'utente.
+
+    La prima volta serve comunque un tocco, e non e' un limite aggirabile: e' il
+    browser che pretende un gesto per dare il microfono. Dopo, non piu'. */
+function deveAccendereDaSolo(preferenza, permesso, saAscoltare) {
+  return preferenza === '1' && permesso === 'granted' && !!saAscoltare;
+}
+
+async function accendiAscoltoContinuoDaSolo() {
+  if (ascoltoContinuo.continuo || ascoltoContinuo.avvioAuto) return;
+  let permesso = '';
+  try {
+    permesso = (await navigator.permissions.query({ name: 'microphone' })).state;
+  } catch (_e) {
+    permesso = '';   // browser che non sa dire lo stato: non si tenta a fondo
+  }
+  if (!deveAccendereDaSolo(localStorage.getItem('ascoltoContinuo'),
+                           permesso, voceCloud.ascolto)) return;
+  ascoltoContinuo.avvioAuto = true;   // si prova una volta sola, non a ogni ciclo
+  avviaAscoltoContinuo();
+  voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
+}
+
+/** Quando il browser tiene l'audio sospeso, il primo tocco sulla pagina lo
+    sblocca e l'ascolto parte. Non e' il pulsante della voce: e' il gesto che il
+    browser pretende, e vale un tocco solo, dopo un ricaricamento. */
+function attendeUnGesto() {
+  if (ascoltoContinuo.togliGesto) return;
+  ascoltoContinuo.attesaGesto = true;
+  aggiornaSpiaAscolto();
+  voceStato('Tocca lo schermo una volta per accendere l\'ascolto: lo chiede il '
+    + 'browser.', 'ok');
+  const avvia = async () => {
+    ascoltoContinuo.togliGesto();
+    if (!ascoltoContinuo.avvioAuto && !ascoltoContinuo.continuo) return;
+    ascoltoContinuo.attesaGesto = false;
+    // il gesto ha sbloccato la pagina: un contesto nuovo ora nasce "running", e
+    // il ciclo riparte da capo perche' quello bloccato si e' fermato
+    ascoltoContinuo.ciclo += 1;
+    avviaAscoltoContinuo();
+    voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
+  };
+  document.addEventListener('pointerdown', avvia);
+  document.addEventListener('keydown', avvia);
+  ascoltoContinuo.togliGesto = () => {
+    document.removeEventListener('pointerdown', avvia);
+    document.removeEventListener('keydown', avvia);
+    ascoltoContinuo.togliGesto = null;
+  };
 }
 
 function fermaAscoltoContinuo() {
@@ -3071,6 +3150,9 @@ function fermaAscoltoContinuo() {
   ascoltoContinuo.ciclo += 1;      // invalida il ciclo in corso
   ascoltoContinuo.sospeso = false;
   ascoltoContinuo.inAttesa = 0;    // la finestra di "Dimmi." non sopravvive
+  ascoltoContinuo.avvioAuto = false;
+  ascoltoContinuo.attesaGesto = false;
+  if (ascoltoContinuo.togliGesto) ascoltoContinuo.togliGesto();
   if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) {
     try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
@@ -3236,6 +3318,13 @@ function cicloAscoltoContinuo() {
 
   const esito = (d) => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
+    if (d && d.bloccato) {
+      // l'audio e' sospeso: si chiede il gesto che lo sblocca, e al prossimo
+      // tocco il ciclo riparte. Fermare qui l'ascolto lo spegnerebbe proprio
+      // all'avvio automatico, che e' il caso appena acceso.
+      attendeUnGesto();
+      return;
+    }
     if (!d || d.errore) { ascoltoContinuo.continuo = false; aggiornaSpiaAscolto(); return; }
     if (d.ripiega) {
       // senza la chiave la trascrizione la fa il browser: il ciclo resta lo
@@ -3310,8 +3399,10 @@ function aggiornaSpiaAscolto() {
   const spia = $('#voice-sempre-spia');
   if (spia) {
     spia.textContent = !ascoltoContinuo.continuo ? ''
-      : (ascoltoContinuo.sospeso ? '⏸ in pausa (sto parlando)'
-                                 : '● in ascolto: di\' «maggiordomo…»');
+      : ascoltoContinuo.attesaGesto
+        ? '⏸ tocca lo schermo una volta (lo chiede il browser)'
+        : (ascoltoContinuo.sospeso ? '⏸ in pausa (sto parlando)'
+                                   : '● in ascolto: di\' «Hey GG…»');
     spia.className = 'voice-avviso' + (acceso ? ' ok' : '');
   }
   const bottone = $('#voice-sempre');
@@ -3377,8 +3468,15 @@ function chiudiVoce() {
 
 $('#mic').addEventListener('click', apriVoce);
 $('#voice-sempre').addEventListener('click', () => {
-  if (ascoltoContinuo.continuo) fermaAscoltoContinuo();
-  else avviaAscoltoContinuo();
+  if (ascoltoContinuo.continuo) {
+    // spento dall'utente: la scelta si ricorda, cosi' al prossimo avvio non se
+    // lo ritrova acceso contro la sua volonta'
+    localStorage.setItem('ascoltoContinuo', '0');
+    fermaAscoltoContinuo();
+  } else {
+    localStorage.setItem('ascoltoContinuo', '1');
+    avviaAscoltoContinuo();
+  }
 });
 $('#voice-close').addEventListener('click', chiudiVoce);
 $('#voice-retry').addEventListener('click', ascolta);
@@ -3611,7 +3709,7 @@ async function init() {
   if (window.speechSynthesis) speechSynthesis.addEventListener?.('voiceschanged', caricaVoci);
   // la voce neurale si annuncia da sola se il server ce l'ha: è una richiesta
   // sola all'avvio, e serve a sapere se mostrare il blocco nel pannello
-  caricaVoceCloud();
+  caricaVoceCloud().then(accendiAscoltoContinuoDaSolo);
   await renderPlan();
   // il timer delle pulizie continua a contare anche dopo un ricaricamento: se
   // era attivo, la barra va rimessa subito

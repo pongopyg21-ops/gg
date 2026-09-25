@@ -312,13 +312,32 @@ def _norm(text):
 #      comando da una frase qualunque: "il maggiordomo prepara la cena" e' una
 #      conversazione, non un ordine. Un "maggiordomo" a meta' frase non deve far
 #      partire niente, altrimenti in cucina si eseguono le chiacchiere.
-_SVEGLIA_ESORDI = r"(?:hey|hei|ehi|ok|okay|ciao|allora|su|dai)?"
+# Gli esordi sono come il riconoscitore rende "hey": "hey", "ehi", ma anche "ai"
+# ("Ai giorni"), "e i" ("E i giorni") e "giorgio". Sono opzionali — li si puo'
+# dire o omettere — e da soli non bastano: serve sempre il nome dopo.
+_SVEGLIA_ESORDI = (r"(?:hey|hei|ehi|ok|okay|ciao|allora|su|dai"
+                   r"|ai|ei|e\s+i|giorgio|george)?")
 # "magiordomo" e "maggiordomo" (una 'g'): il riconoscimento sbaglia i nomi
 # propri, e questo non e' un nome comune. Accettare solo la forma esatta
 # significa non essere mai chiamati.
 _SVEGLIA_NOMI = r"(?:maggiordomo|magiordomo|maggiodomo|maggiordom)"
-_SVEGLIA_AVVIO = re.compile(
+
+# Il secondo modo di chiamare, "Hey GG". Le forme accettate qui **non sono
+# indovinate**: sono quelle che il trascrittore di Azure rende davvero, misurate
+# sintetizzando la frase e rileggendo cosa torna indietro. "Hey GG" finisce in
+# "Ai giorni" (o "E i giorni"), "Hey Gi Gi" in "Ai GG", "Hey Gigi" in "Gigi".
+#
+# Restano tutte ancorate all'**inizio**: e' l'ancora, non la forma, a evitare
+# che il discorso di casa accenda l'assistente. "il nonno Gigi arriva alle
+# otto" non comincia con la sveglia, e non fa partire niente. Il prezzo e' che
+# "I giorni scorsi ho comprato il pane" la farebbe partire: l'assistente
+# risponderebbe "Dimmi." una volta, senza eseguire nulla.
+_SVEGLIA_GG = (r"(?:aigigi|ai\s+gg|ai\s+gi\s+gi|gigi|gi\s+gi|gg|giorni"
+               r"|giorgio|george)")
+_SVEGLIA_AVVIO_MAGGIORDOMO = re.compile(
     rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_NOMI}\b[\s,]*")
+_SVEGLIA_AVVIO_GG = re.compile(
+    rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_GG}\b[\s,]*")
 
 
 def sveglia(text):
@@ -330,10 +349,11 @@ def sveglia(text):
     frase vale come sempre.
     """
     normalized = _norm(text)
-    m = _SVEGLIA_AVVIO.match(normalized)
-    if not m:
-        return False, normalized
-    return True, normalized[m.end():].strip()
+    for avvio in (_SVEGLIA_AVVIO_MAGGIORDOMO, _SVEGLIA_AVVIO_GG):
+        m = avvio.match(normalized)
+        if m:
+            return True, normalized[m.end():].strip()
+    return False, normalized
 
 
 def senza_sveglia(text):

@@ -135,6 +135,10 @@ body {
    ancora una sezione da cui parlare. Questo lo sostituisce, con la stessa
    promessa ma senza l'angolo dello schermo. */
 .home-voice { margin: 0 0 28px; }
+.home-voice-hint {
+  margin: 10px 0 0; max-width: 46ch;
+  font-size: 13.5px; line-height: 1.5; color: var(--muted);
+}
 .home-mic {
   display: inline-flex; align-items: center; gap: 10px;
   min-height: 46px; padding: 12px 22px; border-radius: 999px;

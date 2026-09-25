@@ -903,6 +903,67 @@ parla decide, l'altro non deve far ripartire un secondo ciclo, altrimenti il
 microfono si apre due volte e i due giri si annullano a vicenda — restando
 acceso ma sordo.
 
+### "Hey GG": le varianti del riconoscimento si misurano, non si indovinano
+
+Il secondo modo di chiamare è "Hey GG". La trappola è che il trascrittore
+**non rende quello che si scrive**: "Hey GG" torna come "Ai giorni", "Hey Gi Gi"
+come "Ai GG", "Hey Gigi" come "Gigi", "Ehi maggiordomo" come "E i, maggiordomo".
+Un regex sulle forme scritte ("hey gg") non scatterebbe mai.
+
+Le forme accettate in `voice.py` (`_SVEGLIA_GG`) sono quelle **misurate**:
+si sintetizza la frase con la voce neurale e si rilegge cosa torna dal
+trascrittore, con `misura_sveglia.py` accanto all'app. Se in futuro si aggiunge
+una variante, va misurata allo stesso modo — indovinarla significa non essere
+chiamati, o peggio, accendere l'assistente su parole di casa.
+
+Attenzione al formato: la sintesi esce in MP3 per default, ma la trascrizione
+accetta solo WAV PCM 16 kHz (`AZURE_SPEECH_FORMAT`). Con l'MP3 la trascrizione
+torna **vuota** e sembra che il servizio non senta, mentre è solo il formato
+sbagliato. `misura_sveglia.py` lo imposta già.
+
+Le forme misurate, per non doverle rimisurare: "Hey GG" → "E i giorni", "Ai
+giorni"; "Hey Gi Gi" → "Ai Gigi"; "Hey Gigi" → "Aigigi"; "Ehi GG" → "E i
+giorni"; "Ciao GG" → "Ciao giorni".
+
+Oltre alle forme del nome, gli esordi includono come il riconoscitore rende
+"hey": anche "ai" e "e i". Restano opzionali e da soli non bastano.
+
+L'ancora all'**inizio** è ciò che separa un richiamo dal discorso: "il nonno Gigi
+arriva alle otto" non fa partire niente. Il prezzo onesto è che "I giorni scorsi
+ho comprato il pane" farebbe partire un "Dimmi." una volta, senza eseguire nulla.
+
+### L'accensione automatica: si accende da sola solo se il permesso c'è già
+
+"Hey GG" senza pulsante: dopo la prima accensione il microfono si riapre da solo
+a ogni avvio (`accendiAscoltoContinuoDaSolo`, chiamata da `init` dopo
+`caricaVoceCloud`).
+
+La regola sta in `deveAccendereDaSolo`, **pura** apposta, e le tre condizioni
+sono tutte necessarie: la preferenza salvata (`localStorage.ascoltoContinuo`,
+scritta al click del pulsante, `'1'` acceso e `'0'` spento), il permesso già
+`granted`, e il server che sa trascrivere (`voceCloud.ascolto`).
+
+Due trappole:
+
+- **Il permesso non si chiede senza un tocco.** Con `prompt` o `denied` il
+  browser non lo dà: si aprirebbe solo un avviso bloccato. Per questo si legge
+  `permissions.query` e non si tenta a fondo. La prima volta serve comunque un
+  tocco, e non è aggirabile.
+- **Un `AudioContext` nasce "suspended" finché la pagina non riceve un gesto**,
+  e un contesto sospeso non riceve un campione solo: l'app direbbe "ti ascolto"
+  senza sentire. Il controllo va fatto sul contesto **vero**, quello del
+  registratore (`ascoltaSulServer`), non su una sonda a parte: ogni contesto ha
+  il suo stato, e sbloccarne uno non sblocca l'altro. Se resta bloccato, la
+  frase `{bloccato: true}` porta ad `attendeUnGesto`, che chiede un tocco sulla
+  pagina e poi riparte.
+
+`resume()` può non risolversi **mai** senza gesto: va sempre atteso con un tetto
+(`Promise.race`), altrimenti l'avvio dell'app resta appeso per sempre.
+
+La spia `#voice-sempre-spia` distingue i tre stati: "● in ascolto", "⏸ in pausa
+(sto parlando)", "⏸ tocca lo schermo una volta", così non dice "in ascolto"
+quando non lo è.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa
