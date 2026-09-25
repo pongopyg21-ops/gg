@@ -30,6 +30,41 @@ DB_FILE="${CUCINA_DB:-$BASE_DIR/cucina.db}"
 
 PYTHON="${PYTHON:-python3}"
 
+# --- voce neurale ---------------------------------------------------------
+# La chiave puo' stare in `segreto.sh` accanto all'app invece che nell'ambiente:
+# e' anzi il modo normale, perche' cosi' non va riesportata a ogni avvio. L'app
+# quel file lo legge da sola, quindi qui si legge per **dirlo** — e per dire il
+# vero: guardando solo l'ambiente, un `./avvia.sh status` con la chiave nel file
+# rispondeva "voce del sistema", e chi l'aveva appena messa credeva di aver
+# sbagliato qualcosa.
+#
+# Le due variabili sono gli stessi valori che legge `voce_cloud.chiave()`: nota
+# che `export AZURE_SPEECH_KEY=...` basta, perche' l'assegnazione diventa una
+# variabile d'ambiente della shell corrente.
+#
+# Solo `segreto.sh`: `segreto.bat` ha la sintassi di Windows (`set "NOME=..."`)
+# e in bash non assegnerebbe niente, quindi nominarlo qui darebbe l'illusione di
+# averlo letto. Su Windows il file lo legge l'app, che ha il suo interprete.
+leggi_segreto() {
+  local file="$BASE_DIR/segreto.sh"
+  [ -f "$file" ] || return 0
+  # `set -a` esporta tutto quello che viene assegnato: e' quello che serve,
+  # perche' l'app legge l'ambiente e non le variabili della shell.
+  set -a
+  . "$file" 2>/dev/null
+  set +a
+}
+
+stato_voce() {
+  if [ -n "${AZURE_SPEECH_KEY:-}" ] && [ -n "${AZURE_SPEECH_REGION:-}" ]; then
+    verde "  voce neurale Azure attiva (area: $AZURE_SPEECH_REGION)"
+  elif [ -n "${AZURE_SPEECH_KEY:-}" ] || [ -n "${AZURE_SPEECH_REGION:-}" ]; then
+    giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
+  else
+    echo "  voce: quella del sistema (per la voce neurale: AZURE_SPEECH_KEY e AZURE_SPEECH_REGION)"
+  fi
+}
+
 rosso()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde()  { printf '\033[32m%s\033[0m\n' "$*"; }
 giallo() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -237,13 +272,7 @@ avvia() {
     # la voce neurale e' l'unica cosa che si configura fuori dal progetto: dire
     # subito se e' stata letta evita di cercare un problema nell'app quando la
     # causa e' una variabile d'ambiente non passata al server
-    if [ -n "${AZURE_SPEECH_KEY:-}" ] && [ -n "${AZURE_SPEECH_REGION:-}" ]; then
-      verde "  voce neurale Azure attiva (area: $AZURE_SPEECH_REGION)"
-    elif [ -n "${AZURE_SPEECH_KEY:-}" ] || [ -n "${AZURE_SPEECH_REGION:-}" ]; then
-      giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
-    else
-      echo "  voce: quella del sistema (per la voce neurale: AZURE_SPEECH_KEY e AZURE_SPEECH_REGION)"
-    fi
+    stato_voce
     return 0
   fi
 
@@ -262,6 +291,7 @@ stato() {
   fi
   if risponde; then
     verde "Attivo (pid $pid) su http://127.0.0.1:$PORT/"
+    stato_voce
     return 0
   fi
   giallo "Processo presente (pid $pid) ma non risponde: prova './avvia.sh restart'."
@@ -280,10 +310,10 @@ testa() {
 }
 
 case "${1:-avvia}" in
-  avvia|start)   avvia ;;
+  avvia|start)   leggi_segreto; avvia ;;
   stop)          ferma ;;
-  restart)       ferma && avvia ;;
-  status|stato)  stato ;;
+  restart)       leggi_segreto; ferma && avvia ;;
+  status|stato)  leggi_segreto; stato ;;
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
   test|tests)    testa ;;
   -h|--help|help)

@@ -4578,3 +4578,35 @@ def test_il_contatore_si_dimentica_col_tempo():
     poi = adesso + houses.DIMENTICARE_DOPO + 1
     assert houses.attesa_accesso("8.8.8.8", "casa", adesso=poi) == 0
 
+# ---------------------------------------------------------------- chiave
+# Difetti trovati attorno alla lettura della chiave: il file puo' contenere la
+# chiave ma non essere il primo che si incontra, e la versione precedente si
+# fermava li', lasciando la voce meccanica senza che si capisse perche'.
+
+def test_la_chiave_si_cerca_anche_nel_secondo_file(tmp_path, monkeypatch):
+    """Un `segreto.bat` di Windows copiato accanto al server, senza chiave, non
+    deve far ignorare il `segreto.sh` che la chiave ce l'ha: e' il caso di chi
+    passa dal PC al server, e la voce tornava meccanica senza motivo."""
+    (tmp_path / "segreto.bat").write_text("@echo off\nREM file di Windows, senza chiave\n")
+    (tmp_path / "segreto.sh").write_text("export AZURE_SPEECH_KEY='ChiaveNelSecondo'\n")
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "ChiaveNelSecondo"
+
+
+def test_la_chiave_nel_file_dopo_uno_vuoto(tmp_path, monkeypatch):
+    """Stessa cosa dal lato opposto: il primo file c'e' ma non dice niente, e la
+    lettura deve proseguire invece di fermarsi."""
+    (tmp_path / "segreto.sh").write_text("# solo commenti\n")
+    (tmp_path / "segreto.bat").write_text('set "AZURE_SPEECH_KEY=DalBat"\n')
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "DalBat"
+
+

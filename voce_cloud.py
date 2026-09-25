@@ -119,16 +119,15 @@ def _leggi_file_segreto() -> None:
                 valore = valore.rstrip('"').strip()
                 if nome.startswith("AZURE_SPEECH_") and valore and not os.environ.get(nome):
                     os.environ[nome] = valore
-            return
 
 
 def chiave() -> str:
     """La chiave del servizio.
 
-    In ordine: l'ambiente, `segreto.sh`/`segreto.bat`, i segreti di GitHub.
-    L'ultimo ripiego c'e' perche' il file vive nel workspace, che non e' eterno:
-    quando il workspace viene ricreato la chiave sparisce, e senza il ripiego
-    bisognerebbe incollarla di nuovo a mano.
+    In ordine: l'ambiente, poi `segreto.sh`/`segreto.bat` accanto all'app.
+    L'ambiente viene per primo perche' chi esporta la chiave a mano comanda, e
+    il file serve solo per non doverla riesportare a ogni avvio. Si dice qui
+    perche' e' l'ordine che si sbaglia a ricordare.
     """
     _leggi_file_segreto()
     return os.environ.get("AZURE_SPEECH_KEY", "").strip()
