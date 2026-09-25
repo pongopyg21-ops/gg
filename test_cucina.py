@@ -3242,9 +3242,9 @@ def test_il_microfono_prova_prima_il_server(client):
     assert "/api/voce/ascolta" in js
     assert "ascoltaSulServer" in js and "ascoltaDalBrowser" in js
     # il dispatcher sceglie il server quando è disponibile
-    assert "if (voceCloud.ascolto && ascoltaSulServer()) return;" in js
+    assert "if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto)) return;" in js
     # e il 503 non è un errore da mostrare: si ripiega sul browser
-    assert "if (r.status === 503) { ascoltaDalBrowser(); return; }" in js
+    assert "if (d && d.ripiega) { ascoltaDalBrowser(); return; }" in js
 
 
 def test_la_registrazione_si_ferma_da_sola_fine_frase(client):
@@ -4578,36 +4578,6 @@ def test_il_contatore_si_dimentica_col_tempo():
     poi = adesso + houses.DIMENTICARE_DOPO + 1
     assert houses.attesa_accesso("8.8.8.8", "casa", adesso=poi) == 0
 
-# ---------------------------------------------------------------- chiave
-# Difetti trovati attorno alla lettura della chiave: il file puo' contenere la
-# chiave ma non essere il primo che si incontra, e la versione precedente si
-# fermava li', lasciando la voce meccanica senza che si capisse perche'.
-
-def test_la_chiave_si_cerca_anche_nel_secondo_file(tmp_path, monkeypatch):
-    """Un `segreto.bat` di Windows copiato accanto al server, senza chiave, non
-    deve far ignorare il `segreto.sh` che la chiave ce l'ha: e' il caso di chi
-    passa dal PC al server, e la voce tornava meccanica senza motivo."""
-    (tmp_path / "segreto.bat").write_text("@echo off\nREM file di Windows, senza chiave\n")
-    (tmp_path / "segreto.sh").write_text("export AZURE_SPEECH_KEY='ChiaveNelSecondo'\n")
-    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
-
-    assert voce_cloud.chiave() == "ChiaveNelSecondo"
-
-
-def test_la_chiave_nel_file_dopo_uno_vuoto(tmp_path, monkeypatch):
-    """Stessa cosa dal lato opposto: il primo file c'e' ma non dice niente, e la
-    lettura deve proseguire invece di fermarsi."""
-    (tmp_path / "segreto.sh").write_text("# solo commenti\n")
-    (tmp_path / "segreto.bat").write_text('set "AZURE_SPEECH_KEY=DalBat"\n')
-    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
-    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
-
-    assert voce_cloud.chiave() == "DalBat"
 
 
 # ---------------------------------------------------------------- sveglia
@@ -4702,3 +4672,80 @@ def test_l_ascolto_di_una_frase_comune_non_sveglia(client, monkeypatch):
     assert r.get_json()["sveglia"] is False
 
 
+# ---------------------------------------------------------------- chiave
+# Difetti trovati attorno alla lettura della chiave: il file puo' contenere la
+# chiave ma non essere il primo che si incontra, e la versione precedente si
+# fermava li', lasciando la voce meccanica senza che si capisse perche'.
+
+def test_la_chiave_si_cerca_anche_nel_secondo_file(tmp_path, monkeypatch):
+    """Un `segreto.bat` di Windows copiato accanto al server, senza chiave, non
+    deve far ignorare il `segreto.sh` che la chiave ce l'ha: e' il caso di chi
+    passa dal PC al server, e la voce tornava meccanica senza motivo."""
+    (tmp_path / "segreto.bat").write_text("@echo off\nREM file di Windows, senza chiave\n")
+    (tmp_path / "segreto.sh").write_text("export AZURE_SPEECH_KEY='ChiaveNelSecondo'\n")
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "ChiaveNelSecondo"
+
+
+def test_la_chiave_nel_file_dopo_uno_vuoto(tmp_path, monkeypatch):
+    """Stessa cosa dal lato opposto: il primo file c'e' ma non dice niente, e la
+    lettura deve proseguire invece di fermarsi."""
+    (tmp_path / "segreto.sh").write_text("# solo commenti\n")
+    (tmp_path / "segreto.bat").write_text('set "AZURE_SPEECH_KEY=DalBat"\n')
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.setattr(voce_cloud, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(voce_cloud, "_FILE_LETTI", False)
+
+    assert voce_cloud.chiave() == "DalBat"
+
+
+# ------------------------------------------------------- ascolto continuo
+# La funzione in stile "hey Google": il microfono resta aperto e i comandi
+# partono alla parola di sveglia. E' lato client e non si puo' premere in un
+# test, ma le garanzie che non devono rompersi si possono verificare.
+
+def test_l_ascolto_continuo_esiste_e_si_accende_dal_pannello(client):
+    """La funzione deve essere raggiungibile: un pulsante nel pannello e il
+    ciclo che lo mette in pratica."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="voice-sempre"' in html
+    assert "function avviaAscoltoContinuo()" in js
+    assert "function cicloAscoltoContinuo()" in js
+    assert "function fermaAscoltoContinuo()" in js
+
+
+def test_l_ascolto_continuo_non_risente_se_stesso(client):
+    """Il difetto che rompe la funzione: mentre l'assistente parla, il microfono
+    lo sente, riconosce la propria voce come comando e riparte da solo. La pausa
+    `sospeso` e il segnale di "fine parlato" esistono per questo."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "sospeso" in js
+    assert "function avvisaFineParlato()" in js
+    assert "function riprendiDopoLaVoce(" in js
+    # la voce del browser e quella neurale devono segnalare la fine tutte e due
+    assert "if (ultima) u.onend = avvisaFineParlato;" in js
+    assert "audio.addEventListener('ended', avvisaFineParlato" in js
+
+
+def test_l_ascolto_continuo_non_si_incastra(client):
+    """Se il browser non dice mai che la voce ha finito, il ciclo deve ripartire
+    lo stesso: senza il tetto, l'ascolto resterebbe fermo con l'aria di acceso."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "TETTO_VOCE_MS" in js
+    assert "voce.tempoVoce = setTimeout(" in js
+
+
+def test_chiudere_il_pannello_non_spegne_l_ascolto_continuo(client):
+    """Il modo d'uso e' proprio a pannello chiuso - si cucina e si parla - e
+    fermare il microfono li' renderebbe la funzione inutile quando serve."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function chiudiVoce()" in js
+    inizio = js.index("function chiudiVoce()")
+    corpo = js[inizio:inizio + 700]
+    assert "ascoltoContinuo.continuo" in corpo

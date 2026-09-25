@@ -458,6 +458,16 @@
       <button type="button" class="voice-ex" data-say="che cosa c'è in dispensa">«che cosa c'è in dispensa»</button>
       <button type="button" class="voice-ex" data-say="quanto sale serve">«quanto sale serve»</button>
     </div>
+    <!-- Ascolto continuo: il microfono resta acceso e i comandi partono alla
+         parola "maggiordomo". Si accende da qui e resta acceso anche a pannello
+         chiuso, perche' serve proprio quando le mani sono occupate. -->
+    <div id="voice-sempre-blocco" class="voice-sempre">
+      <button id="voice-sempre" class="primary" type="button">🟢 Ascolto continuo</button>
+      <p class="hint">Con l'ascolto continuo di' «maggiordomo» e poi il comando:
+      «maggiordomo, metti il latte nella spesa». Resta in ascolto anche a pannello
+      chiuso, finché non lo spegni da qui.</p>
+      <p id="voice-sempre-spia" class="voice-avviso"></p>
+    </div>
     <p id="voice-result" class="voice-result" hidden></p>
     <div class="row">
       <input id="voice-text" placeholder="Oppure scrivi il comando…">

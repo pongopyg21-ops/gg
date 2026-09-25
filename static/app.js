@@ -2335,14 +2335,14 @@ function spezzaInFrasi(testo) {
 
 /** Pronuncia un testo spezzandolo in frasi, ognuna con la sua intonazione. */
 function parlaTesto(testo) {
-  if (!window.speechSynthesis) return;
+  if (!window.speechSynthesis) { avvisaFineParlato(); return; }
   try {
     speechSynthesis.cancel();
     const timbro = timbroScelto();
     tts.voce = scegliVoce(timbro);
     const t = TIMBRI[timbro] || TIMBRI.chiara;
     const frasi = spezzaInFrasi(testo);
-    if (!frasi.length) return;
+    if (!frasi.length) { avvisaFineParlato(); return; }
 
     frasi.forEach((frase, i) => {
       const ultima = i === frasi.length - 1;
@@ -2360,9 +2360,21 @@ function parlaTesto(testo) {
       // troncamento meccanico
       u.rate = t.rate * (ultima ? 0.97 : 1.0);
       u.pitch = t.pitch * (ultima ? 0.95 : 1.0);
+      if (ultima) u.onend = avvisaFineParlato;
       speechSynthesis.speak(u);
     });
-  } catch (_e) { /* voce non disponibile: si prosegue */ }
+  } catch (_e) { avvisaFineParlato(); }
+}
+
+/** Segnala che l'assistente ha finito di parlare.
+
+    Serve all'ascolto continuo: finché la voce parla il microfono deve tacere,
+    altrimenti si riascolta e riparte da solo. Un solo punto di segnalazione,
+    chiamato sia dalla voce del browser sia da quella neurale. */
+function avvisaFineParlato() {
+  const f = voce.aFineParlato;
+  voce.aFineParlato = null;
+  if (f) { try { f(); } catch (_e) { /* il chiamante ha già fatto il suo */ } }
 }
 
 function speak(text) {
@@ -2451,6 +2463,9 @@ async function parlaCloud(frase) {
     await audio.play();
     // si libera l'URL quando ha finito: senza, il blob resta agganciato in memoria
     audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+    // l'ascolto continuo deve sapere quando la voce tace, altrimenti il microfono
+    // riparte mentre l'assistente parla e lo risente
+    audio.addEventListener('ended', avvisaFineParlato, { once: true });
     return true;
   } catch (_e) {
     // capita su iOS finché l'utente non ha toccato la pagina: in quel caso si
@@ -2467,7 +2482,18 @@ function parla(testo) {
     // **tutto** il testo, senza ripetere il tentativo a ogni frase
     parlaCloud(frasi[0] || testo).then((ok) => {
       if (!ok) { parlaTesto(testo); return; }
-      frasi.slice(1).forEach(async (f) => { await parlaCloud(f); });
+      // Le frasi si dicono in fila, non tutte insieme: `speechSynthesis` accoda
+      // da solo, ma la voce neurale e' un audio per volta. Si conta quelle
+      // finite e si segnala il silenzio **solo** con l'ultima: segnalandolo a
+      // ogni frase, l'ascolto continuo ripartirebbe a meta' discorso.
+      const coda = frasi.slice(1);
+      if (!coda.length) { avvisaFineParlato(); return; }
+      let fatte = 0;
+      coda.forEach(async (f) => {
+        await parlaCloud(f);
+        fatte += 1;
+        if (fatte === coda.length) avvisaFineParlato();
+      });
     });
     return;
   }
@@ -2673,7 +2699,17 @@ function wavDaCampioni(campioni, frequenza) {
   return new Blob([dati], { type: 'audio/wav' });
 }
 
-let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: null };
+let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: null,
+             aFineParlato: null, tempoVoce: null };
+// Ascolto continuo ("hey Google"): il microfono resta aperto e i comandi partono
+// solo dopo la parola di sveglia. `continuo` e' l'intenzione dell'utente,
+// `sospeso` dice che in questo momento l'assistente sta parlando e non deve
+// ascoltare se stesso (si sentirebbe, si riconoscerebbe e ripartirebbe da solo).
+let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0 };
+const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
+// Tetto alla pausa: se il browser non dice mai che la voce ha finito, il
+// microfono deve riaccendersi lo stesso. Una conferma dura pochi secondi.
+const TETTO_VOCE_MS = 20000;
 
 function voceStato(msg, tipo = '') {
   const el = $('#voice-status');
@@ -2747,8 +2783,20 @@ async function eseguiComando(testo) {
 function ascolta() {
   // già in ascolto (dal server o dal browser): il clic ferma e fa partire la frase
   if (voce.attivo) { fermaAscolto(); return; }
-  if (voceCloud.ascolto && ascoltaSulServer()) return;
+  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto)) return;
   ascoltaDalBrowser();
+}
+
+/** Cosa fare col testo arrivato dal server nell'ascolto singolo. */
+function esitoAscolto(d) {
+  // 503: il server non ha la chiave. Non è un errore da mostrare, è il motivo
+  // per cui esiste il ripiego sul riconoscimento del browser.
+  if (d && d.ripiega) { ascoltaDalBrowser(); return; }
+  if (!d || d.errore) return;
+  const testo = (d.testo || '').trim();
+  if (!testo) { voceStato('Non ho sentito nulla, riprova.'); return; }
+  $('#voice-heard').textContent = testo;
+  eseguiComando(testo);
 }
 
 function fermaAscolto() {
@@ -2761,8 +2809,10 @@ function fermaAscolto() {
 /** Registra dal microfono e manda l'audio al server.
 
     Restituisce `false` se non c'e' modo di registrare qui (microfono negato o
-    API assente): chi chiama ripiega sul riconoscimento del browser. */
-function ascoltaSulServer() {
+    API assente): chi chiama ripiega sul riconoscimento del browser.
+    `alTesto` riceve l'esito, anche quando il microfono viene negato: l'ascolto
+    continuo deve saperlo per non restare in attesa di un ciclo mai partito. */
+function ascoltaSulServer(alTesto) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !Ctx) return false;
 
@@ -2790,7 +2840,7 @@ function ascoltaSulServer() {
     const termina = () => {
       if (chiuso) return;
       chiudi();
-      inviaAscolto(pezzi, ctx.sampleRate);
+      inviaAscolto(pezzi, ctx.sampleRate).then(alTesto);
     };
 
     nodo.onaudioprocess = (e) => {
@@ -2825,11 +2875,20 @@ function ascoltaSulServer() {
     $('#voice-heard').hidden = true;
     const campo = $('#voice-text');
     if (campo) campo.focus();
+    // l'ascolto continuo va fermato: senza questo avviso resterebbe "acceso"
+    // ad aspettare un ciclo che non partirà mai, e il pulsante mentirebbe
+    if (alTesto) alTesto({ errore: true });
   });
   return true;
 }
 
-/** Manda la registrazione al server e usa il testo che torna. */
+/** Manda la registrazione al server e restituisce l'esito.
+
+    L'esito è la risposta del server (`testo`, `sveglia`, `resto`) oppure
+    `{ripiega: true}` se il server non ha la chiave, o `{errore: true}`. Cosa
+    farne lo decide chi chiama: l'ascolto singolo esegue il comando, quello
+    continuo guarda prima la parola di sveglia. Un solo percorso per la
+    trascrizione, così le due modalità non possono divergere. */
 function inviaAscolto(pezzi, frequenza) {
   const totale = pezzi.reduce((n, p) => n + p.length, 0);
   const uniti = new Float32Array(totale);
@@ -2838,25 +2897,23 @@ function inviaAscolto(pezzi, frequenza) {
 
   voceStato('Trascrivo…');
   const wav = wavDaCampioni(aSediciKhz(uniti, frequenza), ASCOLTO_CAMPIONI);
-  fetch('/api/voce/ascolta', {
+  return fetch('/api/voce/ascolta', {
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
     body: wav,
   }).then(async (r) => {
     // 503: il server non ha la chiave. Non è un errore da mostrare, è il
     // motivo per cui esiste il ripiego sul riconoscimento del browser.
-    if (r.status === 503) { ascoltaDalBrowser(); return; }
+    if (r.status === 503) return { ripiega: true };
     const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       voceStato(d.error || 'Non sono riuscito a trascrivere, riprova.', 'err');
-      return;
+      return { errore: true };
     }
-    const testo = (d.testo || '').trim();
-    if (!testo) { voceStato('Non ho sentito nulla, riprova.'); return; }
-    $('#voice-heard').textContent = testo;
-    eseguiComando(testo);
+    return d;
   }).catch(() => {
     voceStato('Non riesco a parlare con il server. Riprova.', 'err');
+    return { errore: true };
   });
 }
 
@@ -2949,8 +3006,192 @@ function apriVoce() {
   mostraAvvisoSicurezza();
   $('#voice').classList.remove('hidden');
   $('#voice-result').hidden = true;
+  aggiornaSpiaAscolto();
+  // con l'ascolto continuo acceso il microfono sta gia' girando: avviarne uno
+  // singolo lo sovrapporrebbe, e due registrazioni insieme non si capiscono
+  if (ascoltoContinuo.continuo) {
+    voceStato('Ascolto continuo acceso: di\' «maggiordomo…»', 'ok');
+    return;
+  }
   $('#voice-heard').textContent = "Parla ora: ad esempio «aggiungi due chili di farina in dispensa».";
   ascolta();
+}
+
+/* ---------- ascolto continuo: la parola di sveglia ----------
+   In stile "hey Google": il microfono resta aperto e i comandi partono solo dopo
+   "maggiordomo". Serve perche' il caso d'uso e' cucinare con le mani occupate, e
+   chiedere di toccare il pulsante a ogni frase lo vanifica.
+
+   Perche' a cicli e non un microfono sempre aperto: l'audio breve di Azure
+   accetta registrazioni di poche decine di secondi, non un flusso continuo. Si
+   registra una frase, si manda, si guarda se conteneva la sveglia, e si riparte.
+
+   Perche' la sveglia si riconosce sul server: la trascrizione la fa gia' lui, e
+   tenerla li' significa che anche il ripiego sul browser usa la stessa logica,
+   invece di una seconda versione che puo' divergere. */
+
+function avviaAscoltoContinuo() {
+  ascoltoContinuo.continuo = true;
+  ascoltoContinuo.sospeso = false;
+  aggiornaSpiaAscolto();
+  cicloAscoltoContinuo();
+}
+
+function fermaAscoltoContinuo() {
+  ascoltoContinuo.continuo = false;
+  ascoltoContinuo.ciclo += 1;      // invalida il ciclo in corso
+  ascoltoContinuo.sospeso = false;
+  if (voce.registratore) voce.registratore.annulla();
+  if (voce.attivo && voce.rec) {
+    try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
+  }
+  aggiornaSpiaAscolto();
+  voceStato('Ascolto continuo spento.');
+}
+
+/** Mette in pausa il microfono e lo riaccende quando l'assistente ha finito.
+
+    La pausa e' il punto: senza, il microfono riprende mentre la voce parla, si
+    risente, riconosce se stesso e il ciclo non finisce piu'.
+
+    C'e' anche un tempo di garanzia: in alcuni browser `onend` della sintesi non
+    arriva mai (o arriva dopo minuti), e senza un tetto l'ascolto continuo
+    resterebbe fermo per sempre con l'aria di essere acceso. */
+function riprendiDopoLaVoce(poi) {
+  ascoltoContinuo.sospeso = true;
+  aggiornaSpiaAscolto();
+  let fatto = false;
+  const riprendi = () => {
+    if (fatto) return;
+    fatto = true;
+    clearTimeout(voce.tempoVoce);
+    voce.aFineParlato = null;
+    ascoltoContinuo.sospeso = false;
+    aggiornaSpiaAscolto();
+    setTimeout(poi, SVEGLIA_RIPRESA_MS);
+  };
+  voce.aFineParlato = riprendi;
+  return riprendi;
+}
+
+/** Dice una frase e riprende ad ascoltare solo quando ha finito. */
+function parlaPoi(testo, poi) {
+  const riprendi = riprendiDopoLaVoce(poi);
+  speak(testo);
+  if (!$('#voice-speak').checked) { riprendi(); return; }
+  // il tetto e' generoso: una conferma di casa dura pochi secondi, e tagliarla
+  // prima farebbe riascoltare l'assistente a meta' frase
+  voce.tempoVoce = setTimeout(riprendi, TETTO_VOCE_MS);
+}
+
+/** Un giro: registra una frase, decide se era per l'app, e si richiama. */
+function cicloAscoltoContinuo() {
+  if (!ascoltoContinuo.continuo) return;
+  if (ascoltoContinuo.sospeso) return;
+  const mio = ++ascoltoContinuo.ciclo;
+
+  const ancora = () => {
+    if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
+    setTimeout(cicloAscoltoContinuo, 250);
+  };
+
+  const esito = (d) => {
+    if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
+    if (!d || d.errore) { ascoltoContinuo.continuo = false; aggiornaSpiaAscolto(); return; }
+    if (d.ripiega) {
+      // senza la chiave la trascrizione la fa il browser: il ciclo resta lo
+      // stesso, cambia solo chi ascolta
+      cicloAscoltoDalBrowser(mio);
+      return;
+    }
+    const testo = (d.testo || '').trim();
+    if (!testo) { ancora(); return; }
+    if (d.sveglia) {
+      const comando = (d.resto || '').trim();
+      voceStato('Sì?');
+      if (!comando) {
+        // chiamato e basta: si risponde, e si aspetta il comando
+        parlaPoi('Dimmi.', ancora);
+        return;
+      }
+      $('#voice-heard').textContent = comando;
+      eseguiComandoContinuo(comando, ancora);
+      return;
+    }
+    // frase non rivolta all'app: si tace, che e' il punto dell'ascolto continuo
+    ancora();
+  };
+
+  if (voceCloud.ascolto && ascoltaSulServer(esito)) return;
+  cicloAscoltoDalBrowser(mio);
+}
+
+/** Registra un giro col riconoscimento del browser (server senza chiave).
+
+    La sveglia la riconosce il server anche qui, con `/api/voce/sveglia`:
+    eseguire il comando in locale significherebbe una seconda copia della
+    comprensione, libera di divergere da quella vera. */
+function cicloAscoltoDalBrowser(mio) {
+  if (!SR) { fermaAscoltoContinuo(); voceStato('Questo browser non sa ascoltare: l\'ascolto continuo ha bisogno di Chrome, Edge o Safari.', 'err'); return; }
+  const rec = new SR();
+  rec.lang = 'it-IT';
+  rec.interimResults = false;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+  const valido = () => mio === ascoltoContinuo.ciclo && ascoltoContinuo.continuo;
+  rec.onresult = (e) => {
+    const testo = (e.results[0] && e.results[0][0] ? e.results[0][0].transcript : '').trim();
+    if (!testo || !valido()) return;
+    api('/api/voce/sveglia', { method: 'POST', body: { text: testo } }).then((d) => {
+      if (!valido()) return;
+      if (d.sveglia && (d.resto || '').trim()) {
+        $('#voice-heard').textContent = d.resto.trim();
+        eseguiComandoContinuo(d.resto.trim(), () => setTimeout(cicloAscoltoContinuo, 250));
+      } else {
+        setTimeout(cicloAscoltoContinuo, 250);
+      }
+    }).catch(() => setTimeout(cicloAscoltoContinuo, 250));
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'aborted') return;
+    // il browser non arriva al servizio di ascolto: si prova comunque a
+    // ripartire, perche' un errore di rete puo' essere momentaneo
+    setTimeout(cicloAscoltoContinuo, 1200);
+  };
+  rec.onend = () => { if (valido()) setTimeout(cicloAscoltoContinuo, 300); };
+  try { rec.start(); } catch (_e) { setTimeout(cicloAscoltoContinuo, 600); }
+}
+
+/** Esegue il comando continuando ad ascoltare: la conferma a voce deve finire
+    prima che il microfono riprenda, altrimenti l'assistente risente se stesso. */
+async function eseguiComandoContinuo(comando, riprendi) {
+  const riparti = riprendiDopoLaVoce(riprendi);
+  try {
+    await eseguiComando(comando);
+  } finally {
+    if (!$('#voice-speak').checked) { riparti(); return; }
+    voce.tempoVoce = setTimeout(riparti, TETTO_VOCE_MS);
+  }
+}
+
+/** Il pallino del microfono dice se l'ascolto continuo e' acceso. */
+function aggiornaSpiaAscolto() {
+  const acceso = ascoltoContinuo.continuo && !ascoltoContinuo.sospeso;
+  const btn = $('#mic');
+  if (btn) btn.classList.toggle('sempre', ascoltoContinuo.continuo);
+  const spia = $('#voice-sempre-spia');
+  if (spia) {
+    spia.textContent = !ascoltoContinuo.continuo ? ''
+      : (ascoltoContinuo.sospeso ? '⏸ in pausa (sto parlando)'
+                                 : '● in ascolto: di\' «maggiordomo…»');
+    spia.className = 'voice-avviso' + (acceso ? ' ok' : '');
+  }
+  const bottone = $('#voice-sempre');
+  if (bottone) {
+    bottone.textContent = ascoltoContinuo.continuo ? '⏹ Spegni ascolto continuo'
+                                                   : '🟢 Ascolto continuo';
+    bottone.classList.toggle('primary', !ascoltoContinuo.continuo);
+  }
 }
 
 /** Avvisa quando il microfono non puo' funzionare, invece di lasciare che il
@@ -3056,6 +3297,13 @@ async function salvaChiaveVoce() {
 }
 
 function chiudiVoce() {
+  // Con l'ascolto continuo acceso, chiudere il pannello non lo spegne: e' anzi
+  // il modo d'uso normale (si cucina e si parla da un'altra stanza), e fermare
+  // il microfono qui renderebbe la funzione inutile proprio quando serve.
+  if (ascoltoContinuo.continuo) {
+    $('#voice').classList.add('hidden');
+    return;
+  }
   if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) voce.rec.stop();
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -3063,6 +3311,10 @@ function chiudiVoce() {
 }
 
 $('#mic').addEventListener('click', apriVoce);
+$('#voice-sempre').addEventListener('click', () => {
+  if (ascoltoContinuo.continuo) fermaAscoltoContinuo();
+  else avviaAscoltoContinuo();
+});
 $('#voice-close').addEventListener('click', chiudiVoce);
 $('#voice-retry').addEventListener('click', ascolta);
 $('#voice').addEventListener('click', (e) => { if (e.target.id === 'voice') chiudiVoce(); });
