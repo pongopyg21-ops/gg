@@ -2737,6 +2737,21 @@ const ASCOLTO_ATTESA_MS = 6000;      // nessuno parla: si chiude
 const ASCOLTO_MAX_MS = 15000;        // tetto, qualunque cosa succeda
 const ASCOLTO_SILENZIO = 0.012;      // sopra questa ampiezza c'è voce
 
+/** La registrazione di una frase e' finita? Pura, cosi' la regola si prova senza
+    microfono, senza AudioContext e senza attese.
+
+    Serve perche' le stesse scadenze si guardano da **due** punti: dentro
+    `onaudioprocess` (quando i campioni arrivano) e da un timer di sicurezza
+    (quando non arrivano). Su iPhone `onaudioprocess` puo' non scattare mai, e se
+    la chiusura dipendesse solo da li' la registrazione resterebbe appesa per
+    sempre. Una sola regola, cosi' i due controlli non possono divergere. */
+function fineRegistrazione({ inizio, ultimoSuono, parlatoDa, adesso }) {
+  if (parlatoDa && adesso - ultimoSuono > ASCOLTO_FINE_MS) return true;
+  if (!parlatoDa && adesso - inizio > ASCOLTO_ATTESA_MS) return true;
+  return adesso - inizio > ASCOLTO_MAX_MS;
+}
+
+
 /** Quanto è "forte" un blocco di campioni, per distinguere voce e silenzio.
     Un picco, non una media: una media su blocchi quasi muti resta a zero anche
     quando si parla, e il silenzio non finirebbe mai. */
@@ -2956,10 +2971,12 @@ function ascoltaSulServer(alTesto) {
     let parlatoDa = null;      // quando si è cominciata a sentire la voce
     let ultimoSuono = 0;       // quando si è sentito l'ultimo suono
     let chiuso = false;
+    let sorveglia = null;
 
     const chiudi = () => {
       if (chiuso) return;
       chiuso = true;
+      if (sorveglia) clearInterval(sorveglia);
       try { nodo.disconnect(); } catch (_e) { /* già staccato */ }
       try { sorgente.disconnect(); } catch (_e) { /* già staccato */ }
       try { ctx.close(); } catch (_e) { /* già chiuso */ }
@@ -2974,6 +2991,20 @@ function ascoltaSulServer(alTesto) {
       inviaAscolto(pezzi, ctx.sampleRate).then(alTesto);
     };
 
+    /** Chiude la frase se e' scaduto il tempo. Le scadenze si guardano qui e non
+        solo dentro `onaudioprocess`: su iPhone quel callback puo' non arrivare
+        mai, e allora la registrazione resterebbe appesa **per sempre** — la
+        spia dice "in ascolto" ma non si passa mai a "Trascrivo…", che e' il modo
+        in cui il telefono smetteva di rispondere. Con questo controllo il ciclo
+        si chiude comunque, e al massimo si sente "non ho sentito nulla". */
+    const valutaFine = () => {
+      if (chiuso) return;
+      const adesso = Date.now();
+      if (fineRegistrazione({
+        inizio, ultimoSuono, parlatoDa: parlatoDa !== null, adesso,
+      })) termina();
+    };
+
     nodo.onaudioprocess = (e) => {
       if (chiuso) return;
       const blocco = e.inputBuffer.getChannelData(0);
@@ -2983,12 +3014,12 @@ function ascoltaSulServer(alTesto) {
         ultimoSuono = adesso;
         if (parlatoDa === null) parlatoDa = adesso;
       }
-      // La frase finisce quando si smette di parlare: senza, il microfono
-      // resterebbe aperto finché non lo si chiude a mano.
-      if (parlatoDa !== null && adesso - ultimoSuono > ASCOLTO_FINE_MS) termina();
-      else if (parlatoDa === null && adesso - inizio > ASCOLTO_ATTESA_MS) termina();
-      else if (adesso - inizio > ASCOLTO_MAX_MS) termina();
+      valutaFine();
     };
+
+    // la rete di sicurezza: un timer che guarda le stesse scadenze senza
+    // dipendere dai campioni
+    sorveglia = setInterval(valutaFine, 250);
 
     sorgente.connect(nodo);
     nodo.connect(ctx.destination);   // serve solo perché il nodo elabori

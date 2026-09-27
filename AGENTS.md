@@ -976,6 +976,33 @@ La spia `#voice-sempre-spia` distingue i tre stati: "● in ascolto", "⏸ in pa
 (sto parlando)", "⏸ tocca lo schermo una volta", così non dice "in ascolto"
 quando non lo è.
 
+
+### La registrazione che non finiva mai (il telefono muto)
+
+Il sintomo era preciso: la spia diceva **"● in ascolto"** ma non si passava mai
+a **"Trascrivo…"**, e non si sentiva né "Sì." né altro. L'audio del telefono era
+alto: non era un problema di uscita.
+
+La causa era la chiusura della frase. Le tre scadenze (fine del silenzio,
+nessuno parla, tetto massimo) si guardavano **solo** dentro `onaudioprocess`.
+Su iPhone quel callback può non arrivare mai: senza campioni nessuna condizione
+veniva valutata, e la registrazione restava appesa **per sempre** — l'ascolto
+acceso con l'aria di funzionare, e nessun suono perché non si arrivava mai alla
+trascrizione.
+
+Il rimedio: le scadenze sono una funzione **pura**, `fineRegistrazione`, e la
+guardano da **due** punti — il callback dei campioni e un `setInterval` di
+sicurezza (250 ms). Una sola regola, così i due controlli non possono divergere.
+Il caso peggiore diventa "non ho sentito nulla", che almeno si sente.
+
+Il test `test_la_registrazione_non_resta_appesa_senza_campioni` esegue
+`ascoltaSulServer` **vera** con un `AudioContext` finto il cui callback non viene
+mai invocato, e verifica che l'esito arrivi lo stesso: senza la correzione fallisce.
+Due trappole del banco, già pagate: in Node `navigator` è un oggetto nativo e
+**non si assegna** (serve `Object.defineProperty`), e il flag va messo
+sull'**invocazione** del callback, non sulla sua assegnazione.
+
+
 ### Il cenno "Comandi.": chi parla deve sapere di essere stato sentito
 
 Quando il comando arriva **insieme** alla sveglia ("Hey GG, metti il latte"),

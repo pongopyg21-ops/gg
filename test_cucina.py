@@ -3462,8 +3462,107 @@ def test_la_registrazione_si_ferma_da_sola_fine_frase(client):
     """Senza la fine automatica il microfono resterebbe aperto finché non lo si
     chiude a mano, e nessuno lo chiude: la frase non partirebbe mai."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    assert "ASCOLTO_FINE_MS" in js and "ASCOLTO_MAX_MS" in js
-    assert "ultimoSuono" in js
+    assert "fineRegistrazione" in js
+    assert "ASCOLTO_MAX_MS" in js
+    d = _fine_registrazione_js(client, """{
+      // si sta parlando, l'ultimo suono e' recente: non chiudere
+      parlando: fineRegistrazione({inizio: 0, ultimoSuono: 1000, parlatoDa: true, adesso: 1200}),
+      // si e' smesso di parlare da un pezzo: chiudere
+      finePausa: fineRegistrazione({inizio: 0, ultimoSuono: 1000, parlatoDa: true, adesso: 3000}),
+      // nessuno parla ancora: chiudere dopo l'attesa
+      silenzioLungo: fineRegistrazione({inizio: 0, ultimoSuono: 0, parlatoDa: false, adesso: 7000}),
+      // e non chiudere troppo presto
+      silenzioBreve: fineRegistrazione({inizio: 0, ultimoSuono: 0, parlatoDa: false, adesso: 3000}),
+      // il tetto chiude qualunque cosa succeda
+      tetto: fineRegistrazione({inizio: 0, ultimoSuono: 999999, parlatoDa: true, adesso: 16000}),
+    }""")
+    assert d["parlando"] is False
+    assert d["finePausa"] is True
+    assert d["silenzioLungo"] is True
+    assert d["silenzioBreve"] is False
+    assert d["tetto"] is True
+
+
+def test_la_registrazione_non_resta_appesa_senza_campioni(client):
+    """Il guasto del telefono, riprodotto: la spia dice "in ascolto" ma non passa
+    mai a "Trascrivo…". La causa era che su iPhone `onaudioprocess` non scatta, e
+    la chiusura della frase dipendeva **solo** da li': la registrazione restava
+    appesa per sempre. Qui si esegue `ascoltaSulServer` **vera** con un
+    `AudioContext` finto il cui callback dei campioni non viene mai chiamato, e
+    si verifica che l'esito arrivi comunque, dal timer di sicurezza."""
+    esito = _ascolta_senza_campioni_js(client)
+    assert esito["gestoreAssegnato"] is True, "il registratore deve essersi avviato"
+    assert esito["campioniChiamati"] is False, "il caso da riprodurre: nessun campione"
+    assert esito["esitoRicevuto"] is True, (
+        "senza campioni la registrazione deve chiudersi lo stesso")
+    assert esito["ms"] < 2000, f"ci ha messo troppo: {esito['ms']} ms"
+
+
+def _ascolta_senza_campioni_js(client):
+    """Esegue il registratore vero con un microfono finto muto e misura se e
+    quando arriva l'esito. Le costanti sono piccole per non far durare il test
+    quanto una frase vera."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    pezzi = [_estrai_funzione_js(js, n) for n in ("ampiezza", "fineRegistrazione",
+                                                  "ascoltaSulServer")]
+    preludio = """
+const ASCOLTO_BLOCCO = 4096;
+const ASCOLTO_CAMPIONI = 16000;
+const ASCOLTO_FINE_MS = 1600;
+const ASCOLTO_ATTESA_MS = 200;
+const ASCOLTO_MAX_MS = 400;
+const ASCOLTO_SILENZIO = 0.012;
+let campioniChiamati = false;
+let gestoreCampioni = null;
+class AudioContextFinto {
+  constructor() { this.state = 'running'; this.sampleRate = 16000; }
+  createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+  createScriptProcessor() {
+    return { connect() {}, disconnect() {},
+             // il gestore viene **assegnato** dal codice vero, ma in questa
+             // simulazione non viene mai invocato: e' il caso iPhone
+             set onaudioprocess(f) { gestoreCampioni = f; } };
+  }
+  close() {}
+  resume() { return Promise.resolve(); }
+}
+global.window = { AudioContext: AudioContextFinto };
+// `navigator` in Node e' un oggetto nativo non assegnabile: va ridefinito
+Object.defineProperty(globalThis, "navigator", {
+  value: { mediaDevices: {
+    getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }),
+  } },
+  configurable: true,
+});
+function ampiezza() { return 0; }
+function inviaAscolto() { return Promise.resolve({ testo: '' }); }
+function $() { return { classList: { add() {}, remove() {} } }; }
+function voceStato() {}
+let voce = { registratore: null, attivo: false };
+"""
+    prova = (preludio + "\n".join(pezzi) + """
+const t0 = Date.now();
+ascoltaSulServer(() => {
+  console.log(JSON.stringify({ esitoRicevuto: true, gestoreAssegnato: !!gestoreCampioni,
+                               campioniChiamati, ms: Date.now() - t0 }));
+  process.exit(0);
+});
+setTimeout(() => {
+  console.log(JSON.stringify({ esitoRicevuto: false, gestoreAssegnato: !!gestoreCampioni,
+                               campioniChiamati, ms: Date.now() - t0 }));
+  process.exit(0);
+}, 3000);""")
+    return _esegui_node(prova)
+
+
+def _fine_registrazione_js(client, casi):
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "fineRegistrazione")
+    costanti = ("const ASCOLTO_FINE_MS = 1600;\n"
+                "const ASCOLTO_ATTESA_MS = 6000;\n"
+                "const ASCOLTO_MAX_MS = 15000;\n")
+    return _esegui_node(costanti + blocco
+                        + "\nconsole.log(JSON.stringify(" + casi + "));")
 
 
 def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
