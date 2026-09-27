@@ -2823,8 +2823,11 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 // solo dopo la parola di sveglia. `continuo` e' l'intenzione dell'utente,
 // `sospeso` dice che in questo momento l'assistente sta parlando e non deve
 // ascoltare se stesso (si sentirebbe, si riconoscerebbe e ripartirebbe da solo).
+// `battito` e' l'ultimo segno di vita del ciclo: serve al sorvegliante per
+// accorgersi di un giro perso.
 let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
-                        avvioAuto: false, attesaGesto: false, togliGesto: null };
+                        avvioAuto: false, attesaGesto: false, togliGesto: null,
+                        battito: 0, sorveglia: null };
 // Vero solo per l'accesso appena fatto: distingue "sono appena entrato" (c'e' il
 // gesto del click) da "ho ricaricato la pagina" (gesto assente). Senza questa
 // distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
@@ -2922,6 +2925,10 @@ function esitoAscolto(d) {
   // per cui esiste il ripiego sul riconoscimento del browser.
   if (d && d.ripiega) { ascoltaDalBrowser(); return; }
   if (!d || d.errore) return;
+  if (d.muto) {
+    voceStato('Il microfono non manda audio: controlla che l\'app possa usarlo.', 'err');
+    return;
+  }
   const testo = (d.testo || '').trim();
   if (!testo) { voceStato('Non ho sentito nulla, riprova.'); return; }
   $('#voice-heard').textContent = testo;
@@ -2987,7 +2994,12 @@ function ascoltaSulServer(alTesto) {
     };
     const termina = () => {
       if (chiuso) return;
+      // se non e' arrivato **nessun** campione, il microfono non ha mandato
+      // audio: e' diverso dal silenzio (quello e' "non ho sentito nulla"). Non
+      // vale la pena spedire un WAV vuoto al server: l'esito si dice subito.
+      const muto = pezzi.length === 0;
       chiudi();
+      if (muto) { alTesto({ muto: true }); return; }
       inviaAscolto(pezzi, ctx.sampleRate).then(alTesto);
     };
 
@@ -3220,8 +3232,51 @@ function avviaAscoltoContinuo() {
   ascoltoContinuo.continuo = true;
   ascoltoContinuo.sospeso = false;
   ascoltoContinuo.avvioAuto = false;
+  ascoltoContinuo.battito = Date.now();
+  sorvegliaIlCiclo();
   aggiornaSpiaAscolto();
   cicloAscoltoContinuo();
+}
+
+/** Il ciclo di ascolto ha un battito: se non batte piu', e' morto.
+
+    Senza, un giro perso (il microfono che non consegna l'audio, `getUserMedia`
+    che si blocca al secondo giro) lascia l'ascolto **acceso ma sordo**: la spia
+    dice "in ascolto" e non succede piu' niente, senza nessun errore visibile.
+
+    Il caso si riconosce da `sospeso`: fermo non perche' sta parlando, e per
+    troppo tempo, significa che non e' in corso nessuna registrazione. Allora si
+    riparte da capo. Un ciclo sano aggiorna il battito a ogni giro. */
+const BATTITO_MASSIMO_MS = 25000;
+
+/** Il ciclo va fatto ripartire? Pura: la regola del sorvegliante si prova senza
+    timer, senza DOM e senza attese.
+
+    - `sospeso`: l'assistente sta parlando, e' un'attesa voluta;
+    - `attesaGesto`: si aspetta il tocco che il browser pretende, e c'e' gia' un
+      avviso che lo spiega. */
+function cicloDaRiavviare(battito, adesso, sospeso = false, attesaGesto = false) {
+  if (sospeso || attesaGesto) return false;
+  return adesso - battito >= BATTITO_MASSIMO_MS;
+}
+
+function sorvegliaIlCiclo() {
+  if (ascoltoContinuo.sorveglia) return;
+  ascoltoContinuo.sorveglia = setInterval(() => {
+    if (!ascoltoContinuo.continuo) return;
+    if (!cicloDaRiavviare(ascoltoContinuo.battito, Date.now(),
+                          ascoltoContinuo.sospeso, ascoltoContinuo.attesaGesto)) return;
+    ascoltoContinuo.battito = Date.now();   // si riprova fra un altro giro
+    voceStato('Ti riascolto…');
+    cicloAscoltoContinuo();
+  }, 5000);
+}
+
+function fermaSorveglianzaCiclo() {
+  if (ascoltoContinuo.sorveglia) {
+    clearInterval(ascoltoContinuo.sorveglia);
+    ascoltoContinuo.sorveglia = null;
+  }
 }
 
 /** La regola dell'avvio dopo il **ricaricamento**, senza gesto attorno: si
@@ -3326,6 +3381,7 @@ function fermaAscoltoContinuo() {
   ascoltoContinuo.inAttesa = 0;    // la finestra di "Sì." non sopravvive
   ascoltoContinuo.avvioAuto = false;
   ascoltoContinuo.attesaGesto = false;
+  fermaSorveglianzaCiclo();
   if (ascoltoContinuo.togliGesto) ascoltoContinuo.togliGesto();
   if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) {
@@ -3483,6 +3539,7 @@ function valutaFrase(testo, sveglia, resto, riparti) {
 function cicloAscoltoContinuo() {
   if (!ascoltoContinuo.continuo) return;
   if (ascoltoContinuo.sospeso) return;
+  ascoltoContinuo.battito = Date.now();   // segno di vita: il sorvegliante lo legge
   const mio = ++ascoltoContinuo.ciclo;
 
   const ancora = () => {
@@ -3504,6 +3561,14 @@ function cicloAscoltoContinuo() {
       // senza la chiave la trascrizione la fa il browser: il ciclo resta lo
       // stesso, cambia solo chi ascolta
       cicloAscoltoDalBrowser(mio);
+      return;
+    }
+    if (d.muto) {
+      // il microfono non ha mandato **nessun** campione: non e' silenzio, e'
+      // assenza di audio. Si dice una volta e si riprova, invece di tacere per
+      // sempre con l'ascolto che sembra acceso.
+      voceStato('Il microfono non manda audio: controlla che l\'app possa usarlo.', 'err');
+      ancora();
       return;
     }
     const testo = (d.testo || '').trim();

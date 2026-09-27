@@ -3496,6 +3496,51 @@ def test_la_registrazione_non_resta_appesa_senza_campioni(client):
     assert esito["esitoRicevuto"] is True, (
         "senza campioni la registrazione deve chiudersi lo stesso")
     assert esito["ms"] < 2000, f"ci ha messo troppo: {esito['ms']} ms"
+    # e l'esito lo dice: tacere sembrerebbe che l'app sia sorda
+    assert esito["muto"] is True, "l'app deve accorgersi del microfono muto"
+
+
+def test_il_microfono_muto_non_tace_per_sempre(client):
+    """Se il microfono non manda **nessun** campione, l'app deve dirlo: tacere
+    con la spia "in ascolto" e' il modo peggiore di fallire, perche' sembra che
+    l'app sia sorda. Si riproduce il caso con `ascoltaSulServer` vera e un
+    microfono finto muto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "muto" in js
+    assert "Il microfono non manda audio" in js
+
+
+def test_il_ciclo_ha_un_battito_e_un_sorvegliante(client):
+    """Un giro perso (microfono che non consegna l'audio) lasciava l'ascolto
+    acceso ma sordo, senza nessun errore. Il battito dice che il ciclo e' vivo,
+    e il sorvegliante lo fa ripartire quando non batte piu'."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "battito" in js
+    assert "function sorvegliaIlCiclo(" in js
+    assert "BATTITO_MASSIMO_MS" in js
+    d = _sorvegliante_js(client, """{
+      // appena acceso: il ciclo ha battuto, non intervenire
+      fresco: cicloDaRiavviare(1000, 5000),
+      // fermo da troppo, e non sta parlando: riavviare
+      fermo: cicloDaRiavviare(1, 40000),
+      // sta parlando (sospeso): attesa voluta, non e' un guasto
+      sospeso: cicloDaRiavviare(1, 40000, true),
+      // aspetta un tocco del browser: c'e' gia' il suo avviso
+      gesto: cicloDaRiavviare(1, 40000, false, true),
+    }""")
+    assert d["fresco"] is False
+    assert d["fermo"] is True, "un ciclo morto va fatto ripartire"
+    assert d["sospeso"] is False
+    assert d["gesto"] is False
+
+
+def _sorvegliante_js(client, casi):
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "cicloDaRiavviare")
+    costanti = "const BATTITO_MASSIMO_MS = 25000;\n"
+    return _esegui_node(costanti + blocco
+                        + "\nconsole.log(JSON.stringify(" + casi + "));")
+
 
 
 def _ascolta_senza_campioni_js(client):
@@ -3542,14 +3587,16 @@ let voce = { registratore: null, attivo: false };
 """
     prova = (preludio + "\n".join(pezzi) + """
 const t0 = Date.now();
-ascoltaSulServer(() => {
+ascoltaSulServer((d) => {
   console.log(JSON.stringify({ esitoRicevuto: true, gestoreAssegnato: !!gestoreCampioni,
-                               campioniChiamati, ms: Date.now() - t0 }));
+                               campioniChiamati, muto: !!(d && d.muto),
+                               ms: Date.now() - t0 }));
   process.exit(0);
 });
 setTimeout(() => {
   console.log(JSON.stringify({ esitoRicevuto: false, gestoreAssegnato: !!gestoreCampioni,
-                               campioniChiamati, ms: Date.now() - t0 }));
+                               campioniChiamati, muto: null,
+                               ms: Date.now() - t0 }));
   process.exit(0);
 }, 3000);""")
     return _esegui_node(prova)
