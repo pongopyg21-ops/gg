@@ -2460,13 +2460,21 @@ async function parlaCloud(frase) {
   try {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    await audio.play();
-    // si libera l'URL quando ha finito: senza, il blob resta agganciato in memoria
-    audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
-    // l'ascolto continuo deve sapere quando la voce tace, altrimenti il microfono
-    // riparte mentre l'assistente parla e lo risente
-    audio.addEventListener('ended', avvisaFineParlato, { once: true });
-    return true;
+    // La promessa si chiude quando l'audio **finisce**, non quando comincia:
+    // `play()` risolve all'istante in cui parte, e segnalare li' la fine della
+    // voce farebbe riaccendere il microfono sopra il discorso — l'assistente si
+    // risente, si riconosce e il ciclo si incastra dopo il primo comando.
+    return await new Promise((risolvi) => {
+      const finito = (esito) => {
+        URL.revokeObjectURL(url);   // senza, il blob resta agganciato in memoria
+        risolvi(esito);
+      };
+      audio.addEventListener('ended', () => finito(true), { once: true });
+      audio.addEventListener('error', () => finito(false), { once: true });
+      // se `play()` viene rifiutata (iOS prima di un tocco) l'audio non parte:
+      // si ripiega subito invece di restare appesi
+      Promise.resolve(audio.play()).catch(() => finito(false));
+    });
   } catch (_e) {
     // capita su iOS finché l'utente non ha toccato la pagina: in quel caso si
     // sente la voce del browser, che parte lo stesso
@@ -2478,22 +2486,20 @@ function parla(testo) {
   if (!testo) return;
   if (cloudAttivo()) {
     const frasi = spezzaInFrasi(testo);
+    if (!frasi.length) { avvisaFineParlato(); return; }
     // si prova la prima frase: se il cloud non risponde, si passa al browser per
     // **tutto** il testo, senza ripetere il tentativo a ogni frase
-    parlaCloud(frasi[0] || testo).then((ok) => {
+    parlaCloud(frasi[0]).then(async (ok) => {
       if (!ok) { parlaTesto(testo); return; }
-      // Le frasi si dicono in fila, non tutte insieme: `speechSynthesis` accoda
-      // da solo, ma la voce neurale e' un audio per volta. Si conta quelle
-      // finite e si segnala il silenzio **solo** con l'ultima: segnalandolo a
-      // ogni frase, l'ascolto continuo ripartirebbe a meta' discorso.
-      const coda = frasi.slice(1);
-      if (!coda.length) { avvisaFineParlato(); return; }
-      let fatte = 0;
-      coda.forEach(async (f) => {
-        await parlaCloud(f);
-        fatte += 1;
-        if (fatte === coda.length) avvisaFineParlato();
-      });
+      // Le frasi si dicono **in fila**, non insieme: la voce neurale suona un
+      // audio per volta, e in parallelo si sovrapporrebbero. Il silenzio si
+      // segnala **solo** dopo l'ultima, altrimenti l'ascolto continuo
+      // ripartirebbe a meta' discorso.
+      for (let i = 1; i < frasi.length; i++) {
+        const riuscita = await parlaCloud(frasi[i]);
+        if (!riuscita) break;
+      }
+      avvisaFineParlato();
     });
     return;
   }
@@ -2713,7 +2719,7 @@ let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
 // l'utente si aspetta di trovarlo acceso.
 let appenaEntrato = false;
 const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
-// Quanto resta aperta la finestra dopo "Dimmi.": il comando si dice subito dopo,
+// Quanto resta aperta la finestra dopo "Sì.": il comando si dice subito dopo,
 // senza ripetere la sveglia. E' un tempo, non uno stato senza fine, perche' una
 // volta che l'assistente ha chiamato, il discorso di casa che segue non deve
 // diventare un ordine.
@@ -3189,7 +3195,7 @@ function fermaAscoltoContinuo() {
   ascoltoContinuo.continuo = false;
   ascoltoContinuo.ciclo += 1;      // invalida il ciclo in corso
   ascoltoContinuo.sospeso = false;
-  ascoltoContinuo.inAttesa = 0;    // la finestra di "Dimmi." non sopravvive
+  ascoltoContinuo.inAttesa = 0;    // la finestra di "Sì." non sopravvive
   ascoltoContinuo.avvioAuto = false;
   ascoltoContinuo.attesaGesto = false;
   if (ascoltoContinuo.togliGesto) ascoltoContinuo.togliGesto();
@@ -3238,7 +3244,7 @@ function parlaPoi(testo, poi) {
 
 /** Il verbo che apre un comando, quando non serve ripetere la sveglia.
 
-    Dopo "Dimmi." la frase non e' rivolta all'app nel senso consueto, ma e' la
+    Dopo "Sì." la frase non e' rivolta all'app nel senso consueto, ma e' la
     continuazione di una conversazione che l'utente ha aperto chiamandola. Si
     accetta solo se *comincia* con un verbo d'azione o un numero: cosi' "il
     maggiordomo prepara la cena", che e' una chiacchiera, resta fuori anche in
@@ -3254,7 +3260,7 @@ const VERBI_COMANDO = [
 ];
 
 /** I numeri a parole che aprono una dose ("due chili di farina"). Riconoscerli
-    serve perche' la dose non ha verbo, e senza questo "Dimmi." seguito dalla
+    serve perche' la dose non ha verbo, e senza questo "Sì." seguito dalla
     dose resterebbe senza effetto. */
 const NUMERI_A_PAROLE = [
   'un', 'una', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette',
@@ -3269,11 +3275,11 @@ function _normalizza(testo) {
     .replace(/\s+/g, ' ').trim();
 }
 
-/** Questa frase e' il comando che segue un "Dimmi."?
+/** Questa frase e' il comando che segue un "Sì."?
 
     Non serve la sveglia: e' l'assistente ad aver chiesto di parlare. Ma non si
     accetta qualunque frase, altrimenti il discorso di casa che segue un
-    "Dimmi." diventerebbe un ordine. */
+    "Sì." diventerebbe un ordine. */
 function sembraComando(testo) {
   const parole = _normalizza(testo).split(' ').filter(Boolean);
   if (!parole.length) return false;
@@ -3285,7 +3291,7 @@ function sembraComando(testo) {
 
 /** Apre la finestra in cui il comando si dice **senza** ripetere la sveglia.
 
-    Serve al dialogo naturale: si chiama "maggiordomo", lui risponde "Dimmi.", e
+    Serve al dialogo naturale: si chiama "maggiordomo", lui risponde "Sì.", e
     la frase successiva e' il comando. Pretendere di nuovo la sveglia qui
     significa ignorare in silenzio proprio quello che l'utente ha appena detto.
 
@@ -3296,7 +3302,7 @@ function attendeComando() {
   ascoltoContinuo.inAttesa = Date.now() + ATTESA_COMANDO_MS;
 }
 
-/** La finestra dopo "Dimmi." e' ancora aperta? */
+/** La finestra dopo "Sì." e' ancora aperta? */
 function inAttesaComando() {
   return ascoltoContinuo.inAttesa > 0 && Date.now() < ascoltoContinuo.inAttesa;
 }
@@ -3305,7 +3311,7 @@ function inAttesaComando() {
 
     Pura apposta: e' la regola che decide se un comando parte, e una regola cosi'
     va provata senza dover simulare microfono, DOM e tempo. Restituisce
-    `{azione, comando}`: `chiedi` = era solo la sveglia, si risponde "Dimmi.";
+    `{azione, comando}`: `chiedi` = era solo la sveglia, si risponde "Sì.";
     `esegui` = c'e' un comando; `ignora` = frase non rivolta all'app. */
 function decisioneContinuo(testo, sveglia, resto, inAttesa) {
   if (sveglia) {
@@ -3314,7 +3320,7 @@ function decisioneContinuo(testo, sveglia, resto, inAttesa) {
     return { azione: 'chiedi', comando: '' };
   }
   const frase = (testo || '').trim();
-  // senza sveglia un comando vale **solo** dentro la finestra aperta da "Dimmi."
+  // senza sveglia un comando vale **solo** dentro la finestra aperta da "Sì."
   if (inAttesa && frase && sembraComando(frase)) {
     return { azione: 'esegui', comando: frase };
   }
@@ -3338,7 +3344,7 @@ function valutaFrase(testo, sveglia, resto, riparti) {
     // voce tace e il microfono riprende.
     voceStato('Sì?');
     attendeComando();
-    parlaPoi('Dimmi.', riparti);
+    parlaPoi(cennoDiChiamata(), riparti);
     return;
   }
   // frase non rivolta all'app: si tace, che e' il punto dell'ascolto continuo
@@ -3459,6 +3465,16 @@ function parlaEAttendi(testo) {
   });
 }
 
+/** Cosa dire quando l'assistente viene chiamato senza comando: un "Sì." breve
+    che fa capire di aver sentito e lascia la parola.
+
+    Prima diceva "Dimmi.", poi si e' scelto "Sì.": e' piu' corto e immediato, e
+    il comando si dice subito dopo senza ripetere la sveglia. La finestra in cui
+    il comando vale senza sveglia si apre lo stesso (`attendeComando`). */
+function cennoDiChiamata() {
+  return 'Sì.';
+}
+
 /** Cosa dire appena un comando e' riconosciuto: il cenno che dice "ricevuto".
 
     Senza, fra la fine della frase e l'esito passano i secondi della trascrizione
@@ -3467,10 +3483,10 @@ function parlaEAttendi(testo) {
     primo. Un cenno breve chiude quel silenzio.
 
     "Comandi" e non "Ok": e' la risposta del maggiordomo, e fa il paio con
-    "Dimmi." — due frasi diverse per due casi diversi, cosi' si sente a orecchio
+    "Sì." — due frasi diverse per due casi diversi, cosi' si sente a orecchio
     se l'assistente ha preso un ordine o ha solo risposto alla chiamata.
 
-    Solo per un comando: chiamare e basta riceve gia' "Dimmi.", e una frase
+    Solo per un comando: chiamare e basta riceve gia' "Sì.", e una frase
     ignorata non merita risposta (rispondere a tutto e' il contrario
     dell'ascolto continuo). */
 function cennoDiRicevuto(azione) {

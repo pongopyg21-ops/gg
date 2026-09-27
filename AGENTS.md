@@ -878,15 +878,15 @@ Chiudere il pannello **non** spegne l'ascolto continuo: è acceso apposta, e il
 pulsante `#mic` (classe `.sempre`) e la spia `#voice-sempre-spia` sono l'unico
 segno che il microfono sta ancora ascoltando.
 
-### Dopo "Dimmi." il comando non ripete la sveglia
+### Dopo "Sì." il comando non ripete la sveglia
 
 C'era un buco silenzioso proprio nel dialogo naturale: si chiama "maggiordomo",
-lui risponde "Dimmi.", e la frase successiva è il comando — ma il ciclo
+lui risponde "Sì.", e la frase successiva è il comando — ma il ciclo
 pretendeva di nuovo la sveglia, quindi il comando veniva **ignorato in
 silenzio**. La trascrizione era perfetta: era la logica del ciclo a scartare la
 frase.
 
-Dopo un "Dimmi." si apre una finestra a tempo (`attendeComando`, 10 s) in cui
+Dopo un "Sì." si apre una finestra a tempo (`attendeComando`, 10 s) in cui
 una frase senza sveglia è un comando. Non è aperta per sempre: altrimenti, una
 volta chiamato l'assistente, ogni discorso di casa diventerebbe un ordine — "il
 maggiordomo prepara la cena" detto a tavola scriverebbe in dispensa. La frase
@@ -930,7 +930,7 @@ Oltre alle forme del nome, gli esordi includono come il riconoscitore rende
 
 L'ancora all'**inizio** è ciò che separa un richiamo dal discorso: "il nonno Gigi
 arriva alle otto" non fa partire niente. Il prezzo onesto è che "I giorni scorsi
-ho comprato il pane" farebbe partire un "Dimmi." una volta, senza eseguire nulla.
+ho comprato il pane" farebbe partire un "Sì." una volta, senza eseguire nulla.
 
 ### L'accensione automatica: all'accesso parte subito, al ricaricamento solo se il permesso c'è già
 
@@ -987,12 +987,12 @@ tentativo si somma al primo.
 Il cenno chiude quel silenzio: un "Comandi." breve, subito, prima dell'esito.
 Sta in `cennoDiRicevuto(azione)`, **puro**, e vale **solo** per `esegui`:
 
-- chiamare e basta riceve già "Dimmi.", e due frasi per lo stesso caso
+- chiamare e basta riceve già "Sì.", e due frasi per lo stesso caso
   confonderebbero;
 - una frase ignorata non merita risposta: rispondere a tutto è il contrario
   dell'ascolto continuo, che deve tacere sul discorso di casa.
 
-"Dimmi." per la chiamata e "Comandi." per l'ordine sono due frasi diverse per due
+"Sì." per la chiamata e "Comandi." per l'ordine sono due frasi diverse per due
 casi diversi: a orecchio si sente se l'assistente ha preso un ordine o ha solo
 risposto.
 
@@ -1002,6 +1002,26 @@ sintesi del browser annulla quello che sta dicendo e la voce neurale suona un
 audio per volta — dette insieme, la seconda mangerebbe la prima. Anche qui c'è un
 tetto (`TETTO_VOCE_MS`): se la sintesi non annuncia mai la fine, non si resta
 appesi.
+
+La frase della chiamata sta in `cennoDiChiamata()`, **pura** come
+`cennoDiRicevuto`: era "Dimmi.", poi si è scelta "Sì." perché è più corta e
+immediata — l'utente ha chiesto così. Il comando si dice subito dopo, nella
+finestra aperta da `attendeComando`.
+
+### La voce neurale avvisava la fine quando l'audio *cominciava*
+
+Il difetto che faceva sembrare l'assistente "macchinoso" e che lo **bloccava dopo
+il primo comando**. `Audio.play()` risolve all'**inizio** della riproduzione, non
+alla fine: la promessa di `parlaCloud` si chiudeva subito, il segnale di "fine
+parlato" (`avvisaFineParlato`) partiva mentre Azure stava ancora parlando, e il
+microfono riprendeva **sopra** la voce. L'assistente si risentiva, si riconosceva
+e il ciclo si incastrava — restando acceso con l'aria di funzionare.
+
+Il rimedio: `parlaCloud` risolve su `'ended'` (o `'error'`), non su `play()`; e le
+frasi di un messaggio lungo si dicono **in fila** con un `for await`, non con un
+`forEach` che le sovrapponeva. Il test `test_la_voce_neurale_avvisa_la_fine_...`
+esegue la funzione vera con un `Audio` finto ma fedele e guarda **quando** la
+promessa si chiude: è l'unico modo per accorgersi di un difetto di *tempo*.
 
 ## Le domande non sono ordini
 

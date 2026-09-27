@@ -4848,9 +4848,9 @@ def _cenno_js(client, casi):
 def test_il_cenno_di_ricevuto_solo_quando_c_e_un_comando(client):
     """Chi dice "Hey GG, metti il latte" aspetta un cenno: senza, fra la frase e
     l'esito passano i secondi della trascrizione e non sa se e' stato sentito.
-    Ma il cenno vale **solo** per un comando: chiamare e basta riceve gia'
-    "Dimmi.", e una frase ignorata non merita risposta, altrimenti l'ascolto
-    continuo risponde a tutto e diventa insopportabile."""
+    Ma il cenno vale **solo** per un comando: chiamare e basta riceve gia' la
+    risposta di chiamata ("Sì."), e una frase ignorata non merita risposta,
+    altrimenti l'ascolto continuo risponde a tutto e diventa insopportabile."""
     d = _cenno_js(client, """{
       comando: cennoDiRicevuto('esegui'),
       chiamata: cennoDiRicevuto('chiedi'),
@@ -4858,9 +4858,23 @@ def test_il_cenno_di_ricevuto_solo_quando_c_e_un_comando(client):
       niente: cennoDiRicevuto()
     }""")
     assert d["comando"].strip(), "un comando deve avere un cenno"
-    assert d["chiamata"] == '', "chiamare e basta riceve gia' Dimmi."
+    assert d["chiamata"] == '', "chiamare e basta riceve gia' la risposta di chiamata"
     assert d["ignorata"] == '', "una frase ignorata non merita risposta"
     assert d["niente"] == ''
+
+
+def test_la_chiamata_risponde_si(client):
+    """Chiamato senza comando, l'assistente risponde "Sì." e basta: e' il
+    riscontro breve che l'utente ha chiesto di sentire quando si attiva, prima
+    del comando. Prima diceva "Dimmi.", piu' lungo e meno immediato.
+
+    Si esegue la funzione pura, cosi' il test verifica **cosa** risponde, non la
+    presenza di una stringa."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "cennoDiChiamata")
+    d = _esegui_node(blocco + "\nconsole.log(JSON.stringify(cennoDiChiamata()));")
+    assert d == "Sì."
+    assert "dimmi" not in d.lower()
 
 
 def _deve_accendere_accesso_js(client, casi):
@@ -5079,6 +5093,102 @@ def test_l_ascolto_continuo_esiste_e_si_accende_dal_pannello(client):
     assert "function fermaAscoltoContinuo()" in js
 
 
+def _estrai_funzione_js(js, nome):
+    """Ritaglia una `function NOME(...) { ... }` con parentesi bilanciate.
+
+    Serve a eseguire il codice vero con node invece di leggerne le stringhe: un
+    test sulle stringhe non si accorge se la funzione fa la cosa sbagliata."""
+    import re
+    m = re.search(r'(?:async\s+)?function ' + nome + r'\s*\(', js)
+    assert m, f"non trovo la funzione {nome}"
+    inizio = m.start()
+    i = js.index('(', m.start())
+    par = 0
+    while i < len(js):
+        if js[i] == '(':
+            par += 1
+        elif js[i] == ')':
+            par -= 1
+            if par == 0:
+                i += 1
+                break
+        i += 1
+    brace = js.index('{', i)
+    depth = 0
+    j = brace
+    while j < len(js):
+        if js[j] == '{':
+            depth += 1
+        elif js[j] == '}':
+            depth -= 1
+            if depth == 0:
+                j += 1
+                break
+        j += 1
+    return js[inizio:j]
+
+
+def _esegui_node(prova):
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def _parlaCloud_e_misura(client):
+    """Esegue `parlaCloud` **vera** con un `Audio` finto ma fedele: `play()`
+    risolve all'inizio, l'evento 'ended' arriva dopo. Restituisce l'ordine degli
+    eventi, per vedere quando la promessa si chiude."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    codice = _estrai_funzione_js(js, "parlaCloud")
+    preludio = """
+const log = [];
+function voceStato() {}
+let voceCloud = { disponibile: true, maxCaratteri: 600,
+                  sentite: new Map([['it-IT-IsabellaNeural|Ciao.', {}]]) };
+function voceCloudScelta() { return 'it-IT-IsabellaNeural'; }
+global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL: () => {} };
+class Audio {
+  play() { log.push('play'); return Promise.resolve(); }
+  addEventListener(ev, fn) {
+    if (ev === 'ended') setTimeout(() => { log.push('ended'); fn(); }, 40);
+  }
+}
+"""
+    prova = (preludio + codice
+             + "\nparlaCloud('Ciao.').then(() => log.push('risolta'));"
+             + "\nsetTimeout(() => console.log(JSON.stringify(log)), 300);")
+    return _esegui_node(prova)
+
+
+def _parla_e_misura(client, testo):
+    """Esegue `parla` **vera** con una `parlaCloud` finta che suona una frase per
+    volta, per verificare che le frasi vadano in fila e che il segnale di
+    silenzio arrivi solo dopo l'ultima."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    pezzi = [_estrai_funzione_js(js, n)
+             for n in ("spezzaInFrasi", "avvisaFineParlato", "parla")]
+    preludio = """
+const log = [];
+function voceStato() {}
+function $() { return { checked: true }; }
+function cloudAttivo() { return true; }
+function parlaTesto() {}
+let voce = { aFineParlato: () => log.push('FINE-PARLATO') };
+function parlaCloud(frase) {
+  return new Promise((risolvi) => {
+    log.push('suona:' + frase);
+    setTimeout(() => { log.push('fine:suona:' + frase); risolvi(true); }, 40);
+  });
+}
+"""
+    prova = (preludio + "\n".join(pezzi)
+             + "\nparla(" + json.dumps(testo) + ");"
+             + "\nsetTimeout(() => console.log(JSON.stringify(log)), 800);")
+    return _esegui_node(prova)
+
+
+
 def test_l_ascolto_continuo_non_risente_se_stesso(client):
     """Il difetto che rompe la funzione: mentre l'assistente parla, il microfono
     lo sente, riconosce la propria voce come comando e riparte da solo. La pausa
@@ -5087,9 +5197,40 @@ def test_l_ascolto_continuo_non_risente_se_stesso(client):
     assert "sospeso" in js
     assert "function avvisaFineParlato()" in js
     assert "function riprendiDopoLaVoce(" in js
-    # la voce del browser e quella neurale devono segnalare la fine tutte e due
+    # la voce del browser segnala la fine con onend dell'ultima frase
     assert "if (ultima) u.onend = avvisaFineParlato;" in js
-    assert "audio.addEventListener('ended', avvisaFineParlato" in js
+    # la voce neurale segnala la fine quando l'audio **termina**, non quando parte
+    assert "audio.addEventListener('ended', () => finito(true)" in js
+    # e non deve piu' segnalarla all'avvio della riproduzione (il difetto)
+    assert "await audio.play();" not in js
+
+
+def test_la_voce_neurale_avvisa_la_fine_quando_l_audio_finisce(client):
+    """Il difetto che incastrava l'ascolto dopo il primo comando.
+
+    `play()` risolve **all'inizio** dell'audio, quindi la promessa di
+    `parlaCloud` si chiudeva subito: il segnale di "fine parlato" partiva mentre
+    Azure stava ancora parlando, il microfono riprendeva sopra la voce,
+    l'assistente si risentiva e il ciclo si bloccava. Si esegue la funzione vera
+    con un `Audio` finto ma fedele (`play()` subito, 'ended' dopo) e si guarda
+    **quando** la promessa si chiude."""
+    ordine = _parlaCloud_e_misura(client)
+    # l'audio comincia, e solo dopo l'evento 'ended' la promessa si chiude
+    assert ordine.index("play") < ordine.index("ended") < ordine.index("risolta")
+
+
+def test_le_frasi_della_voce_neurale_si_dicono_in_fila(client):
+    """Le frasi non si sovrappongono: la voce neurale suona un audio per volta, e
+    in parallelo la seconda mangerebbe la prima. Il segnale di silenzio arriva
+    **solo** dopo l'ultima, altrimenti l'ascolto continuo ripartirebbe a meta'
+    discorso."""
+    ordine = _parla_e_misura(client, "Fatto. Il latte e' in lista.")
+    assert ordine.count("FINE-PARLATO") == 1, "un solo segnale di fine, non uno per frase"
+    assert ordine.index("fine:suona:Fatto.") < ordine.index("suona:Il latte e' in lista.")
+    assert (ordine.index("suona:Il latte e' in lista.")
+            < ordine.index("fine:suona:Il latte e' in lista."))
+    assert ordine[-1] == "FINE-PARLATO", "il silenzio si segnala dopo l'ultima frase"
+
 
 
 def test_l_ascolto_continuo_non_si_incastra(client):
