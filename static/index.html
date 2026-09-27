@@ -117,6 +117,18 @@
       <span class="home-go">Apri →</span>
     </button>
   </div>
+
+  <!-- Riassunto in fondo alla home: chi apre l'app per la prima volta non sa
+       cosa aspettarsi, e i comandi vocali non si indovinano. Il contenuto lo
+       costruisce `disegnaRiassuntoHome` da dati puri, cosi' si puo' provare. -->
+  <section class="home-guide" aria-labelledby="home-guide-title">
+    <h2 id="home-guide-title" class="home-guide-title">Cosa sa fare il maggiordomo</h2>
+    <div id="home-guide-funzioni" class="home-guide-grid"></div>
+    <h3 class="home-guide-sub">I comandi di tutti i giorni</h3>
+    <p class="home-guide-nota">Con l'ascolto continuo acceso, cominciano con
+      «Hey GG» (o «maggiordomo»). Si possono anche scrivere dal pannello 🎙.</p>
+    <ul id="home-guide-comandi" class="home-guide-comandi"></ul>
+  </section>
 </section>
 
 <!-- L'app vera e propria: testata e schede restano nascoste finche' non si
@@ -324,6 +336,31 @@
     </div>
     <div id="faq-count" class="faq-count"></div>
     <div id="faq-list"></div>
+
+    <!-- La password della casa non e' una voce della FAQ (non si consulta, si
+         cambia) ma sta qui: e' un'informazione «di servizio», e chi la cerca la
+         cerca dove sta tutto il resto che non si ricorda. -->
+    <h3 class="section-title">Password della casa</h3>
+    <div class="panel">
+      <p class="hint">La password serve a entrare nell'app da questo nome di
+        casa. Si cambia qui quando la si vuole diversa.</p>
+      <div class="field">
+        <label for="pw-attuale">Password attuale</label>
+        <input id="pw-attuale" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="pw-nuova">Nuova password</label>
+        <input id="pw-nuova" type="password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="pw-ripeti">Ripeti la nuova password</label>
+        <input id="pw-ripeti" type="password" autocomplete="new-password">
+      </div>
+      <div class="row">
+        <button id="pw-salva" class="primary">Cambia password</button>
+        <span id="pw-esito" class="faq-note" role="status" aria-live="polite"></span>
+      </div>
+    </div>
   </section>
 
   <!-- IMPOSTAZIONI DELLA VOCE — le scelte che si fanno una volta e non si

@@ -171,6 +171,66 @@ $('#home-fab').addEventListener('click', tornaAlleSezioni);
 // pulsante flottante e' nascosto, perche' non c'e' ancora una sezione aperta.
 $('#home-mic').addEventListener('click', apriVoce);
 
+/* ---------- il riassunto della home ----------
+   In fondo alla pagina iniziale c'e' un promemoria di cosa si puo' fare e dei
+   comandi piu' comuni: chi apre l'app la prima volta non li indovina.
+
+   Il testo sta in dati **puri** (`riassuntoHome`), non nell'HTML: cosi' le frasi
+   si possono provare, e le quattro sezioni nominate restano le stesse di
+   `SEZIONI` invece di due elenchi liberi di divergere. */
+function riassuntoHome() {
+  return {
+    funzioni: [
+      { icona: '\u{1F373}', nome: 'Cucina',
+        testo: 'Piano della settimana, ricettario, dispensa e lista della spesa.' },
+      { icona: '\u{1F9FD}', nome: 'Igiene',
+        testo: 'Le pulizie con le scadenze da ricordare, e il timer dei 15 minuti.' },
+      { icona: '\u{1F4CB}', nome: 'Progetti',
+        testo: 'Lavori e idee da fare, e il magazzino di quello che si tiene in casa.' },
+      { icona: '\u{1F4CC}', nome: 'FAQ',
+        testo: 'Wi-Fi, indirizzi, contatti e codici, con la password della casa.' },
+    ],
+    comandi: [
+      { detto: 'aggiungi due chili di farina in dispensa',
+        spiega: "Segna quello che c'è in dispensa, con la quantità." },
+      { detto: 'metti mezzo litro di latte nella spesa',
+        spiega: 'Aggiunge alla lista della spesa.' },
+      { detto: 'metti il detersivo in cantina',
+        spiega: 'Lo mette in magazzino, dove si tiene.' },
+      { detto: 'ho cucinato la carbonara',
+        spiega: 'Scala dalla dispensa quello che hai usato.' },
+      { detto: 'cerca la carbonara',
+        spiega: 'Cerca una ricetta nel ricettario.' },
+      { detto: 'crea la ricetta pasta al forno',
+        spiega: 'Apre il modulo di una ricetta nuova.' },
+      { detto: "che cosa c'è in dispensa",
+        spiega: 'Risponde a voce, senza scrivere niente.' },
+      { detto: 'sono allergico al nichel',
+        spiega: 'Lo annota nel profilo.' },
+    ],
+  };
+}
+
+function disegnaRiassuntoHome() {
+  const dati = riassuntoHome();
+  const griglia = $('#home-guide-funzioni');
+  const elenco = $('#home-guide-comandi');
+  if (!griglia || !elenco) return;
+  griglia.innerHTML = dati.funzioni.map((f) => `
+    <div class="home-guide-voce">
+      <span class="home-guide-emoji" aria-hidden="true">${f.icona}</span>
+      <span class="home-guide-nome">${esc(f.nome)}</span>
+      <span class="home-guide-testo">${esc(f.testo)}</span>
+    </div>`).join('');
+  elenco.innerHTML = dati.comandi.map((c) => `
+    <li class="home-guide-comando">
+      <span class="home-guide-detto">«${esc(c.detto)}»</span>
+      <span class="home-guide-spiega">${esc(c.spiega)}</span>
+    </li>`).join('');
+}
+
+disegnaRiassuntoHome();
+
 /* ---------- tabs ---------- */
 $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b === btn));
@@ -1769,6 +1829,43 @@ function apriFaqForm(v) {
 }
 
 $('#faq-new').addEventListener('click', () => apriFaqForm(null));
+
+/* ---------- PASSWORD DELLA CASA ----------
+   Cambiarla e' un'operazione rara e delicata: si chiede la vecchia, e la nuova
+   va ripetuta perche' un refuso in un campo password non si vede e
+   lascerebbe fuori di casa. La conferma la fa il client (la ripetizione) e la
+   verifica seria la fa il server (`/api/houses/password`), che e' l'unico a
+   conoscere l'impronta salvata. */
+function passwordCoerenti(nuova, ripetuta) {
+  return nuova.length > 0 && nuova === ripetuta;
+}
+
+async function cambiaPasswordCasa() {
+  const attuale = $('#pw-attuale').value;
+  const nuova = $('#pw-nuova').value;
+  const ripetuta = $('#pw-ripeti').value;
+  const esito = $('#pw-esito');
+  esito.textContent = '';
+  if (!attuale) { esito.textContent = 'Scrivi la password attuale.'; return; }
+  if (!passwordCoerenti(nuova, ripetuta)) {
+    esito.textContent = 'Le due password nuove non coincidono.';
+    return;
+  }
+  const bottone = $('#pw-salva');
+  bottone.disabled = true;
+  try {
+    await api('/api/houses/password', { method: 'PUT', body: { attuale, nuova } });
+    esito.textContent = 'Password cambiata.';
+    $('#pw-attuale').value = $('#pw-nuova').value = $('#pw-ripeti').value = '';
+    toast('Password cambiata');
+  } catch (e) {
+    esito.textContent = e.message || 'Non è stato possibile cambiare la password.';
+  } finally {
+    bottone.disabled = false;
+  }
+}
+
+$('#pw-salva').addEventListener('click', cambiaPasswordCasa);
 
 /* ---------- PROFILO ---------- */
 function labelOf(key) { return allergenLabels[key] || key; }

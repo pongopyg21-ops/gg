@@ -5249,3 +5249,85 @@ def test_chiudere_il_pannello_non_spegne_l_ascolto_continuo(client):
     inizio = js.index("function chiudiVoce()")
     corpo = js[inizio:inizio + 700]
     assert "ascoltoContinuo.continuo" in corpo
+
+
+# ------------------------------------------- password della casa nella FAQ
+def test_la_password_della_casa_si_cambia_dalla_faq(client):
+    """Cambiare la password e' un'operazione rara ma necessaria: deve stare
+    nell'app, non solo in uno script da riga di comando. Il modulo chiede la
+    vecchia e fa ripetere la nuova, e chiama la rotta vera."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    inizio = html.index('id="tab-faq"')
+    fine = html.index('id="tab-voce"')
+    faq = html[inizio:fine]
+    for pezzo in ('id="pw-attuale"', 'id="pw-nuova"', 'id="pw-ripeti"', 'id="pw-salva"'):
+        assert pezzo in faq, pezzo
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/houses/password" in js
+    assert "method: 'PUT'" in js
+
+
+def test_le_due_password_nuove_devono_coincidere(client):
+    """Un refuso in un campo password non si vede: senza la ripetizione,
+    l'utente cambierebbe la password in una che non conosce e resterebbe fuori
+    di casa. La regola e' pura, cosi' si prova il comportamento."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "passwordCoerenti")
+    d = _esegui_node(blocco + """
+console.log(JSON.stringify({
+  uguali: passwordCoerenti('nuovissima', 'nuovissima'),
+  diverse: passwordCoerenti('nuovissima', 'nuovissimA'),
+  vuota: passwordCoerenti('', ''),
+  unaVuota: passwordCoerenti('nuova', ''),
+}));""")
+    assert d["uguali"] is True
+    assert d["diverse"] is False, "due password diverse non devono passare"
+    assert d["vuota"] is False, "una password vuota non e' una password"
+    assert d["unaVuota"] is False
+
+
+def test_cambiare_password_dalla_faq_funziona_davvero(anon):
+    """La rotta della FAQ e' quella che gia' esiste: si prova end-to-end, cosi'
+    il modulo non punta a un indirizzo sbagliato senza che nessuno se ne accorga."""
+    anon.post("/api/houses", json={"nome": "Casa Password", "password": "vecchia"})
+    r = anon.put("/api/houses/password", json={"attuale": "vecchia", "nuova": "nuovissima"})
+    assert r.status_code == 200
+    anon.post("/api/logout")
+    assert anon.post("/api/login",
+                     json={"nome": "Casa Password", "password": "vecchia"}).status_code == 401
+    assert anon.post("/api/login",
+                     json={"nome": "Casa Password", "password": "nuovissima"}).status_code == 200
+
+
+# ---------------------------------------------- riassunto in fondo alla home
+def _riassunto_home_js(client):
+    """Esegue `riassuntoHome` sul codice vero: il testo del riassunto si prova
+    come dato, e le frasi elencate si possono far girare nel parser."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "riassuntoHome")
+    return _esegui_node(blocco + "\nconsole.log(JSON.stringify(riassuntoHome()));")
+
+
+def test_la_home_riassume_cosa_si_puo_fare(client):
+    """In fondo alla pagina iniziale c'e' un promemoria: chi apre l'app la prima
+    volta non sa cosa aspettarsi, e i comandi vocali non si indovinano."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    home = html[html.index('id="home"'):html.index('id="app"')]
+    assert 'id="home-guide-funzioni"' in home
+    assert 'id="home-guide-comandi"' in home
+    dati = _riassunto_home_js(client)
+    nomi = [f["nome"] for f in dati["funzioni"]]
+    assert nomi == ["Cucina", "Igiene", "Progetti", "FAQ"], nomi
+
+
+def test_i_comandi_del_riassunto_funzionano_davvero(client):
+    """Il riassunto non deve promettere comandi che poi non funzionano: ogni
+    frase elencata viene eseguita davvero da `voice.parse`, e deve essere capita.
+    E' il motivo per cui il testo sta in dati puri invece che in un'immagine."""
+    dati = _riassunto_home_js(client)
+    import voice
+    for c in dati["comandi"]:
+        d = voice.parse(c["detto"])
+        assert d["intent"] != "unknown", f"il riassunto promette «{c['detto']}»"
+        assert c["spiega"].strip()
+
