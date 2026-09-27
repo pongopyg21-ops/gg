@@ -3531,7 +3531,16 @@ function valutaFrase(testo, sveglia, resto, riparti) {
     parlaPoi(cennoDiChiamata(), riparti);
     return;
   }
-  // frase non rivolta all'app: si tace, che e' il punto dell'ascolto continuo
+  // Frase non rivolta all'app. Si tace nel **suono** (e' il punto dell'ascolto
+  // continuo: non risponde al discorso di casa), ma non nello **schermo**:
+  // l'app ha sentito delle parole, e se sembrano un comando lo dice, altrimenti
+  // chi ha parlato vede "Trascrivo…" e poi il nulla, senza capire se e' stato
+  // sentito. Un ordine senza la sveglia riceve l'istruzione che manca.
+  const frase = (testo || '').trim();
+  $('#voice-heard').textContent = frase || '…';
+  if (frase && sembraComando(frase)) {
+    voceStato('Non ho eseguito: di\' «Hey GG» prima del comando.', 'err');
+  }
   riparti();
 }
 

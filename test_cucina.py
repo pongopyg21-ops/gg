@@ -3418,6 +3418,26 @@ def test_fuori_dalla_finestra_la_sveglia_serve_di_nuovo(client):
     assert d["nonComando"]["azione"] == "ignora"
 
 
+def test_un_comando_senza_sveglia_lo_dice_invece_di_tacere(client):
+    """Il caso del telefono: la frase viene trascritta, l'utente la legge, e poi
+    non succede **nulla**. Succede quando il comando non contiene la sveglia e la
+    finestra non e' aperta: la decisione e' `ignora`, e l'app taceva del tutto.
+
+    Tacere nel suono va bene (l'ascolto continuo non risponde al discorso di
+    casa), ma tacere anche sullo **schermo** lascia chi ha parlato senza sapere
+    se e' stato sentito. Un ordine senza la sveglia deve dire che manca la
+    sveglia; una chiacchiera di casa resta muta come prima."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "Non ho eseguito" in js and "Hey GG" in js
+    # la frase sentita si mostra comunque: dice cosa ha capito
+    assert "$('#voice-heard').textContent = frase || '…';" in js
+    # e l'avviso si da' solo a una frase che sembra un comando
+    blocco = js[js.index("const frase = (testo || '').trim();"):]
+    blocco = blocco[:blocco.index("riparti();") + len("riparti();")]
+    assert "sembraComando(frase)" in blocco
+
+
+
 def test_una_chiacchiera_dopo_dimmi_non_diventa_un_ordine(client):
     """Il rischio della finestra: una volta chiamato l'assistente, il discorso di
     casa che segue non deve trasformarsi in un ordine.
