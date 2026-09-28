@@ -5727,6 +5727,65 @@ def test_la_diagnosi_non_stampa_la_chiave():
     assert "area valida:" in uscita
 
 
+def test_ripara_voce_corregge_l_area_senza_toccare_la_chiave(tmp_path):
+    """Il caso reale: `windows\\segreto.bat` contiene l'area `s`, la chiave e'
+    probabilmente giusta. Il riparatore deve cambiare **solo** la riga dell'area:
+    una riga scritta male rovinerebbe la chiave, e la chiave non si recupera.
+
+    Si esegue il riparatore **vero** su file veri, e si controlla che la chiave
+    resti identica e che `segreto.txt` — che in questo caso non comanda — non
+    venga toccato."""
+    import ripara_voce
+    (tmp_path / "windows").mkdir()
+    chiave = "D58nABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnop"
+    bat = tmp_path / "windows" / "segreto.bat"
+    bat.write_text(
+        '@echo off\nREM Chiave della voce neurale. Generato da voce.bat.\n'
+        f'set "AZURE_SPEECH_KEY={chiave}"\nset "AZURE_SPEECH_REGION=s"\n',
+        encoding="utf-8")
+    txt = tmp_path / "segreto.txt"
+    txt.write_text(f"chiave: {chiave}\narea: germanywestcentral\n", encoding="utf-8")
+
+    esito = ripara_voce.ripara(str(tmp_path), area="italynorth")
+
+    assert esito == 0
+    dopo = bat.read_text(encoding="utf-8")
+    # la chiave e' rimasta identica, e l'area e' corretta
+    assert chiave in dopo
+    assert 'AZURE_SPEECH_REGION=italynorth' in dopo
+    assert 'AZURE_SPEECH_REGION=s' not in dopo
+    # segreto.txt non comanda (c'e' il .bat) e non viene toccato
+    assert "germanywestcentral" in txt.read_text(encoding="utf-8")
+
+
+def test_ripara_voce_non_tocca_niente_se_l_area_e_giusta(tmp_path):
+    """Se l'area e' gia' valida non si scrive: riscrivere un file che contiene una
+    chiave funzionante e' un rischio senza guadagno."""
+    import ripara_voce
+    bat = tmp_path / "windows"
+    bat.mkdir()
+    (bat / "segreto.bat").write_text(
+        'set "AZURE_SPEECH_KEY=k"\nset "AZURE_SPEECH_REGION=westeurope"\n', encoding="utf-8")
+    prima = (bat / "segreto.bat").read_text(encoding="utf-8")
+
+    assert ripara_voce.ripara(str(tmp_path), area="italynorth") == 0
+    assert (bat / "segreto.bat").read_text(encoding="utf-8") == prima, \
+        "un'area valida non va toccata"
+
+
+def test_ripara_voce_non_scrive_un_area_inventata(tmp_path):
+    """Se l'area non e' valida non si scrive niente: meglio un errore chiaro che
+    un file corretto con un altro valore sbagliato."""
+    import ripara_voce
+    (tmp_path / "windows").mkdir()
+    bat = tmp_path / "windows" / "segreto.bat"
+    bat.write_text('set "AZURE_SPEECH_KEY=k"\nset "AZURE_SPEECH_REGION=s"\n', encoding="utf-8")
+    prima = bat.read_text(encoding="utf-8")
+
+    assert ripara_voce.ripara(str(tmp_path), area="italia") == 1
+    assert bat.read_text(encoding="utf-8") == prima
+
+
 def test_windows_avvia_dietro_il_tunnel(client):
     """Su Windows l'app sta dietro Tailscale Funnel (o Cloudflare, o nginx):
     `avvia.bat` deve dirlo all'app, altrimenti vede l'indirizzo del tunnel al

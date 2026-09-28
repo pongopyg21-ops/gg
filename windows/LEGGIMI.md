@@ -12,6 +12,8 @@ Sono cinque file:
 | `indirizzo.ps1` | Usato da `avvia.bat`, non serve toccarlo |
 | `dominio.bat` | Attiva l'indirizzo pubblico con HTTPS (vedi *Un indirizzo da fuori casa*) |
 | `dominio.ps1` | Usato da `dominio.bat`, non serve toccarlo |
+| `voce.bat` | Imposta chiave e area della voce neurale Azure |
+| `ripara-voce.bat` | Corregge solo l'area della voce, senza toccare la chiave |
 
 Sono due passi, nell'ordine scritto. Servono all'incirca dieci minuti, più il tempo
 dei download, che sono due: **Python** (installazione, circa 30 MB) e **l'app**
@@ -338,8 +340,21 @@ sbagliato, perché il prompt dell'area viene **prima** di quello della conferma 
 la domanda non era abbastanza chiara. Ora un'area che non esiste viene rifiutata
 e richiesta.
 
-**Il modo più sicuro per correggere**: rilancia `windows\voce.bat` (doppio clic).
-Riscrive `segreto.bat` da zero chiedendo chiave e area, e l'area la valida lui.
+**Il modo più sicuro per correggere**: doppio clic su **`windows\ripara-voce.bat`**.
+Corregge **solo l'area** e lascia la chiave com'è (che è probabilmente giusta):
+ti chiede l'area, la controlla, e scrive la riga nel file che comanda. Se invece
+vuoi rifare tutto, `voce.bat` riscrive il file da zero chiedendo anche la chiave.
+
+`ripara-voce.bat` esiste proprio per il caso più comune: l'area sbagliata e la
+chiave giusta. Rifare tutto da capo per una lettera costringerebbe a rincollare
+la chiave, con il rischio di sbagliarla.
+
+Da terminale, la stessa cosa senza doppio clic:
+
+```
+python ripara_voce.py                  # chiede l'area se serve
+python ripara_voce.py --area italynorth
+```
 
 ### Se l'errore resta dopo aver corretto il file
 
