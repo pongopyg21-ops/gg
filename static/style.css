@@ -664,6 +664,25 @@ tr:last-child td { border-bottom: none; }
 .tema-pallino-chiaro { background: linear-gradient(135deg, #f2f8fa 50%, #0b161c 50%); }
 .tema-pallino-scuro { background: linear-gradient(135deg, #0b161c 50%, #f2f8fa 50%); }
 
+/* Registro dell'assistente: una lista di passi con l'ora e i millisecondi. Sta
+   dentro il pannello (li' si guarda quando qualcosa non va), ed e' richiudibile
+   per non rubare spazio. */
+.voice-registro { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.voice-registro summary { cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 600; }
+.voice-registro ul {
+  list-style: none; margin: 8px 0 0; padding: 0; max-height: 180px; overflow-y: auto;
+  font-size: 12px; line-height: 1.5;
+}
+.voice-registro li { padding: 2px 0; border-bottom: 1px solid var(--line); }
+.voice-registro li .t { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.voice-registro li.err { color: var(--errore-testo); }
+.voice-registro li.ok { color: var(--green); }
+.voice-registro button {
+  margin-top: 8px; font-size: 12px; padding: 4px 10px;
+  background: none; border: 1px solid var(--line-strong); border-radius: 999px;
+  color: var(--muted); cursor: pointer;
+}
+
 /* Cosa ha sentito l'assistente, fuori dal pannello: una riga sopra il pulsante
    del microfono, l'unico posto visibile con l'ascolto continuo a pannello chiuso. */
 .voice-fuori {

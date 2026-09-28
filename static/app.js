@@ -2938,13 +2938,67 @@ const CICLO_PAUSA_MS = 120;
 // diventare un ordine.
 const ATTESA_COMANDO_MS = 10000;
 // Tetto alla pausa: se il browser non dice mai che la voce ha finito, il
-// microfono deve riaccendersi lo stesso. Una conferma dura pochi secondi.
-const TETTO_VOCE_MS = 20000;
+// microfono deve riaccendersi lo stesso. **Non e' un numero fisso**: un tetto
+// lungo (20 s) e' il caso in cui l'assistente resta muto per venti secondi dopo
+// il "Sì." — e chi ha parlato crede che si sia spento. Si calcola dalla frase,
+// cosi' vale pochi secondi anche quando la voce non annuncia la fine.
+const TETTO_VOCE_MS = 20000;   // solo per l'attesa di "fine parlato" (diagnosi)
+
+/** Quanto puo' durare al massimo la voce di questa frase, prima di riprendere ad
+    ascoltare comunque.
+
+    Circa 90 ms per carattere (una voce neurale legge ~11 caratteri al secondo),
+    piu' un margine per l'avvio dell'audio. Il minimo copre il caso di una frase
+    brevissima, il massimo una conferma lunga: oltre, vuol dire che la sintesi non
+    risponde, e aspettare ancora non serve. */
+function tettoVoceMs(testo) {
+  const n = (testo || '').length;
+  return Math.max(2500, Math.min(12000, Math.round(n * 90) + 1200));
+}
 
 function voceStato(msg, tipo = '') {
   const el = $('#voice-status');
   el.textContent = msg;
   el.dataset.tipo = tipo;
+  registra(msg, tipo);
+}
+
+/* ---------- registro dell'assistente ----------
+   Ogni passo dell'assistente finisce qui, con l'ora e i millisecondi dall'avvio
+   della pagina. Serve a **vedere** cosa fa la voce, invece di dedurlo dal
+   silenzio: quale frase ha sentito, cosa ha deciso, quando ha parlato e quando
+   ha ripreso ad ascoltare. E' uno strumento di riscontro, non una decorazione:
+   senza, un "non risponde" resta un'indagine a tentoni.
+
+   Tiene le ultime `REGISTRO_MAX` righe: e' una finestra su quello che sta
+   succedendo ora, non uno storico da conservare. Tutto qui dentro e' locale: non
+   parte nessuna richiesta per scrivere il registro. */
+const REGISTRO_MAX = 60;
+let registroInizio = Date.now();
+
+function registra(passo, tipo = '') {
+  // `typeof document`: la pagina di accesso non ha il pannello, e `registra`
+  // viene chiamata anche da li' (l'ascolto si accende dopo l'accesso, e un
+  // errore di registrazione non deve diventare un errore vero)
+  if (typeof document === 'undefined' || !document.createElement) return;
+  const lista = $('#voice-registro');
+  if (!lista) return;
+  const ora = new Date();
+  const orario = ora.toTimeString().slice(0, 8);
+  const daInizio = ((Date.now() - registroInizio) / 1000).toFixed(1);
+  const li = document.createElement('li');
+  if (tipo) li.className = tipo;
+  const quando = document.createElement('span');
+  quando.className = 't';
+  quando.textContent = `${orario} · ${daInizio}s`;
+  li.appendChild(quando);
+  li.appendChild(document.createTextNode(passo));
+  lista.appendChild(li);
+  // scorre in fondo e non cresce all'infinito
+  while (lista.children.length > REGISTRO_MAX) lista.removeChild(lista.firstChild);
+  lista.scrollTop = lista.scrollHeight;
+  const n = $('#voice-registro-n');
+  if (n) n.textContent = `(${lista.children.length})`;
 }
 
 /** Esegue il comando dettato e ricarica le schede che il server indica.
@@ -3056,7 +3110,27 @@ function ascoltaSulServer(alTesto) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !Ctx) return false;
 
+  // `getUserMedia` puo' **non risolversi**: su Android, al secondo giro, il
+  // permesso c'e' gia' e nessuno mostra piu' il dialogo, ma la promessa resta
+  // appesa. Senza un limite, il ciclo non parte e il sorvegliante lo riavvia solo
+  // dopo 25 s: e' uno dei modi in cui l'assistente sembra "tornato muto".
+  let risolto = false;
+  const scadenza = setTimeout(() => {
+    if (risolto) return;
+    risolto = true;
+    registra('il microfono non risponde: riprovo', 'err');
+    // si ritenta: non e' un guasto del permesso, e' la promessa che non arriva.
+    // Fermare l'ascolto lo spegnerebbe per un ritardo che si risolve da solo.
+    if (alTesto) alTesto({ ritenta: true });
+  }, 6000);
+
   navigator.mediaDevices.getUserMedia({ audio: true }).then(async (flusso) => {
+    if (risolto) {   // arrivato tardi: non serve piu', si rilascia e basta
+      flusso.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    risolto = true;
+    clearTimeout(scadenza);
     const ctx = new Ctx();
     // Il browser tiene l'audio sospeso finche' la pagina non riceve un gesto, e
     // un contesto sospeso non riceve un solo campione: senza questo controllo
@@ -3147,6 +3221,7 @@ function ascoltaSulServer(alTesto) {
     $('#voice-result').hidden = true;
     $('#voice-heard').textContent = '…';
   }).catch(() => {
+    clearTimeout(scadenza);
     // microfono negato o assente: non è un guasto del server, si ripiega
     voceStato('Microfono non disponibile: consentilo nelle impostazioni del '
       + 'browser. Intanto puoi scrivere il comando qui sotto.', 'err');
@@ -3372,6 +3447,7 @@ function sorvegliaIlCiclo() {
     if (!cicloDaRiavviare(ascoltoContinuo.battito, Date.now(),
                           ascoltoContinuo.sospeso, ascoltoContinuo.attesaGesto)) return;
     ascoltoContinuo.battito = Date.now();   // si riprova fra un altro giro
+    registra('il ciclo era fermo: lo riavvio', 'err');
     voceStato('Ti riascolto…');
     cicloAscoltoContinuo();
   }, 5000);
@@ -3516,6 +3592,7 @@ function riprendiDopoLaVoce(poi) {
     voce.aFineParlato = null;
     ascoltoContinuo.sospeso = false;
     aggiornaSpiaAscolto();
+    registra('voce finita: riprendo ad ascoltare');
     setTimeout(poi, SVEGLIA_RIPRESA_MS);
   };
   voce.aFineParlato = riprendi;
@@ -3525,11 +3602,12 @@ function riprendiDopoLaVoce(poi) {
 /** Dice una frase e riprende ad ascoltare solo quando ha finito. */
 function parlaPoi(testo, poi) {
   const riprendi = riprendiDopoLaVoce(poi);
+  registra(`parlo: «${testo}»`);
   speak(testo);
   if (!$('#voice-speak').checked) { riprendi(); return; }
-  // il tetto e' generoso: una conferma di casa dura pochi secondi, e tagliarla
-  // prima farebbe riascoltare l'assistente a meta' frase
-  voce.tempoVoce = setTimeout(riprendi, TETTO_VOCE_MS);
+  // il tetto segue la lunghezza della frase: se la sintesi non annuncia la fine,
+  // il microfono riprende comunque dopo pochi secondi, non dopo venti
+  voce.tempoVoce = setTimeout(riprendi, tettoVoceMs(testo));
 }
 
 /** Il verbo che apre un comando, quando non serve ripetere la sveglia.
@@ -3622,6 +3700,7 @@ function decisioneContinuo(testo, sveglia, resto, inAttesa) {
     la regola che decide se un comando parte. */
 function valutaFrase(testo, sveglia, resto, riparti) {
   const d = decisioneContinuo(testo, sveglia, resto, inAttesaComando());
+  registra(`deciso: ${d.azione}${d.comando ? ' → «' + d.comando + '»' : ''}`);
   if (d.azione === 'esegui') {
     ascoltoContinuo.inAttesa = 0;
     $('#voice-heard').textContent = d.comando;
@@ -3682,9 +3761,13 @@ function nascondiFuori() {
 /** Un giro: registra una frase, decide se era per l'app, e si richiama. */
 function cicloAscoltoContinuo() {
   if (!ascoltoContinuo.continuo) return;
-  if (ascoltoContinuo.sospeso) return;
+  if (ascoltoContinuo.sospeso) {
+    registra('giro saltato: in pausa (sto parlando)');
+    return;
+  }
   ascoltoContinuo.battito = Date.now();   // segno di vita: il sorvegliante lo legge
   const mio = ++ascoltoContinuo.ciclo;
+  registra('microfono aperto: ti ascolto');
 
   const ancora = () => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
@@ -3694,13 +3777,23 @@ function cicloAscoltoContinuo() {
   const esito = (d) => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
     if (d && d.bloccato) {
+      registra('audio bloccato dal browser: serve un tocco', 'err');
       // l'audio e' sospeso: si chiede il gesto che lo sblocca, e al prossimo
       // tocco il ciclo riparte. Fermare qui l'ascolto lo spegnerebbe proprio
       // all'avvio automatico, che e' il caso appena acceso.
       attendeUnGesto();
       return;
     }
-    if (!d || d.errore) { ascoltoContinuo.continuo = false; aggiornaSpiaAscolto(); return; }
+    if (!d || d.errore) {
+      registra('errore di ascolto: ciclo fermato', 'err');
+      ascoltoContinuo.continuo = false; aggiornaSpiaAscolto(); return;
+    }
+    if (d.ritenta) {
+      // il microfono non ha risposto in tempo: si riprova fra poco, senza
+      // spegnere l'ascolto — un ritardo si risolve da solo
+      ancora();
+      return;
+    }
     if (d.ripiega) {
       // senza la chiave la trascrizione la fa il browser: il ciclo resta lo
       // stesso, cambia solo chi ascolta
@@ -3716,7 +3809,8 @@ function cicloAscoltoContinuo() {
       return;
     }
     const testo = (d.testo || '').trim();
-    if (!testo) { ancora(); return; }
+    if (!testo) { registra('trascrizione vuota: riprovo'); ancora(); return; }
+    registra(`trascritto: «${testo}»` + (d.sveglia ? ' (sveglia riconosciuta)' : ''));
     valutaFrase(testo, !!d.sveglia, d.resto, ancora);
   };
 
@@ -3771,16 +3865,18 @@ async function eseguiComandoContinuo(comando, riprendi) {
   // sommandosi alla trascrizione, e' la latenza che si sente come "non esegue".
   // Il cenno e l'esito si mettono **in fila** sulla voce, ma l'esecuzione no.
   const eseguito = eseguiComando(comando, { parla: false });
+  let res = null;
   try {
     await parlaEAttendi(cennoDiRicevuto('esegui'));
-    const res = await eseguito;
+    res = await eseguito;
     // l'esito si dice **dopo** il cenno, altrimenti la seconda frase mangerebbe
     // la prima. Se il comando non e' riuscito `eseguiComando` restituisce `null`
     // e l'errore e' gia' a schermo: parlarne due volte non serve
     if (res && res.message) await parlaEAttendi(res.message);
   } finally {
     if (!$('#voice-speak').checked) { riparti(); return; }
-    voce.tempoVoce = setTimeout(riparti, TETTO_VOCE_MS);
+    // anche qui il tetto segue la frase: l'esito piu' lungo di "Comandi."
+    voce.tempoVoce = setTimeout(riparti, tettoVoceMs(res && res.message ? res.message : ''));
   }
 }
 
@@ -3926,6 +4022,14 @@ $('#voice-sempre').addEventListener('click', () => {
 });
 $('#voice-close').addEventListener('click', chiudiVoce);
 $('#voice-retry').addEventListener('click', ascolta);
+$('#voice-registro-pulisci').addEventListener('click', () => {
+  const lista = $('#voice-registro');
+  if (lista) lista.innerHTML = '';
+  const n = $('#voice-registro-n');
+  if (n) n.textContent = '';
+  registraInizio = Date.now();   // i millisecondi ripartono da qui
+  registra('registro pulito');
+});
 $('#voice').addEventListener('click', (e) => { if (e.target.id === 'voice') chiudiVoce(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') chiudiVoce(); });
 $('#voice-examples').addEventListener('click', (e) => {

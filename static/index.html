@@ -527,6 +527,14 @@
       <p id="voice-sempre-spia" class="voice-avviso"></p>
     </div>
     <p id="voice-result" class="voice-result" hidden></p>
+    <!-- Registro trasparente: ogni passo dell'assistente, con l'ora e i
+         millisecondi dall'inizio. Serve a capire **dove** si perde tempo o dove
+         si ferma, senza indovinare dal solo silenzio. -->
+    <details id="voice-registro-blocco" class="voice-registro">
+      <summary>Registro dell'assistente <span id="voice-registro-n"></span></summary>
+      <ul id="voice-registro"></ul>
+      <button id="voice-registro-pulisci" type="button">Pulisci</button>
+    </details>
     <div class="row">
       <input id="voice-text" placeholder="Oppure scrivi il comando…">
       <button id="voice-send">Invia</button>

@@ -5634,7 +5634,8 @@ def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
     invocato **subito**, prima che la voce finisca, e le due frasi (cenno, esito)
     devono restare in fila, senza sovrapporsi."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "eseguiComandoContinuo")
+    blocco = (_estrai_funzione_js(js, "tettoVoceMs")
+              + _estrai_funzione_js(js, "eseguiComandoContinuo"))
     preludio = """
 const ordine = [];
 let risolviCenno, risolviEsito, risolviCmd;
@@ -5648,8 +5649,8 @@ function eseguiComando(c, o) {
   return new Promise((r) => { risolviCmd = r; });
 }
 function cennoDiRicevuto() { return 'Comandi.'; }
-// piccolo apposta: il tetto vero e' 20 s, e nel banco non serve — anzi, con
-// quello il processo node resterebbe vivo 20 s a ogni esecuzione dei test
+// piccolo apposta: il tetto vero segue la frase, e nel banco non serve — anzi,
+// con quello vero il processo node resterebbe vivo a ogni esecuzione dei test
 const TETTO_VOCE_MS = 30;
 let voce = {};
 function $() { return { checked: true }; }
@@ -5775,6 +5776,116 @@ def test_il_tema_scuro_e_l_opposto_di_quello_chiaro():
     # inchiostro: l'opposto
     assert luminanza(valore("ink", blocco)) > 0.8, "--ink del tema scuro non e' chiaro"
     assert luminanza(valore("ink", chiaro)) < 0.25, "--ink del tema chiaro non e' scuro"
+
+
+def test_il_tetto_della_voce_non_lascia_muti_per_venti_secondi(client):
+    """Il difetto riferito: dopo il "Si." l'assistente torna muto e non trascrive
+    i comandi. La causa e' il tetto dell'attesa di "fine parlato": se la sintesi
+    non annuncia la fine (succede), la pausa durava fino a 20 s **fissi**, e in
+    quei venti secondi il microfono resta chiuso.
+
+    Si esegue `tettoVoceMs` **vera**: il tetto dev'essere proporzionale alla
+    frase, cosi' una parola come "Si." non fa aspettare venti secondi."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "tettoVoceMs")
+    d = _esegui_node(blocco + """
+console.log(JSON.stringify({
+  si: tettoVoceMs('Si.'),
+  comandi: tettoVoceMs('Comandi.'),
+  lunga: tettoVoceMs('Fatto. Farina in dispensa, 2 kg.'),
+}));""")
+    # una parola breve: pochi secondi, non venti
+    assert d["si"] <= 3000, d
+    assert d["comandi"] <= 3500, d
+    # una conferma lunga ha piu' tempo, ma sempre sotto il vecchio tetto fisso
+    assert d["lunga"] > d["si"]
+    assert d["lunga"] <= 12000
+
+
+def test_il_microfono_che_non_risponde_non_blocca_il_ciclo(client):
+    """Un'altra causa del "dopo il Si. torna muto": `getUserMedia` puo' non
+    risolversi (su Android al secondo giro il permesso c'e' gia', e la promessa
+    resta appesa). Senza un limite, il ciclo non parte e il sorvegliante lo
+    riavvia solo dopo 25 s.
+
+    Si esegue `ascoltaSulServer` **vera** con un `getUserMedia` che non risponde
+    mai: l'esito dev'essere `ritenta`, non un silenzio."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "ascoltaSulServer")
+    preludio = """
+function registra() {}
+function ampiezza() { return 0; }
+function wavDaCampioni() { return {}; }
+function aSediciKhz(c) { return c; }
+function voceStato() {}
+function $() { return { classList: { add() {}, remove() {} }, hidden: false }; }
+let voce = { registratore: null, attivo: false };
+const ASCOLTO_BLOCCO = 4096, ASCOLTO_CAMPIONI = 16000;
+const ASCOLTO_FINE_MS = 800, ASCOLTO_ATTESA_MS = 4000, ASCOLTO_MAX_MS = 12000;
+const ASCOLTO_SILENZIO = 0.012;
+class AudioContextFinto { constructor() { this.state = 'running'; this.sampleRate = 16000; } }
+global.window = { AudioContext: AudioContextFinto };
+Object.defineProperty(globalThis, 'navigator', {
+  value: { mediaDevices: { getUserMedia: () => new Promise(() => {}) } },  // mai risolta
+  configurable: true,
+});
+global.setTimeout = setTimeout;
+"""
+    prova = preludio + blocco + """
+const t0 = Date.now();
+const avviato = ascoltaSulServer((d) => {
+  console.log(JSON.stringify({ esito: d, ms: Date.now() - t0, avviato }));
+  process.exit(0);
+});
+setTimeout(() => { console.log(JSON.stringify({ esito: null })); process.exit(0); }, 9000);
+"""
+    d = _esegui_node(prova)
+    assert d["esito"] and d["esito"].get("ritenta") is True, d
+    assert d["ms"] < 8000, f"ha aspettato troppo: {d['ms']} ms"
+
+
+def test_il_registro_dice_cosa_fa_l_assistente(client):
+    """Il riscontro chiesto: l'assistente deve dire in trasparenza cosa fa. Si
+    esegue `registra` **vera**: ogni passo finisce in una riga con l'ora e i
+    millisecondi, le righe vecchie si buttano (non cresce all'infinito) e il
+    pannello ha il contenitore dove scriverle."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "registra")
+    preludio = """
+const REGISTRO_MAX = 60;
+let registroInizio = Date.now();
+const figli = [];
+const lista = {
+  children: figli,
+  get firstChild() { return figli[0]; },
+  appendChild(li) { figli.push(li); },
+  removeChild(li) { figli.splice(figli.indexOf(li), 1); },
+  set scrollTop(v) {}, get scrollTop() { return 0; },
+  get scrollHeight() { return 0; },
+};
+let conteggio = null;
+const nodi = { 'voice-registro': lista,
+               'voice-registro-n': { set textContent(v) { conteggio = v; } } };
+function $(sel) { return nodi[sel.replace(/^#/, '')]; }
+global.document = {
+  createElement: () => ({
+    className: '', children: [],
+    appendChild(c) { this.children.push(c); },
+  }),
+  createTextNode: (t) => ({ testo: t }),
+};
+"""
+    prova = preludio + blocco + """
+for (let i = 0; i < 70; i++) registra('passo ' + i);
+const righe = lista.children.length;
+const testo = lista.children[lista.children.length - 1].children
+  .map((c) => c.testo || '').join('');
+console.log(JSON.stringify({ righe, conteggio, testo, orario: /\\d\\d:\\d\\d:\\d\\d/.test(lista.children[0].children[0].textContent || '') }));
+"""
+    d = _esegui_node(prova)
+    assert d["righe"] == 60, "il registro non deve crescere all'infinito"
+    assert d["conteggio"] == "(60)"
+    assert "passo 69" in d["testo"]
 
 
 def test_il_comando_pubblica_rifiuta_senza_credenziali():
