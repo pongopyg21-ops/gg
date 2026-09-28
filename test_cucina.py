@@ -5669,3 +5669,24 @@ function $() { return { checked: true }; }
     parlate = [v for v in d["dopo"] if v.startswith("parla:")]
     assert parlate == ["parla:Comandi.", "parla:Fatto."], parlate
 
+
+def test_il_comando_pubblica_rifiuta_senza_token():
+    """Il push su GitHub non deve partire con un token assente o vuoto: senza,
+    git chiederebbe l'username a un terminale che non c'e' e il fallimento
+    sembrerebbe un problema di rete. Si esegue lo script vero senza token e si
+    guarda che rifiuti dicendo **quale** variabile manca.
+
+    E' il difetto che ha lasciato 5 commit non pubblicati credendo che il token
+    ci fosse: la variabile puo' esistere ma essere vuota, ed e' lo stesso."""
+    import os
+    import subprocess
+    ambiente = dict(os.environ)
+    for nome in ("GITHUB_TOKEN", "GH_TOKEN"):
+        ambiente.pop(nome, None)
+    esito = subprocess.run(["./avvia.sh", "pubblica"], cwd="/workspace/gg",
+                           env=ambiente, capture_output=True, text=True)
+    assert esito.returncode != 0, "senza token il push non deve riuscire"
+    assert "GITHUB_TOKEN" in esito.stdout
+    # e niente push a vuoto: la URL non deve comparire con credenziali dentro
+    assert "@github.com" not in esito.stdout + esito.stderr
+

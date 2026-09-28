@@ -16,6 +16,7 @@
 #   ./avvia.sh status     dice se è attivo e su quale porta
 #   ./avvia.sh log        mostra le ultime righe del log
 #   ./avvia.sh test       esegue i test nella venv del progetto
+#   ./avvia.sh pubblica   fa il push su GitHub e verifica che sia arrivato
 #
 # Porta: 12000 per impostazione predefinita (è quella inoltrata dall'host).
 # Modificabile con PORT=... ./avvia.sh
@@ -300,6 +301,67 @@ stato() {
   return 1
 }
 
+# --- pubblicazione su GitHub -------------------------------------------------
+# Il push va fatto sul branch `gg` e **verificato sul server**: `git fetch` puo'
+# lasciare `origin/gg` vecchio, e allora un push riuscito sembra fallito (o il
+# contrario), col rischio di credere pubblicato un lavoro che non c'e'. Qui si
+# confronta con `ls-remote`, che e' la verita' del server.
+#
+# Il token **non** entra negli argomenti ne' nella URL: git non lo vedrebbe in
+# `ps`, ma un errore puo' stampare la URL, e in un log di conversazione resterebbe.
+# Si passa da `GIT_ASKPASS`, uno script temporaneo che risponde a git leggendo il
+# token dall'ambiente. Lo script si cancella subito dopo, esito o errore.
+#
+# Il token si prende dall'ambiente (`GITHUB_TOKEN`, o `GH_TOKEN`). Non si legge da
+# `segreto.txt`: quello e' la chiave Azure, e un token di scrittura su GitHub non
+# va in un file del progetto.
+pubblica() {
+  local ramo="${2:-gg}"
+  local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [ -z "$token" ]; then
+    rosso "Manca GITHUB_TOKEN: senza, il push non si puo' fare."
+    echo "  Registralo fra i segreti di questa conversazione, col nome esatto"
+    echo "  GITHUB_TOKEN, poi riprova: ./avvia.sh pubblica"
+    echo "  (in alternativa: GITHUB_TOKEN=... ./avvia.sh pubblica)"
+    return 1
+  fi
+
+  cd "$BASE_DIR" || return 1
+  local locale remoto
+  locale="$(git rev-parse HEAD 2>/dev/null)" || { rosso "Non sono in un repository git."; return 1; }
+
+  # il token puo' non avere i permessi di scrittura, o essere scaduto: si prova e
+  # si riporta l'errore di GitHub invece di attribuirlo al branch
+  local ask err
+  ask="$(mktemp)"; chmod 700 "$ask"
+  cat >"$ask" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  *[Uu]sername*) printf '%s\n' "x-access-token" ;;
+  *) printf '%s\n' "$GITHUB_TOKEN" ;;
+esac
+ASKPASS
+  err="$(mktemp)"
+  if ! GIT_ASKPASS="$ask" GIT_TERMINAL_PROMPT=0 git push origin "$ramo" >"$err" 2>&1; then
+    rm -f "$ask" "$err"
+    rosso "Il push non e' riuscito."
+    echo "  (GitHub non ha accettato il token: controlla che sia valido e che"
+    echo "   abbia il permesso di scrittura sul repository.)"
+    return 1
+  fi
+  rm -f "$ask" "$err"
+
+  # verifica **sul server**, non in locale: e' l'unico modo di sapere se il push
+  # e' arrivato davvero
+  remoto="$(git ls-remote origin "refs/heads/$ramo" 2>/dev/null | cut -f1)"
+  if [ "$remoto" = "$locale" ]; then
+    verde "Pubblicato: $ramo = ${locale:0:7}"
+  else
+    giallo "Il push e' tornato ok ma il server mostra ${remoto:0:7}: riprova."
+    return 1
+  fi
+}
+
 # I test girano nella venv del progetto, così vedono le stesse dipendenze del
 # server. Il server non serve: i test usano un database temporaneo.
 testa() {
@@ -318,12 +380,13 @@ case "${1:-avvia}" in
   status|stato)  stato ;;
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
   test|tests)    testa ;;
+  pubblica|push) pubblica "$@" ;;
   -h|--help|help)
     sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     ;;
   *)
     rosso "Comando sconosciuto: $1"
-    echo "Uso: $0 [avvia|stop|restart|status|log|test]"
+    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica]"
     exit 2
     ;;
 esac

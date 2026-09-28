@@ -78,6 +78,27 @@ Il push va fatto sul branch `gg`, e va verificato **sul server**, non in locale:
 lasciare `origin/gg` vecchio, e allora un push riuscito sembra fallito (o il
 contrario), con il rischio di credere pubblicato un lavoro che non c'e'.
 
+C'e' un comando solo per questo, `./avvia.sh pubblica`: fa il push e confronta con
+`ls-remote`, cosi' l'esito **dice il vero**. Il token si prende dall'ambiente
+(`GITHUB_TOKEN`, o `GH_TOKEN`) e **non** entra nella URL ne' negli argomenti: passa
+da un `GIT_ASKPASS` temporaneo, che si cancella subito. Un errore di push puo'
+stampare la URL, e in un log di conversazione il token resterebbe per sempre.
+
+**Attenzione al token "presente ma vuoto".** In questo ambiente `GITHUB_TOKEN` e'
+sempre *definita* (il sistema dei segreti la esporta quando la si nomina), ma se
+il segreto non e' registrato il valore e' la stringa vuota: `[ -n "$GITHUB_TOKEN" ]`
+lo scopre, un semplice `echo` sembra che ci sia. E' il motivo per cui cinque
+commit sono rimasti non pubblicati credendo che il token ci fosse. Se manca,
+`pubblica` lo dice e si ferma, invece di fallire con un errore di git che sembra
+un problema di rete.
+
+In alternativa, e senza script, il token si passa a git cosi':
+
+```
+git -c credential.helper='' push \
+  "https://x-access-token:${GITHUB_TOKEN}@github.com/pongopyg21-ops/gg.git" gg
+```
+
 Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
 12000, quindi l'indirizzo da aprire è quello della conversazione *corrente*
 (`work-1-...`) e non quello di una sessione vecchia. Un link di una conversazione
