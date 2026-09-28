@@ -5162,6 +5162,33 @@ def test_senza_sveglia_il_testo_resta_intatto():
     assert resto == "metti il latte nella spesa"
 
 
+def test_la_sveglia_sente_anche_quando_il_trascrittore_mette_l_articolo():
+    """Il difetto vero visto dal telefono: "Ehi maggiordomo" torna dal
+    trascrittore come **"E il maggiordomo"** (misurato con `misura_sveglia.py` su
+    Elsa; Isabella e Diego rendono "E i, maggiordomo"), e la sveglia non
+    scattava. L'app rispondeva "Non ho eseguito" o taceva, sembrando sorda
+    proprio mentre la si chiamava.
+
+    Le forme qui sotto non sono inventate: sono quelle uscite dalla misurazione.
+    L'articolo da solo non deve bastare, altrimenti "il maggiordomo prepara la
+    cena" tornerebbe a essere un ordine."""
+    for frase, comando in (
+        ("E il maggiordomo, metti il latte?", "metti il latte"),
+        ("E il maggiordomo aggiungi il pane", "aggiungi il pane"),
+        ("E il maggiordomo?", ""),
+        ("E i, maggiordomo, metti il latte", "metti il latte"),
+        ("E la maggiordomo metti il sale", "metti il sale"),
+    ):
+        svegliato, resto = voice.sveglia(frase)
+        assert svegliato, frase
+        assert resto == comando, frase
+    # e l'articolo senza esordio **non** sveglia: e' il confine che tiene fuori
+    # le frasi di casa, dove "il maggiordomo" e' il soggetto, non una chiamata
+    for frase in ("Il maggiordomo, metti il latte", "la maggiordomo prepara la cena"):
+        svegliato, _ = voice.sveglia(frase)
+        assert not svegliato, frase
+
+
 def test_la_sveglia_si_toglie_anche_dal_comando_scritto(client):
     """Il comando "maggiordomo aggiungi il latte" vale anche scritto a mano nel
     campo di testo, non solo detto a voce: la stessa frase in tutti e due i modi."""

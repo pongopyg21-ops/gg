@@ -316,7 +316,12 @@ def _norm(text):
 # ("Ai giorni"), "e i" ("E i giorni") e "giorgio". Sono opzionali — li si puo'
 # dire o omettere — e da soli non bastano: serve sempre il nome dopo.
 _SVEGLIA_ESORDI = (r"(?:hey|hei|ehi|ok|okay|ciao|allora|su|dai"
-                   r"|ai|ei|e\s+i|aili|giorgio|george)?")
+                   r"|ai|ei|e\s+i|aili|giorgio|george|e)")
+# Un articolo fra l'esordio e il nome: il trascrittore rende cosi' "Ehi
+# maggiordomo" ("E i, maggiordomo", "E il maggiordomo"). E' **misurato** su piu'
+# voci, non indovinato: Elsa rende "E il maggiordomo", Isabella e Diego "E i,
+# maggiordomo". Senza questo, chi chiama l'assistente non viene sentito.
+_SVEGLIA_ARTICOLO = r"(?:il|lo|la|l')?"
 # "magiordomo" e "maggiordomo" (una 'g'): il riconoscimento sbaglia i nomi
 # propri, e questo non e' un nome comune. Accettare solo la forma esatta
 # significa non essere mai chiamati.
@@ -342,9 +347,9 @@ _SVEGLIA_GG = (r"(?:aigigi|aigi|aige|aig|eigi|eiji|egiggi|aili"
                r"|gigi|gi\s+gi|gi|gg|g|giorni"
                r"|giorgio|george)")
 _SVEGLIA_AVVIO_MAGGIORDOMO = re.compile(
-    rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_NOMI}\b[\s,]*")
+    rf"^(?:{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_ARTICOLO}\s*)?{_SVEGLIA_NOMI}\b[\s,]*")
 _SVEGLIA_AVVIO_GG = re.compile(
-    rf"^{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_GG}\b[\s,]*")
+    rf"^(?:{_SVEGLIA_ESORDI}\s*,?\s*{_SVEGLIA_ARTICOLO}\s*)?{_SVEGLIA_GG}\b[\s,]*")
 
 
 def sveglia(text):
