@@ -928,6 +928,21 @@ giorni"; "Ciao GG" → "Ciao giorni".
 Oltre alle forme del nome, gli esordi includono come il riconoscitore rende
 "hey": anche "ai" e "e i". Restano opzionali e da soli non bastano.
 
+### "Ehi maggiordomo" e l'articolo che il trascrittore infila in mezzo
+
+Le forme misurate, per non doverle rimisurare, comprendono anche un **articolo**
+fra l'esordio e il nome. "Ehi maggiordomo" non torna mai come scritto: Elsa rende
+**"E il maggiordomo"**, Isabella e Diego **"E i, maggiordomo"**. Senza l'articolo
+facoltativo (`_SVEGLIA_ARTICOLO`, opzionale ma valido **solo dopo un esordio**)
+"E il maggiordomo" non svegliava, e chi chiamava l'assistente restava senza
+risposta — il difetto vero visto dal telefono.
+
+L'articolo vale solo **dopo un esordio**: "il maggiordomo prepara la cena"
+comincia con l'articolo e non con un esordio, quindi resta chiacchiera. È il
+confine che tiene insieme "E il maggiordomo" (chiamata) e "il maggiordomo"
+(soggetto). Il test `test_la_sveglia_sente_anche_quando_il_trascrittore_mette_l_articolo`
+fissa entrambi i lati.
+
 L'ancora all'**inizio** è ciò che separa un richiamo dal discorso: "il nonno Gigi
 arriva alle otto" non fa partire niente. Il prezzo onesto è che "I giorni scorsi
 ho comprato il pane" farebbe partire un "Sì." una volta, senza eseguire nulla.
