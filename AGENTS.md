@@ -1094,6 +1094,25 @@ il pulsante del microfono): "Ti ho sentito, dimmi." alla chiamata, "Ho sentito:
 «…»" quando capisce, e l'istruzione sulla sveglia mancante quando serve. A
 pannello **aperto** la riga si nasconde, altrimenti raddoppierebbe `#voice-heard`.
 
+### Il comando partiva dopo la voce, e la finestra si consumava parlando
+
+Due cause della latenza, entrambe visibili col telefono (Brave su Android).
+
+1. **L'esecuzione aspettava la fine di "Comandi.".** `eseguiComandoContinuo` era
+   `await parlaEAttendi(...)` e **poi** `eseguiComando`: il comando restava fermo
+   per tutta la voce. Ora si **avvia subito** (`parla: false`, perche' l'esito lo
+   dice il chiamante) e il cenno e l'esito si mettono in fila sulla voce **dopo**.
+   Misurato: il comando parte 0,46 s dopo la risposta del server.
+2. **La finestra dopo "Sì." si apriva prima di parlare** e si consumava mentre
+   l'assistente diceva "Sì.". Con la voce neurale lenta, chi diceva il comando
+   arrivava a finestra scaduta e veniva **ignorato in silenzio**. Ora la finestra
+   si apre quando la voce **tace**: `parlaPoi(cennoDiChiamata(), () => { attendeComando(); riparti(); })`.
+
+`eseguiComando` accetta `{ parla: false }` e **restituisce** la risposta (o
+`null`): a chiamarlo dalla voce e' `eseguiComandoContinuo`, che parla l'esito una
+volta sola. Il test `test_il_comando_parte_subito_senza_aspettare_la_voce` fissa
+l'ordine: comando per primo, poi le due frasi in fila.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa

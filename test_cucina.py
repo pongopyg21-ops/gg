@@ -5619,3 +5619,53 @@ console.log(JSON.stringify({ chiuso, aperto }));
     assert "ok" in d["chiuso"]["classi"]
     assert d["aperto"]["nascosto"] is True, "col pannello aperto la riga non si raddoppia"
 
+
+def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
+    """La latenza riferita: il comando partiva solo **dopo** la fine di
+    "Comandi.", quindi l'esecuzione restava ferma per tutta la voce — e col
+    telefono (trascrizione + voce neurale) sembrava che non eseguisse affatto.
+
+    Si esegue `eseguiComandoContinuo` **vera** con node: il comando dev'essere
+    invocato **subito**, prima che la voce finisca, e le due frasi (cenno, esito)
+    devono restare in fila, senza sovrapporsi."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "eseguiComandoContinuo")
+    preludio = """
+const ordine = [];
+let risolviCenno, risolviEsito, risolviCmd;
+function parlaEAttendi(f) {
+  ordine.push('parla:' + f);
+  return new Promise((r) => { if (f === 'Comandi.') risolviCenno = r; else risolviEsito = r; });
+}
+function riprendiDopoLaVoce() { return () => ordine.push('ripartito'); }
+function eseguiComando(c, o) {
+  ordine.push('esegui:' + c + ':parla=' + (o && o.parla));
+  return new Promise((r) => { risolviCmd = r; });
+}
+function cennoDiRicevuto() { return 'Comandi.'; }
+// piccolo apposta: il tetto vero e' 20 s, e nel banco non serve — anzi, con
+// quello il processo node resterebbe vivo 20 s a ogni esecuzione dei test
+const TETTO_VOCE_MS = 30;
+let voce = {};
+function $() { return { checked: true }; }
+"""
+    prova = preludio + blocco + """
+(async () => {
+  const attendi = () => new Promise((r) => setTimeout(r, 0));
+  const p = eseguiComandoContinuo('metti il latte', () => {});
+  const subito = ordine.slice();   // prima che qualunque voce sia finita
+  risolviCenno && risolviCenno(); await attendi();
+  risolviCmd({ message: 'Fatto.' }); await attendi();
+  risolviEsito && risolviEsito(); await p;
+  console.log(JSON.stringify({ subito, dopo: ordine }));
+})();
+"""
+    d = _esegui_node(prova)
+    # il comando e' la **prima** cosa che succede: non aspetta la voce
+    assert d["subito"][0] == "esegui:metti il latte:parla=false", d["subito"]
+    # l'esecuzione non parla da sola (l'esito lo dice `eseguiComandoContinuo`)
+    assert "esegui:metti il latte:parla=false" in d["subito"]
+    # e le due frasi si dicono in fila: prima il cenno, poi l'esito
+    parlate = [v for v in d["dopo"] if v.startswith("parla:")]
+    assert parlate == ["parla:Comandi.", "parla:Fatto."], parlate
+

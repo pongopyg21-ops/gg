@@ -2878,8 +2878,12 @@ function voceStato(msg, tipo = '') {
   el.dataset.tipo = tipo;
 }
 
-/** Esegue il comando dettato e ricarica le schede che il server indica. */
-async function eseguiComando(testo) {
+/** Esegue il comando dettato e ricarica le schede che il server indica.
+
+    `parla: false` quando l'esito lo dice gia' chi chiama: l'ascolto continuo fa
+    partire il comando **subito** e mette in fila "Comandi." e l'esito, quindi se
+    l'esito parlasse anche qui si sentirebbe due volte. */
+async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
   voce.ultimo = testo;
   voceStato('Comando in corso…');
   try {
@@ -2922,15 +2926,17 @@ async function eseguiComando(testo) {
       loadIngredientsDatalist();
     }
     voceStato('Fatto', 'ok');
-    speak(res.message);
+    if (parlaEsito) speak(res.message);
     toast(res.message);
+    return res;
   } catch (err) {
     const box = $('#voice-result');
     box.hidden = false;
     box.className = 'voice-result err';
     box.textContent = '✕ ' + err.message;
     voceStato('Non ho capito', 'err');
-    speak('Non ho capito il comando');
+    if (parlaEsito) speak('Non ho capito il comando');
+    return null;
   }
 }
 
@@ -3556,15 +3562,17 @@ function valutaFrase(testo, sveglia, resto, riparti) {
   }
   if (d.azione === 'chiedi') {
     // chiamato e basta: si risponde, e la frase successiva e' il comando.
-    // La finestra si apre **prima** di parlare, cosi' e' gia' aperta quando la
-    // voce tace e il microfono riprende.
     voceStato('Sì?');
     // la frase trascritta si scrive anche qui: con il pannello chiuso e' l'unico
     // posto dove si vede che l'assistente ha sentito la chiamata
     $('#voice-heard').textContent = (testo || '').trim() || '…';
     mostraFuori('Ti ho sentito, dimmi.', 'ok');
-    attendeComando();
-    parlaPoi(cennoDiChiamata(), riparti);
+    // la finestra si apre quando la voce **tace**, non subito: parlaPoi avvisa la
+    // fine, e solo allora parte il tempo per dire il comando. Aprirla prima
+    // significa consumarla mentre l'assistente parla — e chi ha una latenza alta
+    // (telefono, voce neurale) arriva a dirla a finestra gia' scaduta, quindi il
+    // comando viene ignorato in silenzio.
+    parlaPoi(cennoDiChiamata(), () => { attendeComando(); riparti(); });
     return;
   }
   // Frase non rivolta all'app. Si tace nel **suono** (e' il punto dell'ascolto
@@ -3689,11 +3697,18 @@ function cicloAscoltoDalBrowser(mio) {
     prima che il microfono riprenda, altrimenti l'assistente risente se stesso. */
 async function eseguiComandoContinuo(comando, riprendi) {
   const riparti = riprendiDopoLaVoce(riprendi);
-  // il cenno esce **subito**, mentre il comando si esegue, e l'esito aspetta che
-  // abbia finito: dette insieme, la seconda mangerebbe la prima
-  await parlaEAttendi(cennoDiRicevuto('esegui'));
+  // Il comando **parte subito**, senza aspettare la fine di "Comandi.": prima si
+  // aspettava, e l'esecuzione restava ferma per tutta la durata della voce —
+  // sommandosi alla trascrizione, e' la latenza che si sente come "non esegue".
+  // Il cenno e l'esito si mettono **in fila** sulla voce, ma l'esecuzione no.
+  const eseguito = eseguiComando(comando, { parla: false });
   try {
-    await eseguiComando(comando);
+    await parlaEAttendi(cennoDiRicevuto('esegui'));
+    const res = await eseguito;
+    // l'esito si dice **dopo** il cenno, altrimenti la seconda frase mangerebbe
+    // la prima. Se il comando non e' riuscito `eseguiComando` restituisce `null`
+    // e l'errore e' gia' a schermo: parlarne due volte non serve
+    if (res && res.message) await parlaEAttendi(res.message);
   } finally {
     if (!$('#voice-speak').checked) { riparti(); return; }
     voce.tempoVoce = setTimeout(riparti, TETTO_VOCE_MS);
