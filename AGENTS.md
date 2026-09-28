@@ -16,6 +16,16 @@ niente, serve **continuare**. Prima di tutto:
 5. **Dati delicati** (non in git, non si ricostruiscono): `cucina.db`, `houses.db`,
    `case/`, `copie/`, su `/workspace`. L'unico salvataggio vero è `/api/backup`.
 
+**La chiave Azure qui va fra i segreti della conversazione, non in `segreto.txt`.**
+Il container viene ricreato dal repository a ogni conversazione, quindi i file
+ignorati da git — `segreto.txt`, `segreto` — spariscono ogni volta. Chi la scrive
+nel file la riscrive a ogni sessione senza capire perché sparisce: è già successo
+sei volte. La via che regge è registrarla come segreto col nome esatto
+`AZURE_SPEECH_KEY` (e, se serve, `AZURE_SPEECH_REGION`); il sistema la esporta a
+ogni comando e `./avvia.sh` la trova. `./avvia.sh diagnosi` deve dire
+`da: ambiente`. Su una macchina propria, invece, il file accanto al programma è
+la via normale e non sparisce.
+
 **Fili aperti**: (a) la casa `Gianluca` è di origine incerta — chiedere se
 rimuoverla; (b) la voce è confermata **da desktop**, manca il riscontro **dal
 telefono**; (c) il link stabile è quello di Tailscale (`windows/dominio.bat`),

@@ -3307,8 +3307,9 @@ function messaggioMicrofono(errore, serverAscolta) {
     return 'Il browser non riesce a raggiungere il servizio di ascolto: di solito '
       + 'è un firewall, un antivirus o una VPN. Con la chiave della voce naturale '
       + 'Azure la trascrizione la fa il server, che non è bloccato: la chiave si '
-      + 'imposta accanto al programma, prima di avviare l\'app. Intanto scrivi qui '
-      + 'sotto: funziona lo stesso.';
+      + 'imposta accanto al programma, prima di avviare l\'app — in questo ambiente '
+      + 'fra i segreti della conversazione, col nome AZURE_SPEECH_KEY. Intanto '
+      + 'scrivi qui sotto: funziona lo stesso.';
   }
   if (errore === 'network') {
     return 'Il browser non riesce a raggiungere il servizio di ascolto: di solito '

@@ -78,7 +78,13 @@ stato_voce() {
   elif [ -n "$chiave" ] || [ -n "$regione" ]; then
     giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
   else
-    echo "  voce: quella del sistema (per la voce neurale: chiave e area in segreto.txt)"
+    echo "  voce: quella del sistema (per la voce neurale servono chiave e area)"
+    echo "        In questo ambiente la chiave va registrata fra i segreti della"
+    echo "        conversazione, col nome AZURE_SPEECH_KEY: il sistema la esporta a"
+    echo "        ogni avvio e il container ricreato la ritrova. Un segreto.txt qui"
+    echo "        non basta: viene ricreato col container e sparisce a ogni sessione."
+    echo "        Su una macchina tua, invece, il file accanto al programma va bene."
+    echo "        Poi: ./avvia.sh diagnosi  (deve dire 'da: ambiente')"
   fi
 }
 
