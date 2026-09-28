@@ -1353,3 +1353,35 @@ Tre trappole, tutte già pagate:
 I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte col
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
 
+
+## Con i thread di waitress la vista Live va tenuta stretta
+
+Otto thread di default sembrano tanti finché non si guarda una telecamera: il
+flusso MJPEG tiene un thread **aperto per tutto il tempo** in cui la pagina è
+aperta, e con uno o due flussi attivi il resto dell'app può restare senza thread.
+Il sintomo non punta alla telecamera: i comandi vocali non rispondono, e si va a
+cercare il guasto nella voce. Da qui la regola pratica: se "voce e IP cam non
+funzionano" insieme, guardare prima `/api/cameras/<id>/stream` e i thread, non
+`voice.py`.
+
+Nel codice questo ha prodotto due difese in `live.py`, entrambe dovute a casi
+visti davvero:
+
+- Un tetto di tempo **complessivo** in `scarica_foto` (`SCADENZA`). Il timeout di
+  `TIMEOUT` vale per la singola lettura, non per il totale: su un flusso che non
+  finisce nessuna lettura lo supera mai, quindi il tetto per lettura non basta a
+  fermare uno scarico appeso. Va aggiunta anche la scadenza sul socket.
+- Un indirizzo sbagliato che punta lo snapshot a `/video` risponde
+  `multipart/x-mixed-replace`: si legge finché non compare il primo JPEG completo
+  (`FF D8 ... FF D9`) e ci si ferma lì. Attenzione a due dettagli non ovvi: la
+  ricerca va fatta **in modo incrementale** (riunire i pezzi a ogni giro è
+  quadratico e diventa un blocco CPU sui corpi grandi), e il tetto va su un
+  contatore dei byte letti, non sulla lunghezza del buffer — perché il buffer
+  scarta l'involucro e resterebbe corto per sempre, con il ciclo che non finisce.
+
+## La tabella della lista della spesa è `shopping_items`
+
+`shopping` non esiste, né come tabella né come vista: l'unico punto che la
+nominava (`FROM shopping` nel ramo `area == "shopping"` di `_rispondi_domanda`)
+rispondeva 500 a ogni domanda sulla lista. Se si tocca la lista, usare
+`shopping_items`.
