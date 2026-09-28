@@ -5524,3 +5524,58 @@ def test_i_comandi_del_riassunto_funzionano_davvero(client):
         assert d["intent"] != "unknown", f"il riassunto promette «{c['detto']}»"
         assert c["spiega"].strip()
 
+
+def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
+    """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
+    proprio quando non si possono usare le mani, e un'area senza pulsante e' una
+    parte dell'app da cui la voce sparisce senza che nessuno se ne accorga.
+
+    Si esegue `apriSezione` **vera** con un DOM finto che registra le classi del
+    pulsante: un test sulle stringhe non si accorgerebbe se una delle quattro
+    aree lo nascondesse."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "apriSezione")
+    preludio = """
+const classi = {};
+function elemento(id) {
+  classi[id] = classi[id] || new Set();
+  return {
+    classList: {
+      add(c) { classi[id].add(c); },
+      remove(c) { classi[id].delete(c); },
+      toggle(c, v) { if (v) classi[id].add(c); else classi[id].delete(c); },
+      contains(c) { return classi[id].has(c); },
+    },
+    dataset: {}, innerHTML: '', textContent: '',
+  };
+}
+const nodi = {};
+function $(sel) {
+  const id = sel.replace(/^#/, '');
+  nodi[id] = nodi[id] || elemento(id);
+  return nodi[id];
+}
+function $$() { return []; }
+function switchTab() {}
+function avviaProfiloSeServe() {}
+function esc(t) { return t; }
+const SEZIONI = {
+  cucina:   { titolo: 'Cucina',   icona: '/static/icons/icona.svg', prima: 'plan' },
+  igiene:   { titolo: 'Igiene',   prima: 'igiene' },
+  progetti: { titolo: 'Progetti', prima: 'progetti' },
+  faq:      { titolo: 'FAQ',      prima: 'faq' },
+};
+global.window = { scrollTo() {} };
+global.document = { title: '' };
+"""
+    prove = "\n".join(
+        f"apriSezione({nome!r}); esiti[{nome!r}] = !classi['mic'].has('hidden');"
+        for nome in ("cucina", "igiene", "progetti", "faq"))
+    prova = (preludio + blocco + "\nconst esiti = {};\n" + prove
+             + "\nconsole.log(JSON.stringify(esiti));")
+    esiti = _esegui_node(prova)
+    # il pulsante nacque nascosto (`class="mic hidden"`): se resta `hidden` in
+    # un'area, da quell'area la voce non si puo' aprire
+    for nome, visibile in esiti.items():
+        assert visibile, f"il pulsante voce resta nascosto in {nome}"
+
