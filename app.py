@@ -21,7 +21,6 @@ import copie
 import faq
 import houses
 import igiene
-import live
 import magazzino
 import ricette_online
 import units
@@ -1627,148 +1626,6 @@ def storage_photo(sid):
     return jsonify({"ok": True, "has_photo": True, "hash": impronta})
 
 
-# ---------------------------------------------------------------- live
-def camera_row(r):
-    return {**dict(r), "enabled": bool(r["enabled"])}
-
-
-def _camera_o_404(db, cid):
-    return one(db.execute("SELECT * FROM cameras WHERE id = ?", (cid,)))
-
-
-@app.route("/api/cameras", methods=["GET", "POST"])
-def cameras():
-    db = get_db()
-    if request.method == "POST":
-        campi, errore = live.payload(request.get_json(force=True) or {})
-        if errore:
-            return bad_request(errore)
-        cur = db.execute(
-            """INSERT INTO cameras (name, place, url, kind, enabled)
-               VALUES (?, ?, ?, ?, ?)""",
-            (campi["name"], campi["place"], campi["url"], campi["kind"],
-             campi["enabled"]),
-        )
-        db.commit()
-        return jsonify(camera_row(_camera_o_404(db, cur.lastrowid))), 201
-
-    return jsonify([camera_row(r) for r in db.execute(
-        "SELECT * FROM cameras ORDER BY enabled DESC, name COLLATE NOCASE, id")])
-
-
-@app.route("/api/cameras/<int:cid>", methods=["GET", "PUT", "PATCH", "DELETE"])
-def camera_detail(cid):
-    db = get_db()
-    attuale = _camera_o_404(db, cid)
-    if not attuale:
-        return bad_request("Telecamera non trovata", 404)
-
-    if request.method == "DELETE":
-        db.execute("DELETE FROM cameras WHERE id = ?", (cid,))
-        db.commit()
-        return jsonify({"ok": True})
-
-    data = request.get_json(force=True) or {}
-    campi, errore = live.payload(data, attuale)
-    if errore:
-        return bad_request(errore)
-    if request.method == "GET" and not data:
-        return jsonify(camera_row(attuale))
-    db.execute(
-        """UPDATE cameras SET name = ?, place = ?, url = ?, kind = ?, enabled = ?,
-           updated_at = datetime('now') WHERE id = ?""",
-        (campi["name"], campi["place"], campi["url"], campi["kind"],
-         campi["enabled"], cid),
-    )
-    db.commit()
-    return jsonify(camera_row(_camera_o_404(db, cid)))
-
-
-@app.route("/api/cameras/prova", methods=["POST"])
-def cameras_prova():
-    """Prova un indirizzo **non ancora salvato**.
-
-    Serve al modulo: si dice se la telecamera risponde prima di aggiungerla,
-    cosi' una riga sbagliata non entra in elenco e chi l'ha scritta capisce
-    subito cosa correggere. L'indirizzo arriva dal corpo, non dalla riga, e
-    viene validato allo stesso modo.
-    """
-    url, errore = live.url_valido((request.get_json(force=True) or {}).get("url"))
-    if errore:
-        return bad_request(errore)
-    ok, messaggio = live.prova(url)
-    return jsonify({"ok": ok, "messaggio": messaggio})
-
-
-@app.route("/api/cameras/<int:cid>/prova", methods=["POST"])
-def camera_prova(cid):
-    """Prova a leggere un fotogramma e dice se la telecamera risponde."""
-    db = get_db()
-    cam = _camera_o_404(db, cid)
-    if not cam:
-        return bad_request("Telecamera non trovata", 404)
-    ok, messaggio = live.prova(cam["url"])
-    return jsonify({"ok": ok, "messaggio": messaggio})
-
-
-@app.route("/api/cameras/<int:cid>/snapshot")
-def camera_snapshot(cid):
-    """Un fotogramma, scaricato dal server e inoltrato al browser.
-
-    Il browser non chiede mai l'indirizzo della telecamera direttamente: qui
-    non c'e' contenuto misto, e l'indirizzo (con l'eventuale password) non
-    arriva al client.
-    """
-    db = get_db()
-    cam = _camera_o_404(db, cid)
-    if not cam:
-        return bad_request("Telecamera non trovata", 404)
-    dati, tipo, errore = live.scarica_foto(cam["url"])
-    if errore:
-        return jsonify({"error": errore}), 502
-    # `mimetype` sempre quello risposto dalla telecamera: IP Webcam manda JPEG,
-    # ma dichiararlo invece di indovinarlo evita un'immagine rotta se cambia
-    risposta = send_file(io.BytesIO(dati), mimetype=tipo or "image/jpeg")
-    # il fotogramma e' vecchio appena consegnato: niente memoria, o la pagina
-    # mostrerebbe sempre la stessa immagine
-    risposta.headers["Cache-Control"] = "no-store"
-    return risposta
-
-
-@app.route("/api/cameras/<int:cid>/stream")
-def camera_stream(cid):
-    """Il flusso continuo, inoltrato pezzo per pezzo.
-
-    Si legge dalla telecamera e si riscrive verso il browser senza tenere nulla
-    in memoria: un flusso aperto per minuti non puo' stare in un buffer. Se la
-    telecamera cade a meta', il browser vede finire lo stream e lo riprova,
-    invece di restare appeso su una connessione muta.
-    """
-    db = get_db()
-    cam = _camera_o_404(db, cid)
-    if not cam:
-        return bad_request("Telecamera non trovata", 404)
-    sorgente, errore = live.apri_flusso(cam["url"])
-    if errore:
-        return jsonify({"error": errore}), 502
-
-    tipo = sorgente.headers.get("Content-Type", "multipart/x-mixed-replace")
-
-    def inoltra():
-        try:
-            while True:
-                pezzo = sorgente.read(64 * 1024)
-                if not pezzo:
-                    break
-                yield pezzo
-        finally:
-            sorgente.close()
-
-    risposta = app.response_class(inoltra(), mimetype=tipo)
-    risposta.headers["Cache-Control"] = "no-store"
-    return risposta
-
-
 # ---------------------------------------------------------------- voce
 @app.route("/api/voice", methods=["POST"])
 def voice_command():
@@ -2860,14 +2717,7 @@ def avvia():
     try:
         from waitress import serve
         annuncia(f"Server (waitress) su http://{host}:{porta}/")
-        # Il tetto dei thread conta perche' la vista Live li occupa **a lungo**:
-        # il flusso MJPEG di una telecamera resta aperto per tutti i minuti in
-        # cui la si guarda, e ognuno tiene un thread finche' non si chiude la
-        # pagina. Con otto, guardare le telecamere poteva lasciare senza thread
-        # il resto dell'app: i comandi vocali non rispondevano piu', e non per la
-        # voce. Con qualche thread in piu' c'e' margine per il flusso e per
-        # l'uso normale insieme.
-        serve(app, host=host, port=porta, threads=16)
+        serve(app, host=host, port=porta, threads=8)
     except ImportError:
         annuncia(f"Server (sviluppo, senza ricaricatore) su http://{host}:{porta}/")
         app.run(host=host, port=porta, debug=False, threaded=True)

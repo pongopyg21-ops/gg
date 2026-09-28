@@ -7,9 +7,7 @@ niente, serve **continuare**. Prima di tutto:
 
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Poi `./sorveglia.sh`.
-2. Test: `./avvia.sh test` → attesi **460 verdi**. Se non lo sono, fermati e dillo.
-   (Erano 444 fino alla sezione **Live**; i 7 test che leggevano i file veri da
-   un percorso fisso sono stati resi indipendenti dalla cartella.)
+2. Test: `./avvia.sh test` → attesi **451 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -28,38 +26,14 @@ perché il link del sandbox muore con la conversazione.
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
 `allergens.py`, comandi vocali in `voice.py`, dati iniziali in `seed.py`, pulizie
-in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
-telecamere di casa in `live.py`.
+in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
-**Cucina**, **Igiene**, **Progetti**, **FAQ**, **Live**. Piano, ricette, dispensa,
+L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
+**Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa,
 spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
 **Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
 **Magazzino**; **FAQ** raccoglie le informazioni utili da consultare (Wi-Fi,
-indirizzi, contatti, codici); **Live** mostra le **videocamere di casa** (di solito
-telefoni Android con IP Webcam).
-
-### La sezione Live (`live.py`)
-
-Le telecamere sono righe della tabella `cameras` del database **della casa**, come
-ogni altro dato: ogni casa vede solo le sue. L'indirizzo è `http://…` e la
-validazione (`live.url_valido`) accetta **solo** `http`/`https` con una macchina:
-`file://` sarebbe un modo di leggere i file del server dall'interfaccia.
-
-Il browser **non** contatta mai la telecamera: chiede `/api/cameras/<id>/snapshot`
-(che il server scarica e inoltra, con un tetto di byte) o `/stream` (MJPEG
-inoltrato a pezzi, senza tenerlo in memoria). Due motivi, entrambi non negoziabili:
-da fuori casa la pagina è in **HTTPS** e un flusso `http://` verrebbe bloccato dal
-browser (*contenuto misto*); e l'indirizzo della telecamera — con l'eventuale
-password dentro — resterebbe sul server, come la chiave di Azure.
-
-La conseguenza pratica, da spiegare a chi chiede aiuto: **il server deve poter
-raggiungere la telecamera**, quindi telefono e computer devono stare sulla stessa
-rete — la stessa LAN, o la stessa **tailnet** di Tailscale. Se non lo sono, il
-rimedio è mettere il telefono nella tailnet (si usa il suo nome Tailscale al posto
-dell'IP `192.168…`, che esiste solo dentro casa), **non** esporre la telecamera con
-Funnel: l'app non lo fa da sé perché pubblicare una telecamera su Internet è una
-decisione di chi la installa. Guida passo-passo in `windows/LEGGIMI.md`.
+indirizzi, contatti, codici).
 
 ## Comandi
 
@@ -1353,58 +1327,3 @@ Tre trappole, tutte già pagate:
 I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte col
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
 
-
-## Con i thread di waitress la vista Live va tenuta stretta
-
-Otto thread di default sembrano tanti finché non si guarda una telecamera: il
-flusso MJPEG tiene un thread **aperto per tutto il tempo** in cui la pagina è
-aperta, e con uno o due flussi attivi il resto dell'app può restare senza thread.
-Il sintomo non punta alla telecamera: i comandi vocali non rispondono, e si va a
-cercare il guasto nella voce. Da qui la regola pratica: se "voce e IP cam non
-funzionano" insieme, guardare prima `/api/cameras/<id>/stream` e i thread, non
-`voice.py`.
-
-Nel codice questo ha prodotto due difese in `live.py`, entrambe dovute a casi
-visti davvero:
-
-- Un tetto di tempo **complessivo** in `scarica_foto` (`SCADENZA`). Il timeout di
-  `TIMEOUT` vale per la singola lettura, non per il totale: su un flusso che non
-  finisce nessuna lettura lo supera mai, quindi il tetto per lettura non basta a
-  fermare uno scarico appeso. Va aggiunta anche la scadenza sul socket.
-- Un indirizzo sbagliato che punta lo snapshot a `/video` risponde
-  `multipart/x-mixed-replace`: si legge finché non compare il primo JPEG completo
-  (`FF D8 ... FF D9`) e ci si ferma lì. Attenzione a due dettagli non ovvi: la
-  ricerca va fatta **in modo incrementale** (riunire i pezzi a ogni giro è
-  quadratico e diventa un blocco CPU sui corpi grandi), e il tetto va su un
-  contatore dei byte letti, non sulla lunghezza del buffer — perché il buffer
-  scarta l'involucro e resterebbe corto per sempre, con il ciclo che non finisce.
-
-## La tabella della lista della spesa è `shopping_items`
-
-`shopping` non esiste, né come tabella né come vista: l'unico punto che la
-nominava (`FROM shopping` nel ramo `area == "shopping"` di `_rispondi_domanda`)
-rispondeva 500 a ogni domanda sulla lista. Se si tocca la lista, usare
-`shopping_items`.
-
-## Un indirizzo di casa non e' instradabile: dirlo, invece di "timed out"
-
-L'app puo' girare su un server che **non e' nella rete di casa** (questo
-container, o una macchina in affitto). Un indirizzo come `192.168.1.188:8080`
-scritto nella scheda della telecamera non e' "la telecamera spenta": quei
-pacchetti non hanno una rotta e finiscono nel vuoto fino allo scadere del
-timeout. `urllib` racconta tutto come `timed out`, che non suggerisce nessun
-rimedio. Un indirizzo locale si deve riconoscere dal **nome** (`192.168.`, `10.`,
-`172.16-31.`, `127.`, `localhost`, o un nome senza punto) e il messaggio deve
-dire cos'e' e come si arriva davvero: **il nome Tailscale**, che attraversa le
-reti. La traduzione sta in `live.py`, in `_errore_sorgente`, e vale per la Prova,
-lo snapshot e il flusso insieme.
-
-Vale anche il caso opposto, gia' visto: IP Webcam nasce `http://`, e scritto
-`https://` la connessione cifrata non parte. Senza traduzione si legge un errore
-OpenSSL in inglese (`CERTIFICATE_VERIFY_FAILED`) che non fa pensare al `http://`
-da correggere.
-
-Il motivo va **mostrato nella card**, non solo nella Prova: la card chiede il
-codice al server una volta (`/api/cameras/<id>/snapshot` risponde 502 con il
-testo) e lo scrive al posto di "non raggiungibile". Un riquadro vuoto e un
-motivo generico sono la stessa cosa per chi guarda.

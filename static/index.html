@@ -130,26 +130,7 @@
         contatti e codici, senza doverli cercare ogni volta.</span>
       <span class="home-go">Apri →</span>
     </button>
-    <button class="home-card" data-section="live">
-      <span class="home-emoji">📹</span>
-      <span class="home-name">Live</span>
-      <span class="home-desc">Le videocamere di casa, per dare un'occhiata
-        quando si è fuori.</span>
-      <span class="home-go">Apri →</span>
-    </button>
   </div>
-
-  <!-- Riassunto in fondo alla home: chi apre l'app per la prima volta non sa
-       cosa aspettarsi, e i comandi vocali non si indovinano. Il contenuto lo
-       costruisce `disegnaRiassuntoHome` da dati puri, cosi' si puo' provare. -->
-  <section class="home-guide" aria-labelledby="home-guide-title">
-    <h2 id="home-guide-title" class="home-guide-title">Cosa sa fare il maggiordomo</h2>
-    <div id="home-guide-funzioni" class="home-guide-grid"></div>
-    <h3 class="home-guide-sub">I comandi di tutti i giorni</h3>
-    <p class="home-guide-nota">Con l'ascolto continuo acceso, cominciano con
-      «Hey GG» (o «maggiordomo»). Si possono anche scrivere dal pannello 🎙.</p>
-    <ul id="home-guide-comandi" class="home-guide-comandi"></ul>
-  </section>
 </section>
 
 <!-- L'app vera e propria: testata e schede restano nascoste finche' non si
@@ -171,7 +152,6 @@
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="voce" data-section="faq">🗣 Voce</button>
-  <button data-tab="live" data-section="live">📹 Live</button>
 </nav>
 
 <main>
@@ -450,25 +430,6 @@
       </div>
       <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
     </div>
-  </section>
-
-  <!-- LIVE — le videocamere di casa, di solito telefoni Android con IP Webcam
-       raggiunti per indirizzo. Le immagini **non** arrivano dal telefono al
-       browser: le scarica il server e le inoltra, cosi' la pagina resta tutta
-       sulla stessa origine e l'indirizzo della telecamera non finisce nel
-       client. -->
-  <section id="tab-live" class="tab">
-    <div class="toolbar">
-      <button id="cam-new" class="primary">+ Aggiungi telecamera</button>
-      <span class="spacer"></span>
-      <label class="check-inline"><input type="checkbox" id="cam-auto"> Aggiorna da solo</label>
-    </div>
-    <p class="hint">Le telecamere di casa, di solito telefoni con l'app <em>IP
-      Webcam</em>. Si guardano da qui, anche da fuori casa. Le immagini passano
-      dal server: il telefono e il computer devono stare sulla stessa rete
-      (la stessa tailnet di Tailscale).</p>
-    <div id="cam-count" class="cam-count"></div>
-    <div id="cam-grid" class="cam-grid"></div>
   </section>
 </main>
 </div>

@@ -5,13 +5,12 @@ della spesa — insieme alle altre aree di casa.
 
 ## Sezioni
 
-L'app si apre su una **pagina iniziale** con cinque aree:
+L'app si apre su una **pagina iniziale** con quattro aree:
 
 - **🍳 Cucina** — piano pasti, ricette, dispensa, lista della spesa, profilo e comandi vocali.
 - **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
 - **📋 Progetti** — lavori in corso e idee, con il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
 - **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
-- **📹 Live** — le videocamere di casa, di solito telefoni Android con **IP Webcam**, guardabili anche da fuori casa.
 
 Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non si
 mescolano. Il pulsante vocale 🎙 resta raggiungibile da ogni area, e in home c'è
@@ -327,41 +326,6 @@ Cinque foto sono **indicative**, e il credito lo dichiara: quella di un piatto s
 
 La foto si imposta dal form della ricetta (menu a tendina fra i file presenti, con anteprima) e si può togliere con un pulsante. Il campo è facoltativo: una ricetta senza foto mostra solo testo. Il nome del file è validato lato server — solo nome semplice e estensione di immagine — per evitare percorsi o traversal.
 
-## Live: le videocamere di casa
-
-Nell'area **Live** si aggiungono una o più videocamere e se ne guarda l'immagine dalla stessa pagina dell'app, anche da fuori casa. La via più semplice è un **telefono Android con l'app IP Webcam**: si avvia, l'app mostra un indirizzo (per esempio `http://192.168.1.50:8080/video`), e quell'indirizzo si scrive nella scheda della telecamera.
-
-Il campo **Tipo** dice come si legge quel flusso, e dipende dall'app del telefono:
-
-- **IP Webcam (flusso `/video`)** — MJPEG continuo; è il tipo predefinito e quello che permette la **Diretta**.
-- **IP Webcam (fotogramma `/shot.jpg`)** — un fotogramma per volta, ricaricato a intervalli. Più leggero, adatto a reti lente.
-
-Non c'è RTSP: leggere quel flusso richiederebbe `ffmpeg`, una dipendenza esterna che l'app non ha. Se la tua telecamera parla solo RTSP, *IP Webcam* ha comunque una modalità MJPEG, ed è quella da usare.
-
-L'indirizzo **non viene completato dal codice**: IP Webcam ne ha diversi a seconda della modalità, e uno indovinato darebbe un errore che sembra un guasto della telecamera. Si scrive quello che l'app mostra. Va bene sia il numero (`http://192.168.1.50:8080/video`) sia un nome (`http://telefono-casa.…ts.net:8080/video`).
-
-Se IP Webcam ha il **login attivo** (opzionale), utente e password si mettono **dentro l'indirizzo**: `http://utente:password@192.168.1.50:8080/video`. Il server le sposta nell'header `Authorization` — `urllib` da solo non le leggerebbe e le tratterebbe come parte del nome dell'host, facendo fallire la risoluzione anche con la telecamera raggiungibile — e le tiene sul server: il browser non vede mai l'indirizzo.
-
-### Perché le immagini passano dal server
-
-Il browser **non** contatta mai la telecamera: chiede sempre un percorso dell'app (`/api/cameras/<id>/snapshot` o `/stream`), e il server scarica dalla telecamera e inoltra. Non è un dettaglio di architettura, è un requisito:
-
-- Da fuori casa la pagina è in **HTTPS** (Tailscale Funnel): un browser **bloccherebbe** un flusso `http://` sulla rete locale — è *contenuto misto*.
-- L'indirizzo della telecamera (e l'eventuale password dentro l'URL) **resta sul server**, come la chiave di Azure. Nel browser finirebbe in chiaro, leggibile da chi apre gli strumenti di sviluppo.
-
-Il costo è che il **server** deve raggiungere la telecamera: il telefono e il computer dell'app devono stare **sulla stessa rete** (la stessa LAN, oppure la **stessa tailnet** di Tailscale — vedi *Un indirizzo da fuori casa* e `windows/LEGGIMI.md`).
-
-### Se il telefono e il computer non sono sulla stessa rete
-
-Il caso normale di un'app di casa è che lo siano. Se non lo sono — il telefono è sulla rete di casa, il computer che esegue l'app altrove — le due strade sono:
-
-1. **Mettere il telefono nella stessa tailnet di Tailscale** (`tailscale` su Android dalla stessa rete dell'account). Il computer raggiunge la telecamera col **nome Tailscale** del telefono (`http://<telefono>.<tuarete>.ts.net:8080/video`), che funziona anche da un'altra rete. È la via consigliata: un indirizzo solo, e la telecamera non si espone a Internet.
-2. **Esporre la telecamera con il proprio Funnel** (`tailscale funnel --bg 8080` sul telefono): dà un indirizzo `https://…ts.net` pubblico, ma **chiunque abbia quel nome vede la telecamera**. L'app non lo fa da sé di proposito: aprire una telecamera su Internet è una decisione di chi la installa, non un'impostazione predefinita.
-
-### Le telecamere sono un dato della casa
-
-Stanno nel database della casa, come tutto il resto: ogni casa vede solo le sue. Non finiscono in un file a parte, quindi viaggiano con `/api/backup` insieme al resto dei dati.
-
 ## Preparazione di una ricetta
 
 Cliccando una ricetta — la scheda in **Ricette**, il pulsante *Preparazione*, o un pasto nel **Piano** — si apre una finestra con foto, porzioni, tempo, difficoltà, ingredienti e preparazione.
@@ -499,12 +463,6 @@ Per una casa con più dispositivi in modo stabile conviene una **macchina sempre
 | POST | `/api/voce/parla` | Restituisce l'audio MP3 di `{text, voice, rate, pitch}` dalla voce neurale. 503 se non configurata, 400 su voce o testo non validi. Richiede l'accesso |
 | GET | `/api/backup` | Scarica i dati della **casa collegata** (ZIP col database e un `LEGGIMI.txt`). Non include il registro né le altre case. Richiede l'accesso |
 | GET | `/api/copie` | Quante copie automatiche esistono per la **casa collegata**, quante se ne conservano e quando è stata presa l'ultima. Richiede l'accesso |
-| GET/POST | `/api/cameras` | Le telecamere della casa: `{name, place, url, kind, enabled}`. L'indirizzo resta sul server |
-| GET/PUT/PATCH/DELETE | `/api/cameras/<id>` | Dettaglio, modifica (anche parziale), eliminazione |
-| POST | `/api/cameras/prova` | Prova un indirizzo **non ancora salvato** `{url}`: dice se la telecamera risponde |
-| POST | `/api/cameras/<id>/prova` | Come sopra, sulla telecamera salvata |
-| GET | `/api/cameras/<id>/snapshot` | Un fotogramma, scaricato dal server e inoltrato (502 se la telecamera non risponde) |
-| GET | `/api/cameras/<id>/stream` | Il flusso continuo MJPEG, inoltrato pezzo per pezzo |
 
 Oltre al pulsante "Scarica una copia dei dati", il server ne prende **una al giorno in automatico** (le ultime sette, in `copie/<casa>/`): una copia che si deve ricordare di chiedere è una copia che non c'è nel momento in cui serve. Il Profilo dice quante ce ne sono e quando è stata presa l'ultima.
 
@@ -518,7 +476,6 @@ houses.py           # case separate: registro, password, un database per casa
 units.py            # conversione e normalizzazione delle unità di misura
 voice.py            # comprensione dei comandi vocali
 voce_cloud.py       # sintesi vocale neurale (Azure), con la chiave sul server
-live.py             # telecamere di casa: validazione dell'indirizzo e lettura del flusso
 allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
 schema.sql          # schema SQLite
