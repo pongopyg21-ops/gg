@@ -5613,6 +5613,30 @@ def test_i_comandi_del_riassunto_funzionano_davvero(client):
         assert c["spiega"].strip()
 
 
+def test_una_area_sbagliata_lo_dice_invece_di_sembrare_un_guasto_di_rete(monkeypatch):
+    """Il caso riferito dal desktop: "Servizio vocale non raggiungibile:
+    [Errno 11001] getaddrinfo failed". L'indirizzo del servizio contiene l'area
+    (`italynorth.tts.speech.microsoft.com`), quindi un refuso **non ha un nome da
+    risolvere**: l'errore che ne segue parla di rete e non dice cosa correggere.
+
+    Si prova con un refuso tipico e si guarda che il messaggio nomini l'area
+    sbagliata e la variabile da controllare, invece di "getaddrinfo"."""
+    import voce_cloud
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "chiave-finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "italynorht")   # n e h invertite
+    voce_cloud._FILE_LETTI = True   # niente file segreto: comanda l'ambiente
+    with pytest.raises(voce_cloud.ErroreVoce) as errore:
+        voce_cloud.sintetizza("ciao", "it-IT-ElsaNeural")
+    messaggio = str(errore.value)
+    assert "italynorht" in messaggio, messaggio
+    assert "AZURE_SPEECH_REGION" in messaggio, messaggio
+    # le aree vere passano: il controllo non deve fermare l'uso normale
+    for area in ("italynorth", "westeurope", "eastus"):
+        assert voce_cloud.area_valida(area), area
+    for area in ("IT", "italia", "", "italynorht"):
+        assert not voce_cloud.area_valida(area), area
+
+
 def test_windows_avvia_dietro_il_tunnel(client):
     """Su Windows l'app sta dietro Tailscale Funnel (o Cloudflare, o nginx):
     `avvia.bat` deve dirlo all'app, altrimenti vede l'indirizzo del tunnel al

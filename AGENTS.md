@@ -204,6 +204,21 @@ Se la chiave c'è ma è errata, o l'area non è quella della risorsa, l'app **ri
 
 La sintesi è in `voce_cloud.py`, e i nomi delle voci sono un sottoinsieme verificato di quelli ufficiali Azure: un nome inventato verrebbe rifiutato con un 400, quindi la validazione avviene prima della chiamata, dove l'errore è leggibile e non costa nulla.
 
+### L'area sbagliata sembra un guasto di rete
+
+L'indirizzo del servizio contiene l'area — `<area>.tts.speech.microsoft.com` —
+quindi un'area che non esiste è un nome che non si risolve: la richiesta non
+parte e il messaggio è **"Servizio vocale non raggiungibile: getaddrinfo failed"**.
+Parla di rete, ma è un refuso: si cerca il guasto dove non c'è.
+
+Per questo `_controlla_area()` ferma la chiamata **prima** di provare, dove
+l'errore si può spiegare: «L'area «italynorht» non esiste fra quelle Azure», con
+la variabile da correggere. `AREE_VALIDE` è l'elenco delle aree Azure Speech;
+`area_valida()` lo interroga. Vale sia per la sintesi sia per la trascrizione.
+
+La stessa lezione delle voci: **si valida prima della chiamata**, perché l'errore
+di Azure (o del sistema) è generico e non dice quale valore correggere.
+
 ## Accesso da ovunque
 
 Il caso d'uso e' la cucina, ma serve anche **da fuori casa e da piu'

@@ -297,6 +297,36 @@ La chiave la trovi su `portal.azure.com`, nella tua risorsa **Speech**, pagina
 All'avvio leggerai `Voce neurale Azure attiva`, e nella pagina, sotto **Voce**,
 comparirà la scelta della voce neurale con l'anteprima.
 
+### «Servizio vocale non raggiungibile: getaddrinfo failed»
+
+Questo errore **non è un problema di rete**, ed è la diagnosi più frequente.
+L'indirizzo del servizio contiene l'area:
+
+```
+https://<area>.tts.speech.microsoft.com
+```
+
+Quindi un'area scritta male è un nome che **non esiste**: la richiesta non parte
+nemmeno, e l'errore parla di "getaddrinfo" (il meccanismo che traduce i nomi in
+indirizzi). Sembra internet che non funziona, invece è un refuso.
+
+Cosa controllare, in ordine:
+
+1. **`AZURE_SPEECH_REGION`** — deve essere l'area della risorsa, **tutta
+   minuscola** e senza spazi: `westeurope`, `italynorth`, `eastus`… Non `IT`,
+   non `Italia`, non `Europe`, non `italy north`.
+2. **La pagina della risorsa su Azure** (`portal.azure.com` → la tua risorsa
+   Speech → **Chiavi ed endpoint**): lì l'area si chiama **Località/Area** e si
+   copia da lì. Un refuso di due lettere è il caso tipico.
+3. **`segreto.bat`** — se l'area è giusta ma l'errore resta, guarda qui: spazi
+   prima o dietro il valore, o righe di esempio col `REM` tolto a metà.
+
+Da questa versione l'app **controlla l'area prima di chiamare** e, se non è una
+delle aree Azure valide, lo dice: «L'area «italynorht» non esiste fra quelle
+Azure», con la variabile da correggere. Il messaggio di rete non comparirà più
+per un refuso.
+
+
 ### Se preferisci farlo a mano
 
 1. Copia `windows\segreto.esempio.bat` e rinomina la copia in `windows\segreto.bat`.

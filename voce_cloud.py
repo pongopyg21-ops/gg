@@ -58,6 +58,46 @@ VOCI = [
 NOMI_VALIDI = {v["nome"] for v in VOCI}
 VOCE_PREDEFINITA = "it-IT-IsabellaNeural"
 
+# Le aree Azure Speech. L'indirizzo del servizio contiene l'area
+# (`<area>.tts.speech.microsoft.com`), quindi un'area scritta male **non esiste**
+# come nome: la richiesta fallisce con un errore di risoluzione DNS
+# (`getaddrinfo failed`) che non dice niente di utile — sembra un guasto di rete,
+# invece e' un refuso. Qui l'area si controlla **prima** di chiamare, dove
+# l'errore si puo' spiegare: e' la diagnosi piu' frequente di "il servizio vocale
+# non risponde".
+AREE_VALIDE = {
+    "australiaeast", "brazilsouth", "canadacentral", "centralindia", "centralus",
+    "eastasia", "eastus", "eastus2", "francecentral", "germanywestcentral",
+    "italynorth", "japaneast", "japanwest", "koreacentral", "northcentralus",
+    "northeurope", "norwayeast", "southafricanorth", "southcentralus",
+    "southeastasia", "southindia", "swedencentral", "switzerlandnorth",
+    "uaenorth", "uksouth", "westcentralus", "westeurope", "westus", "westus2",
+    "westus3",
+}
+
+
+def area_valida(area: str) -> bool:
+    """L'area e' un nome di area Azure esistente?
+
+    Vuota no: senza area non si sa a chi parlare, e `configurato()` lo ha gia'
+    escluso. Il confronto e' in minuscolo perche' `regione()` lo fa gia'."""
+    return (area or "").strip().lower() in AREE_VALIDE
+
+
+def _controlla_area() -> None:
+    """Ferma la chiamata se l'area e' sbagliata, con un messaggio comprensibile.
+
+    Si controlla **prima** di provare: l'errore di rete che ne segue non dice
+    quale area sia, quindi non si capirebbe cosa correggere."""
+    area = regione()
+    if not area or area_valida(area):
+        return
+    raise ErroreVoce(
+        f"L'area «{area}» non esiste fra quelle Azure. Controlla il valore di "
+        f"AZURE_SPEECH_REGION: deve essere l'area della risorsa (per esempio "
+        f"westeurope o italynorth), tutta minuscola.",
+        stato=400)
+
 # Oltre questa lunghezza non si sintetizza: la conferma vocale e' una frase, non un
 # testo da leggere. Un limite tiene anche il costo prevedibile.
 MAX_CARATTERI = 600
@@ -341,6 +381,7 @@ def sintetizza(testo: str, voce: str, rate=1.0, pitch=0.0, stile: str | None = N
     """
     if not configurato():
         raise ErroreVoce("Sintesi cloud non configurata", stato=503)
+    _controlla_area()
     if not voce_valida(voce):
         raise ErroreVoce("Voce non riconosciuta", stato=400)
     testo = (testo or "").strip()
@@ -447,6 +488,12 @@ def trascrivi(audio: bytes, lingua: str = LINGUA_ASCOLTO, timeout: float = 15.0)
     """
     if not configurato():
         raise ErroreAscolto("Trascrizione cloud non configurata", stato=503)
+    # stessa diagnosi della sintesi: un'area sbagliata qui darebbe lo stesso
+    # errore di risoluzione DNS, che non dice quale area sia
+    try:
+        _controlla_area()
+    except ErroreVoce as e:
+        raise ErroreAscolto(str(e), stato=e.stato)
     if not audio:
         raise ErroreAscolto("Nessun audio da trascrivere", stato=400)
     if len(audio) < MIN_AUDIO_BYTE:
