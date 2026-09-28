@@ -1385,3 +1385,26 @@ visti davvero:
 nominava (`FROM shopping` nel ramo `area == "shopping"` di `_rispondi_domanda`)
 rispondeva 500 a ogni domanda sulla lista. Se si tocca la lista, usare
 `shopping_items`.
+
+## Un indirizzo di casa non e' instradabile: dirlo, invece di "timed out"
+
+L'app puo' girare su un server che **non e' nella rete di casa** (questo
+container, o una macchina in affitto). Un indirizzo come `192.168.1.188:8080`
+scritto nella scheda della telecamera non e' "la telecamera spenta": quei
+pacchetti non hanno una rotta e finiscono nel vuoto fino allo scadere del
+timeout. `urllib` racconta tutto come `timed out`, che non suggerisce nessun
+rimedio. Un indirizzo locale si deve riconoscere dal **nome** (`192.168.`, `10.`,
+`172.16-31.`, `127.`, `localhost`, o un nome senza punto) e il messaggio deve
+dire cos'e' e come si arriva davvero: **il nome Tailscale**, che attraversa le
+reti. La traduzione sta in `live.py`, in `_errore_sorgente`, e vale per la Prova,
+lo snapshot e il flusso insieme.
+
+Vale anche il caso opposto, gia' visto: IP Webcam nasce `http://`, e scritto
+`https://` la connessione cifrata non parte. Senza traduzione si legge un errore
+OpenSSL in inglese (`CERTIFICATE_VERIFY_FAILED`) che non fa pensare al `http://`
+da correggere.
+
+Il motivo va **mostrato nella card**, non solo nella Prova: la card chiede il
+codice al server una volta (`/api/cameras/<id>/snapshot` risponde 502 con il
+testo) e lo scrive al posto di "non raggiungibile". Un riquadro vuoto e un
+motivo generico sono la stessa cosa per chi guarda.
