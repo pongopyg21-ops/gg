@@ -7,7 +7,9 @@ niente, serve **continuare**. Prima di tutto:
 
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Poi `./sorveglia.sh`.
-2. Test: `./avvia.sh test` → attesi **444 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **460 verdi**. Se non lo sono, fermati e dillo.
+   (Erano 444 fino alla sezione **Live**; i 7 test che leggevano i file veri da
+   un percorso fisso sono stati resi indipendenti dalla cartella.)
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -26,14 +28,38 @@ perché il link del sandbox muore con la conversazione.
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
 `allergens.py`, comandi vocali in `voice.py`, dati iniziali in `seed.py`, pulizie
-in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`.
+in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
+telecamere di casa in `live.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
-**Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa, spesa,
-profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in **Igiene**;
-**Progetti** raccoglie lavori e idee da fare ed è anche la casa del **Magazzino**;
-**FAQ** raccoglie le informazioni utili da consultare (Wi-Fi, indirizzi,
-contatti, codici).
+L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
+**Cucina**, **Igiene**, **Progetti**, **FAQ**, **Live**. Piano, ricette, dispensa,
+spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
+**Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
+**Magazzino**; **FAQ** raccoglie le informazioni utili da consultare (Wi-Fi,
+indirizzi, contatti, codici); **Live** mostra le **videocamere di casa** (di solito
+telefoni Android con IP Webcam).
+
+### La sezione Live (`live.py`)
+
+Le telecamere sono righe della tabella `cameras` del database **della casa**, come
+ogni altro dato: ogni casa vede solo le sue. L'indirizzo è `http://…` e la
+validazione (`live.url_valido`) accetta **solo** `http`/`https` con una macchina:
+`file://` sarebbe un modo di leggere i file del server dall'interfaccia.
+
+Il browser **non** contatta mai la telecamera: chiede `/api/cameras/<id>/snapshot`
+(che il server scarica e inoltra, con un tetto di byte) o `/stream` (MJPEG
+inoltrato a pezzi, senza tenerlo in memoria). Due motivi, entrambi non negoziabili:
+da fuori casa la pagina è in **HTTPS** e un flusso `http://` verrebbe bloccato dal
+browser (*contenuto misto*); e l'indirizzo della telecamera — con l'eventuale
+password dentro — resterebbe sul server, come la chiave di Azure.
+
+La conseguenza pratica, da spiegare a chi chiede aiuto: **il server deve poter
+raggiungere la telecamera**, quindi telefono e computer devono stare sulla stessa
+rete — la stessa LAN, o la stessa **tailnet** di Tailscale. Se non lo sono, il
+rimedio è mettere il telefono nella tailnet (si usa il suo nome Tailscale al posto
+dell'IP `192.168…`, che esiste solo dentro casa), **non** esporre la telecamera con
+Funnel: l'app non lo fa da sé perché pubblicare una telecamera su Internet è una
+decisione di chi la installa. Guida passo-passo in `windows/LEGGIMI.md`.
 
 ## Comandi
 

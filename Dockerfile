@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py schema.sql seed.py houses.py units.py allergens.py voice.py \
      voce_cloud.py igiene.py faq.py magazzino.py ricette_online.py copie.py \
-     crea_icona.py ripristina_password.py ./
+     live.py crea_icona.py ripristina_password.py ./
 COPY static ./static
 
 # I dati stanno in un volume, non nell'immagine: `/dati` e' il punto in cui si

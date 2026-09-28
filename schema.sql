@@ -204,3 +204,29 @@ CREATE TABLE IF NOT EXISTS storage_photos (
     hash        TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ---------------------------------------------------------------- live
+-- Le telecamere di casa: di solito telefoni Android con IP Webcam, raggiunti
+-- per indirizzo. Non c'e' nessun file da salvare: la riga e' solo **dove**
+-- bussare e come chiamare la telecamera.
+--
+-- L'indirizzo resta nel database della casa e **non** finisce nel browser: e'
+-- il server a scaricare il flusso e a inoltrarlo, come si fa per la chiave di
+-- Azure in voce_cloud.py. Serve anche perché la pagina da fuori casa e' in
+-- HTTPS e un browser non caricherebbe mai un flusso `http://` (contenuto misto).
+--
+-- `kind` dice come si legge il flusso, che dipende da cosa espone l'app del
+-- telefono: `mjpeg` e' `/video` di IP Webcam, `snapshot` e' `/shot.jpg`
+-- interrogato a intervalli. L'indirizzo non viene completato dal codice: IP
+-- Webcam ha troppi indirizzi a seconda della modalita', e un indirizzo
+-- indovinato darebbe un errore che sembra un guasto.
+CREATE TABLE IF NOT EXISTS cameras (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    place       TEXT NOT NULL DEFAULT '',
+    url         TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'mjpeg',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

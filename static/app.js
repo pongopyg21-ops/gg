@@ -105,7 +105,7 @@ async function applicaPasti(n) {
 }
 
 /* ---------- sezioni ----------
-   La pagina iniziale smista verso quattro aree. Le schede della barra appartengono
+   La pagina iniziale smista verso le aree. Le schede della barra appartengono
    a un'area (`data-section`): aprendo un'area si mostrano solo le sue, così
    le aree restano separate invece di mischiarsi in un'unica barra piena di voci. */
 const SEZIONI = {
@@ -116,6 +116,7 @@ const SEZIONI = {
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
+  live:     { titolo: '\u{1F4F9} Live',     prima: 'live' },
 };
 
 function apriSezione(nome) {
@@ -189,6 +190,8 @@ function riassuntoHome() {
         testo: 'Lavori e idee da fare, e il magazzino di quello che si tiene in casa.' },
       { icona: '\u{1F4CC}', nome: 'FAQ',
         testo: 'Wi-Fi, indirizzi, contatti e codici, con la password della casa.' },
+      { icona: '\u{1F4F9}', nome: 'Live',
+        testo: 'Le videocamere di casa, per dare un\'occhiata da fuori.' },
     ],
     comandi: [
       { detto: 'aggiungi due chili di farina in dispensa',
@@ -244,6 +247,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'progetti') renderProgetti();
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
+  if (btn.dataset.tab === 'live') renderLive();
 }));
 
 /* ---------- PIANO ---------- */
@@ -1829,6 +1833,214 @@ function apriFaqForm(v) {
 }
 
 $('#faq-new').addEventListener('click', () => apriFaqForm(null));
+
+/* ---------- LIVE — le telecamere di casa ----------
+   Le immagini non arrivano dal telefono al browser: il browser chiede sempre
+   `/api/cameras/<id>/snapshot` o `/stream`, e il server le prende dalla
+   telecamera. E' lo stesso motivo della chiave di Azure: da fuori casa la
+   pagina e' in HTTPS, e un flusso `http://` verrebbe bloccato dal browser
+   (contenuto misto). In piu' l'indirizzo della telecamera resta sul server.
+
+   Il fotogramma e' la modalita' normale: funziona con qualunque tipo e non
+   tiene aperta una connessione. La **diretta** (solo per `mjpeg`) si accende a
+   parte, perche' e' un flusso che il browser puo' riprovare da solo quando
+   cade, e lasciarlo acceso su una telecamera che non risponde non serve. */
+let liveCam = [];
+let liveTimer = null;
+
+function fermaLiveTimer() {
+  clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+async function renderLive() {
+  fermaLiveTimer();
+  liveCam = await api('/api/cameras');
+  disegnaLive();
+  // il rinnovo automatico non cambia la griglia: ricarica solo le immagini,
+  // cosi' i pulsanti non "saltano" sotto il dito mentre si guarda
+  if ($('#cam-auto').checked) {
+    liveTimer = setInterval(() => {
+      $$('#cam-grid img[data-foto]').forEach((img) => {
+        img.src = `/api/cameras/${img.dataset.foto}/snapshot?t=${Date.now()}`;
+      });
+    }, 3000);
+  }
+}
+
+function disegnaLive() {
+  $('#cam-count').textContent = liveCam.length
+    ? `${liveCam.length} ${liveCam.length === 1 ? 'telecamera' : 'telecamere'}`
+    : '';
+  if (!liveCam.length) {
+    $('#cam-grid').innerHTML = `<div class="empty-state">
+        <span class="empty-emoji">📹</span>
+        <h2>Ancora nessuna telecamera</h2>
+        <p>Aggiungi le videocamere di casa. Su un telefono Android si usa l'app
+          <em>IP Webcam</em>: si avvia, si legge l'indirizzo che mostra, e quel
+          indirizzo va scritto qui.</p>
+      </div>`;
+    return;
+  }
+  $('#cam-grid').innerHTML = liveCam.map(camCard).join('');
+  // il fotogramma che non arriva deve dirlo, non lasciare un riquadro vuoto:
+  // un'immagine rotta e' indistinguibile da una telecamera spenta
+  $$('#cam-grid img[data-foto]').forEach((img) => {
+    img.addEventListener('error', () => {
+      const card = img.closest('.cam-card');
+      card.classList.add('cam-off');
+      const stato = card.querySelector('.cam-stato');
+      if (stato) stato.textContent = 'Telecamera non raggiungibile';
+    });
+  });
+}
+
+function camCard(c) {
+  return `
+    <article class="cam-card" data-id="${c.id}">
+      <div class="cam-view">
+        <img data-foto="${c.id}" src="/api/cameras/${c.id}/snapshot" alt="Vista dalla telecamera ${esc(c.name)}" loading="lazy">
+      </div>
+      <div class="cam-info">
+        <h3 class="cam-name">${esc(c.name)}</h3>
+        ${c.place ? `<span class="cam-place">📍 ${esc(c.place)}</span>` : ''}
+        <span class="cam-stato">${c.enabled ? '' : 'Spenta'}</span>
+      </div>
+      <div class="cam-actions">
+        ${c.kind === 'mjpeg'
+          ? `<button data-act="diretta" type="button">▶ Diretta</button>` : ''}
+        <button data-act="snapshot" type="button" title="Ricarica il fotogramma">⟳</button>
+        <button data-act="edit" type="button" title="Modifica">✏️</button>
+        <button data-act="del" type="button" title="Elimina">🗑️</button>
+      </div>
+    </article>`;
+}
+
+$('#cam-grid').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const card = btn.closest('.cam-card');
+  const id = Number(card.dataset.id);
+  const cam = liveCam.find((x) => x.id === id);
+  const img = card.querySelector('img[data-foto]');
+
+  if (btn.dataset.act === 'snapshot') {
+    card.classList.remove('cam-off');
+    card.querySelector('.cam-stato').textContent = '';
+    img.src = `/api/cameras/${id}/snapshot?t=${Date.now()}`;
+  } else if (btn.dataset.act === 'diretta') {
+    // la diretta e' un flusso: si accende e si spegne, non si ricarica
+    const acceso = img.dataset.diretta === '1';
+    card.classList.remove('cam-off');
+    if (acceso) {
+      img.dataset.diretta = '';
+      img.src = `/api/cameras/${id}/snapshot?t=${Date.now()}`;
+      btn.textContent = '▶ Diretta';
+      card.querySelector('.cam-stato').textContent = '';
+    } else {
+      img.dataset.diretta = '1';
+      img.src = `/api/cameras/${id}/stream`;
+      btn.textContent = '⏹ Ferma';
+      card.querySelector('.cam-stato').textContent = 'In diretta';
+    }
+  } else if (btn.dataset.act === 'edit') {
+    apriCamForm(cam);
+  } else if (btn.dataset.act === 'del') {
+    if (!confirm(`Eliminare la telecamera "${cam.name}"?`)) return;
+    await api(`/api/cameras/${id}`, { method: 'DELETE' });
+    toast('Telecamera eliminata');
+    renderLive();
+  }
+});
+
+$('#cam-auto').addEventListener('change', renderLive);
+
+function apriCamForm(c) {
+  showModal(c ? 'Modifica telecamera' : 'Nuova telecamera', `
+    <div class="field"><label>Nome</label>
+      <input id="cf-name" value="${esc(c ? c.name : '')}" placeholder="Es. Ingresso, Cucina, Garage"></div>
+    <div class="field"><label>Dove sta</label>
+      <input id="cf-place" value="${esc(c ? c.place : '')}" placeholder="Es. Ingresso, Cortile"></div>
+    <div class="field"><label>Indirizzo</label>
+      <input id="cf-url" value="${esc(c ? c.url : '')}" placeholder="http://192.168.1.50:8080/video"></div>
+    <p class="cam-help">Scrivi qui l'indirizzo che mostra IP Webcam: va bene sia
+      il numero (<code>http://192.168.1.50:8080/video</code>) sia il nome
+      Tailscale (<code>http://telefono-casa.…ts.net:8080/video</code>). Se
+      l'app chiede utente e password, mettili nell'indirizzo:
+      <code>http://utente:password@192.168.1.50:8080/video</code>. Restano sul
+      server, non nella pagina.</p>
+    <div class="field"><label>Tipo</label>
+      <select id="cf-kind">
+        <option value="mjpeg"${c && c.kind === 'mjpeg' ? ' selected' : ''}>IP Webcam (flusso /video)</option>
+        <option value="snapshot"${c && c.kind === 'snapshot' ? ' selected' : ''}>IP Webcam (fotogramma /shot.jpg)</option>
+      </select></div>
+    <label class="toggle"><input type="checkbox" id="cf-enabled"${!c || c.enabled ? ' checked' : ''}>
+      Attiva</label>
+    <p class="faq-note" id="cf-nota">L'indirizzo di IP Webcam è quello che l'app
+      mostra all'avvio, per esempio <code>http://192.168.1.50:8080/video</code>.
+      Il telefono e il computer devono stare sulla stessa rete: se il computer
+      non vede il telefono, nemmeno l'app lo vedrà.</p>
+    <div class="modal-foot">
+      <button id="cf-prova">Prova</button>
+      <button id="cf-save" class="primary">${c ? 'Salva' : 'Aggiungi'}</button>
+      <button id="cf-cancel">Annulla</button>
+    </div>`);
+
+  const nota = $('#cf-nota');
+  $('#cf-cancel').addEventListener('click', hideModal);
+  $('#cf-name').focus();
+  $('#cf-kind').addEventListener('change', (e) => {
+    // il fotogramma e il flusso si usano in modo diverso (uno si ricarica, uno
+    // resta acceso): si dice cosa cambia invece di lasciar credere che siano
+    // la stessa cosa chiamata con due nomi
+    nota.textContent = e.target.value === 'snapshot'
+      ? 'Il fotogramma si ricarica a intervalli: e\' piu\' leggero del flusso, ma non e\' una diretta.'
+      : 'L\'indirizzo di IP Webcam è quello che l\'app mostra all\'avvio, per esempio http://192.168.1.50:8080/video.';
+  });
+  $('#cf-prova').addEventListener('click', async () => {
+    const url = $('#cf-url').value.trim();
+    if (!url) return toast('Inserisci l\'indirizzo');
+    $('#cf-prova').disabled = true;
+    $('#cf-prova').textContent = 'Provo…';
+    try {
+      // la telecamera si prova con l'indirizzo scritto nel modulo, non con
+      // quello salvato: si sta decidendo se salvarlo, e una prova su un altro
+      // indirizzo direbbe la cosa sbagliata
+      const esito = await provaIndirizzo(url);
+      toast(esito.messaggio);
+    } catch (err) {
+      toast(err.message);
+    }
+    $('#cf-prova').disabled = false;
+    $('#cf-prova').textContent = 'Prova';
+  });
+  $('#cf-save').addEventListener('click', async () => {
+    const corpo = {
+      name: $('#cf-name').value.trim(),
+      place: $('#cf-place').value.trim(),
+      url: $('#cf-url').value.trim(),
+      kind: $('#cf-kind').value,
+      enabled: $('#cf-enabled').checked,
+    };
+    if (!corpo.name) return toast('Inserisci il nome');
+    try {
+      if (c) await api(`/api/cameras/${c.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/cameras', { method: 'POST', body: corpo });
+      hideModal();
+      toast(c ? 'Telecamera salvata' : 'Telecamera aggiunta');
+      renderLive();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+// Prova l'indirizzo scritto nel modulo, non ancora salvato: il controllo e'
+// sul server (`/api/cameras/prova`), che e' l'unico a poter raggiungere la
+// telecamera.
+async function provaIndirizzo(url) {
+  return api('/api/cameras/prova', { method: 'POST', body: { url } });
+}
+
+$('#cam-new').addEventListener('click', () => apriCamForm(null));
 
 /* ---------- PASSWORD DELLA CASA ----------
    Cambiarla e' un'operazione rara e delicata: si chiede la vecchia, e la nuova

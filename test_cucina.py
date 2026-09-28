@@ -10,6 +10,13 @@ from datetime import date
 
 import pytest
 
+# La cartella dell'app, quella dove girano `avvia.sh` e i test che leggono i
+# file veri (Dockerfile, CSS, script di Windows). Si ricava dal file invece di
+# scriverla fissa: `test_cucina.py` sta nella cartella dell'app, quindi funziona
+# in qualunque posto sia stata clonata — la copia di lavoro qui si chiama
+# `project`, non `gg`, e un percorso fisso faceva fallire sette test.
+BASE_APP = os.path.dirname(os.path.abspath(__file__))
+
 DB = os.path.join(tempfile.mkdtemp(), "test.db")
 os.environ["CUCINA_DB"] = DB
 
@@ -18,6 +25,7 @@ import allergens  # noqa: E402
 import copie  # noqa: E402
 import houses  # noqa: E402
 import igiene  # noqa: E402
+import live  # noqa: E402
 import units  # noqa: E402
 import voice  # noqa: E402
 import voce_cloud  # noqa: E402
@@ -4856,7 +4864,7 @@ def test_il_dockerfile_copia_tutto_quello_che_serve(client):
     dal codice sia copiato nell'immagine, piu' i file dati (`schema.sql`) e la
     cartella `static`."""
     import re
-    base = "/workspace/gg"
+    base = BASE_APP
     dockerfile = open(f"{base}/Dockerfile", encoding="utf-8").read()
 
     # i moduli locali: quelli importati dal codice e presenti come .py accanto
@@ -5598,7 +5606,7 @@ def test_la_home_riassume_cosa_si_puo_fare(client):
     assert 'id="home-guide-comandi"' in home
     dati = _riassunto_home_js(client)
     nomi = [f["nome"] for f in dati["funzioni"]]
-    assert nomi == ["Cucina", "Igiene", "Progetti", "FAQ"], nomi
+    assert nomi == ["Cucina", "Igiene", "Progetti", "FAQ", "Live"], nomi
 
 
 def test_i_comandi_del_riassunto_funzionano_davvero(client):
@@ -5649,7 +5657,7 @@ def test_avvio_avvisa_se_l_area_non_esiste():
     ambiente = dict(os.environ)
     ambiente["AZURE_SPEECH_KEY"] = "chiave-finta"
     ambiente["AZURE_SPEECH_REGION"] = "s"
-    esito = subprocess.run(["./avvia.sh", "status"], cwd="/workspace/gg",
+    esito = subprocess.run(["./avvia.sh", "status"], cwd=BASE_APP,
                            env=ambiente, capture_output=True, text=True)
     uscita = esito.stdout + esito.stderr
     assert "NON attiva" in uscita, uscita
@@ -5664,7 +5672,7 @@ def test_voce_bat_non_accetta_un_area_inventata(client):
 
     Si guarda il file vero: la validazione c'e', e l'elenco e' quello di
     `voce_cloud` (due elenchi diversi divergerebbero)."""
-    bat = open("/workspace/gg/windows/voce.bat", encoding="utf-8").read()
+    bat = open(f"{BASE_APP}/windows/voce.bat", encoding="utf-8").read()
     assert "non e' un'area Azure" in bat
     # almeno un'area vera e' nell'elenco di controllo
     assert "italynorth" in bat and "westeurope" in bat
@@ -5715,7 +5723,7 @@ def test_la_diagnosi_non_stampa_la_chiave():
     con qualcuno che guarda: la chiave **non** deve comparire. Si vedono le prime
     lettere e la lunghezza, che bastano a riconoscere un copia-incolla tronco."""
     import subprocess
-    esito = subprocess.run(["./avvia.sh", "diagnosi"], cwd="/workspace/gg",
+    esito = subprocess.run(["./avvia.sh", "diagnosi"], cwd=BASE_APP,
                            capture_output=True, text=True)
     uscita = esito.stdout + esito.stderr
     import voce_cloud
@@ -5793,10 +5801,10 @@ def test_windows_avvia_dietro_il_tunnel(client):
 
     Dimenticarlo non rompe niente in modo visibile — l'app funziona — quindi si
     scoprirebbe solo dal sintomo sbagliato (qualcuno che aspetta senza motivo)."""
-    bat = open("/workspace/gg/windows/avvia.bat", encoding="utf-8").read()
+    bat = open(f"{BASE_APP}/windows/avvia.bat", encoding="utf-8").read()
     assert "DIETRO_PROXY=1" in bat, "avvia.bat non dichiara di stare dietro un proxy"
     # e la funzione che lo legge esiste davvero lato server
-    app_py = open("/workspace/gg/app.py", encoding="utf-8").read()
+    app_py = open(f"{BASE_APP}/app.py", encoding="utf-8").read()
     assert "DIETRO_PROXY" in app_py and "ProxyFix" in app_py
 
 
@@ -6026,7 +6034,7 @@ def test_il_tema_scuro_e_l_opposto_di_quello_chiaro():
     lascia lo sfondo chiaro non e' un tema diverso — e' la stessa pagina con un
     dettaglio cambiato."""
     import re
-    css = open("/workspace/gg/static/style.css", encoding="utf-8").read()
+    css = open(f"{BASE_APP}/static/style.css", encoding="utf-8").read()
     inizio = css.index('html[data-tema="scuro"]')
     blocco = css[inizio:css.index("}", inizio)]
 
@@ -6173,10 +6181,244 @@ def test_il_comando_pubblica_rifiuta_senza_credenziali():
     for nome in ("GITHUB_TOKEN", "GH_TOKEN", "GIT_SSH_COMMAND"):
         ambiente.pop(nome, None)
     ambiente["MAGGIORDOMO_SSH_CONFIG"] = "/nonexistent/ssh/config"
-    esito = subprocess.run(["./avvia.sh", "pubblica"], cwd="/workspace/gg",
+    esito = subprocess.run(["./avvia.sh", "pubblica"], cwd=BASE_APP,
                            env=ambiente, capture_output=True, text=True)
     assert esito.returncode != 0, "senza credenziali il push non deve riuscire"
     assert "autenticarsi" in esito.stdout.lower()
     # e niente push a vuoto: la URL non deve comparire con credenziali dentro
     assert "@github.com" not in esito.stdout + esito.stderr
+
+
+# ---------------------------------------------------------------- live
+def test_live_camera_si_aggiunge_e_si_vede(client):
+    r = client.post("/api/cameras", json={
+        "name": "Ingresso", "place": "Portone", "url": "http://192.168.1.50:8080/video"})
+    assert r.status_code == 201
+    cam = r.get_json()
+    assert cam["name"] == "Ingresso"
+    assert cam["kind"] == "mjpeg", "senza tipo si assume IP Webcam"
+    assert cam["enabled"] is True
+
+    elenco = client.get("/api/cameras").get_json()
+    assert [c["name"] for c in elenco] == ["Ingresso"]
+
+
+def test_live_una_telecamera_si_modifica_e_si_elimina(client):
+    cid = client.post("/api/cameras", json={
+        "name": "Cucina", "url": "http://10.0.0.2:8080/video"}).get_json()["id"]
+
+    salvata = client.put(f"/api/cameras/{cid}", json={
+        "name": "Cucina di sopra", "place": "Piano primo",
+        "url": "http://10.0.0.2:8080/shot.jpg", "kind": "snapshot", "enabled": False}).get_json()
+    assert salvata["name"] == "Cucina di sopra"
+    assert salvata["kind"] == "snapshot"
+    assert salvata["enabled"] is False
+
+    assert client.delete(f"/api/cameras/{cid}").status_code == 200
+    assert client.get("/api/cameras").get_json() == []
+    assert client.get(f"/api/cameras/{cid}/snapshot").status_code == 404
+
+
+def test_live_la_modifica_parziale_non_azzera_gli_altri_campi(client):
+    """Spegnere o rinominare non deve obbligare a rimandare indietro tutto: un
+    modulo che salva per intero va bene, ma una chiamata parziale non deve
+    lasciare il nome vuoto."""
+    cid = client.post("/api/cameras", json={
+        "name": "Garage", "place": "Cantina", "url": "http://10.0.0.3:8080/video"}).get_json()["id"]
+    r = client.patch(f"/api/cameras/{cid}", json={"enabled": False}).get_json()
+    assert r["enabled"] is False
+    assert r["name"] == "Garage" and r["place"] == "Cantina"
+
+
+def test_live_indirizzo_deve_essere_http_senza_file_locale(client):
+    """`file://` non e' una telecamera: se passasse, l'indirizzo scritto nella
+    scheda diventerebbe un modo di leggere i file del server."""
+    for url, atteso in [
+        ("file:///etc/passwd", 400),
+        ("ftp://192.168.1.1/video", 400),
+        ("192.168.1.50:8080/video", 400),      # manca lo schema
+        ("http://", 400),                       # manca la macchina
+        ("", 400),
+    ]:
+        r = client.post("/api/cameras", json={"name": "X", "url": url})
+        assert r.status_code == atteso, url
+
+
+def test_live_tipo_inventato_non_passa(client):
+    r = client.post("/api/cameras", json={
+        "name": "X", "url": "http://10.0.0.9:8080/video", "kind": "telepatia"})
+    assert r.status_code == 400
+    assert "Tipo" in r.get_json()["error"]
+
+
+def test_live_ogni_casa_ha_le_sue_telecamere(anon):
+    """L'indirizzo di una telecamera e' un dato della casa: non deve comparire
+    nell'elenco di un'altra."""
+    anon.post("/api/houses", json={"nome": "Casa Cam A", "password": "aaaa"})
+    cid = anon.post("/api/cameras", json={
+        "name": "Ingresso di A", "url": "http://10.0.0.1:8080/video"}).get_json()["id"]
+
+    anon.post("/api/logout")
+    anon.post("/api/houses", json={"nome": "Casa Cam B", "password": "bbbb"})
+    assert anon.get("/api/cameras").get_json() == []
+    # per B l'id non esiste: nemmeno il fotogramma si puo' chiedere
+    assert anon.get(f"/api/cameras/{cid}/snapshot").status_code == 404
+
+
+def test_live_lo_snapshot_arriva_dalla_telecamera_via_server(client, monkeypatch):
+    """Il fotogramma lo scarica il server e lo inoltra: il browser non chiede
+    mai l'indirizzo della telecamera. Si prova con una finta sorgente."""
+    cid = client.post("/api/cameras", json={
+        "name": "Cortile", "url": "http://10.0.0.4:8080/shot.jpg"}).get_json()["id"]
+
+    def finto(url, timeout=None):
+        assert url == "http://10.0.0.4:8080/shot.jpg"
+        return b"\xff\xd8finto-jpeg", "image/jpeg", None
+    monkeypatch.setattr(app_module.live, "scarica_foto", finto)
+
+    r = client.get(f"/api/cameras/{cid}/snapshot")
+    assert r.status_code == 200
+    assert r.data == b"\xff\xd8finto-jpeg"
+    assert r.mimetype == "image/jpeg"
+
+
+def test_live_una_telecamera_spenta_dice_che_non_risponde(client, monkeypatch):
+    """Una telecamera irraggiungibile deve dare un 502 con un messaggio, non
+    lasciare la pagina appesa su una connessione muta."""
+    cid = client.post("/api/cameras", json={
+        "name": "Soffitta", "url": "http://10.0.0.5:8080/video"}).get_json()["id"]
+    monkeypatch.setattr(app_module.live, "scarica_foto",
+                        lambda url, timeout=None: (None, None, "Telecamera non raggiungibile (rifiutata)"))
+    r = client.get(f"/api/cameras/{cid}/snapshot")
+    assert r.status_code == 502
+    assert "non raggiungibile" in r.get_json()["error"]
+
+
+def test_live_la_prova_dice_se_risponde_anche_prima_di_salvare(client, monkeypatch):
+    monkeypatch.setattr(app_module.live, "prova", lambda url, timeout=None: (True, "La telecamera risponde"))
+    r = client.post("/api/cameras/prova", json={"url": "http://10.0.0.6:8080/video"})
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "messaggio": "La telecamera risponde"}
+
+    # un indirizzo non valido non deve nemmeno tentare la connessione
+    r = client.post("/api/cameras/prova", json={"url": "file:///etc/passwd"})
+    assert r.status_code == 400
+
+
+def test_live_lo_stream_inoltra_i_pezzi_della_telecamera(client, monkeypatch):
+    """La diretta non si tiene in memoria: si legge a pezzi e si riscrive."""
+    cid = client.post("/api/cameras", json={
+        "name": "Diretta", "url": "http://10.0.0.7:8080/video"}).get_json()["id"]
+
+    class Finta:
+        headers = {"Content-Type": "multipart/x-mixed-replace; boundary=x"}
+        def __init__(self):
+            self.pezzi = [b"parte-1", b"parte-2", b""]
+        def read(self, n):
+            return self.pezzi.pop(0)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(app_module.live, "apri_flusso", lambda url, timeout=None: (Finta(), None))
+    r = client.get(f"/api/cameras/{cid}/stream")
+    assert r.status_code == 200
+    assert b"parte-1" in r.data and b"parte-2" in r.data
+    assert "multipart/x-mixed-replace" in r.headers["Content-Type"]
+
+
+def test_live_le_rotte_richiedono_l_accesso(anon):
+    """Le telecamere sono dati della casa: senza sessione non si toccano."""
+    assert anon.get("/api/cameras").status_code == 401
+    assert anon.post("/api/cameras", json={
+        "name": "X", "url": "http://10.0.0.8:8080/video"}).status_code == 401
+
+
+def test_live_la_tabella_cameras_arriva_a_una_casa_gia_esistente(tmp_path):
+    """Una casa creata prima della sezione Live deve riceverne la tabella.
+    `CREATE TABLE IF NOT EXISTS` non tocca le tabelle esistenti, e senza questo
+    la sezione risponderebbe "no such table" proprio a chi ha gia' dei dati."""
+    percorso = str(tmp_path / "vecchia.db")
+    with closing(sqlite3.connect(percorso)) as con:
+        con.executescript("CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);")
+        con.commit()
+    app_module.init_db(percorso)
+    with closing(sqlite3.connect(percorso)) as con:
+        tabelle = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "cameras" in tabelle
+
+
+def test_live_l_indirizzo_si_valida_a_parte():
+    """La validazione e' in `live.py`, quindi si prova senza server."""
+    assert live.url_valido("http://192.168.1.50:8080/video")[1] is None
+    assert live.url_valido("https://telefono.example/video")[1] is None
+    for cattivo in ("file:///etc/passwd", "javascript:alert(1)", "rtsp://x/y", "", "   "):
+        assert live.url_valido(cattivo)[1] is not None, cattivo
+
+
+def test_live_le_credenziali_nell_indirizzo_diventano_un_header(monkeypatch):
+    """IP Webcam ha un login opzionale, e il modo naturale di scriverlo e' dentro
+    l'indirizzo (`http://admin:segreto@…`). `urllib` non le legge: le lascia
+    attaccate al nome dell'host e la risoluzione fallisce con "Name or service
+    not known" **anche quando la telecamera e' raggiungibile**. Qui si guarda che
+    finiscano nell'header `Authorization` e che l'indirizzo resti pulito.
+    """
+    richieste = []
+
+    class Risposta:
+        headers = {"Content-Type": "image/jpeg"}
+        def read(self, n): return b"jpeg"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def finto_urlopen(req, timeout=None):
+        richieste.append(req)
+        return Risposta()
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen", finto_urlopen)
+    dati, tipo, errore = app_module.live.scarica_foto(
+        "http://admin:segreto@192.168.1.50:8080/video")
+
+    assert errore is None and dati == b"jpeg"
+    req = richieste[0]
+    atteso = "Basic " + base64.b64encode(b"admin:segreto").decode()
+    # urllib.titlecase l'header
+    assert req.get_header("Authorization") == atteso
+    # l'indirizzo non deve contenere piu' le credenziali ne' il nome sporco
+    assert req.full_url == "http://192.168.1.50:8080/video"
+    assert "segreto" not in req.full_url
+
+
+def test_live_senza_credenziali_niente_header(monkeypatch):
+    """Un indirizzo senza utente non deve portarsi dietro un `Authorization`
+    vuoto: alcune telecamere lo leggerebbero come un tentativo fallito."""
+    richieste = []
+
+    class Risposta:
+        headers = {"Content-Type": "image/jpeg"}
+        def read(self, n): return b"jpeg"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen",
+                        lambda req, timeout=None: (richieste.append(req), Risposta())[1])
+    app_module.live.scarica_foto("http://192.168.1.50:8080/shot.jpg")
+    assert richieste[0].get_header("Authorization") is None
+
+
+def test_live_lo_scarico_si_ferma_al_tetto(monkeypatch):
+    """Un indirizzo che punta a un file enorme non deve riempire la memoria:
+    si legge al massimo `MAX_FOTO` byte."""
+    class Finta:
+        headers = {"Content-Type": "image/jpeg"}
+        def __init__(self): self.letto = 0
+        def read(self, n):
+            self.letto = n
+            return b"x" * 10
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    finta = Finta()
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen", lambda req, timeout=None: finta)
+    dati, tipo, errore = app_module.live.scarica_foto("http://10.0.0.9:8080/shot.jpg")
+    assert errore is None and dati == b"x" * 10
+    assert finta.letto == live.MAX_FOTO, "si chiede il tetto, non l'infinito"
 
