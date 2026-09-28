@@ -204,6 +204,40 @@ Se la chiave c'è ma è errata, o l'area non è quella della risorsa, l'app **ri
 
 La sintesi è in `voce_cloud.py`, e i nomi delle voci sono un sottoinsieme verificato di quelli ufficiali Azure: un nome inventato verrebbe rifiutato con un 400, quindi la validazione avviene prima della chiamata, dove l'errore è leggibile e non costa nulla.
 
+## Accesso da ovunque
+
+Il caso d'uso e' la cucina, ma serve anche **da fuori casa e da piu'
+dispositivi**. Le vie sono due, e la differenza e' chi tiene la macchina accesa.
+
+1. **Il computer di casa, con un tunnel HTTPS.** E' quello che fa
+   `windows/dominio.bat` (Tailscale Funnel): da' un nome
+   `https://<computer>.<rete>.ts.net` che **non cambia piu'** (`--bg` lo rende
+   permanente) e non tocca il router. Vale finche' il computer e' acceso.
+2. **Una macchina sempre accesa** (VPS, NAS, Raspberry Pi), per l'app davvero
+   "da ovunque". C'e' un **`Dockerfile`**: l'immagine contiene **solo il codice**,
+   i dati si montano da fuori (`-v ...:/dati`), e `--restart unless-stopped` fa da
+   `sorveglia.sh`. `.dockerignore` tiene fuori database, copie e segreti, cosi'
+   l'immagine si puo' anche pubblicare senza portarsi dietro niente di privato.
+
+**`DIETRO_PROXY=1` quando c'e' un tunnel davanti.** Senza, `request.remote_addr`
+e' l'indirizzo del proxy, e il **freno ai tentativi di accesso conta tutti su un
+indirizzo solo**: chi sbaglia la password farebbe aspettare anche gli altri, e un
+errore di distrazione diventerebbe indistinguibile da un attacco. Si attiva solo
+quando il proxy c'e' davvero: fidarsi degli header senza proxy significa
+lasciarli scrivere a chiunque. In cambio Flask legge `X-Forwarded-For`,
+`X-Forwarded-Proto` e `X-Forwarded-Host` (`ProxyFix`).
+
+L'app **non ha indirizzi assoluti** (nessun `url_for(_external)`, nessun
+`http://` fisso nel client): per questo funziona dietro qualunque proxy senza
+configurazioni. Un test lo tiene tale, perche' un link assoluto in `http://`
+riporterebbe l'utente fuori dall'HTTPS — e li' il browser blocca il microfono.
+
+**Il sandbox di sviluppo e' effimero.** Il link `work-1-...` risponde solo
+finche' quella conversazione vive: se il container viene ricreato (succede, e si
+riconosce da `/proc/uptime` di pochi secondi), i processi in background sono
+morti e va rilanciato `./avvia.sh`. Non e' un guasto dell'app. Per un indirizzo
+**stabile** non si usa il sandbox: si usa una delle due vie qui sopra.
+
 ## Windows
 
 L'app di casa va su una macchina sempre accesa, e per l'utente questa e' Windows.

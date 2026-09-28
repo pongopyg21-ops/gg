@@ -398,6 +398,37 @@ Per trovare l'indirizzo: `hostname -I | awk '{print $1}'` (Linux/macOS) oppure `
 
 Da fuori casa si può esporre la porta con un tunnel, per esempio `ssh -R 80:localhost:12000 nokey@localhost.run` oppure `cloudflared tunnel --url http://localhost:12000`: stampano un indirizzo pubblico `https://...` da aprire sul telefono, valido finché il comando resta in esecuzione.
 
+### Da ovunque, senza tenere acceso il computer di casa
+
+Un tunnel su una macchina di casa basta finché quella macchina è accesa: se si
+spegne, l'indirizzo smette di rispondere. Per averlo **sempre**, l'app va su una
+macchina sempre accesa — una VPS, un NAS, un Raspberry Pi. C'è un `Dockerfile`:
+
+```bash
+docker build -t maggiordomo .
+docker run -d --name maggiordomo --restart unless-stopped \
+  -p 12000:12000 \
+  -v /percorso/dati:/dati \
+  -e AZURE_SPEECH_KEY=... -e AZURE_SPEECH_REGION=... \
+  maggiordomo
+```
+
+`--restart unless-stopped` è il `sorveglia.sh` di questo caso: se l'app cade,
+Docker la riavvia, e riparte anche dopo un riavvio della macchina. I **dati** si
+montano da fuori (`-v ...:/dati`): l'immagine contiene solo il codice, quindi
+aggiornare l'app non tocca il ricettario.
+
+Poi un tunnel con HTTPS davanti alla porta 12000 — **Tailscale Funnel** è il più
+semplice, e non tocca il router: `tailscale funnel --bg 12000` dà un indirizzo
+`https://<nome>.<rete>.ts.net` che non cambia più. In quel caso aggiungi
+`-e DIETRO_PROXY=1` al `docker run`: senza, l'app vede l'indirizzo del tunnel al
+posto di quello di chi bussa, e il freno ai tentativi di accesso conta tutti
+insieme (chi sbaglia la password farebbe aspettare anche gli altri).
+
+Il microfono dal telefono richiede HTTPS: con il tunnel c'è, quindi funziona
+anche da fuori casa.
+
+
 Ogni dispositivo ha la sua sessione: ci si collega una volta con nome e password della casa e si resta collegati, anche riaprendo il browser giorni dopo. **I dati sono gli stessi su tutti i dispositivi** (stanno nel database della casa, non nel browser), mentre le preferenze di voce restano locali al dispositivo: sul telefono si può volere una voce diversa che sul computer. La voce neurale cloud è l'unica che suona identica su tutti.
 
 Per una casa con più dispositivi in modo stabile conviene una **macchina sempre accesa** (un mini-PC, un NAS, un Raspberry Pi) con un servizio di sistema che avvia il server al boot: è la stessa stanza di prima, e con la voce cloud l'esperienza è la stessa dal telefono, dal tablet e dal computer.

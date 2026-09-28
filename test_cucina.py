@@ -4846,6 +4846,89 @@ def test_api_copie_non_nomina_le_altre_case(client):
 # che non dia fastidio a chi entra davvero e che non si possa aggirare cambiando
 # il nome della casa.
 
+def test_il_dockerfile_copia_tutto_quello_che_serve(client):
+    """Per l'accesso **da ovunque** l'app va su una macchina sempre accesa, e la
+    via e' un'immagine: se il `Dockerfile` dimenticasse un modulo, l'app
+    partirebbe e morirebbe con un `ModuleNotFoundError` solo in produzione — il
+    posto peggiore per scoprirlo.
+
+    Si legge il `Dockerfile` e si controlla che **ogni** modulo locale importato
+    dal codice sia copiato nell'immagine, piu' i file dati (`schema.sql`) e la
+    cartella `static`."""
+    import re
+    base = "/workspace/gg"
+    dockerfile = open(f"{base}/Dockerfile", encoding="utf-8").read()
+
+    # i moduli locali: quelli importati dal codice e presenti come .py accanto
+    moduli = set()
+    for nome in os.listdir(base):
+        if nome.endswith(".py"):
+            moduli.add(nome)
+    # quali sono importati da qualche parte (quindi necessari a runtime)
+    usati = set()
+    for nome in moduli:
+        sorgente = open(f"{base}/{nome}", encoding="utf-8").read()
+        for altro in moduli:
+            if altro == nome:
+                continue
+            if re.search(rf"^import {altro[:-3]}\b|^from {altro[:-3]} import", sorgente, re.M):
+                usati.add(altro)
+    # il punto d'ingresso e i suoi import: si parte da app.py e si chiude
+    da_copiare = {"app.py", "schema.sql"}
+    da_copiare |= usati
+    # seed.py e' importato da app.py in modo ritardato (dentro una funzione)
+    da_copiare.add("seed.py")
+
+    for nome in sorted(da_copiare):
+        assert nome in dockerfile, f"il Dockerfile non copia {nome}"
+    assert "static" in dockerfile, "il Dockerfile non copia la cartella static"
+
+
+def test_dietro_un_proxy_si_legge_l_indirizzo_vero(anon, monkeypatch):
+    """Con un tunnel davanti (Tailscale Funnel, Cloudflare) la richiesta arriva
+    dal proxy: senza leggere i suoi header, l'indirizzo di chi bussa e' sempre
+    quello del proxy, e **il freno ai tentativi conta tutti su un indirizzo
+    solo** — chi sbaglia la password blocca anche gli altri.
+
+    Si attiva `DIETRO_PROXY` e si manda l'header come farebbe il tunnel: il freno
+    dev'essere contato sull'indirizzo vero, non su quello del proxy."""
+    import importlib
+    monkeypatch.setenv("DIETRO_PROXY", "1")
+    ricaricato = importlib.reload(app_module)
+    try:
+        with ricaricato.app.test_client() as c:
+            # il freno conta due chiavi, l'indirizzo **e** il nome della casa
+            # (vedi `chiavi_tentativi`): per isolare l'indirizzo si sbaglia con
+            # nomi di casa diversi, cosi' resta in gioco solo la chiave dell'IP
+            for i in range(houses.TENTATIVI_LIBERI + 1):
+                c.post("/api/login", json={"nome": f"Casa {i}", "password": "no"},
+                       headers={"X-Forwarded-For": "10.0.0.1"})
+            # lo stesso indirizzo e' ormai frenato
+            bloccato = c.post("/api/login", json={"nome": "Altra", "password": "no"},
+                              headers={"X-Forwarded-For": "10.0.0.1"})
+            assert bloccato.status_code == 429, "l'indirizzo frenato non lo e' piu'"
+            # un indirizzo **diverso** non ha ancora sbagliato: se il proxy non
+            # fosse letto, sarebbe lo stesso indirizzo del precedente e troverebbe
+            # il freno (429) invece di un semplice rifiuto (401)
+            r = c.post("/api/login", json={"nome": "Ancora", "password": "no"},
+                       headers={"X-Forwarded-For": "10.0.0.2"})
+            assert r.status_code == 401, "l'indirizzo vero non e' stato letto"
+    finally:
+        monkeypatch.delenv("DIETRO_PROXY", raising=False)
+        importlib.reload(app_module)
+
+
+def test_dietro_un_proxy_la_pagina_resta_raggiungibile(anon):
+    """Il tunnel inoltra su http, ma chi bussa e' su https: la pagina non deve
+    dipendere da quale dei due vede il server. Si guarda che la risposta non
+    contenga un indirizzo assoluto in `http://` (un redirect o un link cosi'
+    riporterebbe l'utente fuori dall'https, e il browser blocca il microfono)."""
+    html = anon.get("/", headers={"X-Forwarded-Proto": "https",
+                                  "X-Forwarded-Host": "casa.esempio.ts.net"}
+                    ).get_data(as_text=True)
+    assert 'src="http://' not in html and "href=\"http://" not in html
+
+
 def test_dopo_troppi_errori_la_risposta_dice_di_aspettare(anon):
     nome, sbagliata = "Casa Test", "sbagliata"
     # i primi tentativi sono liberi: sbagliare due volte capita, e non deve

@@ -1,0 +1,42 @@
+# Cosa NON deve entrare nell'immagine.
+#
+# L'immagine si costruisce dal repository, quindi qui si tiene fuori tutto quello
+# che e' locale o privato: i database, la chiave Azure, le copie, i log. Sono
+# esclusi anche per il motivo opposto — un'immagine senza dati si puo' pubblicare
+# senza portarsi dietro niente di privato, e i dati veri si montano da fuori.
+
+.git
+.gitignore
+
+# dati e copie: non sono codice, e non devono stare nell'immagine
+*.db
+*.db.riserva*
+*.riserva*
+copie/
+case/
+
+# segreti: la chiave della voce entra dall'ambiente o da un file montato
+segreto.txt
+segreto
+segreto.sh
+segreto.bat
+windows/segreto.bat
+
+# ambiente locale, log e file di servizio
+.venv/
+.venv-win/
+__pycache__/
+*.pyc
+.pytest_cache/
+server.log
+sorveglia.log
+.avvia.pid
+.sorveglia.pid
+.sorveglia.lock
+
+# la documentazione e le parti che non servono a far girare il server
+AGENTS.md
+README.md
+windows/
+Dockerfile
+.dockerignore

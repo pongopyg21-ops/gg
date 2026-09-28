@@ -37,6 +37,18 @@ SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
+# Dietro un tunnel (Tailscale Funnel, Cloudflare, nginx) la richiesta arriva da
+# un proxy: senza dire a Flask di fidarsi dei suoi header, `request.remote_addr`
+# e' l'indirizzo del proxy, non quello di chi ha bussato, e **il freno ai
+# tentativi di accesso conta tutti su un indirizzo solo** — un errore di
+# password e un attacco diventano la stessa cosa. Si attiva con
+# `DIETRO_PROXY=1`, perche' fidarsi degli header quando non c'e' un proxy
+# significa lasciarli scrivere a chiunque.
+if os.environ.get("DIETRO_PROXY") in ("1", "si", "sì", "true"):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 
 # La pagina e i suoi file non si tengono in memoria nel browser. Senza questo,
 # una modifica alla pagina non si vede finché non si ricarica con forza, e
