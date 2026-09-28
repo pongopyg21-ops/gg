@@ -14,6 +14,7 @@ server, come la chiave di Azure.
 
 import base64
 import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -149,6 +150,71 @@ def _socket_di(risposta):
         return None
 
 
+def _errore_sorgente(errore, host):
+    """Il motivo in italiano, per chi ha scritto l'indirizzo.
+
+    I fallimenti piu' comuni hanno cause diverse e rimedi diversi, ma `urllib`
+    li racconta tutti allo stesso modo: un `timed out`, che non dice niente, o
+    un errore OpenSSL in inglese. Visti davvero:
+
+    - un IP di rete locale che non risponde. Non e' la telecamera rotta: da un
+      server in affitto (questo) o da un'altra rete, quell'indirizzo **non e'
+      instradabile**, e i pacchetti finiscono nel vuoto fino allo scadere. La
+      telecamera si raggiunge col nome Tailscale, che attraversa le reti.
+    - `https://` su una telecamera che parla `http://` (IP Webcam nasce cosi'),
+      o con un certificato che il telefono si e' fatto da solo: la connessione
+      cifrata non parte, e senza spiegazione sembra che la telecamera sia spenta.
+
+    Un indirizzo di rete locale si riconosce dal nome: `192.168.`, `10.`, `172.`
+    (16-31), `127.`, `localhost`, o un nome senza punto. Meglio dirlo che
+    lasciare indovinare.
+    """
+    testo = str(errore)
+    basso = testo.lower()
+    locale = _indirizzo_locale(host)
+
+    if "certificate verify failed" in basso or "ssl" in basso:
+        return ("Connessione cifrata rifiutata: la telecamera non si fida del "
+                "certificato, o non parla https. Prova con http://"
+                + (" e, se il computer e' sulla stessa rete, con l'indirizzo IP."
+                   if locale else "."))
+    if "timed out" in basso or "timeout" in basso:
+        if locale:
+            return (f"Telecamera non raggiungibile: {host} è un indirizzo di rete "
+                    "locale, e da qui non ci si arriva. Serve una via che "
+                    "attraversi le reti, per esempio il nome Tailscale.")
+        return f"Telecamera non raggiungibile: {host} non risponde."
+    if "refused" in basso:
+        return (f"La telecamera {host} rifiuta la connessione: c'è qualcosa a "
+                "quell'indirizzo, ma non risponde su questa porta.")
+    if "name or service not known" in basso or "nodename" in basso:
+        return f"Non trovo {host}: controlla il nome o l'indirizzo."
+    if locale:
+        return (f"Telecamera non raggiungibile: {host} è un indirizzo di rete "
+                "locale, e un indirizzo di casa funziona solo dalla stessa rete. "
+                "Usa il nome Tailscale.")
+    return f"Telecamera non raggiungibile ({testo})"
+
+
+def _indirizzo_locale(host):
+    """Vero se l'indirizzo e' di rete locale e non instradabile da fuori."""
+    host = (host or "").lower()
+    if not host:
+        return False
+    if host in ("localhost",):
+        return True
+    if "." not in host:
+        return True                     # un nome senza punto: risolto in locale
+    if host.startswith(("192.168.", "10.", "127.")):
+        return True
+    if host.startswith("172."):
+        try:
+            return 16 <= int(host.split(".")[1]) <= 31
+        except (IndexError, ValueError):
+            return False
+    return False
+
+
 def _leggi_pezzo(risposta, quanti):
     """Legge quel che c'e' **adesso**, senza aspettare il resto.
 
@@ -222,6 +288,7 @@ def scarica_foto(url, timeout=TIMEOUT):
     prima. In ogni caso il socket ha una scadenza, cosi' una telecamera che
     smette di mandare byte libera il thread invece di tenerlo per sempre.
     """
+    host = urllib.parse.urlsplit(url).hostname or url
     try:
         with urllib.request.urlopen(_richiesta(url), timeout=timeout) as risposta:
             sock = _socket_di(risposta)
@@ -240,9 +307,9 @@ def scarica_foto(url, timeout=TIMEOUT):
     except urllib.error.HTTPError as e:
         return None, None, f"La telecamera ha risposto {e.code}"
     except urllib.error.URLError as e:
-        return None, None, f"Telecamera non raggiungibile ({e.reason})"
+        return None, None, _errore_sorgente(e.reason, host)
     except (TimeoutError, OSError, socket.timeout) as e:
-        return None, None, f"Telecamera non raggiungibile ({e})"
+        return None, None, _errore_sorgente(e, host)
     if not dati:
         return None, None, "La telecamera ha risposto, ma senza immagine"
     return dati, tipo, None
@@ -254,14 +321,15 @@ def apri_flusso(url, timeout=TIMEOUT):
     La risposta va letta a pezzi e chiusa dal chiamante: e' un flusso, non un
     file, e non si puo' tenere tutto in memoria.
     """
+    host = urllib.parse.urlsplit(url).hostname or url
     try:
         risposta = urllib.request.urlopen(_richiesta(url), timeout=timeout)
     except urllib.error.HTTPError as e:
         return None, f"La telecamera ha risposto {e.code}"
     except urllib.error.URLError as e:
-        return None, f"Telecamera non raggiungibile ({e.reason})"
+        return None, _errore_sorgente(e.reason, host)
     except (TimeoutError, OSError) as e:
-        return None, f"Telecamera non raggiungibile ({e})"
+        return None, _errore_sorgente(e, host)
     return risposta, None
 
 

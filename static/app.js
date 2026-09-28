@@ -1884,15 +1884,35 @@ function disegnaLive() {
   }
   $('#cam-grid').innerHTML = liveCam.map(camCard).join('');
   // il fotogramma che non arriva deve dirlo, non lasciare un riquadro vuoto:
-  // un'immagine rotta e' indistinguibile da una telecamera spenta
+  // un'immagine rotta e' indistinguibile da una telecamera spenta. E il motivo
+  // conta: "non risponde perche' e' un indirizzo di rete locale, usa Tailscale"
+  // e' un rimedio; "non raggiungibile" da solo non lo e'.
   $$('#cam-grid img[data-foto]').forEach((img) => {
-    img.addEventListener('error', () => {
-      const card = img.closest('.cam-card');
-      card.classList.add('cam-off');
-      const stato = card.querySelector('.cam-stato');
-      if (stato) stato.textContent = 'Telecamera non raggiungibile';
-    });
+    img.addEventListener('error', () => mostraFotoMancante(img));
   });
+}
+
+// La rotta dello scatto risponde 502 con il motivo in JSON: l'immagine rotta
+// non lo porta con se', quindi il testo si chiede a parte. Una volta sola, per
+// non tempestare il server mentre il rinnovo automatico ritenta.
+async function mostraFotoMancante(img) {
+  const card = img.closest('.cam-card');
+  card.classList.add('cam-off');
+  const stato = card.querySelector('.cam-stato');
+  if (!stato) return;
+  stato.textContent = 'Telecamera non raggiungibile';
+  const id = img.dataset.foto;
+  if (card.dataset.motivo === '1') return;
+  card.dataset.motivo = '1';
+  try {
+    const r = await fetch(`/api/cameras/${id}/snapshot`, { cache: 'no-store' });
+    if (!r.ok) {
+      const d = await r.json().catch(() => null);
+      if (d && d.error) stato.textContent = d.error;
+    }
+  } catch (e) {
+    // resta il messaggio generico: il riquadro e' comunque segnato come spento
+  }
 }
 
 function camCard(c) {
@@ -1927,6 +1947,9 @@ $('#cam-grid').addEventListener('click', async (e) => {
   if (btn.dataset.act === 'snapshot') {
     card.classList.remove('cam-off');
     card.querySelector('.cam-stato').textContent = '';
+    // un ritentativo esplicito puo' riportare un motivo nuovo: senza azzerarlo
+    // il riquadro resterebbe muto al primo errore
+    delete card.dataset.motivo;
     img.src = `/api/cameras/${id}/snapshot?t=${Date.now()}`;
   } else if (btn.dataset.act === 'diretta') {
     // la diretta e' un flusso: si accende e si spegne, non si ricarica
@@ -1969,6 +1992,12 @@ function apriCamForm(c) {
       l'app chiede utente e password, mettili nell'indirizzo:
       <code>http://utente:password@192.168.1.50:8080/video</code>. Restano sul
       server, non nella pagina.</p>
+    <p class="cam-help"><strong>Attenzione a due cose</strong>, perché sono i due
+      modi in cui di solito non va. IP Webcam parla <code>http://</code>, non
+      <code>https://</code>: con <code>https</code> la connessione non parte e
+      sembra che la telecamera sia spenta. E un indirizzo di casa
+      (<code>192.168.…</code>) funziona solo se il server è sulla stessa rete;
+      da fuori serve il nome Tailscale.</p>
     <div class="field"><label>Tipo</label>
       <select id="cf-kind">
         <option value="mjpeg"${c && c.kind === 'mjpeg' ? ' selected' : ''}>IP Webcam (flusso /video)</option>

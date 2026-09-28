@@ -6626,3 +6626,65 @@ def test_live_una_telecamera_muta_non_tiene_il_thread_per_sempre(monkeypatch):
     assert dati is None
     assert "non raggiungibile" in errore.lower()
 
+
+
+def test_live_un_ip_locale_non_raggiungibile_lo_dice(monkeypatch):
+    """Il caso riferito: la telecamera e' scritta come `https://192.168.1.188:8080`
+    e la pagina dice solo "non raggiungibile".
+
+    Un indirizzo di rete locale, da un server che non sta su quella rete, non e'
+    instradabile: i pacchetti finiscono nel vuoto e si scade. Il messaggio deve
+    dirlo e indicare la via che funziona (il nome Tailscale), altrimenti sembra
+    che la telecamera sia spenta."""
+    def finto_urlopen(req, timeout=None):
+        raise app_module.live.urllib.error.URLError(TimeoutError("timed out"))
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen", finto_urlopen)
+    dati, tipo, errore = app_module.live.scarica_foto("https://192.168.1.188:8080")
+    assert dati is None
+    assert "192.168.1.188" in errore
+    assert "Tailscale" in errore, errore
+    assert "rete locale" in errore, errore
+
+
+def test_live_un_https_col_certificato_autofirmato_lo_dice(monkeypatch):
+    """IP Webcam nasce `http://`: scritto come `https://`, la connessione cifrata
+    non parte. Senza traduzione si vedrebbe un errore OpenSSL in inglese, che
+    non fa pensare al `http://` da correggere."""
+    def finto_urlopen(req, timeout=None):
+        raise app_module.live.urllib.error.URLError(
+            app_module.live.ssl.SSLCertVerificationError(
+                "certificate verify failed: self-signed certificate"))
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen", finto_urlopen)
+    dati, tipo, errore = app_module.live.scarica_foto("https://192.168.1.188:8080/video")
+    assert dati is None
+    assert "http" in errore.lower()
+    assert "CERTIFICATE_VERIFY_FAILED" not in errore, "niente gergo OpenSSL"
+
+
+def test_live_un_nome_tailscale_sconosciuto_lo_dice(monkeypatch):
+    """Un nome Tailscale scritto male non e' una telecamera spenta: il DNS non
+    lo risolve, e il messaggio deve parlare del nome."""
+    def finto_urlopen(req, timeout=None):
+        raise app_module.live.urllib.error.URLError(
+            app_module.live.socket.gaierror("Name or service not known"))
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen", finto_urlopen)
+    _, _, errore = app_module.live.scarica_foto("http://telefono-casa.retets.net:8080/video")
+    assert "telefono-casa.retets.net" in errore
+    assert "Non trovo" in errore
+
+
+def test_live_riconosce_gli_indirizzi_di_rete_locale():
+    """La classificazione che regge i messaggi: se sbaglia, un nome Tailscale
+    verrebbe scambiato per un IP di casa (o viceversa) e il rimedio sarebbe
+    quello sbagliato."""
+    locale = app_module.live._indirizzo_locale
+    for host in ("192.168.1.188", "10.2.59.9", "172.20.0.5", "127.0.0.1",
+                 "localhost", "telefono"):
+        assert locale(host) is True, host
+    for host in ("github.com", "telefono-casa.retets.net", "172.15.0.1",
+                 "8.8.8.8", ""):
+        assert locale(host) is False, host
+
