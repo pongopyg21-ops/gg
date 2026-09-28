@@ -60,22 +60,22 @@ un nome comune e si rischierebbe di fermare quello di un altro progetto.
 
 ## Recupero e link pubblico
 
-Il codice vive sul branch **`gg`**, che e' il branch di lavoro: `main` e' **indietro**
-(fermo a un commit vecchio, senza case separate, voce neurale, Windows). Un clone
-normale prende `main` — cioe' la versione sbagliata — quindi **dopo aver clonato
-bisogna passare a `gg`**:
+Il progetto definitivo e' il branch **`main`**. Fino a un certo punto il lavoro
+stava su `gg` (piu' avanti, ma non definitivo) e `main` era indietro; ora `main`
+**contiene tutto**, `gg` **non serve piu'** ed e' stato cancellato. Un clone
+normale prende `main`, che e' la versione giusta: non c'e' nessun `git checkout`
+da fare.
 
 ```
 git clone https://github.com/pongopyg21-ops/gg.git
 cd gg
-git checkout gg
 ```
 
 Da qui `./avvia.sh` trova tutto. Non serve altro.
 
-Il push va fatto sul branch `gg`, e va verificato **sul server**, non in locale:
-`git ls-remote origin` mostra il commit che GitHub ha davvero. `git fetch` puo'
-lasciare `origin/gg` vecchio, e allora un push riuscito sembra fallito (o il
+Il push va fatto sul branch **`main`**, e va verificato **sul server**, non in
+locale: `git ls-remote origin` mostra il commit che GitHub ha davvero. `git fetch`
+puo' lasciare `origin/main` vecchio, e allora un push riuscito sembra fallito (o il
 contrario), con il rischio di credere pubblicato un lavoro che non c'e'.
 
 C'e' un comando solo per questo, `./avvia.sh pubblica`: fa il push e confronta con
@@ -87,8 +87,8 @@ stampare la URL, e in un log di conversazione il token resterebbe per sempre.
 **Attenzione al token "presente ma vuoto".** In questo ambiente `GITHUB_TOKEN` e'
 sempre *definita* (il sistema dei segreti la esporta quando la si nomina), ma se
 il segreto non e' registrato il valore e' la stringa vuota: `[ -n "$GITHUB_TOKEN" ]`
-lo scopre, un semplice `echo` sembra che ci sia. E' il motivo per cui cinque
-commit sono rimasti non pubblicati credendo che il token ci fosse. Se manca,
+lo scopre, un semplice `echo` sembra che ci sia. E' il motivo per cui dei commit
+sono rimasti non pubblicati credendo che il token ci fosse. Se manca,
 `pubblica` lo dice e si ferma, invece di fallire con un errore di git che sembra
 un problema di rete.
 
@@ -96,7 +96,7 @@ In alternativa, e senza script, il token si passa a git cosi':
 
 ```
 git -c credential.helper='' push \
-  "https://x-access-token:${GITHUB_TOKEN}@github.com/pongopyg21-ops/gg.git" gg
+  "https://x-access-token:${GITHUB_TOKEN}@github.com/pongopyg21-ops/gg.git" main
 ```
 
 Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
@@ -236,17 +236,16 @@ Cose che sembrano dettagli e non lo sono:
   li' finirebbe pubblica al primo push. `windows/segreto.bat` e' in `.gitignore` e
   `avvia.bat` lo chiama con `call` se esiste, quindi la chiave resta sulla macchina
   e il comportamento senza chiave non cambia (voce del sistema).
-- **Il branch di lavoro e' `gg`, non `main`.** `main` e' indietro e non contiene
-  nemmeno `windows/`: un clone senza `git checkout gg` da' un'app vecchia, e chi la
-  usa crede di aver sbagliato qualcosa. E' scritto in `windows/LEGGIMI.md`, ed e' il
-  primo posto da controllare se "manca la cartella windows".
+- **Il branch e' `main`.** Un clone normale lo prende gia': non c'e' nessun
+  `git checkout` da fare, e `windows/` c'e'. (Il vecchio branch di lavoro `gg` e'
+  stato cancellato: non serve piu'.)
 - **Il percorso principale non richiede Git: e' lo ZIP del branch.** L'utente ha
   provato `git clone` e ha ricevuto "Termine 'git' non riconosciuto" - Git non e'
   installato, e per un'app che si scarica una volta non vale la pena installarlo.
-  L'indirizzo e' `https://github.com/pongopyg21-ops/gg/archive/refs/heads/gg.zip`
-  (branch `gg`: quello di `main` non ha `windows/`), e lo ZIP **non contiene i
-  database**, quindi aggiornare l'app non tocca i dati. Un problema in meno e' un
-  utente che arriva in fondo: le istruzioni partono da li', Git resta alternativa.
+  L'indirizzo e' `https://github.com/pongopyg21-ops/gg/archive/refs/heads/main.zip`,
+  e lo ZIP **non contiene i database**, quindi aggiornare l'app non tocca i dati.
+  Un problema in meno e' un utente che arriva in fondo: le istruzioni partono da
+  li', Git resta alternativa.
 - **Il firewall di Windows chiede il permesso la prima volta.** Se si risponde
   *Annulla*, il telefono non passa e sembra un problema dell'app: e' la prima cosa
   da controllare, ed e' scritto in `windows/LEGGIMI.md`.

@@ -302,10 +302,11 @@ stato() {
 }
 
 # --- pubblicazione su GitHub -------------------------------------------------
-# Il push va fatto sul branch `gg` e **verificato sul server**: `git fetch` puo'
-# lasciare `origin/gg` vecchio, e allora un push riuscito sembra fallito (o il
-# contrario), col rischio di credere pubblicato un lavoro che non c'e'. Qui si
-# confronta con `ls-remote`, che e' la verita' del server.
+# Il push va fatto sul branch `main` — che e' il progetto definitivo — e
+# **verificato sul server**: `git fetch` puo' lasciare `origin/main` vecchio, e
+# allora un push riuscito sembra fallito (o il contrario), col rischio di credere
+# pubblicato un lavoro che non c'e'. Qui si confronta con `ls-remote`, che e' la
+# verita' del server.
 #
 # Il token **non** entra negli argomenti ne' nella URL: git non lo vedrebbe in
 # `ps`, ma un errore puo' stampare la URL, e in un log di conversazione resterebbe.
@@ -316,7 +317,7 @@ stato() {
 # `segreto.txt`: quello e' la chiave Azure, e un token di scrittura su GitHub non
 # va in un file del progetto.
 pubblica() {
-  local ramo="${2:-gg}"
+  local ramo="${2:-main}"
   local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
   if [ -z "$token" ]; then
     rosso "Manca GITHUB_TOKEN: senza, il push non si puo' fare."

@@ -28,11 +28,11 @@ Sono due clic, e si fa prima di installare Python: è più facile quando si è g
 visto dove finiscono i file.
 
 1. Apri questo indirizzo nel browser:
-   <https://github.com/pongopyg21-ops/gg/archive/refs/heads/gg.zip>
+   <https://github.com/pongopyg21-ops/gg/archive/refs/heads/main.zip>
    Il download parte da solo (circa 2 MB).
-2. Vai nella cartella **Download**, clic destro sul file `gg-gg.zip` → **Estrai
+2. Vai nella cartella **Download**, clic destro sul file `gg-main.zip` → **Estrai
    tutto** → **Estrai**.
-3. Ottieni una cartella dal nome strano, **`gg-gg`**. Va benissimo così: il nome
+3. Ottieni una cartella dal nome strano, **`gg-main`**. Va benissimo così: il nome
    della cartella non conta, puoi anche rinominarla in `Maggiordomo` se preferisci.
    Spostala dove vuoi tenere l'app (per esempio in `C:\`), e **dentro quella
    cartella** troverai la sottocartella `windows`.
@@ -41,10 +41,10 @@ visto dove finiscono i file.
    Files`.** Sono cartelle protette: Windows impedisce all'app di creare lì il
    proprio ambiente, e l'avvio si ferma con `WinError 5 Accesso negato`. Se ti
    succede, non è rotto niente: sposta la cartella in `C:\`, o in *Documenti*, o
-   sul Desktop, e riapri `avvia.bat`. Una posizione comoda e sicura è `C:\gg-gg`.
+   sul Desktop, e riapri `avvia.bat`. Una posizione comoda e sicura è `C:\gg-main`.
 
 Da qui in avanti, quando queste istruzioni dicono `windows\avvia.bat`, significa:
-dentro la cartella `gg-gg` (o come l'hai chiamata), la sottocartella `windows`, il
+dentro la cartella `gg-main` (o come l'hai chiamata), la sottocartella `windows`, il
 file `avvia.bat`.
 
 **Se un giorno ti serve aggiornare l'app**, riscarica lo ZIP e sostituisci i file
@@ -59,14 +59,10 @@ Se hai già Git, o se vuoi poter aggiornare con un comando solo:
 ```powershell
 git clone https://github.com/pongopyg21-ops/gg.git
 cd gg
-git checkout gg
 ```
 
-Il terzo comando **non è facoltativo.** Il branch principale (`main`) è fermo a
-una versione vecchia: senza `git checkout gg` ti trovi un'app senza case separate,
-senza voce neurale e — soprattutto — **senza la cartella `windows\`**, e quindi
-senza `avvia.bat`. Se dopo il clone non vedi la cartella `windows`, è questo il
-motivo.
+Il branch **`main`** e' il progetto definitivo e contiene tutto, `windows\`
+compreso: dopo il clone l'app e' pronta, senza altri comandi.
 
 Git si scarica da <https://git-scm.com/download/win>. Nell'installazione lascia
 le opzioni proposte: mettono Git nel PATH, ed è quello che serve perché il comando
@@ -350,14 +346,14 @@ Desktop) e riapri `avvia.bat`. Vale lo stesso se il percorso contiene `C:\Progra
 o `C:\Program Files`.
 
 **Non trovo la cartella `windows` (o `avvia.bat`).**
-Stai guardando fuori dalla cartella dell'app. Deve essere: `gg-gg` (o come l'hai
+Stai guardando fuori dalla cartella dell'app. Deve essere: `gg-main` (o come l'hai
 chiamata) → dentro → `windows` → dentro → `avvia.bat`. Se `windows` non c'è
-proprio, hai scaricato lo ZIP sbagliato: deve essere quello del branch `gg`
-(l'indirizzo al Passo 1), non quello di `main`.
+proprio, hai estratto una cartella diversa: l'indirizzo giusto è quello al Passo 1
+(branch `main`).
 
 **Windows dice che il file è bloccato, o non succede niente al doppio clic.**
 I file scaricati da internet portano un "marchio" di provenienza, e Windows può
-bloccarli per prudenza. Rimedio: clic destro sul file `gg-gg.zip` **prima** di
+bloccarli per prudenza. Rimedio: clic destro sul file `gg-main.zip` **prima** di
 estrarlo → **Proprietà** → in fondo, spunta **Sblocca** → OK. Poi estrai. Se lo hai
 già estratto, puoi farlo sui singoli file dentro la cartella `windows`.
 

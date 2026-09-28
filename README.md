@@ -467,8 +467,8 @@ Un'app di casa serve tutto il giorno, da più dispositivi: il posto giusto è un
 macchina che non si spegne. Su **Windows** la cartella `windows/` fa tutto, e **Git
 non serve**: si scarica l'app come ZIP.
 
-1. Scarica <https://github.com/pongopyg21-ops/gg/archive/refs/heads/gg.zip> ed
-   estrai. La cartella interna si chiama `gg-gg`.
+1. Scarica <https://github.com/pongopyg21-ops/gg/archive/refs/heads/main.zip> ed
+   estrai. La cartella interna si chiama `gg-main`.
 2. Installa Python (spuntando *Add python.exe to PATH*).
 3. `windows\avvia.bat` — avvia l'app. La prima volta prepara da sé ambiente e
    dipendenze, e mostra sia l'indirizzo per il computer sia quello per il telefono.
@@ -480,11 +480,11 @@ Le istruzioni complete, inclusi i dati da riportare sul computer e i problemi
 tipici (permesso del firewall, microfono dal telefono), stanno in
 **`windows/LEGGIMI.md`**.
 
-Chi preferisce Git parte da `git clone` + `git checkout gg`: il branch di lavoro è
-**`gg`**, perché `main` è indietro e non contiene nemmeno `windows/`. La chiave
-Azure, se la usi, va in `segreto.txt` (escluso da git; su Windows anche
-`windows\segreto.bat`) e non in `avvia.bat`: il repository è pubblico, e una chiave
-nel codice finirebbe online.
+Chi preferisce Git parte da `git clone` e basta: il branch **`main`** e' il
+progetto definitivo e contiene tutto, `windows/` compreso. La chiave Azure, se la
+usi, va in `segreto.txt` (escluso da git; su Windows anche `windows\segreto.bat`)
+e non in `avvia.bat`: il repository è pubblico, e una chiave nel codice finirebbe
+online.
 
 Tre cose da sapere prima:
 
