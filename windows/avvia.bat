@@ -100,6 +100,11 @@ echo.
 
 set "PORT=12000"
 set "HOST=0.0.0.0"
+REM Dietro Tailscale Funnel la richiesta arriva dal tunnel: senza questo, l'app
+REM vede l'indirizzo del proxy al posto di quello di chi bussa, e il freno ai
+REM tentativi di accesso conta tutti insieme — chi sbaglia la password farebbe
+REM aspettare anche gli altri. Vale anche per Cloudflare o nginx davanti.
+set "DIETRO_PROXY=1"
 "%PY%" "%APP%\app.py"
 
 echo.

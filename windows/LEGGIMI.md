@@ -221,12 +221,31 @@ finché non c'è un dominio tuo.
    personale: non serve pagare.
 3. **Doppio clic su `dominio.bat`.** La prima volta si apre il browser per
    un'approvazione: va concessa una volta sola. Poi il file stampa l'indirizzo.
+   Se dice che manca il permesso, l'approvazione si fa anche a mano dalla pagina
+   **Access controls** del pannello Tailscale (`Add Funnel to policy`).
 4. Apri quell'indirizzo dal telefono, **anche in un'altra rete** (dati mobili):
    funziona, ed è HTTPS, quindi **anche il microfono funziona**.
 
 L'indirizzo ha la forma `https://<nome-computer>.<nome-rete>.ts.net` e **non cambia
 più**, anche riavviando il computer: viene attivato in modo permanente, non solo per
 la sessione corrente.
+
+**Fai partire `avvia.bat` *prima* di `dominio.bat`.** L'indirizzo inoltra su
+`127.0.0.1:12000`: se l'app non c'è, Tailscale attiva l'indirizzo lo stesso ma le
+richieste non trovano nessuno, e sembra che il tunnel non funzioni.
+
+### Cosa fa Tailscale, per capire se qualcosa non va
+
+- **La porta 443 è quella che vedi tu** (`https://...`, senza `:porta`): è il
+  tunnel a ricevere, e inoltra alla 12000 dell'app. Il numero 12000 non compare
+  mai nell'indirizzo pubblico.
+- **Le porte pubbliche possibili sono tre** — 443, 8443, 10000 — e sono imposte da
+  Tailscale, non dalla nostra app: non si può pubblicare direttamente la 12000.
+- **`avvia.bat` dichiara `DIETRO_PROXY=1`.** Senza, l'app vede l'indirizzo del
+  tunnel al posto di quello di chi bussa, e il freno ai tentativi di accesso conta
+  tutti insieme: chi sbaglia la password farebbe aspettare anche gli altri.
+- **Per vedere se è attivo**: `tailscale funnel status` mostra l'indirizzo e su
+  cosa inoltra. Per spegnerlo: `tailscale funnel --bg 12000 off`.
 
 ### Due cose da sapere
 

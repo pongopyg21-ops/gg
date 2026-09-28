@@ -5613,6 +5613,20 @@ def test_i_comandi_del_riassunto_funzionano_davvero(client):
         assert c["spiega"].strip()
 
 
+def test_windows_avvia_dietro_il_tunnel(client):
+    """Su Windows l'app sta dietro Tailscale Funnel (o Cloudflare, o nginx):
+    `avvia.bat` deve dirlo all'app, altrimenti vede l'indirizzo del tunnel al
+    posto di quello di chi bussa e il freno ai tentativi conta tutti insieme.
+
+    Dimenticarlo non rompe niente in modo visibile — l'app funziona — quindi si
+    scoprirebbe solo dal sintomo sbagliato (qualcuno che aspetta senza motivo)."""
+    bat = open("/workspace/gg/windows/avvia.bat", encoding="utf-8").read()
+    assert "DIETRO_PROXY=1" in bat, "avvia.bat non dichiara di stare dietro un proxy"
+    # e la funzione che lo legge esiste davvero lato server
+    app_py = open("/workspace/gg/app.py", encoding="utf-8").read()
+    assert "DIETRO_PROXY" in app_py and "ProxyFix" in app_py
+
+
 def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
     """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
     proprio quando non si possono usare le mani, e un'area senza pulsante e' una
