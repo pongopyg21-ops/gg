@@ -1,5 +1,28 @@
 # Il Maggiordomo — note per gli agenti
 
+## ⭐ SEI APPENA ARRIVATO? Leggi qui (versione V.8)
+
+Questa è la **V.8**. Il progetto è **maturo e funzionante**: non serve riscrivere
+niente, serve **continuare**. Prima di tutto:
+
+1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
+   attivo: il container viene ricreato, è normale). Poi `./sorveglia.sh`.
+2. Test: `./avvia.sh test` → attesi **444 verdi**. Se non lo sono, fermati e dillo.
+3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
+   remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
+   `/workspace/ssh` o `GITHUB_TOKEN`).
+4. Stato dell'ultima verifica e **cosa è stato chiuso nella sessione precedente**:
+   `/workspace/CONSEGNA-MAGGIORDOMO-V8.md`. Leggilo: contiene i fili aperti.
+5. **Dati delicati** (non in git, non si ricostruiscono): `cucina.db`, `houses.db`,
+   `case/`, `copie/`, su `/workspace`. L'unico salvataggio vero è `/api/backup`.
+
+**Fili aperti**: (a) la casa `Gianluca` è di origine incerta — chiedere se
+rimuoverla; (b) la voce è confermata **da desktop**, manca il riscontro **dal
+telefono**; (c) il link stabile è quello di Tailscale (`windows/dominio.bat`),
+perché il link del sandbox muore con la conversazione.
+
+## Architettura
+
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
 `allergens.py`, comandi vocali in `voice.py`, dati iniziali in `seed.py`, pulizie
