@@ -120,6 +120,38 @@ _COMMAND_VERBS = {"aggiungi", "aggiungere", "aggiungimi", "metti", "mettere",
                   "comperare", "manca", "mancano", "serve", "servono",
                   "servirebbe", "servirebbero", "bisogna"}
 
+# Verbi che dicono "tira via" dalla dispensa o dalla lista.
+#
+# Servono perche' prima NON esistevano da nessuna parte: "togli il latte dalla
+# dispensa" non trovava nessun verbo di comando, e l'unico segnale rimasto era
+# la destinazione ("dispensa"). La frase finiva quindi nel ramo di **aggiunta**,
+# e l'articolo scritto era "togli il latte" — verificato sull'endpoint vero:
+# "Fatto. Togli il latte in dispensa, 1 pz." Non e' un fraintendimento
+# innocuo: scrive in dispensa una voce che non esiste, e non toglie nulla.
+_RIMOZIONE_VERBS = {"togli", "toglier", "togliere", "tolga", "tolgono",
+                    "rimuovi", "rimuovere", "rimuover", "cancella", "cancellare",
+                    "elimina", "eliminare", "leva", "levare", "butta", "buttare"}
+
+# Verbi che dicono "ne ho usato": consumano la dispensa invece di aggiungerla.
+_CONSUMO_VERBS = {"usato", "usata", "usati", "usate", "consumato", "consumata",
+                  "finito", "finita", "finiti", "finite", "esaurito", "esaurita",
+                  "terminato", "terminata"}
+
+# Verbi che dicono "lo ho preso, non serve piu' comprarlo": spuntano la voce
+# nella lista della spesa.
+_PRESO_VERBS = {"preso", "presa", "presi", "prese", "comprato", "comprata",
+                "comprati", "comprate"}
+
+# Ausiliari che accompagnano i verbi qui sopra ("ho finito", "abbiamo preso").
+# Solo terza persona e prima plurale: "ho" da solo vuol dire "cucinato" quando
+# c'e' un verbo di cottura, e le due letture non devono sovrapporsi.
+_AUSILIARI = {"ho", "hai", "ha", "abbiamo", "avete", "hanno",
+              "avevo", "avevi", "aveva", "avevamo", "avevate", "avevano"}
+
+# Verbi di rimozione e consumo sono comandi a tutti gli effetti (per il
+# controllo "segnali") e vanno tolti dal nome come le altre parole di comando.
+_COMMAND_VERBS = _COMMAND_VERBS | _RIMOZIONE_VERBS | _CONSUMO_VERBS | _PRESO_VERBS
+
 # parole che non fanno parte del nome dell'ingrediente
 _STOPWORDS = {
     "aggiungi", "aggiungere", "aggiungimi", "metti", "mettere", "inserisci",
@@ -144,6 +176,14 @@ _STOPWORDS = {
     "quella", "mi", "ci", "ho", "sono", "allergico", "allergica", "intollerante",
     "intolleranti",
 }
+
+# I verbi di rimozione/consumo/preso e i luoghi del magazzino stanno anche fra
+# le parole da togliere dal nome: altrimenti "togli il latte dalla dispensa"
+# avrebbe il nome "latte dalla cantina" invece di "latte", e "ho finito il
+# latte" scriverebbe "finito latte". I luoghi servono perche' "il detersivo
+# nella cantina" nominava la cantina come parte dell'articolo.
+_STOPWORDS = _STOPWORDS | _RIMOZIONE_VERBS | _CONSUMO_VERBS | _PRESO_VERBS
+_STOPWORDS = _STOPWORDS | set(_LUOGO_TOKENS) | _AUSILIARI
 
 # per la ricerca ricetta si tolgono le parole di comando e i riempitivi: il
 # resto è il testo da cercare, che il client confronta parola per parola
@@ -259,6 +299,14 @@ def _domanda(normalized):
     resto = [t for t in tokens if t not in _PAROLE_DOMANDA]
     if resto and _DOMANDA_DI_ALIMENTO & set(tokens):
         return "pantry", " ".join(resto).strip()
+
+    # "cosa devo comprare", "cosa manca": la domanda e' sulla lista, e la
+    # risposta e' quello che manca. Senza questo ramo la frase veniva letta come
+    # un ordine e scriveva in lista un articolo chiamato "cosa" — verificato:
+    # "Fatto. Cosa in lista, 1 pz." Sta dopo il ramo sugli alimenti perche'
+    # "quanto sale serve" parla della dispensa, non della lista.
+    if _BISOGNO_LISTA & set(tokens):
+        return "shopping", ""
     return None, ""
 
 
@@ -267,6 +315,12 @@ def _domanda(normalized):
 # c'e' il latte" e' una domanda quanto "c'e' il latte".
 _DOMANDA_DI_ALIMENTO = {"quanto", "quanta", "quanti", "quante", "hai", "avete",
                         "avremmo", "c'e", "ce"}
+
+
+# parole che, dopo un avvio interrogativo, dicono che la domanda riguarda la
+# lista della spesa: "cosa devo comprare", "cosa manca", "che cosa serve"
+_BISOGNO_LISTA = {"comprare", "comperare", "manca", "mancano", "serve",
+                  "servono", "mangiare"}
 
 
 # parole della domanda stessa: non sono ne' il luogo ne' cio' che si cerca
@@ -435,6 +489,36 @@ def _extract_amount(tokens):
                     consumed += [j, j + 1]
         return value, unit, consumed
     return None, None, []
+
+
+def _verbo_azione(tokens):
+    """Che cosa fa la frase: `rimuovi`, `consuma`, `preso`, o `None` (aggiunge).
+
+    Un verbo di rimozione vale anche da solo ("togli il latte"); un verbo di
+    consumo o di "preso" vale solo con l'ausiliare, perche' da soli sono
+    participi che compaiono anche in altri discorsi ("il latte e' finito" vs
+    "ho finito il latte"). L'ordine conta: la rimozione e' la lettura piu'
+    esplicita e vince.
+    """
+    presenti = set(tokens)
+    if _RIMOZIONE_VERBS & presenti:
+        return "rimuovi"
+    if _AUSILIARI & presenti:
+        if _CONSUMO_VERBS & presenti:
+            return "consuma"
+        if _PRESO_VERBS & presenti:
+            return "preso"
+    return None
+
+
+def _intent_rimozione(dest):
+    """Dove si toglie: dalla dispensa o dalla lista della spesa.
+
+    Fuori dalla dispensa la destinazione non e' dichiarata ("togli il latte"
+    e basta): si toglie dalla lista, che e' dove "togliere" ha senso senza
+    altro — dalla dispensa si dice "dalla dispensa".
+    """
+    return "pantry_remove" if dest == "pantry" else "shopping_remove"
 
 
 def _find_destination(tokens):
@@ -706,8 +790,9 @@ def parse(text):
     """Comando strutturato ricavato dalla frase dettata.
 
     Ritorna un dizionario con `intent` fra:
-    `pantry_add`, `shopping_add`, `storage_add`, `term_add`, `recipe_search`,
-    `recipe_add`, `recipe_cooked`, `domanda`, `unknown`.
+    `pantry_add`, `pantry_remove`, `pantry_consume`, `shopping_add`,
+    `shopping_remove`, `shopping_check`, `storage_add`, `term_add`,
+    `recipe_search`, `recipe_add`, `recipe_cooked`, `domanda`, `unknown`.
     """
     raw = str(text or "").strip()
     # L'ascolto continuo detta la sveglia insieme al comando: qui si toglie una
@@ -806,6 +891,23 @@ def parse(text):
     if unit == "etto":
         unit = "g"
         quantity = (quantity or 0) * 100
+
+    # "togli il latte dalla dispensa" / "ho finito il latte": la frase non
+    # aggiunge niente, toglie o consuma. Si decide **dopo** aver ricavato il
+    # nome, cosi' si sa cosa togliere; senza questo ramo la frase cadeva nel
+    # ramo di aggiunta e scriveva in dispensa un articolo chiamato "togli il
+    # latte". Nessuna di queste e' una capacità che esistesse prima: erano
+    # tutte fraintese come aggiunte.
+    verbo = _verbo_azione(tokens)
+    if verbo == "rimuovi":
+        return {**base, "intent": _intent_rimozione(dest), "name": name,
+                "quantity": quantity, "unit": unit, "explicit": explicit}
+    if verbo == "consuma":
+        return {**base, "intent": "pantry_consume", "name": name,
+                "quantity": quantity, "unit": unit, "explicit": explicit}
+    if verbo == "preso":
+        return {**base, "intent": "shopping_check", "name": name,
+                "quantity": quantity, "unit": unit, "explicit": explicit}
 
     if dest == "storage":
         categoria = _categoria_deducibile(tokens)

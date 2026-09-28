@@ -1059,6 +1059,111 @@ def test_voce_ripulisce_il_nome_dell_ingrediente():
         assert voice.parse(frase)["name"] == atteso, frase
 
 
+def test_voce_rimozione_non_diventa_un_aggiunta():
+    """Il difetto visto dall'utente: "togli il latte dalla dispensa" **aggiungeva**
+    il latte in dispensa, con l'articolo chiamato "togli il latte".
+
+    Verificato sull'endpoint vero prima della correzione: rispondeva "Fatto.
+    Togli il latte in dispensa, 1 pz." Non e' un fraintendimento innocuo: scrive
+    nella dispensa una voce che non esiste e non toglie quel che serviva."""
+    cmd = voice.parse("togli il latte dalla dispensa")
+    assert cmd["intent"] == "pantry_remove"
+    assert cmd["name"] == "latte"
+
+    # senza destinazione si toglie dalla lista: la dispensa si nomina, la lista
+    # e' il posto da cui si toglie e basta
+    assert voice.parse("togli il latte")["intent"] == "shopping_remove"
+    assert voice.parse("rimuovi il pane dalla spesa")["intent"] == "shopping_remove"
+
+
+def test_voce_consumo_scala_la_dispensa():
+    """"ho finito il latte" e "ho usato 300 grammi di farina" non sono aggiunte:
+    consumano. Prima non venivano capite affatto oppure finivano in lista."""
+    cmd = voice.parse("ho finito il latte")
+    assert cmd["intent"] == "pantry_consume" and cmd["name"] == "latte"
+
+    cmd = voice.parse("ho usato 300 grammi di farina")
+    assert cmd["intent"] == "pantry_consume"
+    assert cmd["name"] == "farina" and cmd["quantity"] == 300.0 and cmd["unit"] == "g"
+
+
+def test_voce_preso_spunta_la_lista():
+    """Non e' una rimozione: la voce resta fra le prese, come spuntarla a mano."""
+    cmd = voice.parse("ho preso il pane")
+    assert cmd["intent"] == "shopping_check" and cmd["name"] == "pane"
+    assert voice.parse("ho comprato il latte")["intent"] == "shopping_check"
+
+
+def test_voce_la_cottura_resta_la_cottura():
+    """Il verbo "ho preparato" e' cottura di una ricetta, non aggiunta a dispensa:
+    la nuova lettura non deve rubargli la frase."""
+    cmd = voice.parse("ho cucinato la carbonara")
+    assert cmd["intent"] == "recipe_cooked" and cmd["name"] == "carbonara"
+
+
+def test_voce_togliere_dalla_dispensa_endpoint(client):
+    """Dal server: la voce sparisce davvero, e le altre restano."""
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 2, "unit": "l"})
+    client.post("/api/pantry", json={"name": "Pane", "quantity": 1, "unit": "pz"})
+    r = client.post("/api/voice", json={"text": "togli il latte dalla dispensa"})
+    assert r.status_code == 200
+    assert "Latte" in r.get_json()["message"]
+    nomi = [v["name"] for v in client.get("/api/pantry").get_json()]
+    assert "Latte" not in nomi
+    assert "Pane" in nomi, "le altre voci della dispensa non si toccano"
+
+
+def test_voce_consumo_scala_la_quantita_endpoint(client):
+    """Con una quantita' la voce resta, diminuita; se arriva a zero sparisce."""
+    client.post("/api/pantry", json={"name": "Farina", "quantity": 1000, "unit": "g"})
+    r = client.post("/api/voice", json={"text": "ho usato 300 grammi di farina"})
+    assert r.status_code == 200
+    riga = [v for v in client.get("/api/pantry").get_json() if v["name"] == "Farina"][0]
+    assert riga["quantity"] == 700
+
+    client.post("/api/voice", json={"text": "ho finito la farina"})
+    assert not [v for v in client.get("/api/pantry").get_json() if v["name"] == "Farina"]
+
+
+def test_voce_quello_che_non_capisce_non_scrive_niente(client):
+    """Una frase senza un alimento non deve inventare un articolo: meglio non
+    capire che sporcare la dispensa."""
+    client.post("/api/voice", json={"text": "prepara la carbonara"})
+    dispensa = client.get("/api/pantry").get_json()
+    assert dispensa == [], f"la dispensa doveva restare vuota, invece: {dispensa}"
+
+
+def test_voce_domanda_su_cosa_comprare_non_e_un_ordine(client):
+    """"cosa devo comprare" finiva in lista come articolo "cosa": rispondeva
+    "Fatto. Cosa in lista, 1 pz." — una domanda **eseguita** come ordine. Ora e'
+    una domanda, e la risposta e' quello che manca."""
+    cmd = voice.parse("cosa devo comprare")
+    assert cmd["intent"] == "domanda" and cmd["area"] == "shopping"
+
+    # il luogo vince: "cosa manca in dispensa" parla della dispensa
+    assert voice.parse("cosa manca in dispensa")["area"] == "pantry"
+    # un alimento vince sulla lista: "quanto sale serve" cerca il sale
+    cmd = voice.parse("quanto sale serve")
+    assert cmd["intent"] == "domanda" and cmd["area"] == "pantry" and cmd["query"] == "sale"
+
+    r = client.post("/api/voice", json={"text": "cosa devo comprare"})
+    assert r.status_code == 200
+    assert client.get("/api/shopping").get_json() == [], "nessun articolo 'cosa' in lista"
+
+
+def test_voce_domanda_sulla_lista_risponde_con_le_voci(client):
+    """La domanda sulla lista nominava una tabella inesistente (`FROM shopping`) e
+    rispondeva 500. Ora elenca le voci vere."""
+    client.post("/api/shopping", json={"name": "Latte", "quantity": 2, "unit": "l"})
+    r = client.post("/api/voice", json={"text": "cosa devo comprare"})
+    assert r.status_code == 200
+    assert "Latte" in r.get_json()["message"]
+
+    r = client.post("/api/voice", json={"text": "cosa c'è in lista"})
+    assert r.status_code == 200
+    assert "Latte" in r.get_json()["message"]
+
+
 def test_voce_registra_allergie_e_intolleranze():
     cmd = voice.parse("sono allergico al nichel")
     assert cmd["intent"] == "term_add"
@@ -6421,4 +6526,103 @@ def test_live_lo_scarico_si_ferma_al_tetto(monkeypatch):
     dati, tipo, errore = app_module.live.scarica_foto("http://10.0.0.9:8080/shot.jpg")
     assert errore is None and dati == b"x" * 10
     assert finta.letto == live.MAX_FOTO, "si chiede il tetto, non l'infinito"
+
+
+def test_live_lo_snapshot_di_un_flusso_prende_il_primo_fotogramma(monkeypatch):
+    """Il caso che ha rotto la pagina: tipo `mjpeg` (l'indirizzo `/video` di IP
+    Webcam) e pulsante dello snapshot.
+
+    `/video` e' un flusso che non finisce mai. `read()` senza argomenti aspetta
+    la fine — che non arriva — e lo scarico restava appeso; ogni scarico appeso
+    teneva occupato per sempre un thread del server. Qui una sorgente che non
+    finisce **deve** comunque restituire il primo fotogramma e smettere di
+    leggere."""
+    JPEG = b"\xff\xd8" + b"contenuto" + b"\xff\xd9"
+
+    class Flusso:
+        headers = {"Content-Type": "multipart/x-mixed-replace; boundary=frame"}
+        def __init__(self):
+            self.finito = False
+            self.letture = 0
+        def read1(self, n):
+            self.letture += 1
+            if self.finito:
+                raise AssertionError("si continua a leggere dopo il primo fotogramma")
+            # prima i pezzi del flusso attorno al JPEG, poi mai piu' nulla
+            self.finito = True
+            return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + JPEG + b"\r\n"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    flusso = Flusso()
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen",
+                        lambda req, timeout=None: flusso)
+    dati, tipo, errore = app_module.live.scarica_foto("http://10.0.0.4:8080/video")
+    assert errore is None
+    assert tipo == "image/jpeg"
+    assert dati == JPEG, "esattamente il primo fotogramma, senza l'involucro multipart"
+    assert flusso.letture == 1, "si smette alla fine del primo JPEG, non alla fine del flusso"
+
+
+def test_live_la_prova_dice_che_risponde_anche_a_un_flusso(monkeypatch):
+    """Il difetto visto dall'utente: "Prova" su un indirizzo `/video` diceva
+    "Telecamera non raggiungibile" **a telecamera accesa**.
+
+    Il flusso non finiva, lo scarico andava in timeout, e il messaggio
+    attribuiva alla telecamera un guasto che era della lettura."""
+    JPEG = b"\xff\xd8" + b"fotogramma" + b"\xff\xd9"
+
+    class Flusso:
+        headers = {"Content-Type": "multipart/x-mixed-replace; boundary=frame"}
+        def read1(self, n):
+            return b"--frame\r\n\r\n" + JPEG + b"\r\n"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen",
+                        lambda req, timeout=None: Flusso())
+    ok, messaggio = app_module.live.prova("http://10.0.0.4:8080/video")
+    assert ok is True, messaggio
+
+
+def test_live_un_multipart_senza_fotogrammi_non_resta_appeso(monkeypatch):
+    """Un indirizzo sbagliato con tipo `multipart/` ma senza nessun JPEG (una
+    pagina, un file binario) non deve restare appeso ne' macinare CPU: si legge
+    al massimo il tetto e si risponde "senza immagine"."""
+    class SenzaFotogrammi:
+        headers = {"Content-Type": "multipart/x-mixed-replace; boundary=frame"}
+        def __init__(self): self.letto = 0
+        def read1(self, n):
+            self.letto += n
+            return b"x" * n
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    finta = SenzaFotogrammi()
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen",
+                        lambda req, timeout=None: finta)
+    dati, tipo, errore = app_module.live.scarica_foto("http://10.0.0.7:8080/video")
+    assert dati is None
+    assert "senza immagine" in errore
+    assert finta.letto <= live.MAX_FOTO + 4096, "si ferma al tetto, non all'infinito"
+
+
+def test_live_una_telecamera_muta_non_tiene_il_thread_per_sempre(monkeypatch):
+    """Una telecamera che accetta la connessione e poi tace non deve bloccare lo
+    scarico: il socket ha una scadenza, e allo scadere si risponde "non
+    raggiungibile" invece di restare appesi."""
+    import socket as _socket
+
+    class Muta:
+        headers = {"Content-Type": "image/jpeg"}
+        def read(self, n):
+            raise _socket.timeout("nessun byte")
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(app_module.live.urllib.request, "urlopen",
+                        lambda req, timeout=None: Muta())
+    dati, tipo, errore = app_module.live.scarica_foto("http://10.0.0.8:8080/shot.jpg")
+    assert dati is None
+    assert "non raggiungibile" in errore.lower()
 

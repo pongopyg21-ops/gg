@@ -1868,7 +1868,112 @@ def voice_command():
     if cmd["intent"] == "domanda":
         return _rispondi_domanda(db, cmd)
 
+    if cmd["intent"] in ("pantry_remove", "pantry_consume"):
+        return _togli_dalla_dispensa(db, cmd)
+
+    if cmd["intent"] == "shopping_remove":
+        return _togli_dalla_spesa(db, cmd)
+
+    if cmd["intent"] == "shopping_check":
+        return _spunta_nella_spesa(db, cmd)
+
     return jsonify({**cmd, "message": "Non ho capito. Riprova."}), 422
+
+
+def _voci_per_nome(righe, nome):
+    """Le righe il cui nome contiene quello detto, senza maiuscole."""
+    return _righe_che_contengono(righe, (nome or "").strip(), ["name"])
+
+
+def _togli_dalla_dispensa(db, cmd):
+    """Toglie, o scala, un ingrediente dalla dispensa.
+
+    Senza quantita' la voce sparisce ("togli il latte", "ho finito il latte"):
+    chi parla non ce l'ha piu'. Con una quantita' si scala e basta ("ho usato
+    300 grammi di farina"), e solo se resta zero la voce sparisce. Prima questa
+    frase non esisteva per il programma: finiva nel ramo di aggiunta e scriveva
+    in dispensa un articolo col verbo nel nome.
+    """
+    nome = (cmd.get("name") or "").strip()
+    if not nome:
+        return jsonify({**cmd, "message": "Non ho capito cosa togliere dalla dispensa."}), 422
+    righe = _voci_per_nome(
+        rows(db.execute(
+            """SELECT p.id, p.quantity, p.unit, i.name
+               FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
+               ORDER BY i.name""")),
+        nome)
+    if not righe:
+        return jsonify({**cmd, "message": f"Non c'è {nome} in dispensa.", "reload": ["pantry"]})
+
+    qta = cmd.get("quantity")
+    toccate = []
+    for r in righe:
+        if qta is None:
+            # senza quantita' la voce sparisce: non ce l'ha piu'
+            db.execute("DELETE FROM pantry WHERE id = ?", (r["id"],))
+        else:
+            da_scalare = units.convert(
+                qta, units.normalize(cmd.get("unit") or r["unit"]), r["unit"])
+            nuova = r["quantity"] - (da_scalare if da_scalare is not None else qta)
+            if nuova > 0:
+                db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
+                           (units.format_quantity(nuova), r["id"]))
+            else:
+                db.execute("DELETE FROM pantry WHERE id = ?", (r["id"],))
+        toccate.append(r["name"])
+    delete_orphan_ingredients(db)
+    db.commit()
+    elenco = ", ".join(toccate)
+    if qta:
+        testo = f"Scalato dalla dispensa: {elenco}."
+    else:
+        testo = f"{'Tolto' if len(toccate) == 1 else 'Tolti'} dalla dispensa: {elenco}."
+    return jsonify({**cmd, "message": testo, "reload": ["pantry", "shopping"]})
+
+
+def _togli_dalla_spesa(db, cmd):
+    """Toglie una voce dalla lista della spesa.
+
+    "togli il latte" senza destinazione parla della lista: la dispensa si nomina
+    ("dalla dispensa"), la lista e' il posto da cui si toglie e basta.
+    """
+    nome = (cmd.get("name") or "").strip()
+    if not nome:
+        return jsonify({**cmd, "message": "Non ho capito cosa togliere dalla lista."}), 422
+    righe = _voci_per_nome(
+        rows(db.execute("SELECT id, name FROM shopping_items WHERE checked = 0 ORDER BY name")),
+        nome)
+    if not righe:
+        return jsonify({**cmd, "message": f"{nome.capitalize()} non è in lista.", "reload": ["shopping"]})
+    for r in righe:
+        db.execute("DELETE FROM shopping_items WHERE id = ?", (r["id"],))
+    delete_orphan_ingredients(db)
+    db.commit()
+    elenco = ", ".join(r["name"] for r in righe)
+    return jsonify({**cmd, "message": f"{'Tolto' if len(righe) == 1 else 'Tolti'} dalla lista: {elenco}.",
+                    "reload": ["shopping"]})
+
+
+def _spunta_nella_spesa(db, cmd):
+    """Spunta una voce come gia' presa ("ho preso il pane", "ho comprato il latte").
+
+    Spunta, non cancella: la voce resta visibile fra quelle prese finche' non si
+    svuota, che e' come funziona la lista a mano.
+    """
+    nome = (cmd.get("name") or "").strip()
+    if not nome:
+        return jsonify({**cmd, "message": "Non ho capito cosa segnare come preso."}), 422
+    righe = _voci_per_nome(
+        rows(db.execute("SELECT id, name FROM shopping_items WHERE checked = 0 ORDER BY name")),
+        nome)
+    if not righe:
+        return jsonify({**cmd, "message": f"{nome.capitalize()} non è in lista.", "reload": ["shopping"]})
+    for r in righe:
+        db.execute("UPDATE shopping_items SET checked = 1 WHERE id = ?", (r["id"],))
+    db.commit()
+    elenco = ", ".join(r["name"] for r in righe)
+    return jsonify({**cmd, "message": f"Segnato come preso: {elenco}.", "reload": ["shopping"]})
 
 
 def _ricette_per_nome(db, nome):
@@ -2040,8 +2145,11 @@ def _rispondi_domanda(db, cmd):
         return jsonify({**cmd, "message": testo, "reload": []})
 
     if area == "shopping":
+        # `shopping_items` in due parole: la tabella vera e' questa, e la vista
+        # `shopping` non esiste (era l'unico posto del codice a nominarla, e la
+        # domanda sulla lista rispondeva 500 "no such table: shopping").
         righe = _righe_che_contengono(
-            db.execute("SELECT name, quantity, unit FROM shopping ORDER BY name"),
+            db.execute("SELECT name, quantity, unit FROM shopping_items ORDER BY name"),
             cerca, ["name"])
         if not righe:
             testo = (f"{cerca.capitalize()} non è in lista." if cerca
@@ -2752,7 +2860,14 @@ def avvia():
     try:
         from waitress import serve
         annuncia(f"Server (waitress) su http://{host}:{porta}/")
-        serve(app, host=host, port=porta, threads=8)
+        # Il tetto dei thread conta perche' la vista Live li occupa **a lungo**:
+        # il flusso MJPEG di una telecamera resta aperto per tutti i minuti in
+        # cui la si guarda, e ognuno tiene un thread finche' non si chiude la
+        # pagina. Con otto, guardare le telecamere poteva lasciare senza thread
+        # il resto dell'app: i comandi vocali non rispondevano piu', e non per la
+        # voce. Con qualche thread in piu' c'e' margine per il flusso e per
+        # l'uso normale insieme.
+        serve(app, host=host, port=porta, threads=16)
     except ImportError:
         annuncia(f"Server (sviluppo, senza ricaricatore) su http://{host}:{porta}/")
         app.run(host=host, port=porta, debug=False, threaded=True)

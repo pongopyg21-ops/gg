@@ -13,6 +13,7 @@ server, come la chiave di Azure.
 """
 
 import base64
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -36,6 +37,20 @@ MAX_FOTO = 8 * 1024 * 1024
 # Quanto si aspetta la telecamera. Breve di proposito: una telecamera spenta
 # deve dire "non raggiungibile" in pochi secondi, non bloccare la pagina.
 TIMEOUT = 6.0
+
+# Tetto al tempo **complessivo** di uno scarico. `TIMEOUT` vale per la singola
+# lettura del socket, non per il totale: su un flusso che non finisce (MJPEG di
+# IP Webcam su `/video`) ogni pezzo arriva entro il timeout, quindi il tetto per
+# lettura non scatta mai e lo scarico non si ferma. Visto davvero: uno snapshot
+# verso `/video` e' restato appeso oltre quindici secondi, e ognuno di quelli
+# occupava per sempre uno degli otto thread di `waitress` — fino a bloccare
+# l'app intera, voce compresa. Il tetto complessivo e' la difesa che mancava.
+SCADENZA = 8.0
+
+# Il confine fra i fotogrammi di un flusso MJPEG. IP Webcam usa `--frame`, ma il
+# confine e' dichiarato nel `Content-Type` (`boundary=...`), quindi si legge da
+# li' invece di indovinarlo.
+_CONFINE_TIPO = "multipart/"
 
 # Lo `User-Agent` di un client vero. Alcune app di streaming rispondono in modo
 # diverso a una richiesta che non sembra un browser; senza, si vedrebbe un
@@ -119,22 +134,114 @@ def _richiesta(url):
     return urllib.request.Request(url, headers=intestazioni)
 
 
+def _socket_di(risposta):
+    """Il socket sotto una risposta HTTP, o `None`.
+
+    Serve per imporre un tetto di tempo **complessivo**: dall'oggetto risposta
+    non si puo' impostare una scadenza, si puo' solo cambiare il timeout di ogni
+    singola lettura, che e' troppo debole per un flusso che non finisce. Il
+    percorso `fp.raw._sock` vale per `http.client`, che e' quello che usa
+    `urlopen`; se la struttura cambia si ripiega senza rompere nulla.
+    """
+    try:
+        return risposta.fp.raw._sock
+    except AttributeError:
+        return None
+
+
+def _leggi_pezzo(risposta, quanti):
+    """Legge quel che c'e' **adesso**, senza aspettare il resto.
+
+    `read(n)` di `http.client` non torna finche' non ha raccolto esattamente `n`
+    byte: su un flusso MJPEG lento ha bloccato sedici secondi prima di
+    consegnare il primo fotogramma. `read1` invece fa una sola lettura dal
+    socket e torna con quello che e' arrivato, quindi il primo JPEG si riconosce
+    subito. Chi non ha `read1` (una sorgente finta nei test) usa `read`.
+    """
+    leggi = getattr(risposta, "read1", None)
+    if leggi is None:
+        return risposta.read(quanti)
+    return leggi(quanti)
+
+
+def _primo_fotogramma(risposta):
+    """Il primo JPEG di un flusso MJPEG, letto a pezzi.
+
+    `read1` consegna quel che arriva senza aspettare un blocco intero, e appena
+    compare un `FF D9` il fotogramma e' completo: si smette li' e non si aspetta
+    mai la fine del flusso, che non arriva.
+
+    La ricerca e' incrementale di proposito. Riunire i pezzi e ricercare da capo
+    a ogni giro sarebbe quadratico: su un corpo grande ma senza JPEG (un
+    indirizzo sbagliato con tipo `multipart/`) diventerebbe un blocco a vuoto
+    che tiene il thread occupato per minuti — lo stesso guasto che si sta
+    evitando, solo con la CPU invece della rete.
+    """
+    buf = bytearray()
+    inizio = -1
+    scan = 0
+    letto = 0
+    while letto < MAX_FOTO:
+        pezzo = _leggi_pezzo(risposta, 4096)
+        if not pezzo:
+            break
+        letto += len(pezzo)
+        buf += pezzo
+        if inizio < 0:
+            inizio = buf.find(b"\xff\xd8")
+            if inizio < 0:
+                # il fotogramma non e' ancora cominciato: basta l'ultimo byte,
+                # perche' il marcatore puo' essere spezzato fra due letture.
+                # Il tetto e' su `letto`, non su `buf`: scartando il corpo si
+                # terrebbe il buffer corto per sempre e il ciclo non finirebbe.
+                del buf[:-1]
+                continue
+        fine = buf.find(b"\xff\xd9", max(inizio + 2, scan))
+        if fine >= 0:
+            # dall'inizio del JPEG, non dall'inizio del buffer: davanti c'e'
+            # l'involucro del flusso (`--frame`, intestazioni), che non fa parte
+            # dell'immagine e la renderebbe illeggibile
+            return bytes(buf[inizio:fine + 2])
+        scan = len(buf) - 1
+    return b""
+
+
 def scarica_foto(url, timeout=TIMEOUT):
     """Scarica un fotogramma. Restituisce (dati, content_type, errore).
 
     Legge al massimo `MAX_FOTO` byte: un indirizzo che punta a un file grande
     non deve riempire la memoria del server, e un fotogramma entra comunque in
     quel tetto.
+
+    Il caso che conta e' l'indirizzo sbagliato: se si punta lo **snapshot** a
+    `/video` (il flusso continuo di IP Webcam), la risposta e' un MJPEG che non
+    finisce mai. Senza difese lo scarico resta appeso — e ogni scarico appeso
+    tiene occupato un thread del server per sempre, fino a bloccare l'app
+    intera. Qui un flusso `multipart/` si legge a pezzi e ci si ferma alla fine
+    del **primo** JPEG; una risposta normale si legge tutta in una volta come
+    prima. In ogni caso il socket ha una scadenza, cosi' una telecamera che
+    smette di mandare byte libera il thread invece di tenerlo per sempre.
     """
     try:
         with urllib.request.urlopen(_richiesta(url), timeout=timeout) as risposta:
+            sock = _socket_di(risposta)
+            if sock is not None:
+                try:
+                    sock.settimeout(SCADENZA)   # telecamera muta: non si aspetta oltre
+                except OSError:
+                    pass
             tipo = risposta.headers.get("Content-Type", "image/jpeg")
+            if _CONFINE_TIPO in tipo.lower():
+                dati = _primo_fotogramma(risposta)
+                if dati:
+                    return dati, "image/jpeg", None
+                return None, None, "La telecamera ha risposto, ma senza immagine"
             dati = risposta.read(MAX_FOTO)
     except urllib.error.HTTPError as e:
         return None, None, f"La telecamera ha risposto {e.code}"
     except urllib.error.URLError as e:
         return None, None, f"Telecamera non raggiungibile ({e.reason})"
-    except (TimeoutError, OSError) as e:
+    except (TimeoutError, OSError, socket.timeout) as e:
         return None, None, f"Telecamera non raggiungibile ({e})"
     if not dati:
         return None, None, "La telecamera ha risposto, ma senza immagine"
