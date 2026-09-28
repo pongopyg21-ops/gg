@@ -15,6 +15,20 @@
 <meta name="theme-color" content="#4fb3e8">
 <meta name="apple-mobile-web-app-title" content="Il Maggiordomo">
 <link rel="stylesheet" href="/static/style.css">
+<script>
+/* Il tema si applica **prima del disegno**, non dal codice dell'app: `app.js`
+   arriva in fondo alla pagina, e applicarlo li' farebbe vedere un lampo bianco a
+   chi ha scelto il tema scuro. Qui la pagina non e' ancora stata disegnata.
+   La scelta e' una preferenza locale (e' del dispositivo, non della casa): il
+   tema chiaro e' il predefinito, e "scuro" e' l'opposto. */
+(function () {
+  try {
+    if (localStorage.getItem('tema') === 'scuro') {
+      document.documentElement.dataset.tema = 'scuro';
+    }
+  } catch (e) { /* niente localStorage: resta il tema chiaro */ }
+})();
+</script>
 </head>
 <body>
 <!-- Accesso: la prima cosa che si vede quando non si e' collegati. Ogni casa
@@ -359,6 +373,25 @@
       <div class="row">
         <button id="pw-salva" class="primary">Cambia password</button>
         <span id="pw-esito" class="faq-note" role="status" aria-live="polite"></span>
+      </div>
+    </div>
+
+    <!-- Il tema e' una preferenza del **dispositivo**, non della casa (chi entra
+         dal telefono la sera la vuole scura, e il computer di giorno no): sta
+         qui perche' e' la stessa specie della password, un'impostazione di
+         servizio che non si consulta ma si cambia. -->
+    <h3 class="section-title">Aspetto</h3>
+    <div class="panel">
+      <p class="hint">Il tema cambia i colori dell'app. Quello scuro riposa gli
+        occhi la sera: si sceglie per questo dispositivo, e resta anche dopo aver
+        chiuso l'app.</p>
+      <div class="row">
+        <button id="tema-chiaro" class="tema-scelta active" type="button">
+          <span class="tema-pallino tema-pallino-chiaro" aria-hidden="true">◐</span> Chiaro
+        </button>
+        <button id="tema-scuro" class="tema-scelta" type="button">
+          <span class="tema-pallino tema-pallino-scuro" aria-hidden="true">◑</span> Scuro
+        </button>
       </div>
     </div>
   </section>

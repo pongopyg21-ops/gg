@@ -1143,6 +1143,53 @@ Due cause della latenza, entrambe visibili col telefono (Brave su Android).
 volta sola. Il test `test_il_comando_parte_subito_senza_aspettare_la_voce` fissa
 l'ordine: comando per primo, poi le due frasi in fila.
 
+### I tempi del ciclo di ascolto: la reattivita' si sceglie, non si subisce
+
+La trascrizione Azure e' veloce (~1,1 s per una frase breve): la lentezza che si
+sente e' fatta di **attese del client**, e ognuna si somma. Tre tagli:
+
+- **`ASCOLTO_FINE_MS` da 1600 a 800 ms.** E' il silenzio che chiude la frase, cioe'
+  la pausa che si fa **dentro** una frase per prendere fiato: non serve lunga, e
+  si aspetta prima di mandare la registrazione. Il tetto di "nessuno parla"
+  (`ASCOLTO_ATTESA_MS`, 4000) resta piu' largo perche' copre anche l'inizio.
+- **`SVEGLIA_RIPRESA_MS` da 700 a 250 ms e `CICLO_PAUSA_MS` = 120 ms** fra un giro
+  e il successivo: quanto basta a lasciar chiudere il microfono, non un'attesa di
+  comodo.
+- **Le frasi fisse si preparano in anticipo** (`preriscaldaFrasiFisse`, chiamata
+  da `caricaVoceCloud`): "Comandi." e "Sì." sono sempre le stesse, quindi si
+  scaricano **senza riprodurle** all'avvio. Senza, ogni "Comandi." costava un giro
+  di rete prima di sentirsi — il silenzio che si nota di piu' dopo aver parlato.
+  L'audio di una frase si prende ora con `audioCloud` (memoria o server), separata
+  da `parlaCloud` che la riproduce: il test del tempo di `parlaCloud` estrae
+  entrambe.
+
+## Il tema scuro
+
+La pagina nasce chiara (palette «mare»), e il tema **scuro e' l'opposto**: sfondo
+profondo, inchiostro chiaro, accento schiarito. Si sceglie dalla **FAQ → Aspetto**,
+perche' e' un'impostazione di servizio come la password della casa, non una voce
+da consultare.
+
+Tre cose che il tema ha richiesto e non sono ovvie:
+
+- **Si applica nello `<head>`, non da `app.js`.** `app.js` arriva in fondo alla
+  pagina: applicandolo li', chi ha scelto il tema scuro vedrebbe un **lampo
+  bianco** all'avvio. Lo script nello `<head>` mette `data-tema="scuro"` su
+  `<html>` prima del disegno. `applicaTema` serve solo al cambio dal vivo.
+- **Il tema chiaro non ha una regola sua.** E' il predefinito: `applicaTema`
+  **toglie** l'attributo invece di scriverlo, cosi' non esistono due regole da
+  tenere allineate (`html[data-tema="scuro"]` e una per il chiaro).
+- **Il tema e' del dispositivo, non della casa.** Chi entra dal telefono la sera lo
+  vuole scuro e il computer di giorno no, quindi la scelta sta in `localStorage`
+  come timbro e suono, non nel database.
+
+Il colore e' passato **tutto** per le variabili CSS: prima c'erano una decina di
+`#...` fuori dalla palette (il cielo di fondo, le nuvole, l'intestazione delle
+tabelle, il riquadro d'errore) e sarebbero rimasti chiari in tema scuro. Un test
+lo verifica in modo oggettivo (`test_il_tema_scuro_e_l_opposto_di_quello_chiaro`):
+calcola la **luminanza** di `--paper` e `--ink` nelle due palette e pretende che
+siano invertite.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa

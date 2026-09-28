@@ -5333,9 +5333,14 @@ def _parlaCloud_e_misura(client):
     risolve all'inizio, l'evento 'ended' arriva dopo. Restituisce l'ordine degli
     eventi, per vedere quando la promessa si chiude."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    codice = _estrai_funzione_js(js, "parlaCloud")
+    # `parlaCloud` prende l'audio da `audioCloud` (separata per poter preparare le
+    # frasi fisse in anticipo): si estraggono entrambe, cosi' il test esegue il
+    # percorso vero e non uno stub che potrebbe divergere
+    codice = (_estrai_funzione_js(js, "audioCloud")
+              + _estrai_funzione_js(js, "parlaCloud"))
     preludio = """
 const log = [];
+const CLOUD_CACHE_MAX = 40;
 function voceStato() {}
 let voceCloud = { disponibile: true, maxCaratteri: 600,
                   sentite: new Map([['it-IT-IsabellaNeural|Ciao.', {}]]) };
@@ -5668,6 +5673,108 @@ function $() { return { checked: true }; }
     # e le due frasi si dicono in fila: prima il cenno, poi l'esito
     parlate = [v for v in d["dopo"] if v.startswith("parla:")]
     assert parlate == ["parla:Comandi.", "parla:Fatto."], parlate
+
+
+def test_le_frasi_fisse_si_preparano_in_anticipo(client):
+    """La latenza che si nota di piu' e' il silenzio dopo aver parlato: ogni
+    "Comandi." costava un giro di rete **prima** di sentirsi. Le frasi fisse sono
+    sempre le stesse, quindi si scaricano in anticipo, senza riprodurle.
+
+    Si esegue la funzione **vera** con node: deve chiedere al server proprio le
+    due frasi fisse, e **non** creare nessun `Audio` (preparare non e' parlare)."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    codice = (_estrai_funzione_js(js, "audioCloud")
+              + _estrai_funzione_js(js, "preriscaldaFrasiFisse"))
+    preludio = """
+const CLOUD_CACHE_MAX = 40;
+const chieste = [];
+let audioCreati = 0;
+function voceStato() {}
+function voceCloudScelta() { return 'it-IT-IsabellaNeural'; }
+let voceCloud = { disponibile: true, maxCaratteri: 600, sentite: new Map() };
+global.fetch = (url, opzioni) => {
+  chieste.push(JSON.parse(opzioni.body).text);
+  return Promise.resolve({ ok: true, blob: () => Promise.resolve({}) });
+};
+class Audio { constructor() { audioCreati++; } }
+"""
+    prova = (preludio + codice + """
+preriscaldaFrasiFisse();
+setTimeout(() => console.log(JSON.stringify({ chieste, audioCreati })), 100);
+""")
+    d = _esegui_node(prova)
+    assert sorted(d["chieste"]) == ["Comandi.", "Sì."], d["chieste"]
+    assert d["audioCreati"] == 0, "preparare l'audio non deve farlo suonare"
+
+
+def test_il_tema_scuro_si_applica_e_si_ricorda(client):
+    """Il tema scuro e' l'opposto di quello chiaro, e si sceglie dalla FAQ. Si
+    esegue `applicaTema` **vera** con node: deve mettere l'attributo sul
+    documento quando e' scuro, toglierlo quando e' chiaro (il chiaro e' il
+    predefinito, quindi non ha una regola sua), e segnare il pulsante giusto.
+
+    Un test sulle stringhe non si accorgerebbe di un `dataset` scritto male."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "applicaTema")
+    preludio = """
+const classi = { 'tema-chiaro': new Set(), 'tema-scuro': new Set() };
+const nodi = {};
+function $(sel) {
+  const id = sel.replace(/^#/, '');
+  nodi[id] = {
+    classList: {
+      toggle(c, v) { if (v) classi[id].add(c); else classi[id].delete(c); },
+      contains(c) { return classi[id].has(c); },
+    },
+  };
+  return nodi[id];
+}
+global.document = { documentElement: { dataset: {} } };
+"""
+    prova = preludio + blocco + """
+applicaTema('scuro');
+const scuro = { attr: document.documentElement.dataset.tema ?? null,
+                chiaro: classi['tema-chiaro'].has('active'),
+                scuroAttivo: classi['tema-scuro'].has('active') };
+applicaTema('chiaro');
+const chiaro = { attr: document.documentElement.dataset.tema ?? null,
+                 chiaro: classi['tema-chiaro'].has('active'),
+                 scuroAttivo: classi['tema-scuro'].has('active') };
+console.log(JSON.stringify({ scuro, chiaro }));
+"""
+    d = _esegui_node(prova)
+    assert d["scuro"]["attr"] == "scuro"
+    assert d["scuro"]["scuroAttivo"] is True and d["scuro"]["chiaro"] is False
+    assert d["chiaro"]["attr"] is None, "il chiaro e' il predefinito: niente attributo"
+    assert d["chiaro"]["chiaro"] is True and d["chiaro"]["scuroAttivo"] is False
+
+
+def test_il_tema_scuro_e_l_opposto_di_quello_chiaro():
+    """Il tema deve essere davvero l'opposto, non una variante: lo sfondo scuro e
+    il testo chiaro. Si guardano le due palette nel CSS, perche' un tema che
+    lascia lo sfondo chiaro non e' un tema diverso — e' la stessa pagina con un
+    dettaglio cambiato."""
+    import re
+    css = open("/workspace/gg/static/style.css", encoding="utf-8").read()
+    inizio = css.index('html[data-tema="scuro"]')
+    blocco = css[inizio:css.index("}", inizio)]
+
+    def valore(nome, testo):
+        m = re.search(rf"--{nome}:\s*([^;]+);", testo)
+        return m.group(1).strip() if m else None
+
+    def luminanza(colore):
+        colore = colore.lstrip("#")
+        r, g, b = (int(colore[i:i + 2], 16) for i in (0, 2, 4))
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
+    chiaro = css[:inizio]
+    # sfondo: scuro nel tema scuro, chiaro in quello chiaro
+    assert luminanza(valore("paper", blocco)) < 0.25, "--paper del tema scuro non e' scuro"
+    assert luminanza(valore("paper", chiaro)) > 0.8, "--paper del tema chiaro non e' chiaro"
+    # inchiostro: l'opposto
+    assert luminanza(valore("ink", blocco)) > 0.8, "--ink del tema scuro non e' chiaro"
+    assert luminanza(valore("ink", chiaro)) < 0.25, "--ink del tema chiaro non e' scuro"
 
 
 def test_il_comando_pubblica_rifiuta_senza_credenziali():

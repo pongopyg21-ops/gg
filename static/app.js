@@ -1867,6 +1867,40 @@ async function cambiaPasswordCasa() {
 
 $('#pw-salva').addEventListener('click', cambiaPasswordCasa);
 
+/* ---------- tema chiaro / scuro ----------
+   Il tema e' una preferenza del dispositivo, quindi vive in `localStorage` come
+   le altre scelte locali (timbro, suono), non nel database della casa. La scelta
+   si applica anche a pagina gia' disegnata (`applicaTema`) perche' qui si cambia
+   dal vivo, mentre l'avvio la applica nello `<head>` per non far vedere un lampo
+   bianco a chi ha scelto il tema scuro. */
+function temaScelto() {
+  try { return localStorage.getItem('tema') === 'scuro' ? 'scuro' : 'chiaro'; }
+  catch (_e) { return 'chiaro'; }
+}
+
+/** Applica il tema al documento e aggiorna i due pulsanti in FAQ. */
+function applicaTema(tema) {
+  const scuro = tema === 'scuro';
+  // il tema chiaro e' il predefinito: si toglie l'attributo invece di scriverlo,
+  // cosi' non serve nessuna regola `html[data-tema="chiaro"]` da tenere allineata
+  if (scuro) document.documentElement.dataset.tema = 'scuro';
+  else delete document.documentElement.dataset.tema;
+  const chiaroBtn = $('#tema-chiaro');
+  const scuroBtn = $('#tema-scuro');
+  if (chiaroBtn) chiaroBtn.classList.toggle('active', !scuro);
+  if (scuroBtn) scuroBtn.classList.toggle('active', scuro);
+}
+
+function scegliTema(tema) {
+  try { localStorage.setItem('tema', tema); } catch (_e) { /* niente memoria */ }
+  applicaTema(tema);
+}
+
+$('#tema-chiaro').addEventListener('click', () => scegliTema('chiaro'));
+$('#tema-scuro').addEventListener('click', () => scegliTema('scuro'));
+// all'avvio i pulsanti si allineano al tema gia' applicato dallo `<head>`
+applicaTema(temaScelto());
+
 /* ---------- PROFILO ---------- */
 function labelOf(key) { return allergenLabels[key] || key; }
 
@@ -2512,48 +2546,70 @@ function voceCloudScelta() {
   return voceCloud.predefinita || 'it-IT-IsabellaNeural';
 }
 
+/** Prende l'audio di una frase: dalla memoria se c'e', altrimenti dal server.
+
+    Separata da `parlaCloud` perche' serve anche a **preparare** le frasi fisse
+    (vedi `preriscaldaFrasiFisse`): li' l'audio si scarica senza riprodurlo, cosi'
+    quando la frase serve davvero e' gia' in memoria e parte senza aspettare Azure.
+    `null` se non si riesce, e allora il chiamante ripiega sulla voce del browser. */
+async function audioCloud(frase) {
+  if (frase.length > (voceCloud.maxCaratteri || 600)) return null;
+  const chiave = voceCloudScelta() + '|' + frase;
+  const inMemoria = voceCloud.sentite.get(chiave);
+  if (inMemoria) return inMemoria;
+
+  let blob;
+  try {
+    const r = await fetch('/api/voce/parla', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: frase, voice: voceCloudScelta() }),
+    });
+    if (!r.ok) {
+      // il perché va detto una volta sola: ripiegando in silenzio si sente la
+      // voce del sistema senza capire che la neurale ha smesso di funzionare,
+      // e sembra che la configurazione non sia mai stata letta
+      let motivo = '';
+      try { motivo = (await r.json()).error || ''; } catch (_e) { /* risposta non JSON */ }
+      if (!voceCloud.avvisato) {
+        voceCloud.avvisato = true;
+        voceStato(motivo ? `${motivo}: si sentirà la voce del sistema.`
+                         : 'Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
+      }
+      return null;
+    }
+    blob = await r.blob();
+  } catch (_e) {
+    if (!voceCloud.avvisato) {
+      voceCloud.avvisato = true;
+      voceStato('Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
+    }
+    return null;
+  }
+  // tetto alla memoria: si butta la più vecchia, non si cresce all'infinito
+  if (voceCloud.sentite.size >= CLOUD_CACHE_MAX) {
+    voceCloud.sentite.delete(voceCloud.sentite.keys().next().value);
+  }
+  voceCloud.sentite.set(chiave, blob);
+  return blob;
+}
+
+/** Prepara in anticipo le frasi fisse della conversazione ("Sì.", "Comandi.").
+
+    Sono sempre le stesse e brevissime, quindi Azure le serve una volta: senza
+    questa preparazione, ogni "Comandi." costa un giro di rete **prima** di
+    sentirsi, ed e' la parte di latenza che si nota di piu' dopo aver parlato.
+    Si scaricano in sottofondo quando il cloud e' attivo, senza bloccare l'avvio. */
+function preriscaldaFrasiFisse() {
+  if (!voceCloud.disponibile) return;
+  ['Comandi.', 'Sì.'].forEach((f) => { audioCloud(f).catch(() => {}); });
+}
+
 /** Scarica l'audio cloud e lo riproduce. `false` se non ci riesce, così il
     chiamante può ripiegare sul browser. */
 async function parlaCloud(frase) {
-  if (frase.length > (voceCloud.maxCaratteri || 600)) return false;
-  const chiave = voceCloudScelta() + '|' + frase;
-
-  let blob = voceCloud.sentite.get(chiave);
-  if (!blob) {
-    try {
-      const r = await fetch('/api/voce/parla', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: frase, voice: voceCloudScelta() }),
-      });
-      if (!r.ok) {
-        // il perché va detto una volta sola: ripiegando in silenzio si sente la
-        // voce del sistema senza capire che la neurale ha smesso di funzionare,
-        // e sembra che la configurazione non sia mai stata letta
-        let motivo = '';
-        try { motivo = (await r.json()).error || ''; } catch (_e) { /* risposta non JSON */ }
-        if (!voceCloud.avvisato) {
-          voceCloud.avvisato = true;
-          voceStato(motivo ? `${motivo}: si sentirà la voce del sistema.`
-                           : 'Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
-        }
-        return false;
-      }
-      blob = await r.blob();
-    } catch (_e) {
-      if (!voceCloud.avvisato) {
-        voceCloud.avvisato = true;
-        voceStato('Voce neurale non raggiungibile: si sentirà la voce del sistema.', 'err');
-      }
-      return false;
-    }
-    // tetto alla memoria: si butta la più vecchia, non si cresce all'infinito
-    if (voceCloud.sentite.size >= CLOUD_CACHE_MAX) {
-      voceCloud.sentite.delete(voceCloud.sentite.keys().next().value);
-    }
-    voceCloud.sentite.set(chiave, blob);
-  }
-
+  const blob = await audioCloud(frase);
+  if (!blob) return false;
   try {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
@@ -2618,6 +2674,9 @@ async function caricaVoceCloud() {
     voceCloud.maxCaratteri = d.max_caratteri || 600;
     popolaVociCloud();
     mostraAvvisoRobotica();
+    // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
+    // significa non farle aspettare dopo, quando servono davvero
+    preriscaldaFrasiFisse();
   } catch (_e) { /* resta la voce del browser */ }
 }
 
@@ -2758,12 +2817,18 @@ function sbloccaVoce() {
 /* ---------- registrazione per il server ----------
    Il microfono consegna i campioni nell'ordine in cui li ha presi, a blocchi di
    `ASCOLTO_BLOCCO`. I valori sono tarati su un comando detto a voce: una frase
-   breve, non una dettatura. */
+   breve, non una dettatura.
+
+   I tempi sono scelti per la **reattivita'**, non per il massimo dell'affidabilita':
+   il silenzio che chiude la frase e' la pausa che si fa **dentro una frase**
+   (prendere fiato), quindi non serve lunga, e ognuna di queste attese si somma a
+   quella della trascrizione. Il tetto all'attesa ("nessuno parla") resta piu'
+   largo perche' copre anche il tempo che si prende per iniziare. */
 const ASCOLTO_BLOCCO = 4096;         // campioni per blocco (~93 ms a 44,1 kHz)
 const ASCOLTO_CAMPIONI = 16000;      // quello che vuole il servizio di ascolto
-const ASCOLTO_FINE_MS = 1600;        // silenzio che chiude la frase
-const ASCOLTO_ATTESA_MS = 6000;      // nessuno parla: si chiude
-const ASCOLTO_MAX_MS = 15000;        // tetto, qualunque cosa succeda
+const ASCOLTO_FINE_MS = 800;         // silenzio che chiude la frase
+const ASCOLTO_ATTESA_MS = 4000;      // nessuno parla: si chiude
+const ASCOLTO_MAX_MS = 12000;        // tetto, qualunque cosa succeda
 const ASCOLTO_SILENZIO = 0.012;      // sopra questa ampiezza c'è voce
 
 /** La registrazione di una frase e' finita? Pura, cosi' la regola si prova senza
@@ -2862,7 +2927,11 @@ let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
 // distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
 // l'utente si aspetta di trovarlo acceso.
 let appenaEntrato = false;
-const SVEGLIA_RIPRESA_MS = 700;   // pausa dopo la voce, prima di riascoltare
+const SVEGLIA_RIPRESA_MS = 250;   // pausa minima dopo la voce, prima di riascoltare
+// Intertempo fra un giro di ascolto e il successivo: quanto basta a lasciar
+// chiudere il microfono del giro prima, non un'attesa di comodo. Ogni
+// millisecondo qui si sente come "non mi ascolta" fra due comandi.
+const CICLO_PAUSA_MS = 120;
 // Quanto resta aperta la finestra dopo "Sì.": il comando si dice subito dopo,
 // senza ripetere la sveglia. E' un tempo, non uno stato senza fine, perche' una
 // volta che l'assistente ha chiamato, il discorso di casa che segue non deve
@@ -3619,7 +3688,7 @@ function cicloAscoltoContinuo() {
 
   const ancora = () => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
-    setTimeout(cicloAscoltoContinuo, 250);
+    setTimeout(cicloAscoltoContinuo, CICLO_PAUSA_MS);
   };
 
   const esito = (d) => {
@@ -3668,7 +3737,7 @@ function cicloAscoltoDalBrowser(mio) {
   rec.continuous = false;
   rec.maxAlternatives = 1;
   const valido = () => mio === ascoltoContinuo.ciclo && ascoltoContinuo.continuo;
-  const riparti = () => { if (valido()) setTimeout(cicloAscoltoContinuo, 250); };
+  const riparti = () => { if (valido()) setTimeout(cicloAscoltoContinuo, CICLO_PAUSA_MS); };
   // onresult e onend arrivano entrambi, nell'ordine che decide il browser. Il
   // primo che parla decide, l'altro non deve far ripartire un secondo ciclo:
   // altrimenti il microfono si apre due volte e i due giri si annullano a
@@ -3690,7 +3759,7 @@ function cicloAscoltoDalBrowser(mio) {
     riparti();
   };
   rec.onend = () => { if (!deciso) riparti(); };
-  try { rec.start(); } catch (_e) { setTimeout(cicloAscoltoContinuo, 600); }
+  try { rec.start(); } catch (_e) { setTimeout(cicloAscoltoContinuo, CICLO_PAUSA_MS); }
 }
 
 /** Esegue il comando continuando ad ascoltare: la conferma a voce deve finire

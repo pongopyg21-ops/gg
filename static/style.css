@@ -34,7 +34,71 @@
      (metricamente identica ad Arial). Il sans-serif finale regge comunque. */
   --font-display: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif;
   --font-ui: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif;
+
+  /* Colori che servivano fissi e ora sono variabili: senza, il tema scuro
+     resterebbe a macchie chiare (le nuvole, l'intestazione delle tabelle, il
+     messaggio d'errore). Erano gli unici `#...` rimasti fuori dalla palette. */
+  --testo-su-accento: #fff;          /* testo sopra --accent e --green */
+  --testo-su-ink: #fff;              /* testo sopra --ink (tendina del timer) */
+  --bordo-su-ink: rgba(255, 255, 255, .3);
+  --testa-tabella: #f7fbfc;          /* sfondo della riga d'intestazione */
+  --riga-hover: #f4fafc;
+  --attenzione-bordo: #7fb8d2;
+  --attenzione-sfondo: #e8f4fa;
+  --errore-sfondo: #fdeceb;
+  --errore-bordo: #f3c3bf;
+  --errore-testo: #8a2b21;
+  --nuvola: #fff;
+  /* Il cielo di fondo (body::before) e le nuvole che scorrono: tre sfumature che
+     nel tema scuro diventano notte — un cielo chiaro sopra un testo scuro
+     accecherebbe. */
+  --cielo-alto: #cdeafb;
+  --cielo-luce-1: rgba(255, 255, 255, .85);
+  --cielo-luce-2: rgba(255, 255, 255, .7);
 }
+
+/* Tema scuro: la stessa palette «mare», ma di notte. Non e' un negativo
+   automatico: lo sfondo profondo e l'inchiostro chiaro sono scelti per il
+   contrasto, e l'accento si schiarisce perche' un blu scuro su fondo scuro non
+   si legge. Si accende dal tema chiaro (l'opposto), come chiesto. */
+html[data-tema="scuro"] {
+  --paper: #0b161c;
+  --surface: #142830;
+  --ink: #eaf4f8;
+  --muted: #9db9c6;
+  --line: #24444f;
+  --line-strong: #35606d;
+
+  --accent: #4fb3e8;
+  --accent-deep: #8fd0f0;
+  --accent-soft: #17313d;
+
+  --green: #4cc0ac;
+  --green-soft: #14302b;
+
+  --sand: #e0a94a;
+
+  --testo-su-accento: #08222c;
+  --testo-su-ink: #08222c;
+  --bordo-su-ink: rgba(0, 0, 0, .35);
+  --testa-tabella: #142830;
+  --riga-hover: #1a333d;
+  --attenzione-bordo: #3f7186;
+  --attenzione-sfondo: #16303c;
+  --errore-sfondo: #3a1f1c;
+  --errore-bordo: #6b3a34;
+  --errore-testo: #f0b3a8;
+  --nuvola: #cfe9f5;
+  --cielo-alto: #0a1d26;
+  --cielo-luce-1: rgba(120, 180, 205, .10);
+  --cielo-luce-2: rgba(120, 180, 205, .08);
+
+  color-scheme: dark;
+}
+
+/* La pagina e' chiara per scelta: si dice al browser, cosi' i controlli nativi
+   (tendine, caselle) seguono la palette anche da soli. */
+:root { color-scheme: light; }
 
 * { box-sizing: border-box; }
 
@@ -106,8 +170,8 @@ body {
 .accesso-bottoni button { flex: 1; padding: 11px; }
 .accesso-errore {
   margin: 0 0 14px; padding: 9px 11px;
-  background: #fdeceb; border: 1px solid #f3c3bf; border-radius: 8px;
-  color: #8a2b21; font-size: 13px; line-height: 1.4;
+  background: var(--errore-sfondo); border: 1px solid var(--errore-bordo); border-radius: 8px;
+  color: var(--errore-testo); font-size: 13px; line-height: 1.4;
 }
 .accesso-link {
   display: block; width: 100%; margin-top: 18px; padding: 8px;
@@ -142,7 +206,7 @@ body {
 .home-mic {
   display: inline-flex; align-items: center; gap: 10px;
   min-height: 46px; padding: 12px 22px; border-radius: 999px;
-  border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--testo-su-accento);
   font-size: 15px; font-weight: 600; letter-spacing: .01em;
   box-shadow: 0 10px 26px -14px rgba(14, 42, 56, .6);
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
@@ -324,7 +388,7 @@ button, input, select, textarea {
 button { cursor: pointer; font-weight: 500; }
 button:hover { border-color: var(--muted); }
 button.primary {
-  background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  background: var(--accent); border-color: var(--accent); color: var(--testo-su-accento); font-weight: 600;
 }
 button.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
 button.icon {
@@ -436,9 +500,9 @@ table {
 th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--line); }
 th {
   font-size: 10.5px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: .09em; color: var(--muted); background: #f7fbfc;
+  letter-spacing: .09em; color: var(--muted); background: var(--testa-tabella);
 }
-tbody tr:hover td { background: #f4fafc; }
+tbody tr:hover td { background: var(--riga-hover); }
 tr:last-child td { border-bottom: none; }
 
 /* ---------- lista della spesa ---------- */
@@ -547,14 +611,14 @@ tr:last-child td { border-bottom: none; }
 .steps li::marker { color: var(--accent); font-weight: 600; }
 .detail-unsafe {
   margin: 16px 0 0; padding: 9px 12px; border-radius: 8px;
-  background: #e2f1f8; border: 1px solid #b9d7e5;
+  background: var(--accent-soft); border: 1px solid var(--attenzione-bordo);
   color: var(--accent-deep); font-size: 12.5px;
 }
 .muted { color: var(--muted); }
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
+  background: var(--ink); color: var(--testo-su-ink); padding: 11px 20px; border-radius: 999px;
   font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(14, 42, 56, .5);
 }
 
@@ -571,7 +635,7 @@ tr:last-child td { border-bottom: none; }
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
 }
 .mic:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -12px rgba(14, 42, 56, .5); }
-.mic.on { background: var(--accent); color: #fff; border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
+.mic.on { background: var(--accent); color: var(--testo-su-accento); border-color: var(--accent); animation: mic-pulse 1.4s ease-in-out infinite; }
 .mic-icon { pointer-events: none; }
 /* Ascolto continuo acceso: il pulsante resta sempre in evidenza, anche a
    pannello chiuso. E' l'unico segno che il microfono sta ancora ascoltando, e
@@ -582,6 +646,23 @@ tr:last-child td { border-bottom: none; }
   width: 10px; height: 10px; border-radius: 50%; background: var(--green);
   animation: mic-pulse 1.4s ease-in-out infinite;
 }
+
+/* Scelta del tema: due pulsanti con un pallino che mostra il colore che si
+   ottiene. Accanto al pulsante, i due pallini si disegnano con i colori dei due
+   temi, cosi' si vede cosa si sceglie senza leggere. */
+.tema-scelta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.tema-scelta.active { border-color: var(--accent); color: var(--accent); }
+.tema-pallino {
+  width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line-strong);
+  display: inline-block;
+}
+.tema-pallino-chiaro { background: linear-gradient(135deg, #f2f8fa 50%, #0b161c 50%); }
+.tema-pallino-scuro { background: linear-gradient(135deg, #0b161c 50%, #f2f8fa 50%); }
 
 /* Cosa ha sentito l'assistente, fuori dal pannello: una riga sopra il pulsante
    del microfono, l'unico posto visibile con l'ascolto continuo a pannello chiuso. */
@@ -657,7 +738,7 @@ tr:last-child td { border-bottom: none; }
   margin: 0 0 14px; padding: 10px 13px; border-radius: 8px; font-size: 13.5px;
 }
 .voice-result.ok { background: var(--green-soft); color: var(--green); }
-.voice-result.err { background: #e2f1f8; color: var(--accent-deep); }
+.voice-result.err { background: var(--accent-soft); color: var(--accent-deep); }
 .voice-foot {
   display: flex; align-items: center; gap: 8px; margin-top: 14px;
   padding-top: 14px; border-top: 1px solid var(--line);
@@ -723,7 +804,7 @@ tr:last-child td { border-bottom: none; }
 
 /* ---------- allergie e intolleranze ---------- */
 .banner {
-  background: var(--accent-soft); border: 1px solid #c3dce8;
+  background: var(--accent-soft); border: 1px solid var(--attenzione-bordo);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius); padding: 13px 17px; margin-bottom: 20px;
 }
@@ -760,7 +841,7 @@ tr:last-child td { border-bottom: none; }
   transition: border-color .16s ease, color .16s ease, background .16s ease;
 }
 .chip:hover { border-color: var(--accent); color: var(--ink); }
-.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--testo-su-accento); font-weight: 600; }
 
 /* --- ricette preferite --- */
 /* la stella accanto al nome resta discreta: e' un promemoria, non un'allerta */
@@ -778,11 +859,11 @@ tr:last-child td { border-bottom: none; }
 
 /* etichette di allerta su ricette e piano */
 .card .allergens { font-size: 11.5px; color: var(--muted); margin-top: 7px; }
-.card.unsafe { border-color: #a8cde0; }
-.slot.unsafe { border-color: #7fb8d2; background: #e8f4fa; }
+.card.unsafe { border-color: var(--attenzione-bordo); }
+.slot.unsafe { border-color: var(--attenzione-bordo); background: var(--attenzione-sfondo); }
 .badge {
-  display: inline-block; background: #e2f1f8; color: var(--accent-deep);
-  border: 1px solid #b9d7e5; border-radius: 999px;
+  display: inline-block; background: var(--accent-soft); color: var(--accent-deep);
+  border: 1px solid var(--attenzione-bordo); border-radius: 999px;
   padding: 1px 9px; font-size: 10.5px; font-weight: 600;
   letter-spacing: .02em; margin: 4px 4px 0 0;
 }
@@ -893,7 +974,7 @@ tr:last-child td { border-bottom: none; }
   color: var(--muted); font-size: 14px; line-height: 1;
 }
 .ch-row.done .ch-check {
-  background: var(--green); border-color: var(--green); color: #fff; font-weight: 700;
+  background: var(--green); border-color: var(--green); color: var(--testo-su-accento); font-weight: 700;
 }
 .ch-name { min-width: 0; }
 .ch-area {
@@ -987,7 +1068,7 @@ tr:last-child td { border-bottom: none; }
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: max(16px, env(safe-area-inset-bottom)); z-index: 60;
   display: flex; align-items: center; gap: 18px;
-  background: var(--ink); color: #fff;
+  background: var(--ink); color: var(--testo-su-ink);
   border-radius: 999px; padding: 10px 12px 10px 22px;
   box-shadow: 0 16px 40px -14px rgba(14, 42, 56, .6);
   font-size: 13.5px;
@@ -1002,9 +1083,9 @@ tr:last-child td { border-bottom: none; }
 .ch-timer button { font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
 .ch-timer button.primary { background: var(--accent); border-color: var(--accent); }
 .ch-timer button:not(.primary) {
-  background: none; border-color: rgba(255, 255, 255, .3); color: #fff;
+  background: none; border-color: var(--bordo-su-ink); color: var(--testo-su-ink);
 }
-.ch-timer button:not(.primary):hover { border-color: #fff; }
+.ch-timer button:not(.primary):hover { border-color: var(--testo-su-ink); }
 /* tempo scaduto nella regola dei 15 minuti: si vede, non suona — un allarme
    sonoro mentre si pulisce sarebbe solo fastidioso */
 .ch-timer.scaduto { background: var(--accent-deep); }
@@ -1050,9 +1131,9 @@ body::before {
   content: "";
   position: fixed; inset: 0; z-index: -2; pointer-events: none;
   background:
-    radial-gradient(ellipse 60% 40% at 20% 0%, rgba(255, 255, 255, .85), transparent 60%),
-    radial-gradient(ellipse 50% 35% at 75% 10%, rgba(255, 255, 255, .7), transparent 60%),
-    linear-gradient(180deg, #cdeafb 0%, var(--paper) 45%, var(--paper) 100%);
+    radial-gradient(ellipse 60% 40% at 20% 0%, var(--cielo-luce-1), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 75% 10%, var(--cielo-luce-2), transparent 60%),
+    linear-gradient(180deg, var(--cielo-alto) 0%, var(--paper) 45%, var(--paper) 100%);
   animation: cielo-respira 24s ease-in-out infinite;
 }
 @keyframes cielo-respira {
@@ -1066,8 +1147,8 @@ body::after {
   content: "";
   position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
   background:
-    radial-gradient(ellipse 160px 34px at 10% 12%, #fff, transparent 70%),
-    radial-gradient(ellipse 220px 40px at 55% 26%, #fff, transparent 72%);
+    radial-gradient(ellipse 160px 34px at 10% 12%, var(--nuvola), transparent 70%),
+    radial-gradient(ellipse 220px 40px at 55% 26%, var(--nuvola), transparent 72%);
   animation: nuvole 90s linear infinite;
 }
 @keyframes nuvole {
@@ -1402,7 +1483,7 @@ button { transition: transform .12s ease; }
 }
 .project-check:hover { border-color: var(--green); }
 .project-check.on {
-  background: var(--green); border-color: var(--green); color: #fff;
+  background: var(--green); border-color: var(--green); color: var(--testo-su-accento);
 }
 
 .project-actions { flex: none; display: flex; gap: 4px; }
