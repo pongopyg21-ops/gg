@@ -17,6 +17,7 @@
 #   ./avvia.sh log        mostra le ultime righe del log
 #   ./avvia.sh test       esegue i test nella venv del progetto
 #   ./avvia.sh pubblica   fa il push su GitHub e verifica che sia arrivato
+#   ./avvia.sh nuovachiave  rigenera la chiave SSH per il push
 #
 # Porta: 12000 per impostazione predefinita (è quella inoltrata dall'host).
 # Modificabile con PORT=... ./avvia.sh
@@ -327,11 +328,42 @@ avvia_ssh() {
   [ -f "$cfg" ] && export GIT_SSH_COMMAND="ssh -F $cfg"
 }
 
+# I permessi della chiave, rimessi a posto se servono.
+#
+# La cartella `/workspace` sopravvive alla ricreazione del container, ma i
+# **permessi** no: torna con il gruppo scrivibile, e `ssh` rifiuta una chiave
+# leggibile da altri con un "UNPROTECTED PRIVATE KEY FILE" che sembra un errore
+# di GitHub. Qui si rimettono prima di provare, cosi' il caso non si ripresenta.
+sistema_chiave() {
+  local cfg="${MAGGIORDOMO_SSH_CONFIG:-/workspace/ssh/config}"
+  local dir; dir="$(dirname "$cfg")"
+  [ -d "$dir" ] || return 0
+  chmod 700 "$dir" 2>/dev/null
+  [ -f "$cfg" ] && chmod 600 "$cfg" 2>/dev/null
+  [ -f "$dir/deploy_key" ] && chmod 600 "$dir/deploy_key" 2>/dev/null
+  return 0
+}
+
+# `ssh` non e' nell'immagine di base: senza, la chiave non si puo' usare. Si
+# installa al volo (`sudo` non chiede la password) — e' un pacchetto di sistema,
+# quindi sparisce a ogni ricreazione e va rimesso. Senza questo, un push
+# fallirebbe dicendo "Permission denied" e sembrerebbe colpa della chiave.
+assicura_ssh() {
+  command -v ssh >/dev/null 2>&1 && return 0
+  giallo "ssh non c'e': lo installo (openssh-client)."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo -n apt-get update -qq >/dev/null 2>&1
+    sudo -n apt-get install -y --no-install-recommends openssh-client >/dev/null 2>&1
+  fi
+  command -v ssh >/dev/null 2>&1
+}
+
 pubblica() {
   local ramo="${2:-main}"
   local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
   cd "$BASE_DIR" || return 1
+  sistema_chiave
   avvia_ssh
   local locale remoto
   locale="$(git rev-parse HEAD 2>/dev/null)" || { rosso "Non sono in un repository git."; return 1; }
@@ -357,6 +389,11 @@ ASKPASS
     local esito=$?
     rm -f "$ask"
   elif [ -n "${GIT_SSH_COMMAND:-}" ]; then
+    if ! assicura_ssh; then
+      rm -f "$err"
+      rosso "ssh non e' disponibile: non posso usare la chiave."
+      return 1
+    fi
     # `origin` e' in HTTPS, e con quella la chiave SSH non entra in gioco: si
     # spinge all'indirizzo SSH dello stesso repository, ricavato da `origin` invece
     # che scritto a mano (il repo potrebbe cambiare).
@@ -393,6 +430,36 @@ ASKPASS
   fi
 }
 
+# Genera una nuova chiave SSH per il push, e stampa la parte pubblica da
+# aggiungere su GitHub.
+#
+# Serve quando la chiave non c'e' piu' (o non e' mai stata autorizzata): si
+# rigenera qui, si incolla la pubblica fra le **deploy key** del repository
+# (spuntando "Allow write access"), e `./avvia.sh pubblica` funziona. La privata
+# resta in `/workspace/ssh`, **fuori da ogni repository**, quindi non puo' finire
+# in git.
+nuova_chiave() {
+  assicura_ssh || { rosso "ssh non e' disponibile: non posso generare la chiave."; return 1; }
+  local dir="/workspace/ssh"
+  mkdir -p "$dir"
+  if [ -f "$dir/deploy_key" ] && [ "${2:-}" != "forza" ]; then
+    giallo "Esiste gia' una chiave in $dir/deploy_key."
+    echo "  Per rifarla da zero: ./avvia.sh nuovachiave forza"
+  else
+    ssh-keygen -t ed25519 -N "" -C "openhands-maggiordomo-deploy" -f "$dir/deploy_key" >/dev/null
+  fi
+  sistema_chiave
+  printf 'Host github.com\n  HostName github.com\n  User git\n  IdentityFile %s/deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n' "$dir" > "$dir/config"
+  chmod 600 "$dir/config"
+  echo
+  verde "Chiave pronta. Incolla questa riga su GitHub:"
+  echo "  https://github.com/pongopyg21-ops/gg/settings/keys  →  Add deploy key"
+  echo "  (spunta \"Allow write access\")"
+  echo
+  cat "$dir/deploy_key.pub"
+  echo
+}
+
 # I test girano nella venv del progetto, così vedono le stesse dipendenze del
 # server. Il server non serve: i test usano un database temporaneo.
 testa() {
@@ -412,12 +479,13 @@ case "${1:-avvia}" in
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
   test|tests)    testa ;;
   pubblica|push) pubblica "$@" ;;
+  nuovachiave)   nuova_chiave "$@" ;;
   -h|--help|help)
     sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     ;;
   *)
     rosso "Comando sconosciuto: $1"
-    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica]"
+    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica|nuovachiave]"
     exit 2
     ;;
 esac
