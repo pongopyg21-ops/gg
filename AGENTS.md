@@ -1065,6 +1065,35 @@ frasi di un messaggio lungo si dicono **in fila** con un `for await`, non con un
 esegue la funzione vera con un `Audio` finto ma fedele e guarda **quando** la
 promessa si chiude: è l'unico modo per accorgersi di un difetto di *tempo*.
 
+### Su iPhone la voce resta muta senza un gesto *recente*
+
+Sintomo riferito: il microfono sente, ma l'assistente **non dice né "Sì." né
+"Comandi."**. La causa è iOS: non lascia partire un elemento `Audio` creato senza
+un gesto **recente**, e la voce neurale è proprio un `Audio` (`parlaCloud`).
+Sbloccare l'`AudioContext` del "tin" non basta: **ogni elemento `Audio` ha il suo
+sblocco**, e finora nessuno lo faceva per la voce.
+
+Il rimedio è `sbloccaVoce()`: dentro ogni tocco sulla pagina si riproduce un WAV
+**muto** (`SILENZIO_WAV`), che sblocca la riproduzione. Non si sente nulla. Va
+fatto a **ogni** tocco, non una volta sola, perché il permesso di iOS vale per un
+gesto recente; il "tin" invece resta una volta sola.
+
+Attenzione al banco di prova: `--autoplay-policy=no-user-gesture-required` **maschera**
+questo difetto. Nelle prove sul telefono va tolto.
+
+### Col pannello chiuso non si vedeva niente: la riga `#voice-fuori`
+
+Con l'ascolto continuo acceso il pannello e' **chiuso**, e la frase trascritta
+(`#voice-heard`) e le conferme stanno **dentro** di esso. Chi parla col pannello
+chiuso vedeva solo il pulsante colorato — e siccome l'ascolto continuo **tace**
+sul discorso di casa, sembrava che l'assistente non avesse sentito, anche quando
+aveva capito.
+
+`mostraFuori()` scrive in `#voice-fuori`, una riga **fuori** dal pannello (sopra
+il pulsante del microfono): "Ti ho sentito, dimmi." alla chiamata, "Ho sentito:
+«…»" quando capisce, e l'istruzione sulla sveglia mancante quando serve. A
+pannello **aperto** la riga si nasconde, altrimenti raddoppierebbe `#voice-heard`.
+
 ## Le domande non sono ordini
 
 `voice.parse` riconosce le domande **prima** di ogni altro ramo. Senza, "che cosa

@@ -446,6 +446,12 @@
   <span class="mic-icon">🎙</span>
 </button>
 
+<!-- Cosa ha sentito l'assistente, **fuori** dal pannello: con l'ascolto continuo
+     acceso il pannello e' chiuso, e la frase trascritta e l'esito stanno dentro
+     di esso. Senza questo, chi parla col pannello chiuso non vede nulla e sembra
+     che l'assistente non abbia sentito, anche quando ha capito. -->
+<div id="voice-fuori" class="voice-fuori hidden" aria-live="polite"></div>
+
 <!-- Ritorno alle sezioni da qualsiasi pagina. Sta a sinistra perché il
      microfono occupa l'angolo opposto. -->
 <button id="home-fab" class="home-fab hidden" type="button" title="Torna alla pagina iniziale" aria-label="Torna alla pagina iniziale">

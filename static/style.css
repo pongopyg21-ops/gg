@@ -583,6 +583,19 @@ tr:last-child td { border-bottom: none; }
   animation: mic-pulse 1.4s ease-in-out infinite;
 }
 
+/* Cosa ha sentito l'assistente, fuori dal pannello: una riga sopra il pulsante
+   del microfono, l'unico posto visibile con l'ascolto continuo a pannello chiuso. */
+.voice-fuori {
+  position: fixed; right: 20px; bottom: 88px; z-index: 41;
+  max-width: min(78vw, 380px);
+  padding: 8px 12px; border-radius: 12px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); box-shadow: 0 10px 26px -14px rgba(14, 42, 56, .45);
+  font-size: 14px; line-height: 1.3;
+}
+.voice-fuori.ok { border-color: var(--green); color: var(--green); }
+.voice-fuori.err { border-color: var(--accent-deep); color: var(--accent-deep); font-weight: 600; }
+
 /* Ascolto continuo: il blocco sta dentro il pannello vocale. */
 .voice-sempre {
   display: flex; flex-direction: column; gap: 6px; align-items: flex-start;

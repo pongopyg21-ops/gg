@@ -5579,3 +5579,43 @@ global.document = { title: '' };
     for nome, visibile in esiti.items():
         assert visibile, f"il pulsante voce resta nascosto in {nome}"
 
+
+def test_la_frase_sentita_si_vede_anche_col_pannello_chiuso(client):
+    """Con l'ascolto continuo acceso il pannello e' chiuso, e `#voice-heard` sta
+    dentro di esso: la frase trascritta e l'esito non si vedono. Chi parla col
+    pannello chiuso vede solo il pulsante colorato, e se l'assistente non risponde
+    (ascolto continuo: tace sul discorso di casa) sembra che non abbia sentito.
+
+    `mostraFuori` scrive in una riga **fuori** dal pannello. Si esegue la funzione
+    vera con node: a pannello chiuso la riga si vede, a pannello aperto no
+    (altrimenti si raddoppierebbe)."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "mostraFuori")
+    preludio = """
+const stato = { nascosto: true, testo: '', classi: '' };
+let pannelloChiuso = true;
+function $(sel) {
+  if (sel === '#voice-fuori') {
+    return {
+      set hidden(v) { stato.nascosto = v; }, get hidden() { return stato.nascosto; },
+      set textContent(v) { stato.testo = v; }, get textContent() { return stato.testo; },
+      set className(v) { stato.classi = v; }, get className() { return stato.classi; },
+    };
+  }
+  return { classList: { contains: () => pannelloChiuso } };
+}
+"""
+    prova = preludio + blocco + """
+mostraFuori('Ti ho sentito, dimmi.', 'ok');
+const chiuso = { nascosto: stato.nascosto, testo: stato.testo, classi: stato.classi };
+pannelloChiuso = false;   // pannello aperto: li' c'e' gia' #voice-heard
+mostraFuori('Ho sentito: «metti il latte»', 'ok');
+const aperto = { nascosto: stato.nascosto };
+console.log(JSON.stringify({ chiuso, aperto }));
+"""
+    d = _esegui_node(prova)
+    assert d["chiuso"]["nascosto"] is False, "col pannello chiuso la riga deve vedersi"
+    assert "Ti ho sentito" in d["chiuso"]["testo"]
+    assert "ok" in d["chiuso"]["classi"]
+    assert d["aperto"]["nascosto"] is True, "col pannello aperto la riga non si raddoppia"
+

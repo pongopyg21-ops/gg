@@ -2719,11 +2719,40 @@ function tentaSuonoApertura() {
   if (tingsuonato) return;
   tingsuonato = true;
   suonoApertura();
+  sbloccaVoce();
+}
+
+/* Un WAV muto di 0,1 s: serve solo a far "toccare" un elemento Audio dal gesto
+   dell'utente. Non si sente niente. */
+const SILENZIO_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+
+/* Sblocca la riproduzione della voce dentro il gesto dell'utente.
+
+   iPhone non lascia partire un `Audio` creato senza un gesto recente: la voce
+   neurale (l'elemento `Audio` di `parlaCloud`) resta **muta** anche avendo
+   l'audio pronto e il microfono che sente. Sbloccare l'`AudioContext` del "tin"
+   non basta: ogni elemento `Audio` ha il suo sblocco, e finora nessuno lo
+   faceva per la voce. Qui si riproduce un WAV muto dentro il gesto (il tocco su
+   "Entra" o sul pulsante), cosi' l'elemento `Audio` del gesto successivo e' gia'
+   autorizzato. Non si sente nulla, e la voce del sistema non ne ha bisogno. */
+function sbloccaVoce() {
+  try {
+    const a = new Audio(SILENZIO_WAV);
+    const p = a.play();
+    if (p && p.then) p.catch(() => { /* niente da sbloccare su questo browser */ });
+  } catch (_e) { /* audio non disponibile: la voce del sistema resta */ }
 }
 
 // primo tocco o primo tasto: la prima occasione in cui il browser concede l'audio
 ['pointerdown', 'keydown'].forEach((ev) => {
   document.addEventListener(ev, tentaSuonoApertura, { once: true });
+});
+
+// e a **ogni** tocco successivo si risblocca la voce: su iPhone il permesso vale
+// per un gesto recente, non per sempre, e la conversazione puo' durare a lungo
+// fra un tocco e l'altro. Il "tin" invece resta una volta sola (sopra).
+['pointerdown', 'keydown'].forEach((ev) => {
+  document.addEventListener(ev, sbloccaVoce);
 });
 
 /* ---------- registrazione per il server ----------
@@ -3203,6 +3232,7 @@ function apriVoce() {
   tentaSuonoApertura();
   mostraAvvisoSicurezza();
   $('#voice').classList.remove('hidden');
+  nascondiFuori();   // il pannello aperto mostra gia' #voice-heard
   $('#voice-result').hidden = true;
   aggiornaSpiaAscolto();
   // con l'ascolto continuo acceso il microfono sta gia' girando: avviarne uno
@@ -3388,6 +3418,7 @@ function fermaAscoltoContinuo() {
     try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
   }
   aggiornaSpiaAscolto();
+  nascondiFuori();   // spento l'ascolto, non c'e' piu' niente da mostrare fuori
   voceStato('Ascolto continuo spento.');
 }
 
@@ -3519,6 +3550,7 @@ function valutaFrase(testo, sveglia, resto, riparti) {
   if (d.azione === 'esegui') {
     ascoltoContinuo.inAttesa = 0;
     $('#voice-heard').textContent = d.comando;
+    mostraFuori(`Ho sentito: «${d.comando}»`, 'ok');
     eseguiComandoContinuo(d.comando, riparti);
     return;
   }
@@ -3527,6 +3559,10 @@ function valutaFrase(testo, sveglia, resto, riparti) {
     // La finestra si apre **prima** di parlare, cosi' e' gia' aperta quando la
     // voce tace e il microfono riprende.
     voceStato('Sì?');
+    // la frase trascritta si scrive anche qui: con il pannello chiuso e' l'unico
+    // posto dove si vede che l'assistente ha sentito la chiamata
+    $('#voice-heard').textContent = (testo || '').trim() || '…';
+    mostraFuori('Ti ho sentito, dimmi.', 'ok');
     attendeComando();
     parlaPoi(cennoDiChiamata(), riparti);
     return;
@@ -3540,8 +3576,30 @@ function valutaFrase(testo, sveglia, resto, riparti) {
   $('#voice-heard').textContent = frase || '…';
   if (frase && sembraComando(frase)) {
     voceStato('Non ho eseguito: di\' «Hey GG» prima del comando.', 'err');
+    mostraFuori('Non ho eseguito: di\' «Hey GG» prima del comando.', 'err');
+  } else {
+    mostraFuori(`Ho sentito: «${frase}»`, '');
   }
   riparti();
+}
+
+/** Aggiorna la riga **fuori** dal pannello: e' l'unico posto visibile quando
+    l'ascolto continuo e' acceso col pannello chiuso. Non si mostra a pannello
+    aperto, perche' li' c'e' gia' `#voice-heard` e si raddoppierebbe. */
+function mostraFuori(testo, tipo) {
+  const el = $('#voice-fuori');
+  if (!el) return;
+  if (!$('#voice').classList.contains('hidden')) { el.hidden = true; return; }
+  el.textContent = testo;
+  el.className = 'voice-fuori' + (tipo ? ' ' + tipo : '');
+  el.hidden = false;
+}
+
+/** Nasconde la riga esterna: si chiama quando il pannello si apre (li' c'e'
+    `#voice-heard`) e quando l'ascolto continuo si spegne. */
+function nascondiFuori() {
+  const el = $('#voice-fuori');
+  if (el) el.hidden = true;
 }
 
 /** Un giro: registra una frase, decide se era per l'app, e si richiama. */
