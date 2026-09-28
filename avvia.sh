@@ -18,6 +18,7 @@
 #   ./avvia.sh test       esegue i test nella venv del progetto
 #   ./avvia.sh pubblica   fa il push su GitHub e verifica che sia arrivato
 #   ./avvia.sh nuovachiave  rigenera la chiave SSH per il push
+#   ./avvia.sh diagnosi    dice da dove vengono chiave e area della voce
 #
 # Porta: 12000 per impostazione predefinita (è quella inoltrata dall'host).
 # Modificabile con PORT=... ./avvia.sh
@@ -50,13 +51,14 @@ PYTHON="${PYTHON:-python3}"
 # ha preparato la venv), si ripiega sulle sole variabili d'ambiente.
 
 stato_voce() {
-  local py="$VENV_PYTHON" esito chiave regione area_ok
+  local py="$VENV_PYTHON" esito chiave regione area_ok area_da
   [ -x "$py" ] || py="$SYS_PYTHON"
   esito="$(cd "$BASE_DIR" && "$py" -c \
-    'import voce_cloud as v; print(v.chiave()); print(v.regione()); print(v.area_valida(v.regione()))' 2>/dev/null)"
+    'import voce_cloud as v; print(v.chiave()); print(v.regione()); print(v.area_valida(v.regione())); print(v.origine("AZURE_SPEECH_REGION"))' 2>/dev/null)"
   chiave="$(printf '%s\n' "$esito" | sed -n '1p')"
   regione="$(printf '%s\n' "$esito" | sed -n '2p')"
   area_ok="$(printf '%s\n' "$esito" | sed -n '3p')"
+  area_da="$(printf '%s\n' "$esito" | sed -n '4p')"
   # l'interprete non ha risposto: si guarda l'ambiente, che e' la seconda fonte
   [ -n "$chiave" ] || chiave="${AZURE_SPEECH_KEY:-}"
   [ -n "$regione" ] || regione="${AZURE_SPEECH_REGION:-}"
@@ -69,6 +71,8 @@ stato_voce() {
       verde "  voce neurale Azure attiva (area: $regione)"
     else
       giallo "  voce neurale NON attiva: l'area «$regione» non esiste fra quelle Azure."
+      # da quale file viene: senza, si corregge il file sbagliato e l'errore resta
+      [ -n "$area_da" ] && echo "  L'area e' letta da: $area_da"
       giallo "  Correggi AZURE_SPEECH_REGION (es. italynorth, westeurope) e riavvia."
     fi
   elif [ -n "$chiave" ] || [ -n "$regione" ]; then
@@ -439,6 +443,27 @@ ASKPASS
   fi
 }
 
+# Mostra da dove vengono chiave e area della voce: il file esatto, o l'ambiente.
+#
+# Serve davanti al caso che fa perdere piu' tempo: si corregge un file e l'errore
+# resta, perche' il valore vero viene da un altro posto. Su Windows `avvia.bat`
+# chiama `windows\segreto.bat`, che **imposta l'ambiente** (`set`): da li' in poi
+# `segreto.txt` non viene nemmeno guardato. Qui si vede quale dei due comanda.
+# La chiave non si stampa: solo le prime lettere e la lunghezza.
+diagnosi_voce() {
+  prepara_ambiente || return 1
+  (cd "$BASE_DIR" && "$PYTHON" - <<'PY'
+import voce_cloud as v
+chiave, area = v.chiave(), v.regione()
+print("chiave :", (f"{chiave[:4]}… ({len(chiave)} caratteri)" if chiave else "(nessuna)"))
+print("        da:", v.origine("AZURE_SPEECH_KEY") or "(nessuna fonte)")
+print("area   :", area or "(nessuna)")
+print("        da:", v.origine("AZURE_SPEECH_REGION") or "(nessuna fonte)")
+print("area valida:", "si" if v.area_valida(area) else "NO — non e' un'area Azure")
+PY
+  )
+}
+
 # Genera una nuova chiave SSH per il push, e stampa la parte pubblica da
 # aggiungere su GitHub.
 #
@@ -489,12 +514,13 @@ case "${1:-avvia}" in
   test|tests)    testa ;;
   pubblica|push) pubblica "$@" ;;
   nuovachiave)   nuova_chiave "$@" ;;
+  diagnosi)      diagnosi_voce ;;
   -h|--help|help)
     sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     ;;
   *)
     rosso "Comando sconosciuto: $1"
-    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica|nuovachiave]"
+    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica|nuovachiave|diagnosi]"
     exit 2
     ;;
 esac

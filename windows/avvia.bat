@@ -88,8 +88,15 @@ if "%AZURE_SPEECH_KEY%"=="" (
     echo  Voce neurale Azure attiva ^(area: %AZURE_SPEECH_REGION%^)
   ) else (
     echo  Voce neurale NON attiva: l'area "%AZURE_SPEECH_REGION%" non esiste.
-    echo  Correggi AZURE_SPEECH_REGION in windows\segreto.bat ^(es. italynorth^),
-    echo  oppure rilancia windows\voce.bat per riscriverlo.
+    REM l'area e' **nell'ambiente** se il file `segreto.bat` l'ha impostata con
+    REM `set`: correggere `segreto.txt` in quel caso non serve a niente, perche'
+    REM `avvia.bat` non lo guarda. E' il motivo per cui l'errore puo' restare.
+    if exist "%~dp0segreto.bat" (
+      echo  L'area e' impostata da: windows\segreto.bat
+      echo  Correggi quella riga li' ^(o rilancia windows\voce.bat^).
+    ) else (
+      echo  Nessun windows\segreto.bat: l'area e' nell'ambiente o in segreto.txt.
+    )
   )
 )
 

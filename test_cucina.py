@@ -5674,6 +5674,59 @@ def test_voce_bat_non_accetta_un_area_inventata(client):
     assert pos_controllo < pos_scrittura, "il controllo deve venire prima di salvare"
 
 
+def test_si_vede_da_quale_file_viene_l_area(monkeypatch, tmp_path):
+    """Il caso che fa perdere tempo: si corregge un file e l'errore resta, perche'
+    il valore vero arriva da un altro posto. Su Windows `avvia.bat` chiama
+    `windows\\segreto.bat`, che imposta l'**ambiente**: da li' in poi
+    `segreto.txt` non viene nemmeno guardato.
+
+    Qui si guarda che il valore dica la sua **provenienza** (il file esatto), cosi'
+    si sa quale correggere."""
+    import importlib
+    import voce_cloud
+    importlib.reload(voce_cloud)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_REGION", raising=False)
+    (tmp_path / "segreto.txt").write_text(
+        "set \"AZURE_SPEECH_KEY=chiave-finta\"\nset \"AZURE_SPEECH_REGION=s\"\n",
+        encoding="utf-8")
+    voce_cloud._FILE_LETTI = False
+    voce_cloud._ORIGINE.clear()
+    voce_cloud.BASE_DIR = str(tmp_path)
+    voce_cloud.DATA_DIR = str(tmp_path)
+
+    assert voce_cloud.regione() == "s"
+    assert voce_cloud.origine("AZURE_SPEECH_REGION") == str(tmp_path / "segreto.txt")
+    # e il messaggio d'errore lo dice, cosi' non si corregge il file sbagliato
+    with pytest.raises(voce_cloud.ErroreVoce) as errore:
+        voce_cloud._controlla_area()
+    assert "letta da" in str(errore.value), str(errore.value)
+
+    # dall'ambiente invece lo dice: e' il caso di avvia.bat su Windows
+    importlib.reload(voce_cloud)
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "chiave-finta")
+    monkeypatch.setenv("AZURE_SPEECH_REGION", "s")
+    voce_cloud._FILE_LETTI = True
+    assert voce_cloud.origine("AZURE_SPEECH_REGION") == "ambiente"
+
+
+def test_la_diagnosi_non_stampa_la_chiave():
+    """La diagnostica serve a capire da dove viene un valore sbagliato, e si fa
+    con qualcuno che guarda: la chiave **non** deve comparire. Si vedono le prime
+    lettere e la lunghezza, che bastano a riconoscere un copia-incolla tronco."""
+    import subprocess
+    esito = subprocess.run(["./avvia.sh", "diagnosi"], cwd="/workspace/gg",
+                           capture_output=True, text=True)
+    uscita = esito.stdout + esito.stderr
+    import voce_cloud
+    chiave = voce_cloud.chiave()
+    if chiave:
+        assert chiave not in uscita, "la diagnosi ha stampato la chiave intera"
+    # ma la provenienza si vede
+    assert "da:" in uscita
+    assert "area valida:" in uscita
+
+
 def test_windows_avvia_dietro_il_tunnel(client):
     """Su Windows l'app sta dietro Tailscale Funnel (o Cloudflare, o nginx):
     `avvia.bat` deve dirlo all'app, altrimenti vede l'indirizzo del tunnel al

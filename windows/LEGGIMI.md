@@ -341,6 +341,41 @@ e richiesta.
 **Il modo più sicuro per correggere**: rilancia `windows\voce.bat` (doppio clic).
 Riscrive `segreto.bat` da zero chiedendo chiave e area, e l'area la valida lui.
 
+### Se l'errore resta dopo aver corretto il file
+
+Succede, e la causa è questa: **su Windows i file dei segreti sono due, e ne
+comanda uno solo.**
+
+`avvia.bat` chiama `windows\segreto.bat`, che **imposta l'ambiente** del
+programma (`set "AZURE_SPEECH_REGION=..."`). Da quel momento l'app usa quel
+valore e **non guarda più `segreto.txt`**. Quindi:
+
+- **`windows\segreto.bat`** — comanda quando c'è. È quello che scrive `voce.bat`.
+- **`segreto.txt`** (accanto ad `app.py`) — si usa **solo se** `segreto.bat` non
+  esiste.
+
+Se hai corretto `segreto.txt` ma `windows\segreto.bat` c'è ancora con l'area
+vecchia, l'errore resta e sembra che la correzione non serva a niente. **Correggi
+quello che il messaggio ti dice**, o — meglio — **cancella `windows\segreto.bat`
+e rilancia `voce.bat`**: così ne esiste uno solo e non c'è niente da indovinare.
+
+Per vedere da dove viene il valore, senza indovinare, c'è un comando
+(da terminale, nella cartella dell'app):
+
+```
+./avvia.sh diagnosi
+```
+
+Risponde così, senza stampare la chiave:
+
+```
+chiave : D58n… (84 caratteri)
+        da: /percorso/dell/app/segreto.txt
+area   : s
+        da: /percorso/dell/app/windows/segreto.bat
+area valida: NO — non e' un'area Azure
+```
+
 
 ### Se preferisci farlo a mano
 

@@ -84,6 +84,24 @@ def area_valida(area: str) -> bool:
     return (area or "").strip().lower() in AREE_VALIDE
 
 
+def origine(nome: str) -> str:
+    """Da dove viene il valore di questa variabile: il file, o «ambiente».
+
+    Serve a rispondere alla domanda che si fa sempre davanti a un valore
+    sbagliato: *quale* dei file lo contiene? L'app guarda quattro nomi di file in
+    due cartelle, piu' l'ambiente che `avvia.bat` imposta prima di partire: senza
+    dire da dove viene, chi corregge un file puo' correggere quello sbagliato e
+    vedere l'errore restare. Vuoto se la variabile non c'e' da nessuna parte."""
+    _leggi_file_segreto()
+    if nome in _ORIGINE:
+        return _ORIGINE[nome]
+    if os.environ.get(nome):
+        # era gia' nell'ambiente prima di leggere i file: l'ha messa chi avvia
+        # l'app (`avvia.bat` chiama `segreto.bat`), oppure e' esportata a mano
+        return "ambiente"
+    return ""
+
+
 def _controlla_area() -> None:
     """Ferma la chiamata se l'area e' sbagliata, con un messaggio comprensibile.
 
@@ -92,10 +110,12 @@ def _controlla_area() -> None:
     area = regione()
     if not area or area_valida(area):
         return
+    dove = origine("AZURE_SPEECH_REGION")
     raise ErroreVoce(
-        f"L'area «{area}» non esiste fra quelle Azure. Controlla il valore di "
-        f"AZURE_SPEECH_REGION: deve essere l'area della risorsa (per esempio "
-        f"westeurope o italynorth), tutta minuscola.",
+        f"L'area «{area}» non esiste fra quelle Azure"
+        + (f" (letta da: {dove})" if dove else "")
+        + ". Correggi AZURE_SPEECH_REGION: deve essere l'area della risorsa "
+          "(per esempio westeurope o italynorth), tutta minuscola.",
         stato=400)
 
 # Oltre questa lunghezza non si sintetizza: la conferma vocale e' una frase, non un
@@ -113,6 +133,9 @@ PITCH_MIN, PITCH_MAX = -50, 50  # in percentuale
 
 
 _FILE_LETTI = False
+# Da quale file e' arrivato ogni valore: vedi `origine()`. Si riempie mentre si
+# leggono i file, e serve solo a spiegare un valore sbagliato.
+_ORIGINE: dict = {}
 
 # Etichette che si scrivono naturalmente in un file di testo, ricondotte al nome
 # vero della variabile: chi scrive `chiave: ...` non deve sapere come si chiama.
@@ -190,6 +213,9 @@ def _leggi_file_segreto() -> None:
                     continue
                 if nome_var.startswith("AZURE_SPEECH_") and valore and not os.environ.get(nome_var):
                     os.environ[nome_var] = valore
+                    # si ricorda da quale file viene: davanti a un valore
+                    # sbagliato la prima domanda e' "quale dei file lo contiene?"
+                    _ORIGINE[nome_var] = percorso
 
 
 def chiave() -> str:
