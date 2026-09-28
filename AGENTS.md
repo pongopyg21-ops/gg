@@ -79,25 +79,35 @@ puo' lasciare `origin/main` vecchio, e allora un push riuscito sembra fallito (o
 contrario), con il rischio di credere pubblicato un lavoro che non c'e'.
 
 C'e' un comando solo per questo, `./avvia.sh pubblica`: fa il push e confronta con
-`ls-remote`, cosi' l'esito **dice il vero**. Il token si prende dall'ambiente
-(`GITHUB_TOKEN`, o `GH_TOKEN`) e **non** entra nella URL ne' negli argomenti: passa
-da un `GIT_ASKPASS` temporaneo, che si cancella subito. Un errore di push puo'
-stampare la URL, e in un log di conversazione il token resterebbe per sempre.
+`ls-remote`, cosi' l'esito **dice il vero**. Si autentica **da solo**, scegliendo:
+
+1. la **chiave SSH** in `/workspace/ssh/config` (una *deploy key* del repo con
+   "Allow write access"). La chiave vive **fuori dal repository**, quindi non puo'
+   finire in git. E' il modo che funziona anche quando i segreti non arrivano:
+   il segreto `GITHUB_TOKEN` viene iniettato **all'avvio della conversazione**, e
+   aggiungerlo a conversazione gia' avviata non lo fa comparire (verificato:
+   `${#GITHUB_TOKEN}` resta 0 anche nominandolo);
+2. il **token** dall'ambiente (`GITHUB_TOKEN`, o `GH_TOKEN`), come alternativa.
+   Non entra nella URL ne' negli argomenti: passa da un `GIT_ASKPASS` temporaneo,
+   che si cancella subito. Un errore di push puo' stampare la URL, e in un log di
+   conversazione il token resterebbe.
 
 **Attenzione al token "presente ma vuoto".** In questo ambiente `GITHUB_TOKEN` e'
 sempre *definita* (il sistema dei segreti la esporta quando la si nomina), ma se
 il segreto non e' registrato il valore e' la stringa vuota: `[ -n "$GITHUB_TOKEN" ]`
 lo scopre, un semplice `echo` sembra che ci sia. E' il motivo per cui dei commit
-sono rimasti non pubblicati credendo che il token ci fosse. Se manca,
-`pubblica` lo dice e si ferma, invece di fallire con un errore di git che sembra
-un problema di rete.
+sono rimasti non pubblicati credendo che il token ci fosse.
 
-In alternativa, e senza script, il token si passa a git cosi':
+Se manca sia la chiave sia il token, `pubblica` lo dice e si ferma, invece di
+fallire con un errore di git che sembra un problema di rete. Il percorso della
+chiave si puo' cambiare con `MAGGIORDOMO_SSH_CONFIG`, che serve ai test per provare
+il caso "nessuna credenziale" senza fare un push vero.
 
-```
-git -c credential.helper='' push \
-  "https://x-access-token:${GITHUB_TOKEN}@github.com/pongopyg21-ops/gg.git" main
-```
+Per **rigenerare** la chiave, se serve: `ssh-keygen -t ed25519 -N "" -f
+/workspace/ssh/deploy_key`, poi si aggiunge `/workspace/ssh/deploy_key.pub` come
+deploy key su GitHub (spuntando "Allow write access"). `openssh-client` non e'
+nell'immagine di base: si installa con `sudo apt-get install -y openssh-client`
+(`sudo` non chiede la password).
 
 Il link pubblico **non** è legato alla conversazione: l'host inoltra sulla porta
 12000, quindi l'indirizzo da aprire è quello della conversazione *corrente*

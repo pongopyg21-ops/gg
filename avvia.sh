@@ -308,53 +308,83 @@ stato() {
 # pubblicato un lavoro che non c'e'. Qui si confronta con `ls-remote`, che e' la
 # verita' del server.
 #
-# Il token **non** entra negli argomenti ne' nella URL: git non lo vedrebbe in
-# `ps`, ma un errore puo' stampare la URL, e in un log di conversazione resterebbe.
-# Si passa da `GIT_ASKPASS`, uno script temporaneo che risponde a git leggendo il
-# token dall'ambiente. Lo script si cancella subito dopo, esito o errore.
-#
-# Il token si prende dall'ambiente (`GITHUB_TOKEN`, o `GH_TOKEN`). Non si legge da
-# `segreto.txt`: quello e' la chiave Azure, e un token di scrittura su GitHub non
-# va in un file del progetto.
+# Due modi per autenticarsi, e si sceglie da solo:
+#   1. la **chiave SSH** in `/workspace/ssh/config`, fuori dal repository (quindi
+#      non puo' finire in git). E' il modo che ha funzionato quando il segreto
+#      `GITHUB_TOKEN` non arrivava al container: la chiave non dipende da un
+#      segreto iniettato all'avvio della conversazione.
+#   2. il **token** dall'ambiente (`GITHUB_TOKEN`, o `GH_TOKEN`), come ripiego.
+#      Non entra negli argomenti ne' nella URL: git non lo vedrebbe in `ps`, ma un
+#      errore puo' stampare la URL, e in un log di conversazione resterebbe. Si
+#      passa da un `GIT_ASKPASS` temporaneo, che si cancella subito.
+# Il token non si legge da `segreto.txt`: quello e' la chiave Azure, e un token di
+# scrittura su GitHub non va in un file del progetto.
+avvia_ssh() {
+  # la config SSH del container, se c'e': la chiave vive fuori da ogni repository.
+  # Il percorso si puo' cambiare (`MAGGIORDOMO_SSH_CONFIG`): serve ai test, che
+  # devono poter provare il caso "nessuna credenziale" senza fare un push vero.
+  local cfg="${MAGGIORDOMO_SSH_CONFIG:-/workspace/ssh/config}"
+  [ -f "$cfg" ] && export GIT_SSH_COMMAND="ssh -F $cfg"
+}
+
 pubblica() {
   local ramo="${2:-main}"
   local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-  if [ -z "$token" ]; then
-    rosso "Manca GITHUB_TOKEN: senza, il push non si puo' fare."
-    echo "  Registralo fra i segreti di questa conversazione, col nome esatto"
-    echo "  GITHUB_TOKEN, poi riprova: ./avvia.sh pubblica"
-    echo "  (in alternativa: GITHUB_TOKEN=... ./avvia.sh pubblica)"
-    return 1
-  fi
 
   cd "$BASE_DIR" || return 1
+  avvia_ssh
   local locale remoto
   locale="$(git rev-parse HEAD 2>/dev/null)" || { rosso "Non sono in un repository git."; return 1; }
 
-  # il token puo' non avere i permessi di scrittura, o essere scaduto: si prova e
-  # si riporta l'errore di GitHub invece di attribuirlo al branch
-  local ask err
-  ask="$(mktemp)"; chmod 700 "$ask"
-  cat >"$ask" <<'ASKPASS'
+  local err; err="$(mktemp)"
+  # con il token si usa `origin` (HTTPS), con la chiave l'indirizzo SSH: cosi' la
+  # verifica finale legge dallo stesso posto in cui si e' scritto
+  local verso="origin"
+
+  if [ -n "$token" ]; then
+    # il token puo' non avere i permessi di scrittura, o essere scaduto: si prova e
+    # si riporta l'errore di GitHub invece di attribuirlo al branch
+    local ask
+    ask="$(mktemp)"; chmod 700 "$ask"
+    cat >"$ask" <<'ASKPASS'
 #!/bin/sh
 case "$1" in
   *[Uu]sername*) printf '%s\n' "x-access-token" ;;
   *) printf '%s\n' "$GITHUB_TOKEN" ;;
 esac
 ASKPASS
-  err="$(mktemp)"
-  if ! GIT_ASKPASS="$ask" GIT_TERMINAL_PROMPT=0 git push origin "$ramo" >"$err" 2>&1; then
-    rm -f "$ask" "$err"
-    rosso "Il push non e' riuscito."
-    echo "  (GitHub non ha accettato il token: controlla che sia valido e che"
-    echo "   abbia il permesso di scrittura sul repository.)"
+    GIT_ASKPASS="$ask" GIT_TERMINAL_PROMPT=0 git push origin "$ramo" >"$err" 2>&1
+    local esito=$?
+    rm -f "$ask"
+  elif [ -n "${GIT_SSH_COMMAND:-}" ]; then
+    # `origin` e' in HTTPS, e con quella la chiave SSH non entra in gioco: si
+    # spinge all'indirizzo SSH dello stesso repository, ricavato da `origin` invece
+    # che scritto a mano (il repo potrebbe cambiare).
+    verso="$(git remote get-url origin | sed -E 's#^https://([^/]+)/#ssh://git@\1/#')"
+    git push "$verso" "$ramo:refs/heads/$ramo" >"$err" 2>&1
+    local esito=$?
+  else
+    rm -f "$err"
+    rosso "Nessun modo di autenticarsi su GitHub."
+    echo "  Serve una delle due:"
+    echo "   - una chiave SSH in /workspace/ssh/config (deploy key con scrittura), o"
+    echo "   - GITHUB_TOKEN fra i segreti della conversazione."
     return 1
   fi
-  rm -f "$ask" "$err"
+
+  if [ "$esito" -ne 0 ]; then
+    # l'errore di git puo' contenere la URL con dentro il token: non si stampa
+    rm -f "$err"
+    rosso "Il push non e' riuscito."
+    echo "  (GitHub non ha accettato le credenziali: controlla che la chiave abbia"
+    echo "   \"Allow write access\", o che il token sia valido e scrivibile.)"
+    return 1
+  fi
+  rm -f "$err"
 
   # verifica **sul server**, non in locale: e' l'unico modo di sapere se il push
   # e' arrivato davvero
-  remoto="$(git ls-remote origin "refs/heads/$ramo" 2>/dev/null | cut -f1)"
+  remoto="$(git ls-remote "$verso" "refs/heads/$ramo" 2>/dev/null | cut -f1)"
   if [ "$remoto" = "$locale" ]; then
     verde "Pubblicato: $ramo = ${locale:0:7}"
   else

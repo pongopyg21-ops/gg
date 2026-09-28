@@ -5670,23 +5670,25 @@ function $() { return { checked: true }; }
     assert parlate == ["parla:Comandi.", "parla:Fatto."], parlate
 
 
-def test_il_comando_pubblica_rifiuta_senza_token():
-    """Il push su GitHub non deve partire con un token assente o vuoto: senza,
-    git chiederebbe l'username a un terminale che non c'e' e il fallimento
-    sembrerebbe un problema di rete. Si esegue lo script vero senza token e si
-    guarda che rifiuti dicendo **quale** variabile manca.
+def test_il_comando_pubblica_rifiuta_senza_credenziali():
+    """Il push non deve mai partire senza un modo di autenticarsi: senza, git
+    chiederebbe l'username a un terminale che non c'e' e il fallimento sembrerebbe
+    un problema di rete. Si esegue lo script vero senza token e **senza chiave SSH**
+    (il percorso della chiave si punta a un file inesistente), e si guarda che
+    rifiuti dicendo cosa serve, invece di tentare un push a vuoto.
 
-    E' il difetto che ha lasciato 5 commit non pubblicati credendo che il token
-    ci fosse: la variabile puo' esistere ma essere vuota, ed e' lo stesso."""
+    E' il difetto che ha lasciato commit non pubblicati credendo che il token ci
+    fosse: la variabile puo' esistere ma essere vuota, ed e' lo stesso."""
     import os
     import subprocess
     ambiente = dict(os.environ)
-    for nome in ("GITHUB_TOKEN", "GH_TOKEN"):
+    for nome in ("GITHUB_TOKEN", "GH_TOKEN", "GIT_SSH_COMMAND"):
         ambiente.pop(nome, None)
+    ambiente["MAGGIORDOMO_SSH_CONFIG"] = "/nonexistent/ssh/config"
     esito = subprocess.run(["./avvia.sh", "pubblica"], cwd="/workspace/gg",
                            env=ambiente, capture_output=True, text=True)
-    assert esito.returncode != 0, "senza token il push non deve riuscire"
-    assert "GITHUB_TOKEN" in esito.stdout
+    assert esito.returncode != 0, "senza credenziali il push non deve riuscire"
+    assert "autenticarsi" in esito.stdout.lower()
     # e niente push a vuoto: la URL non deve comparire con credenziali dentro
     assert "@github.com" not in esito.stdout + esito.stderr
 
