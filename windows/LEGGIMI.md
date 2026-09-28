@@ -326,6 +326,21 @@ delle aree Azure valide, lo dice: «L'area «italynorht» non esiste fra quelle
 Azure», con la variabile da correggere. Il messaggio di rete non comparirà più
 per un refuso.
 
+**Anche l'avvio lo dice.** Prima stampava `Voce neurale Azure attiva` guardando
+solo che chiave e area fossero presenti: con l'area sbagliata la riga era una
+bugia, e mandava a cercare il guasto altrove. Ora, se l'area non esiste, leggi
+`Voce neurale NON attiva: l'area «...» non esiste fra quelle Azure`.
+
+**E `voce.bat` non accetta più un'area inventata.** Prima qualunque cosa scritta
+al prompt finiva in `segreto.bat`, anche una lettera sola: è così che è finita lì
+l'area `s` — la `S` della conferma (`Scrivi S per salvare`) scritta al posto
+sbagliato, perché il prompt dell'area viene **prima** di quello della conferma e
+la domanda non era abbastanza chiara. Ora un'area che non esiste viene rifiutata
+e richiesta.
+
+**Il modo più sicuro per correggere**: rilancia `windows\voce.bat` (doppio clic).
+Riscrive `segreto.bat` da zero chiedendo chiave e area, e l'area la valida lui.
+
 
 ### Se preferisci farlo a mano
 

@@ -5637,6 +5637,43 @@ def test_una_area_sbagliata_lo_dice_invece_di_sembrare_un_guasto_di_rete(monkeyp
         assert not voce_cloud.area_valida(area), area
 
 
+def test_avvio_avvisa_se_l_area_non_esiste():
+    """L'avvio diceva "voce neurale Azure attiva" anche con l'area sbagliata: chi
+    legge quella riga va a cercare un guasto di rete che non c'e', mentre la
+    causa e' un refuso. E' successo davvero: in `segreto.bat` era finita l'area
+    "s" (la S della conferma scritta al posto sbagliato).
+
+    Si esegue lo script con un'area inesistente e si guarda che NON dica "attiva"."""
+    import os
+    import subprocess
+    ambiente = dict(os.environ)
+    ambiente["AZURE_SPEECH_KEY"] = "chiave-finta"
+    ambiente["AZURE_SPEECH_REGION"] = "s"
+    esito = subprocess.run(["./avvia.sh", "status"], cwd="/workspace/gg",
+                           env=ambiente, capture_output=True, text=True)
+    uscita = esito.stdout + esito.stderr
+    assert "NON attiva" in uscita, uscita
+    assert "«s»" in uscita, uscita
+    assert "AZURE_SPEECH_REGION" in uscita, uscita
+
+
+def test_voce_bat_non_accetta_un_area_inventata(client):
+    """`voce.bat` scrive `segreto.bat` e chiede l'area a mano: qualunque cosa si
+    scriva finiva nel file, anche una lettera sola. Ora rifiuta un'area che non
+    esiste e la richiede, cosi' il file non puo' piu' nascere sbagliato.
+
+    Si guarda il file vero: la validazione c'e', e l'elenco e' quello di
+    `voce_cloud` (due elenchi diversi divergerebbero)."""
+    bat = open("/workspace/gg/windows/voce.bat", encoding="utf-8").read()
+    assert "non e' un'area Azure" in bat
+    # almeno un'area vera e' nell'elenco di controllo
+    assert "italynorth" in bat and "westeurope" in bat
+    # e la scrittura del file avviene solo dopo il controllo
+    pos_controllo = bat.index("non e' un'area Azure")
+    pos_scrittura = bat.index("> \"segreto.bat\"")
+    assert pos_controllo < pos_scrittura, "il controllo deve venire prima di salvare"
+
+
 def test_windows_avvia_dietro_il_tunnel(client):
     """Su Windows l'app sta dietro Tailscale Funnel (o Cloudflare, o nginx):
     `avvia.bat` deve dirlo all'app, altrimenti vede l'indirizzo del tunnel al

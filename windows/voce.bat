@@ -50,13 +50,35 @@ set "CHIAVE=!CHIAVE:"=!"
 
 echo.
 set "AREA="
-set /p "AREA= Area [invio per italynorth]: "
+set /p "AREA= Area della risorsa (non l'area geografica) [invio per italynorth]: "
 if "!AREA!"=="" set "AREA=italynorth"
 set "AREA=!AREA:"=!"
 set "AREA=!AREA: =!"
 REM l'area e' l'indirizzo del servizio: va minuscola, o l'indirizzo non esiste.
 REM PowerShell fa il lavoro in un colpo, senza i giri che servirebbero in batch.
 for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Write-Output ('!AREA!'.ToLower())"`) do set "AREA=%%a"
+
+REM L'area **deve** essere una di quelle Azure: l'indirizzo del servizio e'
+REM `<area>.tts.speech.microsoft.com`, quindi un valore inventato da' un errore di
+REM risoluzione del nome che sembra un guasto di rete. Qui si ferma subito, dove
+REM l'errore si spiega: e' successo che finisse in `segreto.bat` una lettera sola
+REM (la "S" della conferma scritta al posto sbagliato), e la voce restava mezza
+REM rotta senza dire perche'.
+set "AREA_OK="
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$a=@('australiaeast','brazilsouth','canadacentral','centralindia','centralus','eastasia','eastus','eastus2','francecentral','germanywestcentral','italynorth','japaneast','japanwest','koreacentral','northcentralus','northeurope','norwayeast','southafricanorth','southcentralus','southeastasia','southindia','swedencentral','switzerlandnorth','uaenorth','uksouth','westcentralus','westeurope','westus','westus2','westus3'); if ($a -contains '!AREA!') { 'ok' }"`) do set "AREA_OK=%%a"
+if not "!AREA_OK!"=="ok" (
+  echo.
+  echo  ----------------------------------------------------------
+  echo   "!AREA!" non e' un'area Azure.
+  echo.
+  echo   L'area si copia dalla pagina della tua risorsa Speech su
+  echo   portal.azure.com: la riga si chiama "Localita'/Area".
+  echo   Alcuni esempi: italynorth, westeurope, eastus, uksouth
+  echo   (tutta minuscola, una parola sola, senza spazi).
+  echo  ----------------------------------------------------------
+  echo.
+  goto :chiedi
+)
 
 REM lunghezza della chiave, per far vedere che il copia-incolla e' completo
 set "L=0"

@@ -79,7 +79,18 @@ if exist "%~dp0segreto.bat" call "%~dp0segreto.bat"
 if "%AZURE_SPEECH_KEY%"=="" (
   echo  Voce: quella del sistema
 ) else (
-  echo  Voce neurale Azure attiva ^(area: %AZURE_SPEECH_REGION%^)
+  REM L'area va controllata: l'indirizzo del servizio la contiene
+  REM (<area>.tts.speech.microsoft.com), quindi un refuso non risolve e la voce
+  REM non parte. Dire "attiva" manderebbe a cercare un guasto di rete che non c'e'.
+  set "AREA_OK="
+  for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$a=@('australiaeast','brazilsouth','canadacentral','centralindia','centralus','eastasia','eastus','eastus2','francecentral','germanywestcentral','italynorth','japaneast','japanwest','koreacentral','northcentralus','northeurope','norwayeast','southafricanorth','southcentralus','southeastasia','southindia','swedencentral','switzerlandnorth','uaenorth','uksouth','westcentralus','westeurope','westus','westus2','westus3'); if ($a -contains '%AZURE_SPEECH_REGION%'.ToLower()) { 'ok' }"`) do set "AREA_OK=%%a"
+  if "!AREA_OK!"=="ok" (
+    echo  Voce neurale Azure attiva ^(area: %AZURE_SPEECH_REGION%^)
+  ) else (
+    echo  Voce neurale NON attiva: l'area "%AZURE_SPEECH_REGION%" non esiste.
+    echo  Correggi AZURE_SPEECH_REGION in windows\segreto.bat ^(es. italynorth^),
+    echo  oppure rilancia windows\voce.bat per riscriverlo.
+  )
 )
 
 REM Ottiene l'indirizzo di rete: e' quello che usi dal telefono. Non serve

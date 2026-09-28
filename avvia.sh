@@ -50,18 +50,27 @@ PYTHON="${PYTHON:-python3}"
 # ha preparato la venv), si ripiega sulle sole variabili d'ambiente.
 
 stato_voce() {
-  local py="$VENV_PYTHON" esito chiave regione
+  local py="$VENV_PYTHON" esito chiave regione area_ok
   [ -x "$py" ] || py="$SYS_PYTHON"
   esito="$(cd "$BASE_DIR" && "$py" -c \
-    'import voce_cloud as v; print(v.chiave()); print(v.regione())' 2>/dev/null)"
+    'import voce_cloud as v; print(v.chiave()); print(v.regione()); print(v.area_valida(v.regione()))' 2>/dev/null)"
   chiave="$(printf '%s\n' "$esito" | sed -n '1p')"
   regione="$(printf '%s\n' "$esito" | sed -n '2p')"
+  area_ok="$(printf '%s\n' "$esito" | sed -n '3p')"
   # l'interprete non ha risposto: si guarda l'ambiente, che e' la seconda fonte
   [ -n "$chiave" ] || chiave="${AZURE_SPEECH_KEY:-}"
   [ -n "$regione" ] || regione="${AZURE_SPEECH_REGION:-}"
 
   if [ -n "$chiave" ] && [ -n "$regione" ]; then
-    verde "  voce neurale Azure attiva (area: $regione)"
+    # L'area sbagliata non e' "voce attiva": l'indirizzo del servizio contiene
+    # l'area, quindi un refuso non risolve e la voce non parte. Dire "attiva" lo
+    # manderebbe a cercare un guasto di rete che non c'e'.
+    if [ "$area_ok" = "True" ] || [ -z "$area_ok" ]; then
+      verde "  voce neurale Azure attiva (area: $regione)"
+    else
+      giallo "  voce neurale NON attiva: l'area «$regione» non esiste fra quelle Azure."
+      giallo "  Correggi AZURE_SPEECH_REGION (es. italynorth, westeurope) e riavvia."
+    fi
   elif [ -n "$chiave" ] || [ -n "$regione" ]; then
     giallo "  voce neurale non attiva: servono sia AZURE_SPEECH_KEY sia AZURE_SPEECH_REGION"
   else
