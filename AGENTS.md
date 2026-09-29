@@ -35,7 +35,8 @@ perché il link del sandbox muore con la conversazione.
 
 App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
-`allergens.py`, comandi vocali in `voice.py`, dati iniziali in `seed.py`, pulizie
+`allergens.py`, comandi vocali in `voice.py`, comprensione facoltativa col
+modello in `comprensione.py`, dati iniziali in `seed.py`, pulizie
 in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
@@ -210,6 +211,9 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 | `AZURE_SPEECH_FORMAT` | Formato dell'audio richiesto | `audio-24khz-48kbitrate-mono-mp3` |
 | `PORT` | Porta del server | 12000 |
 | `CUCINA_DB` | Percorso del database della prima casa | `cucina.db` |
+| `LLM_API_KEY` | Chiave del modello per comprendere i comandi (facoltativa) | si usa il parser a regole |
+| `LLM_MODEL` | Modello da chiamare | `gpt-4o-mini` |
+| `LLM_BASE_URL` | Endpoint compatibile OpenAI | `https://api.openai.com/v1` |
 
 Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in un **file di testo** `segreto.txt` (o `segreto`, senza estensione) accanto a `app.py`, escluso da git, modello in `segreto.esempio.txt`. Forme accettate: `chiave: valore` / `chiave=valore` / `export chiave=valore` / il valore nudo su una riga — una parola tutta minuscola è l'area, il resto è la chiave, quindi l'ordine delle due righe non conta. Le etichette possono essere `chiave`/`area` (o `key`/`region`, `regione`). Restano validi anche `segreto.sh` e `segreto.bat` per chi li ha già. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
 
@@ -929,6 +933,70 @@ che non c'era.
 Il sintomo, per riconoscerlo: la pagina è vecchia **solo** in un browser che l'ha
 già aperta, e ricaricando con forza si aggiorna. Il rimedio immediato per l'utente
 è aggiungere `?v=2` all'indirizzo, che per il browser è una pagina mai vista.
+
+## Capire i comandi con un modello (facoltativo)
+
+Il parser a regole di `voice.py` capisce le frasi previste e lascia fuori le
+altre: «dammi la lista della spesa», «fammi vedere la dispensa», «metti via il
+vino in cantina». Non e' un difetto del riconoscimento — la trascrizione Azure e'
+buona — e' che le regole sono una grammatica scritta a mano, e la lingua parlata
+non ci sta dentro. `comprensione.py` fa la stessa comprensione con un modello
+linguistico.
+
+**Fallisce in modo aperto**, ed e' la proprieta' che rende sicuro accenderlo. Il
+parser diventa cosi': si prova il modello, e se risponde `unknown` o non risponde
+(manca la chiave, manca la rete, risposta storta) si usa il risultato di
+`voice.parse`. Quindi o capisce di piu', o non cambia niente:
+
+```
+cmd = comprensione.chiama(testo)
+if not cmd or cmd["intent"] == "unknown":
+    cmd = voice.parse(testo)     # la rete di sicurezza di sempre
+```
+
+E' un test (`test_se_il_modello_non_capisce_si_usa_il_parser`) e non una
+promessa. Il modello si preferisce **anche** quando il parser crede di aver
+capito, perche' proprio li' stanno gli errori da correggere («metti via il vino
+in cantina» diventava un articolo in magazzino chiamato «via il vino»).
+
+Le tre scelte che contano:
+
+- **Il modello non inventa intenti.** La risposta viene ripulita con
+  `_ripulisci()`: un intento fuori da `INTENTI`, un'unita' fuori da `UNITA`, una
+  quantita' non numerica vengono scartati. Se resta poco, il comando vale
+  `unknown`. Una comprensione sbagliata deve restare una frase, non un'azione:
+  meglio «non ho capito» di una voce sbagliata in dispensa per sempre.
+- **Niente funziona senza che la casa l'abbia acceso.** `llm_prefs.abilitato`
+  (una riga sola, nel database **della casa**) parte a `0`: nessuna chiamata a
+  consumo se non la si accende dal pannello Voce. E' una scelta dell'utente, non
+  del dispositivo, per questo sta nella casa e non in `localStorage`.
+- **L'interruttore non accende una cosa che non c'e'.** `PUT /api/voce/llm` con
+  `abilitato: true` e nessuna chiave risponde **400** dicendo il nome esatto della
+  variabile da registrare (`LLM_API_KEY`). L'alternativa — accettare e non fare
+  niente — e' peggio di un rifiuto: l'utente crederebbe di aver acceso qualcosa.
+
+La chiave entra **solo** dall'ambiente o da un file accanto all'app
+(`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una
+rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
+Le variabili sono `LLM_API_KEY`, `LLM_MODEL` (default `gpt-4o-mini`) e
+`LLM_BASE_URL` (default OpenAI; lo stesso codice parla con OpenRouter, Groq o un
+server locale, perche' l'API e' quella compatibile OpenAI).
+
+**Il costo e' la ragione per cui questa funzione e' scritta cosi'.** Ogni comando
+e' una chiamata breve: il modello e' il piu' economico, `temperature=0`,
+`max_tokens` basso, e la risposta e' un oggetto JSON solo. Non si chiama il
+modello se l'interruttore e' spento: e' la differenza fra un'app che costa a
+consumo e una che costa a caso.
+
+**La latenza si misura, non si intuisce.** Il difetto riferito («lento,
+macchinoso») e' quasi tutto attese del client, non Azure: la trascrizione e'
+~1,0 s e la sintesi ~0,6 s a caldo. Il pacchetto `azure-cognitiveservices-speech`
+(1.52.0) e' stato **provato e scartato**: installato e misurato con
+`PushAudioOutputStream`, il primo byte arriva a ~0,52 s contro ~0,59 s del REST a
+caldo, per una funzione (audio incrementale) che il client non usa. Non vale una
+dipendenza con binari nativi per qualche decina di millisecondi. La lentezza che
+si sente e' la **partenza a freddo** (~1,3–1,8 s alla prima chiamata), e si taglia
+riusando le frasi gia' sintetizzate (la cache del client), che infatti esiste.
 
 ## Il riconoscimento vocale
 

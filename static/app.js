@@ -2471,7 +2471,8 @@ function speak(text) {
    3. l'anteprima del timbro resta locale. Deve essere immediata, e una chiamata di
       rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
 
-let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map(), avvisato: false };
+let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map(), avvisato: false,
+                  llmDisponibile: false, llmAbilitato: false };
 
 // oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
 const CLOUD_CACHE_MAX = 40;
@@ -2612,7 +2613,10 @@ async function caricaVoceCloud() {
     voceCloud.voci = d.voci || [];
     voceCloud.predefinita = d.predefinita;
     voceCloud.maxCaratteri = d.max_caratteri || 600;
+    voceCloud.llmDisponibile = !!d.llm_disponibile;
+    voceCloud.llmAbilitato = !!d.llm_abilitato;
     popolaVociCloud();
+    popolaLlm();
     mostraAvvisoRobotica();
     // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
     // significa non farle aspettare dopo, quando servono davvero
@@ -2635,6 +2639,27 @@ function popolaVociCloud() {
   }
   const attivo = $('#voice-cloud');
   if (attivo) attivo.checked = localStorage.getItem('voceCloudOff') !== '1';
+}
+
+/** Mostra l'interruttore della comprensione col modello, se c'e' la chiave.
+
+    Se la chiave manca, il blocco sparisce e resta un avviso con il nome esatto
+    della variabile da registrare: e' l'unica cosa che l'utente puo' fare, e
+    indovinarla e' impossibile. Un interruttore che non fa niente sarebbe peggio
+    di nessun interruttore. */
+function popolaLlm() {
+  const blocco = $('#voice-llm-block');
+  const avviso = $('#voice-llm-avviso');
+  if (!blocco) return;
+  blocco.hidden = !voceCloud.llmDisponibile;
+  if (avviso) avviso.hidden = voceCloud.llmDisponibile;
+  if (avviso) avviso.textContent = voceCloud.llmDisponibile ? '' :
+    'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.';
+  const sel = $('#voice-llm');
+  if (sel) {
+    sel.checked = voceCloud.llmAbilitato;
+    sel.disabled = !voceCloud.llmDisponibile;
+  }
 }
 
 /** Anteprima del timbro: si sente com'è la voce prima di usarla davvero. */
@@ -4055,6 +4080,37 @@ $('#voice-ting').addEventListener('change', (e) => {
   localStorage.setItem('voceSuono', e.target.checked ? 'on' : 'off');
   if (e.target.checked) suonoApertura();  // riaccendendolo si risente subito
 });
+
+// comprensione col modello: si salva sul server, per casa. Il salvataggio e' un
+// `fetch`, quindi il cambio si conferma **dopo** la risposta: se il server la
+// rifiuta (chiave tolta), la casella torna com'era invece di mentire.
+const llmToggle = $('#voice-llm');
+if (llmToggle) {
+  llmToggle.addEventListener('change', async (e) => {
+    const voluto = e.target.checked;
+    try {
+      const r = await fetch('/api/voce/llm', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abilitato: voluto }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        e.target.checked = !voluto;
+        toast(d.error || 'Non riesco a salvare la scelta.');
+        return;
+      }
+      voceCloud.llmAbilitato = !!d.llm_abilitato;
+      e.target.checked = voceCloud.llmAbilitato;
+      toast(voceCloud.llmAbilitato
+        ? 'Comandi compresi anche dal modello.'
+        : 'Uso di nuovo il riconoscitore a regole.');
+    } catch (_e) {
+      e.target.checked = !voluto;
+      toast('Non riesco a parlare con il server.');
+    }
+  });
+}
 
 /* ---------- datalist ---------- */
 async function loadIngredientsDatalist() {

@@ -430,6 +430,20 @@
       </div>
       <p id="voice-avviso-robotica" class="voice-avviso" hidden></p>
     </div>
+
+    <h3 class="section-title">Capire i comandi</h3>
+    <div class="panel">
+      <p class="hint">Il microfono trascrive, ma è la comprensione a decidere cosa
+      fare. Con un modello linguistico l'app capisce anche le frasi che il
+      riconoscitore a regole non prevede («dammi la lista della spesa», «metti via
+      il vino in cantina»). La chiave resta sul server; senza, si continua a usare
+      il riconoscitore a regole e l'app funziona come prima.</p>
+      <div id="voice-llm-block" hidden>
+        <label class="toggle"><input type="checkbox" id="voice-llm"> Comprendi i comandi col modello (a consumo)</label>
+        <p class="voice-avviso">Ogni comando è una chiamata a consumo. Si può spegnere quando non serve.</p>
+      </div>
+      <p id="voice-llm-avviso" class="voice-avviso" hidden></p>
+    </div>
   </section>
 </main>
 </div>

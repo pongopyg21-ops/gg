@@ -15,6 +15,7 @@
 #     -p 12000:12000 \
 #     -v /percorso/dati:/dati \
 #     -e AZURE_SPEECH_KEY=... -e AZURE_SPEECH_REGION=... \
+#     -e LLM_API_KEY=... \
 #     maggiordomo
 #
 # `--restart unless-stopped` e' il `sorveglia.sh` di questo caso: se l'app cade,
@@ -42,7 +43,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py schema.sql seed.py houses.py units.py allergens.py voice.py \
-     voce_cloud.py igiene.py faq.py magazzino.py ricette_online.py copie.py \
+     voce_cloud.py comprensione.py igiene.py faq.py magazzino.py ricette_online.py copie.py \
      crea_icona.py ripristina_password.py ./
 COPY static ./static
 

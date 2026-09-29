@@ -183,6 +183,17 @@ CREATE TABLE IF NOT EXISTS storage (
 
 CREATE INDEX IF NOT EXISTS idx_storage_cat ON storage(category);
 
+-- Un'impostazione sola: se usare il modello linguistico per capire i comandi
+-- oltre al parser a regole. Sta nella casa e non in `localStorage` perche' e'
+-- una scelta dell'utente, non del dispositivo: chi amministra la casa decide se
+-- e' disposto a spendere per la comprensione, e le altre case non sono toccate.
+-- Zero di default: senza una chiave configurata la comprensione non e'
+-- disponibile, e un interruttore acceso che non fa niente confonderebbe.
+CREATE TABLE IF NOT EXISTS llm_prefs (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    abilitato INTEGER NOT NULL DEFAULT 0
+);
+
 -- La foto di una voce di magazzino, per riconoscerla a colpo d'occhio: e' il
 -- motivo per cui si fotografa una mensola o una scatola di cui non si ricorda
 -- il nome.

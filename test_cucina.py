@@ -22,6 +22,7 @@ os.environ["CUCINA_DB"] = DB
 
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
+import comprensione  # noqa: E402
 import copie  # noqa: E402
 import houses  # noqa: E402
 import igiene  # noqa: E402
@@ -6258,5 +6259,164 @@ def test_il_comando_pubblica_rifiuta_senza_credenziali():
     assert "autenticarsi" in esito.stdout.lower()
     # e niente push a vuoto: la URL non deve comparire con credenziali dentro
     assert "@github.com" not in esito.stdout + esito.stderr
+
+
+# ------------------------------------------------- comprensione col modello (LLM)
+# La comprensione con un modello e' facoltativa: senza chiave si usa il parser a
+# regole di `voice.parse`, con il comportamento identico a prima. I test qui sotto
+# sostituiscono `urlopen` di `comprensione`: la rete non si tocca, si prova il
+# percorso vero — costruzione della richiesta, interpretazione della risposta e,
+# soprattutto, **cosa succede quando la risposta e' sbagliata**.
+
+
+class _RispostaLlm:
+    """Risposta finta di un servizio compatibile con OpenAI."""
+
+    def __init__(self, contenuto: str):
+        self._corpo = json.dumps(
+            {"choices": [{"message": {"content": contenuto}}]}).encode()
+
+    def read(self): return self._corpo
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def test_comprensione_valida_solo_un_intento_che_esiste():
+    """Un intento inventato dal modello non deve arrivare all'esecuzione."""
+    assert comprensione._ripulisci({"intent": "spegni_la_luce"})["intent"] == "unknown"
+    assert comprensione._ripulisci({"intent": "shopping_add", "name": "latte"})["intent"] == "shopping_add"
+    # senza nome non c'e' niente da scrivere: meglio non capire che scrivere vuoto
+    assert comprensione._ripulisci({"intent": "shopping_add"})["intent"] == "unknown"
+
+
+def test_comprensione_scarta_unita_e_quantita_non_previste():
+    """Un'unita' fuori elenco o una quantita' non numerica vanno scartate, non
+    passate: e' la differenza fra "non ho capito" e una voce sbagliata in dispensa."""
+    c = comprensione._ripulisci({"intent": "pantry_add", "name": "farina",
+                                 "quantity": "due", "unit": "cucchiaiate"})
+    assert c["name"] == "farina"
+    assert c["quantity"] is None    # "due" non e' un numero: il client mettera' 1
+    assert c["unit"] is None        # unita' sconosciuta: si usa pz
+    c = comprensione._ripulisci({"intent": "pantry_add", "name": "farina",
+                                 "quantity": 2, "unit": "kg"})
+    assert c["quantity"] == 2.0 and c["unit"] == "kg"
+
+
+def test_comprensione_legge_il_json_anche_con_testo_attorno():
+    """Non tutti i servizi rispettano `response_format`: si prende il primo oggetto."""
+    assert comprensione._estrai_json('{"intent": "unknown"}') == {"intent": "unknown"}
+    assert comprensione._estrai_json('Ecco: {"intent": "unknown"} grazie') == {"intent": "unknown"}
+    assert comprensione._estrai_json("nessun json qui") is None
+
+
+def test_comprensione_senza_chiave_non_e_configurata(monkeypatch):
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    assert not comprensione.configurato()
+    assert comprensione.chiama("aggiungi il latte alla spesa") is None
+
+
+def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch):
+    """Si prova la richiesta vera, non solo l'interpretazione: la chiave va
+    nell'intestazione e il modello richiesto e' quello configurato."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setenv("LLM_MODEL", "modello-di-prova")
+    catturato = {}
+
+    def finta(richiesta, timeout=None):
+        catturato["url"] = richiesta.full_url
+        catturato["aut"] = richiesta.headers.get("Authorization")
+        catturato["corpo"] = json.loads(richiesta.data.decode())
+        return _RispostaLlm('{"intent": "shopping_add", "name": "latte", "quantity": 1, "unit": "pz"}')
+
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", finta)
+    cmd = comprensione.chiama("dammi il latte")
+    assert cmd["intent"] == "shopping_add" and cmd["name"] == "latte"
+    assert catturato["aut"] == "Bearer chiave-llm-di-prova"
+    assert catturato["corpo"]["model"] == "modello-di-prova"
+    assert catturato["url"].endswith("/chat/completions")
+    assert "latte" in catturato["corpo"]["messages"][-1]["content"]
+
+
+def test_comprensione_ripiega_in_silenzio_se_il_modello_non_risponde(monkeypatch):
+    """Un errore di rete non deve diventare un errore per chi ha parlato: si
+    restituisce `None`, e il chiamante usa il parser a regole."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+
+    def esplode(*a, **k):
+        raise OSError("rete assente")
+
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", esplode)
+    assert comprensione.chiama("aggiungi il latte alla spesa") is None
+
+
+def test_senza_chiave_del_modello_l_interruttore_non_si_accende(client, monkeypatch):
+    """Accendere una cosa che non c'e' confonderebbe: si risponde 400 dicendo
+    quale variabile registrare."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    r = client.put("/api/voce/llm", json={"abilitato": True})
+    assert r.status_code == 400
+    assert "LLM_API_KEY" in r.get_json()["error"]
+
+
+def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
+    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    r = client.put("/api/voce/llm", json={"abilitato": True})
+    assert r.status_code == 200 and r.get_json()["llm_abilitato"] is True
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_disponibile"] is True and cfg["llm_abilitato"] is True
+    assert "chiave-llm-di-prova" not in json.dumps(cfg)
+    # e si puo' spegnere
+    assert client.put("/api/voce/llm", json={"abilitato": False}).get_json()["llm_abilitato"] is False
+
+
+def test_senza_chiave_del_modello_la_comprensione_resta_a_regole(client, monkeypatch):
+    """Con l'interruttore spento (o la chiave assente) non si chiama nessuno:
+    la comprensione e' quella del parser, identica a prima."""
+    def non_chiamare(*a, **k):
+        raise AssertionError("il modello non deve essere chiamato")
+
+    monkeypatch.setattr(comprensione, "chiama", non_chiamare)
+    r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "shopping_add"
+
+
+def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(client, monkeypatch):
+    """Il caso che ha motivato tutto: "metti via il vino in cantina" finiva in
+    magazzino con l'articolo chiamato "via il vino". Col modello il nome e' "vino".
+
+    Il modello e' finto: si prova l'**integrazione** — che la sua risposta vinca
+    su quella del parser e finisca davvero nel database."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    client.put("/api/voce/llm", json={"abilitato": True})
+    monkeypatch.setattr(comprensione, "chiama", lambda t: {
+        "intent": "storage_add", "name": "vino", "quantity": None, "unit": None,
+        "place": "Cantina", "category": None})
+    r = client.post("/api/voice", json={"text": "metti via il vino in cantina"})
+    assert r.status_code == 200
+    dati = r.get_json()
+    assert dati["intent"] == "storage_add"
+    assert dati["name"] == "vino"
+    # e il nome sbagliato del parser non e' finito nel magazzino
+    mag = client.get("/api/storage").get_json()
+    nomi = [v["name"] for v in (mag.get("items", mag) if isinstance(mag, dict) else mag)]
+    assert "vino" in nomi and "via il vino" not in nomi
+
+
+def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
+    """`unknown` dal modello non cancella quello che il parser sapeva gia' fare."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    client.put("/api/voce/llm", json={"abilitato": True})
+    monkeypatch.setattr(comprensione, "chiama", lambda t: {"intent": "unknown"})
+    r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
+    assert r.get_json()["intent"] == "shopping_add"
+
+
+def test_la_comprensione_e_disattiva_di_partenza(client):
+    """Nessuna chiamata a consumo senza che l'utente l'abbia accesa."""
+    assert client.get("/api/voce/config").get_json()["llm_abilitato"] is False
 
 

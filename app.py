@@ -17,6 +17,7 @@ from flask import Flask, g, jsonify, request, send_file, send_from_directory, se
 from werkzeug.exceptions import HTTPException
 
 import allergens
+import comprensione
 import copie
 import faq
 import houses
@@ -269,6 +270,10 @@ def migrate(db):
     if have and "generated" not in have:
         db.execute("ALTER TABLE shopping_items ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
         db.execute("UPDATE shopping_items SET generated = 1")
+
+    # `llm_prefs` e' una tabella **nuova**: `CREATE TABLE IF NOT EXISTS` la crea
+    # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
+    # aggiunge una **colonna** a quella tabella la aggiunga anche in questo blocco.
 
 
 def _semina_pulizie(db):
@@ -1627,6 +1632,44 @@ def storage_photo(sid):
 
 
 # ---------------------------------------------------------------- voce
+def _llm_abilitato(db):
+    """La casa ha acceso la comprensione col modello? (0 di default)."""
+    riga = one(db.execute("SELECT abilitato FROM llm_prefs WHERE id = 1"))
+    return bool(riga and riga["abilitato"])
+
+
+def imposta_llm(db, abilitato):
+    db.execute(
+        "INSERT INTO llm_prefs (id, abilitato) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET abilitato = excluded.abilitato",
+        (1 if abilitato else 0,))
+    db.commit()
+
+
+def _comprendi(testo, db):
+    """Il comando della frase dettata: prima il modello, poi le regole.
+
+    Il modello si usa **solo** se la casa l'ha acceso e la chiave c'e'. Quando
+    risponde `unknown` — o non risponde affatto, perche' manca la rete o la
+    chiave — si usa il risultato del parser a regole. E' il motivo per cui questa
+    funzione non puo' peggiorare niente: o capisce di piu', o resta com'era.
+
+    Si preferisce il modello anche quando il parser **crede** di aver capito:
+    proprio li' stanno gli errori che il modello corregge ("metti via il vino in
+    cantina" diventava un articolo chiamato "via il vino"). Il parser resta la
+    rete di sicurezza, non la prima scelta.
+    """
+    a_regole = voice.parse(testo)
+    if not comprensione.configurato() or not _llm_abilitato(db):
+        return a_regole
+    cmd = comprensione.chiama(testo)
+    if not cmd or cmd.get("intent") == "unknown":
+        return a_regole
+    # il parser porta il testo originale (`text`), che il modello non ripete:
+    # si tiene quello, cosi' la risposta dice sempre la frase sentita
+    return {**a_regole, **cmd}
+
+
 @app.route("/api/voice", methods=["POST"])
 def voice_command():
     """Comprende una frase dettata ed esegue il comando.
@@ -1635,10 +1678,13 @@ def voice_command():
     solo testo: la comprensione resta qui, dove si può verificare con dei test
     senza microfono. La risposta contiene anche un messaggio di conferma in
     italiano, così il client non deve ricostruire da capo cosa è successo.
+
+    Con una chiave del modello configurata e l'interruttore acceso, la
+    comprensione prova prima il modello (vedi `_comprendi`).
     """
     db = get_db()
     data = request.get_json(force=True) or {}
-    cmd = voice.parse(data.get("text"))
+    cmd = _comprendi(data.get("text"), db)
 
     if cmd["intent"] == "pantry_add":
         unit = units.normalize(cmd["unit"] or "pz")
@@ -2082,7 +2128,12 @@ def voce_config():
     Non espone la chiave ne' l'area: dice solo se la sintesi cloud e' pronta e
     l'elenco delle voci fra cui scegliere. Il client decide in base a questo se
     usare il cloud o ripiegare sulla voce del browser.
+
+    Dice anche se la comprensione col modello e' **disponibile** (chiave
+    configurata) e se questa casa l'ha accesa: le due cose sono diverse, e il
+    pannello le distingue.
     """
+    db = get_db()
     return jsonify({
         "cloud": voce_cloud.configurato(),
         # la trascrizione usa la stessa chiave della sintesi: se la voce neurale
@@ -2091,7 +2142,29 @@ def voce_config():
         "voci": voce_cloud.elenco_voci(),
         "predefinita": voce_cloud.VOCE_PREDEFINITA,
         "max_caratteri": voce_cloud.MAX_CARATTERI,
+        "llm_disponibile": comprensione.configurato(),
+        "llm_abilitato": _llm_abilitato(db),
     })
+
+
+@app.route("/api/voce/llm", methods=["PUT"])
+def voce_llm():
+    """Accende o spegne la comprensione col modello per la casa collegata.
+
+    La chiave non si tocca da qui: entra solo dall'ambiente o da un file, prima
+    dell'avvio, come quella di Azure. Questa rotta cambia **solo** se usarla.
+    Senza chiave configurata l'interruttore non ha effetto, e risponde 400
+    dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
+    """
+    db = get_db()
+    data = request.get_json(force=True) or {}
+    abilitato = bool(data.get("abilitato"))
+    if abilitato and not comprensione.configurato():
+        return jsonify({"error": "Manca la chiave del modello: registrala come segreto "
+                                 "LLM_API_KEY prima di avviare l'app."}), 400
+    imposta_llm(db, abilitato)
+    return jsonify({"llm_disponibile": comprensione.configurato(),
+                    "llm_abilitato": _llm_abilitato(db)})
 
 
 @app.route("/api/voce/parla", methods=["POST"])
