@@ -24,6 +24,33 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.add('hidden'), 2400);
 }
 
+/* ---------- errori non gestiti ----------
+   Un errore a runtime non deve sparire in silenzio. E' il caso che ha reso
+   invisibile il difetto di `caricaVoci`: `init()` sollevava un ReferenceError,
+   il `catch` di `avviaApp` rimostrava l'accesso e all'utente sembrava che l'app
+   si bloccasse. Il gestore non ripara niente, ma **dice** cosa e' successo
+   (breve, a schermo) e lascia la traccia nel registro dell'assistente, dove si
+   legge il passo esatto invece di dedurlo dal silenzio.
+
+   Sta qui in alto perche' l'ascolto degli eventi e' a livello di modulo: gli
+   errori dell'avvio (compreso `avviaApp()`, in fondo al file) sono gia' coperti.
+   Non mostra mai il nome dell'eccezione ne' la traccia: quelli restano nel
+   registro, a schermo confonderebbero e basta. */
+let erroreInCorso = false;
+function erroreNonGestito(errore) {
+  const testo = String((errore && (errore.message || errore.reason)) || errore || '');
+  registra('errore non gestito: ' + testo, 'err');
+  // un solo avviso per volta: una raffica di errori non deve coprire l'app
+  if (erroreInCorso) return;
+  erroreInCorso = true;
+  toast('Si è verificato un errore imprevisto. Riprova.');
+  setTimeout(() => { erroreInCorso = false; }, 4000);
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('error', (e) => erroreNonGestito(e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => erroreNonGestito(e.reason));
+}
+
 /* Riduce una foto scelta dall'utente prima di mandarla al server.
    La riduzione sta qui e non sul server per non aggiungere una libreria di
    elaborazione immagini alle dipendenze: chi installa l'app deve poter
@@ -3993,6 +4020,25 @@ function mostraErrore(sel, messaggio) {
   el.hidden = false;
 }
 
+/* Avviso d'avvio quando la casa e' **gia'** collegata. Diverso dall'errore
+   dell'accesso: li' le credenziali possono essere sbagliate e si resta sulla
+   schermata di accesso, qui l'utente e' dentro e il guasto e' un altro — quindi
+   niente ritorno all'accesso, che gli farebbe credere di aver sbagliato la
+   password. Il pulsante "Ricarica" e' l'unica azione sensata. */
+function mostraErroreApp(messaggio) {
+  const testo = $('#errore-app-testo');
+  if (!testo) return;   // pagina senza l'avviso: non e' un errore in se'
+  testo.textContent = messaggio;
+  $('#errore-app').classList.remove('hidden');
+}
+
+function nascondiErroreApp() {
+  const el = $('#errore-app');
+  if (el) el.classList.add('hidden');
+}
+$('#errore-app-ricarica')?.addEventListener('click', () => location.reload());
+$('#errore-app-chiudi')?.addEventListener('click', nascondiErroreApp);
+
 async function caricaCaseEsistenti() {
   try {
     const caseEsistenti = await api('/api/houses');
@@ -4063,20 +4109,35 @@ async function esci() {
   location.reload();
 }
 
-/** Load della pagina: si entra solo se c'e' una casa collegata. */
+/** Load della pagina: si entra solo se c'e' una casa collegata.
+
+    I due guasti sono diversi e vanno detti in modo diverso. Se la **sessione**
+    non risponde non si sa chi e' collegato, quindi si mostra l'accesso. Se la
+    sessione c'e' ma `init()` fallisce, l'utente e' **dentro**: rimandarlo
+    all'accesso gli farebbe credere di aver sbagliato la password, mentre il
+    guasto e' un altro. E' il caso del `ReferenceError` di `caricaVoci`, che
+    faceva sembrare l'app "bloccata e chiusa" proprio dopo un accesso riuscito.
+    Qui si tiene la home e si mostra un avviso con "Ricarica". */
 async function avviaApp() {
+  let sessione;
   try {
-    const sessione = await api('/api/session');
-    if (!sessione.authenticated) {
-      await avviaAccesso();
-      return;
-    }
-    await init();
+    sessione = await api('/api/session');
   } catch (e) {
-    // se anche la sessione non risponde, meglio mostrare l'accesso che una
-    // pagina vuota: il messaggio d'errore serve a capire cosa succede
+    // non si sa nemmeno chi e' collegato: meglio l'accesso che una pagina vuota
     mostraAccesso();
     mostraErrore('#acc-errore', e.message || 'Il server non risponde');
+    return;
+  }
+  if (!sessione.authenticated) {
+    await avviaAccesso();
+    return;
+  }
+  try {
+    await init();
+  } catch (e) {
+    registra('avvio fallito dopo l\'accesso: ' + (e.message || e), 'err');
+    mostraErroreApp("Si è verificato un errore nell'avvio dell'app. "
+      + 'Ricarica la pagina; se persiste, il guasto è nel registro qui sotto.');
   }
 }
 

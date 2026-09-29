@@ -590,6 +590,24 @@ tr:last-child td { border-bottom: none; }
   font-size: 13.5px; z-index: 100; box-shadow: 0 12px 32px -12px rgba(14, 42, 56, .5);
 }
 
+/* Errore d'avvio a casa gia' collegata: sta in alto, sopra la testata, cosi'
+   non copre i pulsanti in basso (voce, home). Sopra la testata (20) e sotto i
+   modali (50): un errore non deve galleggiare sopra una finestra aperta. */
+.errore-app {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 45;
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+  background: var(--errore-sfondo); border-bottom: 1px solid var(--errore-bordo);
+  color: var(--errore-testo); font-size: 13px; line-height: 1.4;
+}
+.errore-app #errore-app-testo { flex: 1; }
+.errore-app button {
+  flex: none; min-height: 34px; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--errore-bordo); background: transparent;
+  color: var(--errore-testo); font-weight: 600; cursor: pointer;
+}
+.errore-app button.icon { border: none; font-size: 15px; padding: 6px 8px; }
+
 /* ---------- comandi vocali ----------
    Il pulsante è un cerchio in basso a destra: resta sotto il pollice su telefono
    e non copre i contenuti. Durante l'ascolto pulsa, così si vede che è attivo. */

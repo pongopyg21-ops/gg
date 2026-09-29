@@ -761,6 +761,17 @@ Conseguenze pratiche per chi mette mano al codice:
   vede; ora `test_app_js_non_chiama_funzioni_che_non_esiste` scandisce `app.js` e
   pretende che ogni funzione chiamata esista. Rimuovendo una funzione, cercarne
   **tutte** le chiamate.
+  **Due reti chiudono quel buco.** (1) `erroreNonGestito` e' legato a
+  `window.onerror` e `unhandledrejection` in cima ad `app.js` (l'ascolto e' a
+  livello di modulo, quindi copre anche `avviaApp()` in fondo): un errore a
+  runtime produce un avviso breve (`toast`) e una riga nel registro, con la
+  raffica limitata a un avviso per volta e senza nome dell'eccezione ne' traccia a
+  schermo. (2) `avviaApp()` distingue i due guasti: se la **sessione** non
+  risponde si mostra l'accesso (non si sa chi e' collegato), ma se la sessione
+  c'e' e `init()` fallisce l'utente **resta dentro** con l'avviso `#errore-app` e
+  "Ricarica" — rimandarlo all'accesso gli farebbe credere di aver sbagliato la
+  password. Il banner sta fuori da `#app` (si vede anche con la home aperta) e
+  sotto i modali (`z-index` 45).
 - La voce di conferma si sceglie in `TIMBRI` (`static/app.js`) per **caratteristiche**,
   non per nome: l'elenco `nomi` è una lista di preferenze, e `scegliVoce` prende la
   prima voce italiana che combacia, altrimenti la prima italiana, altrimenti quella

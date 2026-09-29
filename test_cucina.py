@@ -6574,3 +6574,99 @@ def test_app_js_non_chiama_funzioni_che_non_esiste(client):
     orfane = _nomi_chiamati_senza_definizione(js)
     assert not orfane, (
         "app.js chiama funzioni che non esistono: " + ", ".join(orfane))
+
+
+def test_gli_errori_non_gestiti_avvisano_e_finiscono_nel_registro(client):
+    """Il gestore non ripara, ma **dice**: un errore non gestito produce un
+    avviso breve a schermo e una riga nel registro, e una raffica non ripete
+    l'avviso. E' la rete che mancava: senza, un errore a runtime spariva in
+    silenzio e l'app sembrava bloccarsi."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    corpo = _estrai_funzione_js(js, "erroreNonGestito")
+    prova = """
+const log = [];
+let erroreInCorso = false;
+function registra(m, t) { log.push('registra:' + m + ':' + t); }
+function toast(m) { log.push('toast:' + m); }
+const timer = [];
+function setTimeout(fn) { timer.push(fn); return timer.length; }
+""" + corpo + """
+erroreNonGestito(new Error('primo'));
+erroreNonGestito(new Error('secondo'));   // raffica: un solo avviso
+timer[0]();                                // passato il momento, si puo' riavvisare
+erroreNonGestito(new Error('terzo'));
+console.log(JSON.stringify(log));
+"""
+    log = _esegui_node(prova)
+    avvisi = [v for v in log if v.startswith('toast:')]
+    registri = [v for v in log if v.startswith('registra:')]
+    assert len(avvisi) == 2, log           # primo e terzo, non il secondo
+    assert len(registri) == 3, log         # nel registro ci vanno tutti
+    # il testo a schermo non porta il nome dell'eccezione ne' la traccia
+    assert all('Error' not in v and 'at ' not in v for v in registri), registri
+
+
+def test_gli_errori_non_gestiti_sono_ascoltati(client):
+    """La registrazione degli eventi e' il legame che rende utile il gestore:
+    senza, `erroreNonGestito` non verrebbe mai chiamato."""
+    import re
+    js = client.get("/static/app.js").get_data(as_text=True)
+    m = re.search(r"if \(typeof window[^\n]*\n(?:.*\n)*?\}", js)
+    assert m, "non trovo la registrazione degli eventi d'errore"
+    prova = """
+const sentiti = [];
+const window = { addEventListener: (t, f) => sentiti.push([t, f]) };
+let chiamate = 0;
+function erroreNonGestito() { chiamate++; }
+""" + m.group(0) + """
+for (const [tipo, f] of sentiti) {
+  if (tipo === 'error') f({ error: new Error('x') });
+  if (tipo === 'unhandledrejection') f({ reason: new Error('y') });
+}
+console.log(JSON.stringify({ tipi: sentiti.map((s) => s[0]), chiamate }));
+"""
+    d = _esegui_node(prova)
+    assert d["tipi"] == ["error", "unhandledrejection"], d
+    assert d["chiamate"] == 2, d
+
+
+def test_un_avvio_fallito_non_riporta_all_accesso(client):
+    """Se la sessione c'e' ma `init()` fallisce, l'utente resta **dentro** con
+    un avviso e "Ricarica": rimandarlo all'accesso gli farebbe credere di aver
+    sbagliato la password. Solo se la **sessione** non risponde si torna
+    all'accesso. E' la differenza che rendeva il difetto di `caricaVoci`
+    indistinguibile da un problema di credenziali."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    corpo = _estrai_funzione_js(js, "avviaApp")
+    prova = """
+const log = [];
+let scenario = 'sessione-giu';
+async function api() {
+  if (scenario === 'sessione-giu') throw new Error('server giu');
+  return { authenticated: scenario !== 'anonimo' };
+}
+async function init() {
+  if (scenario === 'init-giu') throw new Error('guasto');
+  log.push('init-ok');
+}
+function mostraAccesso() { log.push('mostraAccesso'); }
+function mostraErrore() { log.push('mostraErrore'); }
+function mostraErroreApp() { log.push('mostraErroreApp'); }
+function registra() { log.push('registra'); }
+async function avviaAccesso() { log.push('avviaAccesso'); }
+""" + corpo + """
+(async () => {
+  const esiti = {};
+  for (const s of ['sessione-giu', 'anonimo', 'init-giu', 'collegato']) {
+    scenario = s; log.length = 0;
+    await avviaApp();
+    esiti[s] = log.slice();
+  }
+  console.log(JSON.stringify(esiti));
+})();
+"""
+    e = _esegui_node(prova)
+    assert e["sessione-giu"] == ["mostraAccesso", "mostraErrore"], e
+    assert e["anonimo"] == ["avviaAccesso"], e
+    assert e["init-giu"] == ["registra", "mostraErroreApp"], e
+    assert e["collegato"] == ["init-ok"], e

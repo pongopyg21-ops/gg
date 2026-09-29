@@ -411,6 +411,16 @@
 
 <div id="toast" class="toast hidden"></div>
 
+<!-- Errore d'avvio quando la casa e' **gia'** collegata: non sono le credenziali,
+     quindi non si rimanda all'accesso (l'utente crederebbe di aver sbagliato la
+     password). Sta fuori da #app, cosi' si vede anche con la home aperta, ed e'
+     chiudibile perche' non deve coprire l'app una volta letto. -->
+<div id="errore-app" class="errore-app hidden" role="alert">
+  <span id="errore-app-testo"></span>
+  <button id="errore-app-ricarica" type="button">Ricarica</button>
+  <button id="errore-app-chiudi" class="icon" type="button" aria-label="Chiudi">✕</button>
+</div>
+
 <!-- Timer delle pulizie: barra fissa in basso, non un modale. Si avvia il timer
      e si va a pulire, quindi deve restare visibile mentre si gira per l'app.
      Il caso d'uso e' la regola dei 15 minuti: timer su una zona sola. -->
