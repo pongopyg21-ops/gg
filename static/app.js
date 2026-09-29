@@ -4093,10 +4093,6 @@ async function init() {
   await loadIngredientsDatalist();
   photoFiles = await api('/api/recipe-images');
   profile = await api('/api/profile');
-  // l'elenco delle voci arriva in modo asincrono: si legge ora e si rilegge
-  // quando il browser segnala che è pronto
-  caricaVoci();
-  if (window.speechSynthesis) speechSynthesis.addEventListener?.('voiceschanged', caricaVoci);
   // la voce neurale si annuncia da sola se il server ce l'ha: è una richiesta
   // sola all'avvio, e serve a sapere se mostrare il blocco nel pannello
   caricaVoceCloud().then(() => {

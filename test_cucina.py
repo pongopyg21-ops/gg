@@ -6470,3 +6470,107 @@ def test_la_comprensione_e_disattiva_di_partenza(client):
     assert client.get("/api/voce/config").get_json()["llm_abilitato"] is False
 
 
+def _nomi_chiamati_senza_definizione(js):
+    """Ritorna i nomi chiamati come `nome(...)` che non risultano definiti da
+    nessuna parte nel file (function, const/let/var, class, parametro).
+
+    E' una scansione testuale, non un vero parser: toglie i commenti, le
+    stringhe e i template literal, poi cerca le chiamate. Serve a scoprire un
+    riferimento a una funzione **inesistente**, che il browser solleva come
+    ReferenceError solo quando quella riga viene raggiunta — quindi un errore
+    che sfugge a ogni test che non esegue la pagina intera. E' il caso di
+    `caricaVoci`: rimossa con la scheda Voce, ma ancora chiamata in `init()`,
+    faceva fallire l'accesso e l'app restava sulla schermata di login."""
+    import re
+
+    def senza_commenti_stringhe(s):
+        out = []
+        i, n = 0, len(s)
+        while i < n:
+            if s[i:i + 2] == '//':
+                j = s.find('\n', i)
+                i = n if j < 0 else j
+                continue
+            if s[i:i + 2] == '/*':
+                j = s.find('*/', i + 2)
+                i = n if j < 0 else j + 2
+                continue
+            c = s[i]
+            if c in '"\'':
+                # stringa mono-riga: se non si chiude sulla stessa riga non e'
+                # una stringa (es. apostrofo dentro un commento gia' tolto)
+                j, chiusa = i + 1, False
+                while j < n and s[j] != '\n':
+                    if s[j] == '\\':
+                        j += 2
+                        continue
+                    if s[j] == c:
+                        chiusa = True
+                        break
+                    j += 1
+                if chiusa:
+                    i = j + 1
+                    out.append(' ')
+                    continue
+                out.append(c)
+                i += 1
+                continue
+            if c == '`':
+                j = i + 1
+                while j < n:
+                    if s[j] == '\\':
+                        j += 2
+                        continue
+                    if s[j] == '`':
+                        break
+                    j += 1
+                i = n if j >= n else j + 1
+                out.append(' ')
+                continue
+            out.append(c)
+            i += 1
+        return ''.join(out)
+
+    code = senza_commenti_stringhe(js)
+    defs = set(re.findall(r'function\s+([A-Za-z_$][\w$]*)', code))
+    defs |= set(re.findall(r'(?:const|let|var)\s+([A-Za-z_$][\w$]*)', code))
+    defs |= set(re.findall(r'class\s+([A-Za-z_$][\w$]*)', code))
+    params = set()
+    for m in re.finditer(r'\(([^()]*)\)\s*(?:=>|\{)', code):
+        for p in m.group(1).split(','):
+            p = p.strip().split('=')[0].strip()
+            if re.fullmatch(r'[A-Za-z_$][\w$]*', p):
+                params.add(p)
+    for m in re.finditer(r'\{([^{}]*)\}\s*=\s*', code):
+        for p in re.findall(r'[A-Za-z_$][\w$]*', m.group(1)):
+            params.add(p)
+    chiamate = re.findall(r'(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(', code)
+    parole = {'if', 'for', 'while', 'switch', 'catch', 'return', 'function',
+              'typeof', 'new', 'do', 'else', 'in', 'of', 'case', 'delete',
+              'void', 'yield', 'await', 'super', 'this', 'async'}
+    # nomi forniti dal browser, non definiti nel file
+    browser = set("""Array ArrayBuffer Audio Blob Boolean DataView Date Error
+FileReader Float32Array Image JSON Map Math Number Object Promise RegExp Set
+String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN
+encodeURIComponent decodeURIComponent fetch setTimeout clearTimeout setInterval
+clearInterval confirm alert console requestAnimationFrame cancelAnimationFrame
+AudioContext webkitAudioContext MediaRecorder URL URLSearchParams FormData btoa
+atob structuredClone queueMicrotask crypto""".split())
+    return sorted(set(c for c in chiamate
+                      if c not in parole and c not in defs
+                      and c not in params and c not in browser))
+
+
+def test_app_js_non_chiama_funzioni_che_non_esiste(client):
+    """Un riferimento a una funzione rimossa non deve restare in `app.js`.
+
+    Non e' un'ipotesi: e' successo con `caricaVoci`, tolta insieme alla scheda
+    Voce ma lasciata in `init()`. `init()` solleva il ReferenceError **dopo** che
+    il login e' riuscito, quindi l'errore finisce nel `catch` di `avviaApp` e
+    l'utente, appena entra, resta sulla schermata di accesso con la casa non
+    collegata a schermo: l'app "si blocca e si chiude". Nessun test lo vedeva,
+    perche' nessuno eseguiva `init()` intera."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    orfane = _nomi_chiamati_senza_definizione(js)
+    assert not orfane, (
+        "app.js chiama funzioni che non esistono: " + ", ".join(orfane))

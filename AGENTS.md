@@ -753,6 +753,14 @@ Conseguenze pratiche per chi mette mano al codice:
   col modello si e' spostato in **Profilo**, perche' serve davvero. La voce
   naturale Azure resta attiva quando il server ha la chiave (`cloudAttivo()` =
   `voceCloud.disponibile`): si spegne togliendo la chiave, non da una casella.
+  **Attenzione alle chiamate che restano.** Togliendo la scheda era stata rimossa
+  la funzione `caricaVoci`, ma due chiamate erano rimaste in `init()`: il
+  ReferenceError scatta **dopo** che il login e' riuscito, quindi finisce nel
+  `catch` di `avviaApp` e l'utente, appena entra, resta sulla schermata di accesso
+  ("l'app si blocca e si chiude"). Un test che non esegue `init()` intera non lo
+  vede; ora `test_app_js_non_chiama_funzioni_che_non_esiste` scandisce `app.js` e
+  pretende che ogni funzione chiamata esista. Rimuovendo una funzione, cercarne
+  **tutte** le chiamate.
 - La voce di conferma si sceglie in `TIMBRI` (`static/app.js`) per **caratteristiche**,
   non per nome: l'elenco `nomi` è una lista di preferenze, e `scegliVoce` prende la
   prima voce italiana che combacia, altrimenti la prima italiana, altrimenti quella
