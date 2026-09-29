@@ -3746,10 +3746,15 @@ def _fine_registrazione_js(client, casi):
 
 
 def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
-    """Senza chiave la voce e' quella del sistema: la pagina deve dirlo."""
+    """Senza chiave la voce e' quella del sistema: il pannello del microfono, dove
+    la voce si sente, deve dirlo e indicare come avere quella naturale. (La scheda
+    "Voce" delle FAQ, che lo ripeteva, e' stata rimossa su richiesta.)"""
     js = client.get("/static/app.js").get_data(as_text=True)
-    assert "mostraAvvisoRobotica" in js and "voice-avviso-robotica" in js
-    assert client.get("/static/index.html").get_data(as_text=True).count("voice-avviso-robotica") >= 1
+    assert "mostraAvvisoRobotica" in js
+    assert "voice-chiave-manca" in js
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="voice-chiave-manca"' in html
+    assert "voce naturale" in html
 
 
 def test_la_pagina_avvisa_se_il_microfono_non_puo_funzionare(client):
@@ -4297,24 +4302,24 @@ def test_errore_di_ascolto_401_non_riporta_la_risposta(monkeypatch):
     assert "chiave" in messaggio.lower() and "401" not in messaggio
 
 
-def test_le_impostazioni_della_voce_stanno_nella_faq(client):
-    """Le impostazioni (timbro, voce di sistema, voce neurale, chiave) sono scelte
-    che si fanno una volta: nel pannello del microfono intralciavano chi voleva
-    solo dare un comando. Stanno nella scheda Voce della FAQ."""
+def test_la_scheda_voce_e_stata_rimossa(client):
+    """Le impostazioni della voce (timbro, voce neurale) non hanno piu' una scheda
+    nelle FAQ: il pannello del microfono resta ai comandi soltanto. L'interruttore
+    della comprensione col modello si e' spostato in Profilo, perche' serve."""
     html = client.get("/static/index.html").get_data(as_text=True)
-    voce = html.index('id="tab-voce"')
+    assert 'id="tab-voce"' not in html
     for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
                   'id="voice-ting"'):
-        assert html.index(pezzo) > voce, pezzo
-    # il pannello del microfono resta ai comandi: l'ascolto, il testo, il ripeti
+        assert pezzo not in html, pezzo
+    # il pannello del microfono resta ai comandi
     inizio = html.index('id="voice"')
     pannello = html[inizio:]
     for pezzo in ('id="voice-text"', 'id="voice-retry"', 'id="voice-heard"'):
         assert pezzo in pannello, pezzo
-    # e nessuna impostazione e' rimasta dentro il pannello
-    for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
-                  'id="voice-ting"'):
-        assert pezzo not in pannello, pezzo
+    # e la comprensione col modello sta nel Profilo
+    profilo = html.index('id="tab-profile"')
+    faq = html.index('id="tab-faq"')
+    assert profilo < html.index('id="voice-llm"') < faq
 
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):
@@ -5652,7 +5657,7 @@ def test_la_password_della_casa_si_cambia_dalla_faq(client):
     vecchia e fa ripetere la nuova, e chiama la rotta vera."""
     html = client.get("/static/index.html").get_data(as_text=True)
     inizio = html.index('id="tab-faq"')
-    fine = html.index('id="tab-voce"')
+    fine = html.index('</main>')
     faq = html[inizio:fine]
     for pezzo in ('id="pw-attuale"', 'id="pw-nuova"', 'id="pw-ripeti"', 'id="pw-salva"'):
         assert pezzo in faq, pezzo
@@ -5984,7 +5989,8 @@ def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
     invocato **subito**, prima che la voce finisca, e le due frasi (cenno, esito)
     devono restare in fila, senza sovrapporsi."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = (_estrai_funzione_js(js, "tettoVoceMs")
+    blocco = (_estrai_funzione_js(js, "confermaVoce")
+              + _estrai_funzione_js(js, "tettoVoceMs")
               + _estrai_funzione_js(js, "eseguiComandoContinuo"))
     preludio = """
 const ordine = [];

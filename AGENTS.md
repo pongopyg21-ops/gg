@@ -746,6 +746,13 @@ Conseguenze pratiche per chi mette mano al codice:
   detto da solo vale solo se non c'è una destinazione: "in cucina" è anche il posto
   della dispensa e non basta da solo. Aggiungendo una destinazione nuova, va
   aggiunta qui e non nel ramo dell'esecuzione.
+- **La scheda «Voce» delle FAQ e' stata rimossa**: timbro, voce di sistema, voce
+  neurale e suono non hanno piu' un pannello. Le preferenze restano in
+  `localStorage` col loro comportamento predefinito, e il codice che le legge e'
+  null-safe o centralizzato (`confermaVoce()`). L'interruttore della comprensione
+  col modello si e' spostato in **Profilo**, perche' serve davvero. La voce
+  naturale Azure resta attiva quando il server ha la chiave (`cloudAttivo()` =
+  `voceCloud.disponibile`): si spegne togliendo la chiave, non da una casella.
 - La voce di conferma si sceglie in `TIMBRI` (`static/app.js`) per **caratteristiche**,
   non per nome: l'elenco `nomi` è una lista di preferenze, e `scegliVoce` prende la
   prima voce italiana che combacia, altrimenti la prima italiana, altrimenti quella
@@ -969,12 +976,14 @@ Le tre scelte che contano:
   meglio «non ho capito» di una voce sbagliata in dispensa per sempre.
 - **Niente funziona senza che la casa l'abbia acceso.** `llm_prefs.abilitato`
   (una riga sola, nel database **della casa**) parte a `0`: nessuna chiamata a
-  consumo se non la si accende dal pannello Voce. E' una scelta dell'utente, non
-  del dispositivo, per questo sta nella casa e non in `localStorage`.
+  consumo se non la si accende dalla scheda **Profilo** («Capire i comandi»).
+  E' una scelta dell'utente, non del dispositivo, per questo sta nella casa e non
+  in `localStorage`.
 - **L'interruttore non accende una cosa che non c'e'.** `PUT /api/voce/llm` con
-  `abilitato: true` e nessuna chiave risponde **400** dicendo il nome esatto della
-  variabile da registrare (`LLM_API_KEY`). L'alternativa — accettare e non fare
-  niente — e' peggio di un rifiuto: l'utente crederebbe di aver acceso qualcosa.
+  `abilitato: true` e nessun modello risponde **400** dicendo cosa manca (per un
+  servizio in rete il nome della variabile, `LLM_API_KEY`; per un modello di casa
+  l'indirizzo da controllare). L'alternativa — accettare e non fare niente — e'
+  peggio di un rifiuto: l'utente crederebbe di aver acceso qualcosa.
 
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
 (`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una

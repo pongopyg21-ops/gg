@@ -2330,69 +2330,6 @@ function scegliVoce(timbro) {
   return naturali[0] || it[0] || null;
 }
 
-/** Rilegge le voci: su molte piattaforme l'elenco arriva in modo asincrono. */
-function caricaVoci() {
-  if (!window.speechSynthesis) return;
-  tts.caricate = true;
-  tts.voce = scegliVoce(timbroScelto());
-  aggiornaEtichetteVoci();
-  aggiornaElencoVoci();
-}
-
-/** Mostra il nome della voce che ogni timbro usa davvero su questo sistema.
-    Il timbro è una preferenza ("una voce femminile"), ma la voce concreta
-    cambia di piattaforma in piattaforma: dirlo evita di cercare una voce
-    che qui non esiste. */
-function aggiornaEtichetteVoci() {
-  const pick = $('#voice-pick');
-  if (!pick || !window.speechSynthesis || !speechSynthesis.getVoices) return;
-  if (!speechSynthesis.getVoices().length) return;
-  Object.keys(TIMBRI).forEach((chiave) => {
-    const opt = pick.querySelector(`option[value="${chiave}"]`);
-    if (!opt) return;
-    const v = scegliVoce(chiave);
-    opt.textContent = v ? `${TIMBRI[chiave].etichetta} · ${v.name}` : TIMBRI[chiave].etichetta;
-  });
-}
-
-/** Riempie l'elenco completo delle voci italiane.
-
-    I tre timbri sono scorciatoie comode ma non lasciano scegliere: se il sistema
-    espone una voce naturale e il timbro ne pesca un'altra, l'utente non ha modo di
-    prenderla. Qui si mostrano tutte, marcando le naturali e quelle che funzionano
-    senza rete, così la scelta è esplicita. */
-function aggiornaElencoVoci() {
-  const sel = $('#voice-all');
-  if (!sel || !window.speechSynthesis || !speechSynthesis.getVoices) return;
-  const voci = speechSynthesis.getVoices();
-  if (!voci.length) return;
-
-  const it = voci.filter((v) => (v.lang || '').toLowerCase().startsWith('it'));
-  const corrente = voceEsplicita() || tts.voce;
-  const righe = ['<option value="">Automatica (secondo il timbro)</option>'];
-
-  // naturali in cima: sono quelle che l'utente sta cercando
-  it.sort((a, b) => (eVoceNaturale(b) ? 1 : 0) - (eVoceNaturale(a) ? 1 : 0) || a.name.localeCompare(b.name));
-  for (const v of it) {
-    const note = [];
-    if (eVoceNaturale(v)) note.push('naturale');
-    if (v.localService === false) note.push('online');
-    const etichetta = note.length ? `${v.name} · ${note.join(', ')}` : v.name;
-    const sel_ = corrente && corrente.voiceURI === v.voiceURI ? ' selected' : '';
-    righe.push(`<option value="${esc(v.voiceURI)}"${sel_}>${esc(etichetta)}</option>`);
-  }
-  sel.innerHTML = righe.join('');
-
-  const avviso = $('#voice-avviso');
-  if (avviso) {
-    // se non c'e' nessuna voce naturale, dirlo invece di lasciare l'utente a
-    // cercare fra nomi che sembrano tutti uguali
-    avviso.textContent = it.some(eVoceNaturale)
-      ? ''
-      : 'Nessuna voce naturale disponibile su questo browser. Su Windows le voci migliori compaiono solo in Microsoft Edge.';
-  }
-}
-
 /** Divide il testo in frasi, tenendo la punteggiatura di ciascuna.
 
     Serve a non leggere tutto in una fila sola: la sintesi del sistema applica
@@ -2448,8 +2385,16 @@ function avvisaFineParlato() {
   if (f) { try { f(); } catch (_e) { /* il chiamante ha già fatto il suo */ } }
 }
 
+function confermaVoce() {
+  // La casella "Conferma a voce" e' stata rimossa con la scheda Voce: la conferma
+  // resta attiva di norma. L'helper esiste per non spargere `true` ovunque, e per
+  // poter rimettere una preferenza senza toccare tutti i punti che la leggono.
+  const el = $('#voice-speak');
+  return el ? el.checked : true;
+}
+
 function speak(text) {
-  if (!$('#voice-speak').checked) return;
+  if (!confermaVoce()) return;
   // la sintesi vocale è un di più: se non è disponibile o fallisce, il comando
   // resta comunque riuscito e non deve trasformarsi in un falso errore
   parla(text);
@@ -2478,7 +2423,10 @@ let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map
 const CLOUD_CACHE_MAX = 40;
 
 function cloudAttivo() {
-  return voceCloud.disponibile && $('#voice-cloud') && $('#voice-cloud').checked;
+  // La casella che accendeva/spegneva la voce neurale e' stata rimossa con la
+  // scheda Voce: la voce naturale resta attiva quando il server la offre, e si
+  // spegne solo togliendo la chiave.
+  return voceCloud.disponibile;
 }
 
 function voceCloudScelta() {
@@ -2615,30 +2563,12 @@ async function caricaVoceCloud() {
     voceCloud.maxCaratteri = d.max_caratteri || 600;
     voceCloud.llmDisponibile = !!d.llm_disponibile;
     voceCloud.llmAbilitato = !!d.llm_abilitato;
-    popolaVociCloud();
     popolaLlm();
     mostraAvvisoRobotica();
     // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
     // significa non farle aspettare dopo, quando servono davvero
     preriscaldaFrasiFisse();
   } catch (_e) { /* resta la voce del browser */ }
-}
-
-function popolaVociCloud() {
-  const blocco = $('#voice-cloud-block');
-  if (!blocco) return;
-  blocco.hidden = !voceCloud.disponibile;
-  if (!voceCloud.disponibile) return;
-
-  const sel = $('#voice-cloud-voice');
-  if (sel) {
-    sel.innerHTML = voceCloud.voci
-      .map((v) => `<option value="${esc(v.nome)}">${esc(v.etichetta)} · ${esc(v.genere)}</option>`)
-      .join('');
-    sel.value = voceCloudScelta();
-  }
-  const attivo = $('#voice-cloud');
-  if (attivo) attivo.checked = localStorage.getItem('voceCloudOff') !== '1';
 }
 
 /** Mostra l'interruttore della comprensione col modello, se c'e' la chiave.
@@ -2661,52 +2591,6 @@ function popolaLlm() {
     sel.disabled = !voceCloud.llmDisponibile;
   }
 }
-
-/** Anteprima del timbro: si sente com'è la voce prima di usarla davvero. */
-function anteprimaTimbro(nome) {
-  if (!window.speechSynthesis) return;
-  try {
-    speechSynthesis.cancel();
-    const v = scegliVoce(nome);
-    const t = TIMBRI[nome] || TIMBRI.chiara;
-    const frasi = spezzaInFrasi('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.');
-    frasi.forEach((frase, i) => {
-      const ultima = i === frasi.length - 1;
-      const u = new SpeechSynthesisUtterance(frase);
-      try {
-        if (v) u.voice = v;
-      } catch (_e) { /* voce non assegnabile: si sente quella predefinita */ }
-      u.lang = (v && v.lang) || 'it-IT';
-      u.rate = t.rate * (ultima ? 0.97 : 1.0);
-      u.pitch = t.pitch * (ultima ? 0.95 : 1.0);
-      speechSynthesis.speak(u);
-    });
-  } catch (_e) { /* niente anteprima */ }
-}
-
-/** Anteprima brevissima di una voce scelta dall'elenco completo. */
-function anteprimaVoce(v) {
-  if (!window.speechSynthesis || !v) return;
-  try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance('Ciao, sono il maggiordomo.');
-    try {
-      u.voice = v;
-    } catch (_e) { /* voce non assegnabile: si sente quella predefinita */ }
-    u.lang = v.lang || 'it-IT';
-    speechSynthesis.speak(u);
-  } catch (_e) { /* niente anteprima */ }
-}
-
-/* ---------- suono di apertura ----------
-   Un breve jingle sintetizzato con la Web Audio API: due note che salgono, nello
-   stile dei loghi in streaming. Non serve nessun file audio da scaricare.
-
-   I browser bloccano l'audio prima che l'utente tocchi la pagina: il suono non
-   può partire all'apertura, per scelta loro. Si tenta subito, e se il contesto
-   resta sospeso si riproduce al primo tocco o tasto, che è la prima occasione
-   in cui è permesso. */
-let audioCtx = null;
 
 /** Il suono è attivo salvo esplicita disattivazione: la preferenza si ricorda. */
 function suonoAttivo() {
@@ -3570,7 +3454,7 @@ function parlaPoi(testo, poi) {
   const riprendi = riprendiDopoLaVoce(poi);
   registra(`parlo: «${testo}»`);
   speak(testo);
-  if (!$('#voice-speak').checked) { riprendi(); return; }
+  if (!confermaVoce()) { riprendi(); return; }
   // il tetto segue la lunghezza della frase: se la sintesi non annuncia la fine,
   // il microfono riprende comunque dopo pochi secondi, non dopo venti
   voce.tempoVoce = setTimeout(riprendi, tettoVoceMs(testo));
@@ -3840,7 +3724,7 @@ async function eseguiComandoContinuo(comando, riprendi) {
     // e l'errore e' gia' a schermo: parlarne due volte non serve
     if (res && res.message) await parlaEAttendi(res.message);
   } finally {
-    if (!$('#voice-speak').checked) { riparti(); return; }
+    if (!confermaVoce()) { riparti(); return; }
     // anche qui il tetto segue la frase: l'esito piu' lungo di "Comandi."
     voce.tempoVoce = setTimeout(riparti, tettoVoceMs(res && res.message ? res.message : ''));
   }
@@ -3854,7 +3738,7 @@ async function eseguiComandoContinuo(comando, riprendi) {
     dette insieme la seconda mangerebbe la prima. */
 function parlaEAttendi(testo) {
   return new Promise((risolvi) => {
-    if (!$('#voice-speak').checked) { risolvi(); return; }
+    if (!confermaVoce()) { risolvi(); return; }
     const precedente = voce.aFineParlato;
     let fatto = false;
     const fine = () => {
@@ -3948,7 +3832,9 @@ function mostraAvvisoSicurezza() {
     perche' l'app funziona — le manca solo la voce naturale.
 */
 function mostraAvvisoRobotica() {
-  const el = $('#voice-avviso-robotica');
+  // La scheda Voce e' stata rimossa: l'avviso "voce robotica" che stava li' non
+  // ha piu' un posto. Resta il rimando nel pannello del microfono, dove l'utente
+  // la voce la sente davvero, e dove deve sapere come avere quella naturale.
   const rimando = $('#voice-chiave-manca');
   if (rimando) rimando.hidden = voceCloud.disponibile;
   const dove = $('#voice-chiave-dove');
@@ -3962,13 +3848,6 @@ function mostraAvvisoRobotica() {
       + 'ricreato a ogni avvio la chiave va registrata fra i segreti, col nome '
       + 'AZURE_SPEECH_KEY, perché un file lì non sopravvive.';
   }
-  if (!el) return;
-  if (voceCloud.disponibile) { el.hidden = true; return; }
-  el.hidden = false;
-  el.textContent = 'La voce che senti \u00e8 quella meccanica del sistema: a '
-    + 'questo server non \u00e8 stata data la chiave della voce naturale Azure. '
-    + 'La chiave si imposta prima di avviare l\u2019app, accanto al programma '
-    + '(segreto.sh, o le variabili AZURE_SPEECH_KEY e AZURE_SPEECH_REGION).';
 }
 
 function chiudiVoce() {
@@ -4025,61 +3904,10 @@ function inviaTestoVoce() {
 $('#voice-send').addEventListener('click', inviaTestoVoce);
 $('#voice-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') inviaTestoVoce(); });
 
-// scelta del timbro: si salva la preferenza e si fa sentire subito l'anteprima
-$('#voice-pick').value = timbroScelto();
-$('#voice-pick').addEventListener('change', (e) => {
-  localStorage.setItem('voceTimbro', e.target.value);
-  // il timbro è una modalità automatica: annulla la voce scelta a mano, altrimenti
-  // resterebbe quella e il timbro non avrebbe alcun effetto
-  localStorage.removeItem('voceScelta');
-  tts.voce = scegliVoce(e.target.value);
-  aggiornaElencoVoci();
-  $('#voice-all').value = '';
-  anteprimaTimbro(e.target.value);
-});
-
-// voce di sistema scelta a mano dall'elenco completo: vince sul timbro
-$('#voice-all').addEventListener('change', (e) => {
-  if (e.target.value) {
-    localStorage.setItem('voceScelta', e.target.value);
-    tts.voce = voceEsplicita() || scegliVoce(timbroScelto());
-    anteprimaVoce(tts.voce);
-  } else {
-    localStorage.removeItem('voceScelta');
-    tts.voce = scegliVoce(timbroScelto());
-  }
-  aggiornaEtichetteVoci();
-});
-
-// voce neurale: si spegne, e la scelta resta
-$('#voice-cloud').addEventListener('change', (e) => {
-  localStorage.setItem('voceCloudOff', e.target.checked ? '0' : '1');
-  if (e.target.checked) anteprimaCloud();
-  else parlaTesto('Va bene, uso la voce del sistema.');
-});
-
-// voce neurale precisa, con anteprima: è una voce che si sceglie ascoltandola
-$('#voice-cloud-voice').addEventListener('change', (e) => {
-  localStorage.setItem('voceCloud', e.target.value);
-  anteprimaCloud();
-});
-
-/** Fa sentire la voce neurale scelta: è l'unico modo per giudicarla. */
-function anteprimaCloud() {
-  if (!voceCloud.disponibile) return;
-  voceCloud.sentite.clear();
-  // si riprova: l'avviso torna disponibile, così una nuova prova può dire di nuovo
-  // cosa non va invece di restare in silenzio per il resto della sessione
-  voceCloud.avvisato = false;
-  parlaCloud('Ciao, sono il maggiordomo. Dimmi pure cosa ti serve.');
-}
-
-// il jingle di apertura si può disattivare, e la scelta resta
-$('#voice-ting').checked = suonoAttivo();
-$('#voice-ting').addEventListener('change', (e) => {
-  localStorage.setItem('voceSuono', e.target.checked ? 'on' : 'off');
-  if (e.target.checked) suonoApertura();  // riaccendendolo si risente subito
-});
+// Il timbro, la voce di sistema e la voce Azure si scelgono eliminando la
+// rispettiva interfaccia: le preferenze restano in localStorage e il codice le
+// legge ancora, ma non c'è più un pannello che le cambi. La voce di sistema e
+// quella neurale continuano a funzionare con i valori predefiniti.
 
 // comprensione col modello: si salva sul server, per casa. Il salvataggio e' un
 // `fetch`, quindi il cambio si conferma **dopo** la risposta: se il server la
