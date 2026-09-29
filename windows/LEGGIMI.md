@@ -439,6 +439,90 @@ curl -s localhost:12000/api/voce/config | grep -o '"cloud":[a-z]*'
 Se dice `"cloud":false` la chiave non è arrivata; se dice `true` la voce naturale
 è pronta, e nella pagina compare la scelta della voce con l'anteprima.
 
+## Capire i comandi con un modello (facoltativo)
+
+Senza fare niente, i comandi a voce li capisce un piccolo insieme di regole. Bastano
+per le frasi previste («aggiungi il latte in dispensa»), non per tutte le altre:
+«dammi la lista della spesa» o «fammi vedere la dispensa» restano senza risposta.
+Con un modello linguistico si capiscono anche quelle.
+
+Non è obbligatorio: se non lo configuri, l'app funziona esattamente come prima.
+
+### Il modello in casa, con Ollama (consigliato)
+
+Ollama è un programma che fa girare un modello **dentro il tuo computer**: è
+gratuito, non serve una chiave, non serve internet, e quello che dici non esce di
+casa. È la via che consigliamo per un'app di casa.
+
+1. Scarica Ollama da <https://ollama.com/download/windows> e installalo. Non serve
+   configurare nulla: si avvia da solo e resta nella tray.
+2. Apri il terminale (scrivi `cmd` nella barra di ricerca di Windows) e scarica un
+   modello:
+
+   ```
+   ollama pull qwen2.5:7b-instruct
+   ```
+
+   Serve circa 5 GB di spazio e un computer con 16 GB di memoria. Con 8 GB di
+   memoria usa `qwen2.5:3b-instruct`, che è più leggero e meno preciso.
+3. Verifica che risponda (deve elencare il modello):
+
+   ```
+   curl http://127.0.0.1:11434/v1/models
+   ```
+
+   `curl` c'è già in Windows 11. Se il comando non esiste, apri Ollama dalla tray e
+   riprova dal computer, oppure salta pure: i passi sotto lo verificano lo stesso.
+4. Copia `windows\segreto.esempio.bat`, rinomina la copia `windows\segreto.bat`, e in
+   fondo togli il `REM` dalle righe del modello:
+
+   ```bat
+   set "LLM_BASE_URL=http://127.0.0.1:11434/v1"
+   set "LLM_MODEL=qwen2.5:7b-instruct"
+   set "LLM_API_KEY=ollama"
+   set "LLM_TIMEOUT=60"
+   ```
+
+   `LLM_API_KEY` è solo un segnaposto: Ollama non controlla nessuna chiave.
+   `LLM_TIMEOUT` sono i secondi di attesa. Su un modello in casa servono: il primo
+   comando dopo l'avvio impiega fino a mezzo minuto per caricare il modello in
+   memoria, e con un tetto più corto la chiamata scadrebbe senza dire niente.
+5. Riapri l'app con `avvia.bat`. Dentro, vai in **Voce → «Capire i comandi»** e
+   accendi l'interruttore. Da quel momento i comandi passano prima dal modello.
+
+Il primo comando è lento (il modello si sta caricando); dal secondo in poi risponde
+in pochi secondi.
+
+### Il modello in internet (Groq, Gemini)
+
+Se preferisci non installare niente sul computer, le stesse tre variabili puntano a
+un servizio online compatibile OpenAI. Cambia solo il modello e la chiave:
+
+```bat
+set "LLM_BASE_URL=https://api.groq.com/openai/v1"
+set "LLM_MODEL=llama-3.3-70b-versatile"
+set "LLM_API_KEY=la-tua-chiave"
+```
+
+La chiave si prende dal sito del servizio e **non va mai in `avvia.bat`**: sta nel
+`segreto.bat`, come quella della voce. Attenzione: così facendo le frasi che detti
+escono di casa. Con Ollama no.
+
+### Se il modello «non capisce niente»
+
+Quasi sempre è una delle tre cose, in quest'ordine:
+
+1. **Ollama non è in esecuzione.** Deve esserci la sua icona nella tray. Riapri
+   Ollama e riprova; non c'è niente da reinstallare.
+2. **`LLM_TIMEOUT` troppo corto.** Su un modello in casa prova `60`. Un timeout
+   scaduto non dà errore: l'app ricade in silenzio sulle regole, e sembra che il
+   modello non capisca.
+3. **L'interruttore è spento.** Controlla **Voce → «Capire i comandi»**.
+
+Se dopo questo resta lento o sbaglia spesso, è il modello: un modello piccolo in
+casa è meno preciso di uno grande in internet. Non c'è niente di rotto — e quando
+sbaglia, l'app usa comunque le regole di prima.
+
 ---
 
 ## Se qualcosa non va
@@ -489,6 +573,11 @@ Il database è finito nella cartella sbagliata. Guarda dove hai messo il file
 **La voce non funziona sul telefono.**
 È previsto, ed è il browser: sul telefono serve una connessione sicura. Sul
 computer, con `localhost`, funziona.
+
+**Ho acceso la comprensione col modello, ma non capisce lo stesso.**
+Vai alla sezione **Capire i comandi con un modello**: quasi sempre è Ollama spento,
+`LLM_TIMEOUT` troppo corto, o l'interruttore in **Voce → «Capire i comandi»** da
+riaccendere. Non è un guasto dell'app.
 
 **Voglio salvare i dati su un disco esterno.**
 In `avvia.bat` c'è una riga `REM set "MAGGIORDOMO_DATA=..."`: togli `REM`, metti
