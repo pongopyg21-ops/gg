@@ -3926,6 +3926,17 @@ function mostraAvvisoRobotica() {
   const el = $('#voice-avviso-robotica');
   const rimando = $('#voice-chiave-manca');
   if (rimando) rimando.hidden = voceCloud.disponibile;
+  const dove = $('#voice-chiave-dove');
+  if (dove) {
+    // La via del file va benissimo su una macchina propria, ma in un ambiente
+    // ricreato a ogni sessione il file sparisce: chi legge deve sapere che li'
+    // la chiave va registrata fra i segreti, non riscritta in segreto.txt.
+    dove.textContent = ' Dove si mette dipende dall\'ambiente: su una macchina '
+      + 'tua va bene il file accanto al programma (segreto.txt, segreto.sh, o le '
+      + 'variabili AZURE_SPEECH_KEY e AZURE_SPEECH_REGION); in un ambiente '
+      + 'ricreato a ogni avvio la chiave va registrata fra i segreti, col nome '
+      + 'AZURE_SPEECH_KEY, perché un file lì non sopravvive.';
+  }
   if (!el) return;
   if (voceCloud.disponibile) { el.hidden = true; return; }
   el.hidden = false;
