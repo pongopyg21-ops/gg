@@ -6338,6 +6338,36 @@ def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch)
     assert "latte" in catturato["corpo"]["messages"][-1]["content"]
 
 
+def test_la_comprensione_lascia_budget_ai_modelli_di_ragionamento(monkeypatch):
+    """Il tetto di token non deve strozzare i modelli che "pensano" prima di
+    rispondere (gpt-oss, o-series): il ragionamento spende lo stesso budget, e
+    con un tetto stretto il JSON arriva troncato o vuoto. L'app ripiegherebbe in
+    silenzio sulle regole e sembrerebbe che il modello non capisca.
+    Un tetto largo non costa sugli altri modelli: si fermano da soli."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    catturato = {}
+
+    def finta(richiesta, timeout=None):
+        catturato["corpo"] = json.loads(richiesta.data.decode())
+        return _RispostaLlm('{"intent": "unknown"}')
+
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", finta)
+    comprensione.chiama("dammi il latte")
+    assert catturato["corpo"]["max_tokens"] >= 1024
+
+
+def test_il_tempo_di_attesa_del_modello_si_puo_allungare(monkeypatch):
+    """Un modello locale (Ollama su CPU) impiega diversi secondi a rispondere: il
+    tetto del cloud lo farebbe scadere sempre, e si ricadrebbe in silenzio sulle
+    regole. `LLM_TIMEOUT` lo allunga; senza la variabile resta il predefinito."""
+    monkeypatch.delenv("LLM_TIMEOUT", raising=False)
+    assert comprensione.timeout() == comprensione.TIMEOUT
+    monkeypatch.setenv("LLM_TIMEOUT", "30")
+    assert comprensione.timeout() == 30.0
+    monkeypatch.setenv("LLM_TIMEOUT", "non-un-numero")
+    assert comprensione.timeout() == comprensione.TIMEOUT
+
+
 def test_comprensione_ripiega_in_silenzio_se_il_modello_non_risponde(monkeypatch):
     """Un errore di rete non deve diventare un errore per chi ha parlato: si
     restituisce `None`, e il chiamante usa il parser a regole."""

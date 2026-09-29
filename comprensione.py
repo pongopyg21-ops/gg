@@ -42,6 +42,30 @@ MODELLO_PREDEFINITO = "gpt-4o-mini"
 TIMEOUT = 8.0   # un comando e' una frase: se il modello non risponde in fretta,
                 # si ricade sul parser invece di far aspettare chi ha parlato
 
+# Il tetto di token della risposta. Sembra alto per un oggetto JSON di poche
+# chiavi, ed e' voluto: i modelli di ragionamento (gpt-oss, o-series) spendono
+# lo stesso budget prima di scrivere la risposta. Con un tetto stretto il
+# ragionamento lo esaurisce e il JSON arriva troncato o vuoto — l'app ripiega in
+# silenzio sulle regole, e sembra che il modello "non capisca". Un tetto largo
+# non costa nulla sugli altri modelli: si fermano da soli quando hanno finito.
+MAX_TOKENS = 1024
+
+
+def timeout() -> float:
+    """Quanto aspettare il modello, in secondi.
+
+    Il predefinito (`TIMEOUT`) va bene per un servizio in cloud, che risponde in
+    frazioni di secondo. Un modello **locale** (Ollama su CPU) impiega diversi
+    secondi: con il tetto stretto la chiamata scadrebbe sempre, si ricadrebbe in
+    silenzio sul parser a regole e non si capirebbe perche' il modello "non
+    capisca". Si alza con `LLM_TIMEOUT`, letto all'avvio come le altre variabili.
+    """
+    try:
+        return max(0.1, float(os.environ.get("LLM_TIMEOUT") or TIMEOUT))
+    except (TypeError, ValueError):
+        return TIMEOUT
+
+
 # Gli intenti che il parser sa eseguire. Il modello **non ne inventa di nuovi**:
 # fuori da questo elenco la risposta vale `unknown`, che e' il modo in cui una
 # comprensione sbagliata non diventa un'azione sbagliata.
@@ -318,7 +342,7 @@ def chiama(testo: str) -> dict | None:
             {"role": "user", "content": frase},
         ],
         "temperature": 0,
-        "max_tokens": 300,
+        "max_tokens": MAX_TOKENS,
         "response_format": {"type": "json_object"},
     }).encode("utf-8")
     richiesta = urllib.request.Request(
@@ -332,7 +356,7 @@ def chiama(testo: str) -> dict | None:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(richiesta, timeout=TIMEOUT) as risposta:
+        with urllib.request.urlopen(richiesta, timeout=timeout()) as risposta:
             dati = json.loads(risposta.read().decode("utf-8"))
     except (OSError, ValueError):
         # URLError, timeout, DNS, risposta illeggibile: sono tutti lo stesso caso

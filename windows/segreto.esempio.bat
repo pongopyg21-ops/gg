@@ -31,3 +31,32 @@ REM  davanti o dietro.
 REM Togli il REM dalle due righe qui sotto e metti i tuoi valori:
 REM set "AZURE_SPEECH_KEY=incolla-qui-la-chiave"
 REM set "AZURE_SPEECH_REGION=westeurope"
+
+REM ============================================================
+REM  Comprensione dei comandi con un modello  (facoltativa)
+REM ============================================================
+REM
+REM  Senza, i comandi sono capiti dal parser a regole e l'app funziona lo
+REM  stesso. Con un modello si capiscono anche le frasi non previste
+REM  ("dammi la lista della spesa", "fammi vedere la dispensa").
+REM
+REM  Modello IN LOCALE con Ollama (gratuito, niente chiavi, niente rete):
+REM  basta avviare Ollama e scaricare un modello, poi puntare qui l'app.
+REM    LLM_BASE_URL = http://127.0.0.1:11434/v1
+REM    LLM_API_KEY  = ollama   (segnaposto: Ollama non la controlla)
+REM    LLM_MODEL    = qwen2.5:7b-instruct   (o un altro modello scaricato)
+REM
+REM  Un modello locale su CPU impiega qualche secondo: si alza LLM_TIMEOUT
+REM  (in secondi). Senza, il tetto di 8 secondi del cloud lo farebbe scadere.
+REM
+REM  In alternativa, un servizio in cloud compatibile OpenAI (Groq, Gemini,
+REM  OpenRouter): cambiano solo queste tre variabili.
+REM    LLM_BASE_URL = https://api.groq.com/openai/v1
+REM    LLM_MODEL    = <secret-hidden>
+REM    LLM_API_KEY  = la-tua-chiave-del-servizio
+
+REM Togli il REM e metti i tuoi valori (esempio con Ollama in locale):
+REM set "LLM_BASE_URL=http://127.0.0.1:11434/v1"
+REM set "LLM_MODEL=qwen2.5:7b-instruct"
+REM set "LLM_API_KEY=ollama"
+REM set "LLM_TIMEOUT=30"

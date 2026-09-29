@@ -214,6 +214,7 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 | `LLM_API_KEY` | Chiave del modello per comprendere i comandi (facoltativa) | si usa il parser a regole |
 | `LLM_MODEL` | Modello da chiamare | `gpt-4o-mini` |
 | `LLM_BASE_URL` | Endpoint compatibile OpenAI | `https://api.openai.com/v1` |
+| `LLM_TIMEOUT` | Secondi di attesa della risposta del modello | 8 (adatto al cloud) |
 
 Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in un **file di testo** `segreto.txt` (o `segreto`, senza estensione) accanto a `app.py`, escluso da git, modello in `segreto.esempio.txt`. Forme accettate: `chiave: valore` / `chiave=valore` / `export chiave=valore` / il valore nudo su una riga — una parola tutta minuscola è l'area, il resto è la chiave, quindi l'ordine delle due righe non conta. Le etichette possono essere `chiave`/`area` (o `key`/`region`, `regione`). Restano validi anche `segreto.sh` e `segreto.bat` per chi li ha già. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
 
@@ -978,6 +979,22 @@ Le tre scelte che contano:
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
 (`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una
 rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
+**Modelli di ragionamento e modelli locali: due trappole, entrambe misurate.**
+
+- `gpt-oss`/o-series su Groq: il modello spende lo stesso budget di token prima
+  di scrivere la risposta. Con un tetto stretto il JSON arriva troncato o vuoto e
+  Groq risponde `400 json_validate_failed`; l'app ripiega in silenzio sulle regole
+  e sembra che "non capisca". `MAX_TOKENS` (1024) lascia il margine che serve, e
+  non costa sugli altri modelli, che si fermano da soli.
+- Ollama in locale su CPU: risponde in 2-10 secondi, non in frazioni. Con il
+  `TIMEOUT` dell'app (8 s) la chiamata scadrebbe spesso e si ricadrebbe sulle
+  regole. `LLM_TIMEOUT` allunga l'attesa (`comprensione.timeout()`); senza la
+  variabile resta 8 s. Configurazione tipica: `LLM_BASE_URL` =
+  `http://127.0.0.1:11434/v1`, `LLM_API_KEY` = `ollama` (segnaposto, Ollama non la
+  controlla), `LLM_MODEL` = un modello scaricato (`qwen2.5:7b-instruct`). Nota di
+  qualita': un 7B locale sbaglia piu' spesso di un modello cloud grande — il
+  parser a regole resta la rete di sicurezza, quindi l'errore non peggiora l'app.
+
 Le variabili sono `LLM_API_KEY`, `LLM_MODEL` (default `gpt-4o-mini`) e
 `LLM_BASE_URL` (default OpenAI; lo stesso codice parla con OpenRouter, Groq o un
 server locale, perche' l'API e' quella compatibile OpenAI).
