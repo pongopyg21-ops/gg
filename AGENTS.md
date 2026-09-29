@@ -212,9 +212,9 @@ Tutto quello che si configura passa da variabili d'ambiente, lette **all'avvio**
 | `PORT` | Porta del server | 12000 |
 | `CUCINA_DB` | Percorso del database della prima casa | `cucina.db` |
 | `LLM_API_KEY` | Chiave del modello per comprendere i comandi (facoltativa) | si usa il parser a regole |
-| `LLM_MODEL` | Modello da chiamare | `gpt-4o-mini` |
-| `LLM_BASE_URL` | Endpoint compatibile OpenAI | `https://api.openai.com/v1` |
-| `LLM_TIMEOUT` | Secondi di attesa della risposta del modello | 8 (adatto al cloud) |
+| `LLM_MODEL` | Modello da chiamare | `qwen2.5:7b-instruct` (modello di casa) |
+| `LLM_BASE_URL` | Endpoint compatibile OpenAI | `http://127.0.0.1:11434/v1` (Ollama) |
+| `LLM_TIMEOUT` | Secondi di attesa della risposta del modello | 60 (modello di casa) |
 
 Le chiavi vanno messe prima di `./avvia.sh` e non finiscono mai nel repository. In alternativa si scrivono in un **file di testo** `segreto.txt` (o `segreto`, senza estensione) accanto a `app.py`, escluso da git, modello in `segreto.esempio.txt`. Forme accettate: `chiave: valore` / `chiave=valore` / `export chiave=valore` / il valore nudo su una riga — una parola tutta minuscola è l'area, il resto è la chiave, quindi l'ordine delle due righe non conta. Le etichette possono essere `chiave`/`area` (o `key`/`region`, `regione`). Restano validi anche `segreto.sh` e `segreto.bat` per chi li ha già. **L'app non le scrive**: non c'è un pannello né una rotta che salvi la chiave, perché il segreto non deve passare da una richiesta HTTP né essere riscritto da chi apre la pagina.
 
@@ -986,18 +986,23 @@ rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
   fallisce e l'app ripiega in silenzio sulle regole: sembra che "non capisca".
   `MAX_TOKENS` (1024) lascia il margine che serve, e non costa sugli altri
   modelli, che si fermano da soli.
-- Ollama in locale su CPU: risponde in 2-10 secondi, non in frazioni. Con il
-  `TIMEOUT` dell'app (8 s) la chiamata scadrebbe spesso e si ricadrebbe sulle
-  regole. `LLM_TIMEOUT` allunga l'attesa (`comprensione.timeout()`); senza la
-  variabile resta 8 s. Configurazione tipica: `LLM_BASE_URL` =
-  `http://127.0.0.1:11434/v1`, `LLM_API_KEY` = `ollama` (segnaposto, Ollama non la
-  controlla), `LLM_MODEL` = un modello scaricato (`qwen2.5:7b-instruct`). Nota di
-  qualita': un 7B locale sbaglia piu' spesso di un modello cloud grande — il
-  parser a regole resta la rete di sicurezza, quindi l'errore non peggiora l'app.
+- Ollama in locale su CPU: risponde in 2-10 secondi, non in frazioni. Con un
+  `TIMEOUT` corto la chiamata scadrebbe spesso e si ricadrebbe sulle regole.
+  `LLM_TIMEOUT` regola l'attesa (`comprensione.timeout()`). **Il predefinito e'
+  il modello di casa**: `LLM_BASE_URL` = `http://127.0.0.1:11434/v1`, `LLM_MODEL`
+  = `qwen2.5:7b-instruct`, `LLM_TIMEOUT` = 60. Un servizio in rete si punta con
+  le stesse variabili. Nota di qualita': un 7B locale sbaglia piu' spesso di un
+  modello grande in rete — il parser a regole resta la rete di sicurezza, quindi
+  l'errore non peggiora l'app.
+- **Un endpoint locale vale anche senza chiave.** Ollama non ne usa: se
+  `configurato()` pretendesse `LLM_API_KEY` resterebbe spenta proprio la
+  configurazione predefinita. `_e_locale()` riconosce 127.0.0.1/localhost
+  nell'indirizzo. Nei test, per simulare "nessun modello", va impostato un
+  `LLM_BASE_URL` in rete e tolta la chiave.
 
-Le variabili sono `LLM_API_KEY`, `LLM_MODEL` (default `gpt-4o-mini`) e
-`LLM_BASE_URL` (default OpenAI; lo stesso codice parla con qualsiasi servizio che
-esponga l'API compatibile OpenAI, compreso un modello in casa con Ollama).
+Le variabili sono `LLM_API_KEY` (serve solo ai servizi in rete), `LLM_MODEL`
+(default `qwen2.5:7b-instruct`) e `LLM_BASE_URL` (default Ollama in locale; lo
+stesso codice parla con qualsiasi servizio che esponga l'API compatibile OpenAI).
 
 **Il costo e' la ragione per cui questa funzione e' scritta cosi'.** Ogni comando
 e' una chiamata breve: il modello e' il piu' economico, `temperature=0`,

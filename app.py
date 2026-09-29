@@ -2160,8 +2160,10 @@ def voce_llm():
     data = request.get_json(force=True) or {}
     abilitato = bool(data.get("abilitato"))
     if abilitato and not comprensione.configurato():
-        return jsonify({"error": "Manca la chiave del modello: registrala come segreto "
-                                 "LLM_API_KEY prima di avviare l'app."}), 400
+        return jsonify({"error": "Nessun modello configurato. Un modello in casa "
+                                 "(Ollama) non richiede chiave: avvialo e assicurati "
+                                 "che LLM_BASE_URL punti a http://127.0.0.1:11434/v1. "
+                                 "Per un servizio in rete registra LLM_API_KEY."}), 400
     imposta_llm(db, abilitato)
     return jsonify({"llm_disponibile": comprensione.configurato(),
                     "llm_abilitato": _llm_abilitato(db)})

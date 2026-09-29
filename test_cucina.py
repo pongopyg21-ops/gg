@@ -6309,11 +6309,24 @@ def test_comprensione_legge_il_json_anche_con_testo_attorno():
     assert comprensione._estrai_json("nessun json qui") is None
 
 
-def test_comprensione_senza_chiave_non_e_configurata(monkeypatch):
+def test_comprensione_senza_chiave_ne_modello_non_e_configurata(monkeypatch):
+    """Senza chiave **e** con un endpoint in rete non c'e' un modello: la
+    comprensione resta a regole. (Un endpoint locale, come Ollama, invece vale
+    anche senza chiave: vedi il test qui sotto.)"""
     monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "https://esempio.invalid/v1")
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
     assert not comprensione.configurato()
     assert comprensione.chiama("aggiungi il latte alla spesa") is None
+
+
+def test_un_modello_in_casa_non_richiede_una_chiave(monkeypatch):
+    """Ollama non usa chiavi: l'endpoint locale da solo basta. E' la
+    configurazione predefinita, e senza questo resterebbe spenta."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    assert comprensione.configurato()
 
 
 def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch):
@@ -6380,10 +6393,11 @@ def test_comprensione_ripiega_in_silenzio_se_il_modello_non_risponde(monkeypatch
     assert comprensione.chiama("aggiungi il latte alla spesa") is None
 
 
-def test_senza_chiave_del_modello_l_interruttore_non_si_accende(client, monkeypatch):
+def test_senza_modello_l_interruttore_non_si_accende(client, monkeypatch):
     """Accendere una cosa che non c'e' confonderebbe: si risponde 400 dicendo
     quale variabile registrare."""
     monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "https://esempio.invalid/v1")
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
     r = client.put("/api/voce/llm", json={"abilitato": True})
     assert r.status_code == 400
@@ -6402,7 +6416,7 @@ def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
     assert client.put("/api/voce/llm", json={"abilitato": False}).get_json()["llm_abilitato"] is False
 
 
-def test_senza_chiave_del_modello_la_comprensione_resta_a_regole(client, monkeypatch):
+def test_con_l_interruttore_spento_la_comprensione_resta_a_regole(client, monkeypatch):
     """Con l'interruttore spento (o la chiave assente) non si chiama nessuno:
     la comprensione e' quella del parser, identica a prima."""
     def non_chiamare(*a, **k):

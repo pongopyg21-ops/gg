@@ -29,19 +29,18 @@ import os
 import re
 import urllib.request
 
-# L'endpoint e' quello compatibile con OpenAI, cosi' lo stesso codice parla con
-# OpenAI e con qualsiasi servizio che ne espone la stessa forma (un modello in
-# casa con Ollama, o un servizio in rete). Cambiare fornitore e' cambiare questa
-# variabile.
-BASE_URL_PREDEFINITA = "https://api.openai.com/v1"
+# L'endpoint e' quello compatibile con OpenAI. Il predefinito e' il **modello di
+# casa** (Ollama): nessuna chiave, nessun costo, niente che esce di casa. Chi
+# vuole un servizio in rete lo punta con `LLM_BASE_URL`.
+BASE_URL_PREDEFINITA = "http://127.0.0.1:11434/v1"
 
-# Il modello piu' economico che regge bene l'italiano e il formato JSON: la
-# comprensione di un comando breve non richiede un modello grande, e il costo
-# per comando e' la ragione per cui questa funzione esiste cosi' com'e'.
-MODELLO_PREDEFINITO = "gpt-4o-mini"
+# Il modello di casa scaricato di norma (`ollama pull qwen2.5:7b-instruct`).
+# Se non c'e', la chiamata fallisce e si ricade sul parser a regole: non rompe.
+MODELLO_PREDEFINITO = "qwen2.5:7b-instruct"
 
-TIMEOUT = 8.0   # un comando e' una frase: se il modello non risponde in fretta,
-                # si ricade sul parser invece di far aspettare chi ha parlato
+TIMEOUT = 60.0  # un modello di casa su CPU impiega secondi a rispondere: il
+                # primo comando dopo l'avvio puo' arrivare a mezzo minuto. Su un
+                # servizio in rete, che risponde subito, questo tetto non si vede.
 
 # Il tetto di token della risposta. Sembra alto per un oggetto JSON di poche
 # chiavi, ed e' voluto: i modelli di ragionamento spendono lo stesso budget prima
@@ -210,12 +209,24 @@ def base_url() -> str:
     return (os.environ.get("LLM_BASE_URL") or BASE_URL_PREDEFINITA).strip().rstrip("/")
 
 
-def configurato() -> bool:
-    """C'e' una chiave con cui chiamare il modello?
+def _e_locale() -> bool:
+    """L'endpoint e' un modello in casa (Ollama)?
 
-    Senza, la comprensione resta quella a regole: l'app funziona lo stesso, non
-    si rompe niente. E' la stessa logica di `voce_cloud.configurato()`."""
-    return bool(chiave())
+    Un modello in casa non chiede una chiave: pretendere `LLM_API_KEY` terrebbe
+    spenta proprio la configurazione predefinita. Si riconosce dall'indirizzo,
+    perche' non c'e' altro modo di saperlo."""
+    return "127.0.0.1" in base_url() or "localhost" in base_url()
+
+
+def configurato() -> bool:
+    """C'e' un modello con cui capire i comandi?
+
+    Serve o una chiave (servizio in rete) oppure un endpoint locale (Ollama, che
+    non ne usa). Senza ne' l'una ne' l'altro resta il parser a regole: l'app
+    funziona lo stesso, non si rompe. E' la stessa logica di
+    `voce_cloud.configurato()`.
+    """
+    return bool(chiave()) or _e_locale()
 
 
 def _ripulisci(dati: dict) -> dict:

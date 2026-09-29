@@ -40,23 +40,16 @@ REM  Senza, i comandi sono capiti dal parser a regole e l'app funziona lo
 REM  stesso. Con un modello si capiscono anche le frasi non previste
 REM  ("dammi la lista della spesa", "fammi vedere la dispensa").
 REM
-REM  Modello IN LOCALE con Ollama (gratuito, niente chiavi, niente rete):
-REM  basta avviare Ollama e scaricare un modello, poi puntare qui l'app.
-REM    LLM_BASE_URL = http://127.0.0.1:11434/v1
-REM    LLM_API_KEY  = ollama   (segnaposto: Ollama non la controlla)
-REM    LLM_MODEL    = qwen2.5:7b-instruct   (o un altro modello scaricato)
+REM  NON serve fare niente per Ollama: l'app usa gia' qwen2.5:7b-instruct su
+REM  http://127.0.0.1:11434/v1. Basta che Ollama sia avviato e che il modello
+REM  sia scaricato (`ollama pull qwen2.5:7b-instruct`), poi si accende
+REM  l'interruttore in Voce -> "Capire i comandi".
 REM
-REM  Un modello locale su CPU impiega qualche secondo: si alza LLM_TIMEOUT
-REM  (in secondi). Senza, il tetto di 8 secondi del cloud lo farebbe scadere.
+REM  Queste righe servono solo per CAMBIARE modello o indirizzo: togli il REM.
+REM  Per un servizio in rete (OpenAI o simile) servono anche LLM_API_KEY e
+REM  l'indirizzo del servizio.
 REM
-REM  In alternativa, un servizio in rete compatibile OpenAI: cambiano solo
-REM  queste tre variabili.
-REM    LLM_BASE_URL = l'indirizzo del servizio
-REM    LLM_MODEL    = il modello che offre
-REM    LLM_API_KEY  = la-tua-chiave-del-servizio
-
-REM Togli il REM e metti i tuoi valori (esempio con Ollama in locale):
 REM set "LLM_BASE_URL=http://127.0.0.1:11434/v1"
 REM set "LLM_MODEL=qwen2.5:7b-instruct"
-REM set "LLM_API_KEY=ollama"
-REM set "LLM_TIMEOUT=30"
+REM set "LLM_API_KEY=la-tua-chiave-solo-per-un-servizio-in-rete"
+REM set "LLM_TIMEOUT=60"
