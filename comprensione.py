@@ -30,8 +30,9 @@ import re
 import urllib.request
 
 # L'endpoint e' quello compatibile con OpenAI, cosi' lo stesso codice parla con
-# OpenAI e con qualsiasi servizio che ne espone la stessa forma (OpenRouter,
-# Groq, un server locale). Cambiare fornitore e' cambiare questa variabile.
+# OpenAI e con qualsiasi servizio che ne espone la stessa forma (un modello in
+# casa con Ollama, o un servizio in rete). Cambiare fornitore e' cambiare questa
+# variabile.
 BASE_URL_PREDEFINITA = "https://api.openai.com/v1"
 
 # Il modello piu' economico che regge bene l'italiano e il formato JSON: la
@@ -43,11 +44,11 @@ TIMEOUT = 8.0   # un comando e' una frase: se il modello non risponde in fretta,
                 # si ricade sul parser invece di far aspettare chi ha parlato
 
 # Il tetto di token della risposta. Sembra alto per un oggetto JSON di poche
-# chiavi, ed e' voluto: i modelli di ragionamento (gpt-oss, o-series) spendono
-# lo stesso budget prima di scrivere la risposta. Con un tetto stretto il
-# ragionamento lo esaurisce e il JSON arriva troncato o vuoto — l'app ripiega in
-# silenzio sulle regole, e sembra che il modello "non capisca". Un tetto largo
-# non costa nulla sugli altri modelli: si fermano da soli quando hanno finito.
+# chiavi, ed e' voluto: i modelli di ragionamento spendono lo stesso budget prima
+# di scrivere la risposta. Con un tetto stretto il ragionamento lo esaurisce e il
+# JSON arriva troncato o vuoto — l'app ripiega in silenzio sulle regole, e sembra
+# che il modello "non capisca". Un tetto largo non costa nulla sugli altri
+# modelli: si fermano da soli quando hanno finito.
 MAX_TOKENS = 1024
 
 

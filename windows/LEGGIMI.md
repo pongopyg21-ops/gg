@@ -493,14 +493,15 @@ casa. È la via che consigliamo per un'app di casa.
 Il primo comando è lento (il modello si sta caricando); dal secondo in poi risponde
 in pochi secondi.
 
-### Il modello in internet (Groq, Gemini)
+### Un servizio in rete (alternativa)
 
 Se preferisci non installare niente sul computer, le stesse tre variabili puntano a
-un servizio online compatibile OpenAI. Cambia solo il modello e la chiave:
+un servizio in rete compatibile OpenAI. Cambiano solo l'indirizzo, il modello e la
+chiave:
 
 ```bat
-set "LLM_BASE_URL=https://api.groq.com/openai/v1"
-set "LLM_MODEL=llama-3.3-70b-versatile"
+set "LLM_BASE_URL=l'indirizzo-del-servizio"
+set "LLM_MODEL=il-modello-scelto"
 set "LLM_API_KEY=la-tua-chiave"
 ```
 

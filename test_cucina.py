@@ -6340,10 +6340,10 @@ def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch)
 
 def test_la_comprensione_lascia_budget_ai_modelli_di_ragionamento(monkeypatch):
     """Il tetto di token non deve strozzare i modelli che "pensano" prima di
-    rispondere (gpt-oss, o-series): il ragionamento spende lo stesso budget, e
-    con un tetto stretto il JSON arriva troncato o vuoto. L'app ripiegherebbe in
-    silenzio sulle regole e sembrerebbe che il modello non capisca.
-    Un tetto largo non costa sugli altri modelli: si fermano da soli."""
+    rispondere: il ragionamento spende lo stesso budget, e con un tetto stretto il
+    JSON arriva troncato o vuoto. L'app ripiegherebbe in silenzio sulle regole e
+    sembrerebbe che il modello non capisca. Un tetto largo non costa sugli altri
+    modelli: si fermano da soli."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
     catturato = {}
 

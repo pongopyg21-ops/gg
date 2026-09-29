@@ -981,11 +981,11 @@ La chiave entra **solo** dall'ambiente o da un file accanto all'app
 rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
 **Modelli di ragionamento e modelli locali: due trappole, entrambe misurate.**
 
-- `gpt-oss`/o-series su Groq: il modello spende lo stesso budget di token prima
-  di scrivere la risposta. Con un tetto stretto il JSON arriva troncato o vuoto e
-  Groq risponde `400 json_validate_failed`; l'app ripiega in silenzio sulle regole
-  e sembra che "non capisca". `MAX_TOKENS` (1024) lascia il margine che serve, e
-  non costa sugli altri modelli, che si fermano da soli.
+- I modelli di ragionamento spendono lo stesso budget di token prima di scrivere
+  la risposta. Con un tetto stretto il JSON arriva troncato o vuoto, la chiamata
+  fallisce e l'app ripiega in silenzio sulle regole: sembra che "non capisca".
+  `MAX_TOKENS` (1024) lascia il margine che serve, e non costa sugli altri
+  modelli, che si fermano da soli.
 - Ollama in locale su CPU: risponde in 2-10 secondi, non in frazioni. Con il
   `TIMEOUT` dell'app (8 s) la chiamata scadrebbe spesso e si ricadrebbe sulle
   regole. `LLM_TIMEOUT` allunga l'attesa (`comprensione.timeout()`); senza la
@@ -996,8 +996,8 @@ rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
   parser a regole resta la rete di sicurezza, quindi l'errore non peggiora l'app.
 
 Le variabili sono `LLM_API_KEY`, `LLM_MODEL` (default `gpt-4o-mini`) e
-`LLM_BASE_URL` (default OpenAI; lo stesso codice parla con OpenRouter, Groq o un
-server locale, perche' l'API e' quella compatibile OpenAI).
+`LLM_BASE_URL` (default OpenAI; lo stesso codice parla con qualsiasi servizio che
+esponga l'API compatibile OpenAI, compreso un modello in casa con Ollama).
 
 **Il costo e' la ragione per cui questa funzione e' scritta cosi'.** Ogni comando
 e' una chiamata breve: il modello e' il piu' economico, `temperature=0`,

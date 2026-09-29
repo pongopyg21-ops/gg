@@ -49,10 +49,10 @@ REM
 REM  Un modello locale su CPU impiega qualche secondo: si alza LLM_TIMEOUT
 REM  (in secondi). Senza, il tetto di 8 secondi del cloud lo farebbe scadere.
 REM
-REM  In alternativa, un servizio in cloud compatibile OpenAI (Groq, Gemini,
-REM  OpenRouter): cambiano solo queste tre variabili.
-REM    LLM_BASE_URL = https://api.groq.com/openai/v1
-REM    LLM_MODEL    = <secret-hidden>
+REM  In alternativa, un servizio in rete compatibile OpenAI: cambiano solo
+REM  queste tre variabili.
+REM    LLM_BASE_URL = l'indirizzo del servizio
+REM    LLM_MODEL    = il modello che offre
 REM    LLM_API_KEY  = la-tua-chiave-del-servizio
 
 REM Togli il REM e metti i tuoi valori (esempio con Ollama in locale):
