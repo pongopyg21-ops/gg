@@ -3110,6 +3110,109 @@ def test_la_casa_nuova_ha_gli_ingredienti_del_ricettario(anon):
     assert all(v["name"].strip() for v in dettaglio["items"])
 
 
+def test_ogni_ricetta_ha_una_preparazione_dettagliata():
+    """Le preparazioni del ricettario sono scritte per passi, non in due righe.
+
+    Il client le mostra come elenco numerato (`passiDa` divide su righe vuote e
+    punti), quindi una preparazione di una frase sola diventa un passo unico e
+    non serve a chi cucina. Il test fissa la sostanza: piu' passi e un testo che
+    spiega tempi e modi, non solo l'elenco degli ingredienti in prosa.
+    """
+    import seed
+    for r in seed.RECIPES:
+        passi = [p for p in r["instructions"].split("\n\n") if p.strip()]
+        assert len(passi) >= 4, \
+            f"{r['name']}: solo {len(passi)} passi, la preparazione e' troppo breve"
+        assert len(r["instructions"]) >= 400, \
+            f"{r['name']}: {len(r['instructions'])} caratteri, troppo poco dettaglio"
+        for passo in passi:
+            assert passo.strip().endswith((".", ":", "!")), \
+                f"{r['name']}: passo senza punto finale «{passo[:40]}»"
+
+
+def test_le_preparazioni_vecchie_vengono_aggiornate(casa_test):
+    """Un database esistente riceve le preparazioni nuove al primo `semina()`.
+
+    Chi usa l'app da prima ha ancora i testi brevi: senza questo aggiornamento
+    vedrebbe le preparazioni dettagliate solo creando una casa nuova.
+    """
+    import seed
+    percorso = houses.db_path(casa_test["slug"])
+    with closing(sqlite3.connect(percorso)) as db:
+        for r in seed.RECIPES:
+            db.execute("INSERT INTO recipes (name, servings, time_minutes, difficulty,"
+                       " instructions) VALUES (?, 2, 20, 'facile', ?)",
+                       (r["name"], seed.PREPARAZIONI_PRECEDENTI[r["name"]]))
+        db.commit()
+
+    seed.semina(percorso)
+
+    with closing(sqlite3.connect(percorso)) as db:
+        for r in seed.RECIPES:
+            testo = db.execute("SELECT instructions FROM recipes WHERE name = ?",
+                               (r["name"],)).fetchone()[0]
+            assert testo == r["instructions"], f"{r['name']} non aggiornata"
+
+
+def test_una_preparazione_scritta_a_mano_non_viene_sovrascritta(casa_test):
+    """La preparazione dell'utente e' un dato suo: `semina()` non la tocca.
+
+    L'aggiornamento sostituisce il testo solo se e' ancora quello vecchio. Senza
+    questa guardia, chi ha riscritto la ricetta di famiglia se la vedrebbe
+    cancellare al primo riavvio del server.
+    """
+    import seed
+    percorso = houses.db_path(casa_test["slug"])
+    mio = "La ricetta di nonna: soffriggi tutto e cuoci piano finche' e' pronto."
+    with closing(sqlite3.connect(percorso)) as db:
+        for r in seed.RECIPES:
+            db.execute("INSERT INTO recipes (name, servings, time_minutes, difficulty,"
+                       " instructions) VALUES (?, 2, 20, 'facile', ?)",
+                       (r["name"], seed.PREPARAZIONI_PRECEDENTI[r["name"]]))
+        db.execute("UPDATE recipes SET instructions = ? WHERE name = ?",
+                   (mio, "Pasta al pomodoro"))
+        db.commit()
+
+    seed.semina(percorso)
+
+    with closing(sqlite3.connect(percorso)) as db:
+        testo = db.execute("SELECT instructions FROM recipes WHERE name = ?",
+                           ("Pasta al pomodoro",)).fetchone()[0]
+        assert testo == mio, "la preparazione scritta a mano e' stata sovrascritta"
+        # le altre invece si aggiornano: la guardia vale solo per quella toccata
+        altro = db.execute("SELECT instructions FROM recipes WHERE name = ?",
+                           ("Cacio e pepe",)).fetchone()[0]
+        assert altro == next(r["instructions"] for r in seed.RECIPES
+                             if r["name"] == "Cacio e pepe")
+
+
+def test_le_preparazioni_dettagliate_escono_come_passi(client):
+    """`passiDa` deve spezzare la preparazione in un elenco, non in un blocco.
+
+    E' la resa vera nel client: si esegue la funzione estratta da `app.js` con
+    node, sul testo che sta davvero nel ricettario. Un test sulle stringhe non
+    accorgerebbe di una preparazione che resta un passo unico.
+    """
+    import seed
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("function passiDa"):
+                 js.index("\n}\n", js.index("function passiDa")) + 3]
+    preparazione = next(r["instructions"] for r in seed.RECIPES
+                        if r["name"] == "Cacio e pepe")
+    prova = blocco + f"""
+const testo = {json.dumps(preparazione)};
+console.log(JSON.stringify({{ passi: passiDa(testo) }}));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    passi = json.loads(esito.stdout)["passi"]
+    assert len(passi) >= 5, f"solo {len(passi)} passi: la preparazione resta un blocco"
+    assert all(p.strip() for p in passi), "nessun passo vuoto"
+    # il primo passo dice cosa preparare per primo, non e' un titolo
+    assert "pepe" in passi[0].lower()
+
+
 def test_non_si_possono_creare_due_case_con_lo_stesso_nome(anon):
     anon.post("/api/houses", json={"nome": "Casa Unica", "password": "aaaa"})
     anon.post("/api/logout")

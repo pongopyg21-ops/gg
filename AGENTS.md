@@ -26,10 +26,12 @@ ogni comando e `./avvia.sh` la trova. `./avvia.sh diagnosi` deve dire
 `da: ambiente`. Su una macchina propria, invece, il file accanto al programma è
 la via normale e non sparisce.
 
-**Fili aperti**: (a) la casa `Gianluca` è di origine incerta — chiedere se
-rimuoverla; (b) la voce è confermata **da desktop**, manca il riscontro **dal
-telefono**; (c) il link stabile è quello di Tailscale (`windows/dominio.bat`),
-perché il link del sandbox muore con la conversazione.
+**Fili aperti**: (a) la casa `Gian` è stata rimossa dal registro su richiesta
+dell'utente; il file `case/case-gian.db` resta su disco (scelta voluta, vedi
+`houses.elimina`), quindi se un domani servisse si può ancora registrare; (b) la
+voce è confermata **da desktop**, manca il riscontro **dal telefono**; (c) il link
+stabile è quello di Tailscale (`windows/dominio.bat`), perché il link del sandbox
+muore con la conversazione.
 
 ## Architettura
 
@@ -558,6 +560,24 @@ Conseguenze pratiche per chi mette mano al codice:
   aggiunto alle regole del glutine in `allergens.py`, altrimenti la ricetta sfugge
   al filtro allergie. Il test `test_ricettario_di_partenza_e_coerente` verifica
   categorie, unità e quantità di tutto il ricettario.
+- **Le preparazioni sono dettagliate, a passi.** Il testo di `instructions` sta in
+  `RECIPES` (unica fonte: non esiste un secondo dizionario di preparazioni) ed è
+  scritto su paragrafi separati da una riga vuota, perché il client lo mostra come
+  elenco numerato (`passiDa` in `static/app.js` divide anche sulle frasi). Almeno
+  quattro passi, con tempi e temperature espliciti: «inforna a 180°C per 40
+  minuti», non «cuoci». Una preparazione di una frase sola diventa un passo unico e
+  non serve a chi cucina; i test `test_ogni_ricetta_ha_una_preparazione_dettagliata`
+  e `test_le_preparazioni_dettagliate_escono_come_passi` (quest'ultimo esegue
+  `passiDa` vera con node) lo tengono fermo.
+- **Le preparazioni arrivano anche ai database esistenti, senza cancellare il
+  lavoro dell'utente.** `PREPARAZIONI_PRECEDENTI` è la fotografia dei testi com'era
+  prima di essere riscritti, e `semina()` sostituisce `instructions` **solo se è
+  ancora esattamente quella vecchia**: una preparazione riscritta a mano è un dato
+  dell'utente e non va sovrascritta. È lo stesso metodo di `MINUTI_CAMBIATI` in
+  `igiene.py`. Senza, chi usa l'app da prima vedrebbe i testi nuovi solo creando una
+  casa nuova, e chi ha riscritto la ricetta di famiglia se la vedrebbe cancellare.
+  Aggiungendo un testo nuovo a `RECIPES`, va aggiunto il testo vecchio anche a
+  `PREPARAZIONI_PRECEDENTI`, altrimenti l'aggiornamento non scatta.
 - **Ogni ricetta del ricettario ha una foto**, e la foto è un file in
   `static/recipes/` registrato in `PHOTOS` (`seed.py`) con il suo credito. Il test
   `test_ogni_ricetta_ha_la_sua_foto` verifica tre cose insieme: la voce esiste, il
