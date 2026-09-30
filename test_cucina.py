@@ -3579,6 +3579,106 @@ def test_la_sveglia_con_il_comando_esegue_senza_finestra(client):
     assert d["insieme"] == {"azione": "esegui", "comando": "metti il latte nella spesa"}
 
 
+def test_la_domanda_sulla_quantita_vale_senza_sveglia(client):
+    """Il difetto riferito: dopo aver chiamato l'assistente, comandi come
+    "quante ricette ho" venivano **ignorati in silenzio**, e sembrava che
+    servisse dire "Hey GG" ogni volta.
+
+    La causa: il criterio che apre la frase (`sembraComando`) accettava "quanto"
+    ma non "quante"/"quanti"/"quanta", che sono la forma piu' naturale ("quante
+    uova ho?", "quanti grammi sono rimasti"). Il parser del server li capisce
+    (intento `domanda`), quindi era solo il cancello a sbarrarli."""
+    d = _decisione_js(client, """{
+      quanteRicette: decisioneContinuo('quante ricette ho', false, '', true),
+      quantiGrammi: decisioneContinuo('quanti grammi sono rimasti', false, '', true),
+      quantaFarina: decisioneContinuo('quanta farina ho', false, '', true),
+      quantoSale: decisioneContinuo('quanto sale ho', false, '', true),
+    }""")
+    for caso in ("quanteRicette", "quantiGrammi", "quantaFarina", "quantoSale"):
+        assert d[caso]["azione"] == "esegui", (caso, d[caso])
+    # e la forma resta fuori **fuori** dalla finestra, come ogni comando
+    d2 = _decisione_js(client, """{
+      fuori: decisioneContinuo('quante ricette ho', false, '', false),
+    }""")
+    assert d2["fuori"]["azione"] == "ignora"
+
+
+def _finestra_js(client, script):
+    """Esegue le funzioni della finestra dopo "Sì." con un orologio finto.
+
+    Il tempo e' l'unico modo di provare una regola a scadenza senza aspettare:
+    `Date.now` si sostituisce con un valore che il test fa avanzare a mano."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("const ATTESA_COMANDO_MS")
+    fine = js.index("\n}\n", js.index("function inAttesaComando")) + 3
+    blocco = js[inizio:fine]
+    prova = """
+let adesso = 1000000;   // non zero: l'orologio vero non parte mai da zero, e
+                        // `apertaIl` a zero sarebbe indistinguibile da "mai aperta"
+const Date = { now: () => adesso };
+let ascoltoContinuo = { inAttesa: 0, apertaIl: 0 };
+function avanza(ms) { adesso += ms; }
+""" + blocco + "\n" + script
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    return json.loads(esito.stdout)
+
+
+def test_la_finestra_dopo_si_si_riarma_dopo_un_comando(client):
+    """Il secondo pezzo del difetto: la finestra si chiudeva col **primo**
+    comando, quindi "Hey GG", "metti il latte", "e aggiungi il pane" richiedeva
+    la sveglia a ogni frase. Ora dopo un comando si rinnova, cosi' piu' ordini
+    di fila si dicono dopo una sola attivazione.
+
+    Il tetto resta: la finestra non e' eterna, altrimenti il discorso di casa
+    diventerebbe un ordine."""
+    d = _finestra_js(client, """
+attendeComando();                       // t=0: si apre
+const subito = inAttesaComando();       // true
+avanza(9000);
+riarmaFinestra();                       // t=9000: un comando la rinnova
+avanza(6000);                           // t=15000
+const dopoComando = inAttesaComando();  // true: 15s - 9s < 10s
+avanza(5000);                           // t=20000: 20s - 9s = 11s > 10s
+const scaduta = inAttesaComando();      // false
+console.log(JSON.stringify({ subito, dopoComando, scaduta }));
+""")
+    assert d == {"subito": True, "dopoComando": True, "scaduta": False}, d
+
+
+def test_la_finestra_ha_un_tetto_e_non_si_apre_da_sola(client):
+    """Due guardie opposte, entrambe necessarie:
+
+    - `riarmaFinestra` **non** apre una finestra chiusa: altrimenti bastava un
+      comando qualunque per far entrare il discorso di casa;
+    - una raffica di comandi non tiene la finestra aperta per sempre: il tetto
+      si misura dall'apertura, non dall'ultimo comando."""
+    d = _finestra_js(client, """
+// chiusa: riarmare non apre
+riarmaFinestra();
+const chiusaRestaChiusa = inAttesaComando();
+// aperta, con comandi a raffica ogni 9 s
+attendeComando();
+for (let i = 0; i < 5; i++) { avanza(9000); riarmaFinestra(); }
+avanza(1000);                            // t = 46 s dall'apertura
+const oltreIlTetto = inAttesaComando();  // il tetto e' 30 s
+console.log(JSON.stringify({ chiusaRestaChiusa, oltreIlTetto }));
+""")
+    assert d == {"chiusaRestaChiusa": False, "oltreIlTetto": False}, d
+
+
+def test_dopo_un_comando_la_finestra_non_si_azzera(client):
+    """Il legame che rende utile il riarmo: nel ramo `esegui` si chiama
+    `riarmaFinestra()`. Con il vecchio `inAttesa = 0` il secondo ordine di fila
+    veniva ignorato in silenzio — il difetto riferito."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    ramo = js[js.index("if (d.azione === 'esegui')"):]
+    ramo = ramo[:ramo.index("eseguiComandoContinuo(")]
+    assert "riarmaFinestra()" in ramo
+    assert "inAttesa = 0" not in ramo
+
+
 def test_il_microfono_prova_prima_il_server(client):
     """La strada giusta è il server: è quello che esce dalla rete. Il browser
     resta il ripiego, per quando la chiave non c'è."""

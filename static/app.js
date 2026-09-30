@@ -2796,8 +2796,8 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 // `battito` e' l'ultimo segno di vita del ciclo: serve al sorvegliante per
 // accorgersi di un giro perso.
 let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
-                        avvioAuto: false, attesaGesto: false, togliGesto: null,
-                        battito: 0, sorveglia: null };
+                        apertaIl: 0, avvioAuto: false, attesaGesto: false,
+                        togliGesto: null, battito: 0, sorveglia: null };
 // Vero solo per l'accesso appena fatto: distingue "sono appena entrato" (c'e' il
 // gesto del click) da "ho ricaricato la pagina" (gesto assente). Senza questa
 // distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
@@ -2813,6 +2813,11 @@ const CICLO_PAUSA_MS = 120;
 // volta che l'assistente ha chiamato, il discorso di casa che segue non deve
 // diventare un ordine.
 const ATTESA_COMANDO_MS = 10000;
+// Tetto complessivo della finestra: dopo un comando la finestra si riarma (si
+// possono dire piu' ordini di fila), ma non oltre questo tempo dall'apertura.
+// Senza il tetto, una chiamata + un comando ogni pochi secondi terrebbe la
+// finestra aperta per sempre, e il discorso di casa diventerebbe un ordine.
+const TETTO_FINESTRA_MS = 30000;
 // Tetto alla pausa: se il browser non dice mai che la voce ha finito, il
 // microfono deve riaccendersi lo stesso. **Non e' un numero fisso**: un tetto
 // lungo (20 s) e' il caso in cui l'assistente resta muto per venti secondi dopo
@@ -3289,6 +3294,10 @@ function avviaAscoltoContinuo() {
   ascoltoContinuo.continuo = true;
   ascoltoContinuo.sospeso = false;
   ascoltoContinuo.avvioAuto = false;
+  // una finestra di una conversazione precedente non deve sopravvivere
+  // all'accensione: si riparte sempre chiedendo la sveglia
+  ascoltoContinuo.inAttesa = 0;
+  ascoltoContinuo.apertaIl = 0;
   ascoltoContinuo.battito = Date.now();
   sorvegliaIlCiclo();
   aggiornaSpiaAscolto();
@@ -3502,6 +3511,11 @@ const VERBI_COMANDO = [
   'mostra', 'dimmi', 'quanto', 'quale', 'che', 'come', 'quando', 'dove',
   'posso', 'serve', 'manca', 'ci', 'sono', 'mangio', 'bevo', 'pulisci',
   'pulito', 'lava', 'lavare', 'cambia', 'modifica', 'aggiorna', 'porta',
+  // il femminile e il plurale della domanda sulla quantita': "quante ricette ho",
+  // "quanti grammi sono rimasti" sono comandi come "quanto sale ho", e il parser
+  // le capisce (intento `domanda`). Senza, la domanda piu' naturale in cucina
+  // veniva ignorata in silenzio.
+  'quante', 'quanti', 'quanta',
 ];
 
 /** I numeri a parole che aprono una dose ("due chili di farina"). Riconoscerli
@@ -3544,12 +3558,47 @@ function sembraComando(testo) {
     sveglia, altrimenti una volta chiamato l'assistente ogni frase di casa
     diventerebbe un ordine. */
 function attendeComando() {
+  apriFinestra();
+}
+
+/** Apre la finestra della conversazione (o la lascia aperta).
+
+    L'ancora del tetto (`apertaIl`) si fissa **solo** quando la finestra si apre
+    da chiusa: cosi' una raffica di comandi non sposta il tetto in avanti
+    all'infinito. */
+function apriFinestra() {
+  if (!inAttesaComando()) ascoltoContinuo.apertaIl = Date.now();
   ascoltoContinuo.inAttesa = Date.now() + ATTESA_COMANDO_MS;
 }
 
-/** La finestra dopo "Sì." e' ancora aperta? */
+/** Sposta in avanti la finestra **se e' gia' aperta**.
+
+    Serve dopo un comando eseguito: "Hey GG" seguito da piu' ordini di fila
+    ("metti il latte", "e aggiungi il pane") deve funzionare senza ripetere la
+    sveglia a ogni frase. Prima la finestra si chiudeva col primo comando, e il
+    secondo veniva ignorato **in silenzio** — che e' il difetto vero dietro
+    "senza Hey GG non esegue".
+
+    Non apre se era chiusa: senza attivazione il discorso di casa non deve
+    diventare un ordine. E il tempo complessivo resta limitato dal tetto in
+    `inAttesaComando`, altrimenti una chiamata basterebbe per sempre. */
+function riarmaFinestra() {
+  if (!inAttesaComando()) return;
+  ascoltoContinuo.inAttesa = Date.now() + ATTESA_COMANDO_MS;
+}
+
+/** La finestra dopo "Sì." e' ancora aperta?
+
+    Due limiti, non uno: la scadenza mobile (`inAttesa`, spostata da ogni
+    comando) e il tetto fisso dall'apertura (`apertaIl` + `TETTO_FINESTRA_MS`).
+    Il primo da' il tempo di dire il comando; il secondo impedisce che una
+    conversazione a raffica tenga la finestra aperta per sempre. */
 function inAttesaComando() {
-  return ascoltoContinuo.inAttesa > 0 && Date.now() < ascoltoContinuo.inAttesa;
+  if (!(ascoltoContinuo.inAttesa > 0)) return false;
+  if (Date.now() >= ascoltoContinuo.inAttesa) return false;
+  if (ascoltoContinuo.apertaIl
+      && Date.now() - ascoltoContinuo.apertaIl > TETTO_FINESTRA_MS) return false;
+  return true;
 }
 
 /** Decide cosa fare di una frase trascritta nell'ascolto continuo.
@@ -3579,7 +3628,10 @@ function valutaFrase(testo, sveglia, resto, riparti) {
   const d = decisioneContinuo(testo, sveglia, resto, inAttesaComando());
   registra(`deciso: ${d.azione}${d.comando ? ' → «' + d.comando + '»' : ''}`);
   if (d.azione === 'esegui') {
-    ascoltoContinuo.inAttesa = 0;
+    // il comando parte, ma la finestra **resta aperta** (rinnovata): "Hey GG"
+    // seguito da piu' ordini di fila non deve richiedere la sveglia a ogni
+    // frase. Azzerandola, il secondo ordine veniva ignorato in silenzio.
+    riarmaFinestra();
     $('#voice-heard').textContent = d.comando;
     mostraFuori(`Ho sentito: «${d.comando}»`, 'ok');
     eseguiComandoContinuo(d.comando, riparti);

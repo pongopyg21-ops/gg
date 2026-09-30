@@ -1129,6 +1129,34 @@ maggiordomo prepara la cena" detto a tavola scriverebbe in dispensa. La frase
 deve aprirsi con un verbo d'azione o un numero (`sembraComando`, `NUMERI_A_PAROLE`
 per le dosi senza verbo come "due chili di farina").
 
+**La finestra non si consuma col primo comando, e si riarma.** Il difetto
+riferito — «sembra che senza Hey GG non esegua» — aveva due cause, entrambe
+dentro `sembraComando` e `valutaFrase`:
+
+- il cancello accettava "quanto" ma non "quante/quanti/quanta", che è la forma
+  più naturale ("quante ricette ho", "quanti grammi sono rimasti"): il parser del
+  server le capisce (intento `domanda`), era solo il cancello a sbarrarle;
+- nel ramo `esegui` si azzerava la finestra (`inAttesa = 0`), quindi dopo **un**
+  comando il secondo ordine di fila richiedeva di nuovo la sveglia. Ora si chiama
+  `riarmaFinestra()`, che rinnova la scadenza **solo se la finestra era già
+  aperta**.
+
+Il riarmo non apre una finestra chiusa (`riarmaFinestra` non è `attendeComando`),
+altrimenti bastava un comando qualunque per far entrare il discorso di casa; e il
+tempo complessivo resta limitato da un tetto fisso dall'apertura
+(`TETTO_FINESTRA_MS`, 30 s), altrimenti una chiamata seguita da comandi a raffica
+terrebbe la finestra aperta per sempre. La regola sta in `inAttesaComando`, che
+guarda **due** limiti: la scadenza mobile e il tetto. `apriFinestra` fissa
+l'ancora del tetto solo quando la finestra si apre da chiusa.
+
+Il criterio resta una lista di parole, non una comprensione: la finestra non va
+aperta a qualunque frase. Misurato, il parser del server ha falsi positivi reali
+sul discorso di casa («ho trovato un lavoro nuovo» → voce in lista), quindi
+lasciar passare tutto dentro la finestra scriverebbe spazzatura in dispensa. Le
+parole colloquiali che il parser capisce davvero (`faro`, `sistemero`,
+`riordino`…) danno `unknown` e non aggiungono niente al criterio: `quante/quanti/
+quanta` sono l'unica aggiunta, perché sono l'unica che il server comprende.
+
 La decisione sta in `decisioneContinuo`, **pura** apposta: è la regola che decide
 se un comando parte, e va provata senza microfono, DOM e attese. `valutaFrase` la
 applica, e la usano **entrambi** i percorsi (server e ripiego del browser): due
