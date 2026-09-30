@@ -1723,6 +1723,33 @@ def test_ricettario_di_partenza_e_coerente():
             assert i["category"] in categorie_note, f"{r['name']}: categoria {i['category']}"
 
 
+def test_ogni_ricetta_ha_la_sua_foto():
+    """Ogni ricetta del ricettario ha una foto che esiste davvero su disco.
+
+    Una foto mancante non si nota leggendo il codice: si nota aprendo la
+    scheda e trovando un riquadro vuoto. Il test guarda `PHOTOS` *e* il file,
+    perche' un nome giusto con il file assente e' lo stesso difetto.
+
+    La licenza deve essere libera e il credito completo: le foto arrivano da
+    Wikimedia Commons e l'attribuzione (autore, licenza, pagina) e' un
+    obbligo, non un abbellimento.
+    """
+    import seed
+    cartella = os.path.join(os.path.dirname(app_module.__file__), "static", "recipes")
+    for r in seed.RECIPES:
+        nome = r["name"]
+        assert nome in seed.PHOTOS, f"{nome} senza foto in PHOTOS"
+        file_name, credito = seed.PHOTOS[nome]
+        assert os.path.exists(os.path.join(cartella, file_name)), \
+            f"{nome}: manca il file {file_name}"
+        assert file_name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")), \
+            f"{nome}: {file_name} non e' un'immagine"
+        assert "Wikimedia Commons" in credito and "CC" in credito.upper() \
+            or "Public domain" in credito, f"{nome}: credito incompleto «{credito}»"
+        assert "https://commons.wikimedia.org/" in credito, \
+            f"{nome}: manca l'indirizzo della foto nel credito"
+
+
 def test_ricettario_copre_primi_e_piatti_unici_recenti(client):
     """I piatti entrati in voga negli ultimi anni esistono e sono pianificabili.
 

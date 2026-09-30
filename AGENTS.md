@@ -558,6 +558,24 @@ Conseguenze pratiche per chi mette mano al codice:
   aggiunto alle regole del glutine in `allergens.py`, altrimenti la ricetta sfugge
   al filtro allergie. Il test `test_ricettario_di_partenza_e_coerente` verifica
   categorie, unità e quantità di tutto il ricettario.
+- **Ogni ricetta del ricettario ha una foto**, e la foto è un file in
+  `static/recipes/` registrato in `PHOTOS` (`seed.py`) con il suo credito. Il test
+  `test_ogni_ricetta_ha_la_sua_foto` verifica tre cose insieme: la voce esiste, il
+  file esiste davvero su disco, e il credito è completo (autore, licenza,
+  `Wikimedia Commons`, indirizzo della pagina). Un nome giusto con il file assente
+  è lo stesso difetto di una voce mancante: si nota solo aprendo la scheda.
+  Le foto vengono da **Wikimedia Commons** e sono a licenza libera (CC0, CC BY,
+  CC BY-SA, pubblico dominio): sono le uniche che si possono ridistribuire in un
+  repository pubblico con l'attribuzione. La via per trovarne una **non è cercare
+  il nome del piatto su Commons**: la ricerca restituisce PDF, bancarelle e
+  foto di piatti diversi (una «lasagna soup» è finita su una zuppa di zucca in
+  Bolivia). Il criterio che regge è l'**immagine principale della voce Wikipedia**
+  di quel piatto (`prop=pageimages`): è scelta dagli editori, quindi è quasi
+  sempre il piatto giusto. Quando non c'è — «lasagna soup» non ha una voce — si
+  ripiega su una foto **indicativa** e lo si scrive nel credito, come già fa
+  `PHOTOS` per altre voci. Non inventare un abbinamento: una foto sbagliata in
+  una scheda è peggio di un riquadro vuoto. Una foto che è già di un'altra
+  ricetta non si riusa (sarebbe un doppione).
 - I giorni in cui serve una voce della spesa (`days` in `/api/shopping`) si calcolano
   a ogni lettura dal piano con `_need_by_day`/`_day_breakdown`, non si salvano: una
   tabella di appoggio si disallineerebbe appena si modifica un pasto. L'invariante
