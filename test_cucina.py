@@ -499,7 +499,7 @@ def test_riconosce_le_forme_di_pasta_del_ricettario():
     """Ogni formato di pasta usato nelle ricette deve risultare glutinato."""
     import seed
     forme = {"Pasta", "Pasta corta", "Penne", "Spaghetti", "Bucatini", "Trofie",
-             "Tagliolini", "Malloreddus", "Casoncelli", "Lasagne", "Noodles"}
+             "Tagliolini", "Calamarata", "Lasagne", "Noodles"}
     usati = {i["name"] for r in seed.RECIPES for i in r["items"]}
     for forma in forme:
         assert forma in usati, f"{forma} non compare in nessuna ricetta"
@@ -1760,11 +1760,9 @@ def test_ricettario_copre_primi_e_piatti_unici_recenti(client):
     import seed
     attesi = {"Pasta alla Norma", "Spaghetti all'assassina", "Cacio e pepe",
               "Trofie al pesto", "Bucatini all'amatriciana", "Penne all'arrabbiata",
-              "Pasta fredda alla mediterranea", "Casoncelli alla bergamasca",
-              "Malloreddus alla campidanese", "Tagliolini al tartufo",
-              "Marry me chicken", "Lasagna soup", "Poke bowl", "Riso alla cantonese",
-              "Gulasch", "Pizza napoletana", "Paella", "Ramen",
-              "Chicken tikka masala", "Shakshuka"}
+              "Pasta fredda alla mediterranea", "Calamarata",
+              "Tagliolini al tartufo", "Poke bowl",
+              "Gulasch", "Pizza napoletana", "Ramen"}
     assert attesi <= {r["name"] for r in seed.RECIPES}
 
     for r in seed.RECIPES:
@@ -3211,6 +3209,106 @@ console.log(JSON.stringify({{ passi: passiDa(testo) }}));
     assert all(p.strip() for p in passi), "nessun passo vuoto"
     # il primo passo dice cosa preparare per primo, non e' un titolo
     assert "pepe" in passi[0].lower()
+
+
+def test_le_ricette_tolte_non_sono_piu_nel_ricettario():
+    """Le ricette tolte su richiesta dell'utente non tornano a ogni semina.
+
+    `REMOVED` da solo non basta: la cancellazione in `semina()` avviene prima
+    dell'inserimento, quindi una ricetta presente in entrambe le liste verrebbe
+    tolta e subito rimessa. Devono mancare da `RECIPES`, e le mappe che le
+    accompagnano devono seguire, altrimenti restano chiavi senza ricetta.
+    """
+    import seed
+    tolte = ["Casoncelli alla bergamasca", "Chicken tikka masala",
+             "Insalata di riso", "Lasagna soup", "Malloreddus alla campidanese",
+             "Marry me chicken", "Paella", "Riso alla cantonese", "Shakshuka"]
+    nomi = {r["name"] for r in seed.RECIPES}
+    for nome in tolte:
+        assert nome not in nomi, f"{nome} e' ancora nel ricettario"
+        assert nome not in seed.PHOTOS, f"{nome} ha ancora una foto"
+        assert nome not in seed.PREPARAZIONI_PRECEDENTI, nome
+    # le tre mappe parlano delle stesse ricette: una chiave in piu' e' un residuo
+    assert set(seed.PHOTOS) == nomi
+    assert set(seed.PREPARAZIONI_PRECEDENTI) == nomi
+    # e i file delle foto tolte non restano orfani su disco
+    import os
+    for nome in tolte:
+        for f in os.listdir(os.path.join(os.path.dirname(seed.__file__),
+                                         "static", "recipes")):
+            assert nome.replace(" ", "-").lower() not in f.lower(), \
+                f"il file {f} della ricetta tolta {nome} e' ancora su disco"
+
+
+def test_le_ricette_tolte_spariscono_anche_dai_database_esistenti(casa_test):
+    """Chi ha gia' i dati non deve tenersi le ricette tolte per sempre.
+
+    `seed.semina()` gira solo quando un database nasce, e `windows\\avvia.bat`
+    non lo chiama affatto: senza il passaggio in `migrate()` le ricette tolte
+    sparirebbero solo dalle case nuove. Qui si simula il database di prima —
+    ricette presenti, una nel piano e fra i preferiti — e si verifica che la
+    migrazione le porti via **insieme** a quello che le puntava.
+    """
+    import seed
+    percorso = houses.db_path(casa_test["slug"])
+    tolte = seed.REMOVED
+    with closing(sqlite3.connect(percorso)) as db:
+        db.execute("PRAGMA foreign_keys = ON")
+        for nome in tolte:
+            db.execute("INSERT INTO recipes (name, servings, time_minutes, difficulty,"
+                       " instructions) VALUES (?, 2, 30, 'facile', 'vecchia')", (nome,))
+        rid = db.execute("SELECT id FROM recipes WHERE name = ?", (tolte[0],)).fetchone()[0]
+        db.execute("INSERT INTO meal_plan (date, meal, recipe_id, servings)"
+                   " VALUES ('2026-09-29', 'pranzo', ?, 2)", (rid,))
+        db.execute("INSERT INTO favorites (recipe_id) VALUES (?)", (rid,))
+        ing = db.execute("INSERT INTO ingredients (name, category)"
+                         " VALUES ('ingrediente-fantasma', 'Altro')").lastrowid
+        db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                   " VALUES (?, ?, 1, 'pz')", (rid, ing))
+        db.commit()
+
+    # il passaggio che gira a ogni richiesta
+    app_module.init_db(percorso)
+
+    with closing(sqlite3.connect(percorso)) as db:
+        rimaste = {r[0] for r in db.execute("SELECT name FROM recipes")}
+        assert not (set(tolte) & rimaste), "una ricetta tolta e' rimasta"
+        assert db.execute("SELECT COUNT(*) FROM meal_plan").fetchone()[0] == 0, \
+            "il piano conserva una ricetta tolta"
+        assert db.execute("SELECT COUNT(*) FROM favorites").fetchone()[0] == 0
+        orfane = db.execute(
+            "SELECT COUNT(*) FROM recipe_items WHERE recipe_id NOT IN"
+            " (SELECT id FROM recipes)").fetchone()[0]
+        assert orfane == 0, "restano righe di ricette che non esistono piu'"
+        # l'ingrediente che solo quella ricetta usava non deve restare orfano
+        assert db.execute("SELECT COUNT(*) FROM ingredients WHERE name = ?",
+                          ("ingrediente-fantasma",)).fetchone()[0] == 0
+
+
+def test_le_ricette_con_foto_vengono_prima(client):
+    """Nell'elenco le ricette con foto stanno sopra quelle senza.
+
+    Si esegue la funzione vera di `app.js` con node: l'ordine e' una proprieta'
+    del client, e un test sulle stringhe non accorgerebbe di un comparatore
+    sbagliato. Dentro i due gruppi l'ordine alfabetico non deve cambiare.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = js[js.index("function conFotoPrima"):
+                 js.index("\n}\n", js.index("function conFotoPrima")) + 3]
+    prova = blocco + """
+const lista = [
+  {name: 'Senza A', image: ''},
+  {name: 'Con B', image: 'b.jpg'},
+  {name: 'Senza C', image: ''},
+  {name: 'Con D', image: 'd.jpg'},
+];
+console.log(JSON.stringify(conFotoPrima(lista).map((r) => r.name)));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    ordine = json.loads(esito.stdout)
+    assert ordine == ["Con B", "Con D", "Senza A", "Senza C"], ordine
 
 
 def test_non_si_possono_creare_due_case_con_lo_stesso_nome(anon):

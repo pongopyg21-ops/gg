@@ -162,25 +162,6 @@ RECIPES = [
         ],
     },
     {
-        "name": "Insalata di riso", "servings": 4, "time_minutes": 30, "difficulty": "facile",
-        "instructions": (
-            "Lessa il riso in acqua salata, scolalo e stendilo su un vassoio o su un canovaccio pulito: raffreddandosi in strato sottile non si appiccica.\n\n"
-            "Scola il tonno dall'olio e sbriciolalo. Taglia i pomodorini a meta', la mozzarella a cubetti e snocciola le olive.\n\n"
-            "In una ciotola grande unisci riso freddo, tonno, mais, pomodorini, olive e mozzarella.\n\n"
-            "Condisci con olio, un pizzico di sale e, se ti piace, una macinata di pepe. Mescola con delicatezza per non rompere la mozzarella.\n\n"
-            "Lascia riposare in frigorifero almeno mezz'ora: i sapori si mescolano. Tira fuori 10 minuti prima di servire, il riso freddo di frigo sa di poco."
-        ),
-        "items": [
-            {"name": "Riso", "quantity": 350, "unit": "g", "category": CEREALI},
-            {"name": "Tonno", "quantity": 160, "unit": "g", "category": DISPENSA},
-            {"name": "Mais", "quantity": 150, "unit": "g", "category": DISPENSA},
-            {"name": "Pomodorini", "quantity": 200, "unit": "g", "category": FRUTTA},
-            {"name": "Olive", "quantity": 100, "unit": "g", "category": DISPENSA},
-            {"name": "Mozzarella", "quantity": 150, "unit": "g", "category": LATTICINI},
-            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
         "name": "Frittata di zucchine", "servings": 2, "time_minutes": 20, "difficulty": "facile",
         "instructions": (
             "Taglia le zucchine a rondelle sottili. Scalda un cucchiaio d'olio in una padella con la cipolla tritata e falle saltare 5 minuti: devono ammorbidirsi ma restare verdi.\n\n"
@@ -638,42 +619,6 @@ RECIPES = [
         ],
     },
     {
-        "name": "Casoncelli alla bergamasca", "servings": 4, "time_minutes": 50, "difficulty": "difficile",
-        "instructions": (
-            "Porta a bollore una pentola d'acqua abbondante e salala.\n\n"
-            "In una padella larga sciogli il burro a fiamma dolce con le foglie di salvia. Aggiungi la pancetta tagliata a strisciette e falla dorare: il burro deve prendere il profumo della salvia senza bruciare.\n\n"
-            "Butta i casoncelli e scolali appena risalgono a galla, con un mestolo forato: cuociono in 3-4 minuti e vanno maneggiati con delicatezza per non romperli.\n\n"
-            "Versali nella padella col burro e la pancetta e saltali 1 minuto a fiamma viva, facendo attenzione a non romperli.\n\n"
-            "Completa con grana grattugiato e, se piace, una macinata di pepe. Servi subito: i casoncelli freddi perdono tutto."
-        ),
-        "items": [
-            {"name": "Casoncelli", "quantity": 400, "unit": "g", "category": CEREALI},
-            {"name": "Burro", "quantity": 80, "unit": "g", "category": LATTICINI},
-            {"name": "Pancetta", "quantity": 80, "unit": "g", "category": CARNE},
-            {"name": "Grana", "quantity": 60, "unit": "g", "category": LATTICINI},
-            {"name": "Salvia", "quantity": 10, "unit": "g", "category": FRUTTA},
-        ],
-    },
-    {
-        "name": "Malloreddus alla campidanese", "servings": 4, "time_minutes": 45, "difficulty": "media",
-        "instructions": (
-            "Sbriciola la salsiccia con le mani. Mettila in una padella con la cipolla tritata finissima e rosolala a fiamma media: la salsiccia deve perdere il rosa e la cipolla diventare dolce.\n\n"
-            "Aggiungi la passata di pomodoro e lo zafferano sciolto in un cucchiaio d'acqua. Sala poco: la salsiccia e il pecorino sono gia' sapidi.\n\n"
-            "Cuoci a fuoco basso 25 minuti, finche' il ragu' non si e' ristretto e non sa piu' di pomodoro crudo.\n\n"
-            "Lessa i malloreddus in acqua salata, tenendoli al dente: sono gnocchetti di semola e tengono bene la cottura.\n\n"
-            "Scolali e condiscili con il ragu', una spolverata di pecorino e, se piace, una foglia di basilico. Servi caldo."
-        ),
-        "items": [
-            {"name": "Malloreddus", "quantity": 320, "unit": "g", "category": CEREALI},
-            {"name": "Salsiccia", "quantity": 250, "unit": "g", "category": CARNE},
-            {"name": "Passata di pomodoro", "quantity": 500, "unit": "g", "category": DISPENSA},
-            {"name": "Zafferano", "quantity": 1, "unit": "pz", "category": DISPENSA},
-            {"name": "Pecorino romano", "quantity": 50, "unit": "g", "category": LATTICINI},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
         "name": "Tagliolini al tartufo", "servings": 2, "time_minutes": 20, "difficulty": "facile",
         "instructions": (
             "Porta a bollore l'acqua per la pasta e salala con moderazione.\n\n"
@@ -688,46 +633,6 @@ RECIPES = [
             {"name": "Burro", "quantity": 50, "unit": "g", "category": LATTICINI},
             {"name": "Parmigiano", "quantity": 40, "unit": "g", "category": LATTICINI},
             {"name": "Sale", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
-        ],
-    },
-    {
-        "name": "Marry me chicken", "servings": 2, "time_minutes": 30, "difficulty": "facile",
-        "instructions": (
-            "Salale e infarina leggermente i petti di pollo, scuotendo via l'eccesso.\n\n"
-            "Scalda l'olio in una padella larga e rosola il pollo 4 minuti per lato, finche' e' dorato. Tienilo da parte: finira' di cuocere nella salsa.\n\n"
-            "Nella stessa padella, a fiamma dolce, scalda la panna con l'aglio tritato, i pomodori secchi a pezzetti e il parmigiano. Mescola finche' la salsa non e' liscia e il parmigiano sciolto.\n\n"
-            "Rimetti il pollo nella padella, copri e cuoci 10 minuti a fiamma dolce, girandolo a meta' cottura.\n\n"
-            "La salsa e' pronta quando si e' addensata e vela il dorso di un cucchiaio. Se e' troppo liquida, alza la fiamma un minuto senza coperchio. Completa con basilico fresco e servi con il fondo di cottura."
-        ),
-        "items": [
-            {"name": "Pollo", "quantity": 400, "unit": "g", "category": CARNE},
-            {"name": "Panna", "quantity": 200, "unit": "ml", "category": LATTICINI},
-            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
-            {"name": "Pomodori secchi", "quantity": 60, "unit": "g", "category": DISPENSA},
-            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
-            {"name": "Basilico", "quantity": 10, "unit": "g", "category": FRUTTA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
-        "name": "Lasagna soup", "servings": 4, "time_minutes": 45, "difficulty": "facile",
-        "instructions": (
-            "In una pentola capiente rosola il macinato con la cipolla e l'aglio tritati, a fiamma media, finche' la carne non e' bruna e sgranata.\n\n"
-            "Aggiungi la passata di pomodoro e il brodo. Sala, aggiungi un pizzico di origano e porta a bollore.\n\n"
-            "Rompi le sfoglie di lasagne crude a pezzi di 3-4 centimetri e uniscile alla zuppa. Cuoci 12-15 minuti a fiamma media, mescolando ogni tanto: la pasta cuoce nel brodo e lo addensa con il suo amido.\n\n"
-            "Assaggia e regola di sale. Se la zuppa si e' troppo ristretta, aggiungi brodo caldo.\n\n"
-            "Servi in ciotole calde con un cucchiaio di ricotta e una spolverata di parmigiano: si sciolgono nel brodo bollente e completano il piatto. Qualche foglia di basilico fresco sopra."
-        ),
-        "items": [
-            {"name": "Lasagne", "quantity": 250, "unit": "g", "category": CEREALI},
-            {"name": "Macinato", "quantity": 400, "unit": "g", "category": CARNE},
-            {"name": "Passata di pomodoro", "quantity": 700, "unit": "g", "category": DISPENSA},
-            {"name": "Brodo", "quantity": 1, "unit": "l", "category": DISPENSA},
-            {"name": "Ricotta", "quantity": 150, "unit": "g", "category": LATTICINI},
-            {"name": "Parmigiano", "quantity": 50, "unit": "g", "category": LATTICINI},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Aglio", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
         ],
     },
     {
@@ -748,25 +653,6 @@ RECIPES = [
             {"name": "Salsa di soia", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
             {"name": "Sesamo", "quantity": 10, "unit": "g", "category": DISPENSA},
             {"name": "Lime", "quantity": 1, "unit": "pz", "category": FRUTTA},
-        ],
-    },
-    {
-        "name": "Riso alla cantonese", "servings": 2, "time_minutes": 25, "difficulty": "facile",
-        "instructions": (
-            "Il riso deve essere freddo: cuocilo in anticipo o usa gli avanzi del giorno prima. Il riso caldo, in padella, si stufa e diventa colloso.\n\n"
-            "Sbatti le uova con un pizzico di sale e strapazzale in una padella con un filo d'olio, a fiamma media. Devono essere cotte ma morbide. Mettile da parte.\n\n"
-            "Nella stessa padella, a fiamma alta, salta la cipolla tritata con i piselli e il prosciutto a cubetti per 3 minuti.\n\n"
-            "Aggiungi il riso freddo e saltalo 2 minuti, sgranandolo con il cucchiaio: ogni chicco deve insaporirsi.\n\n"
-            "Versa la salsa di soia lungo il bordo della padella (cosi' tosta e non bagna il riso) e mescola. Unisci le uova strapazzate e salta tutto insieme un minuto. Servi caldo."
-        ),
-        "items": [
-            {"name": "Riso", "quantity": 180, "unit": "g", "category": CEREALI},
-            {"name": "Uova", "quantity": 2, "unit": "pz", "category": LATTICINI},
-            {"name": "Prosciutto", "quantity": 100, "unit": "g", "category": CARNE},
-            {"name": "Piselli", "quantity": 100, "unit": "g", "category": SURGELATI},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Salsa di soia", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
         ],
     },
     {
@@ -808,28 +694,6 @@ RECIPES = [
         ],
     },
     {
-        "name": "Paella", "servings": 4, "time_minutes": 60, "difficulty": "media",
-        "instructions": (
-            "Usa una padella larga e bassa, meglio se di ferro. Rosola il pollo a pezzi in olio a fiamma viva finche' non e' dorato, poi mettilo da parte.\n\n"
-            "Nella stessa padella soffriggi i peperoni a strisciette e la cipolla. Aggiungi il pomodoro tritato e cuoci 5 minuti, finche' non si e' ridotto a una salsa scura.\n\n"
-            "Unisci il riso e fallo insaporire 2 minuti nel soffritto, mescolando.\n\n"
-            "Versa il brodo caldo con lo zafferano, sala e distribuisci il riso in modo uniforme. Da questo momento non mescolare piu': e' la regola della paella. Cuoci 18 minuti a fiamma media.\n\n"
-            "A meta' cottura aggiungi i gamberi, le cozze e i piselli, affondandoli leggermente. Quando il brodo e' assorbito e il riso e' asciutto in superficie, alza la fiamma 1 minuto per formare la crosticina sul fondo (socarrat). Lascia riposare 5 minuti coperta e servi nella padella."
-        ),
-        "items": [
-            {"name": "Riso", "quantity": 320, "unit": "g", "category": CEREALI},
-            {"name": "Gamberi", "quantity": 200, "unit": "g", "category": CARNE},
-            {"name": "Cozze", "quantity": 300, "unit": "g", "category": CARNE},
-            {"name": "Pollo", "quantity": 300, "unit": "g", "category": CARNE},
-            {"name": "Peperoni", "quantity": 200, "unit": "g", "category": FRUTTA},
-            {"name": "Piselli", "quantity": 100, "unit": "g", "category": SURGELATI},
-            {"name": "Zafferano", "quantity": 1, "unit": "pz", "category": DISPENSA},
-            {"name": "Brodo", "quantity": 900, "unit": "ml", "category": DISPENSA},
-            {"name": "Pomodoro", "quantity": 200, "unit": "g", "category": FRUTTA},
-            {"name": "Olio", "quantity": 3, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
         "name": "Ramen", "servings": 2, "time_minutes": 45, "difficulty": "media",
         "instructions": (
             "Prepara il brodo: scalda il brodo in una pentola con miso, salsa di soia, zenzero grattugiato e cipolla. Porta a un leggero bollore e lascia sobbollire 15 minuti, per far fondere i sapori. Assaggia e regola di sale.\n\n"
@@ -850,49 +714,6 @@ RECIPES = [
             {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
         ],
     },
-    {
-        "name": "Chicken tikka masala", "servings": 4, "time_minutes": 50, "difficulty": "media",
-        "instructions": (
-            "Taglia il pollo a bocconcini. Marina con lo yogurt, il curry, il garam masala e un pizzico di sale. Lascialo almeno 30 minuti, meglio un'ora in frigorifero: lo yogurt ammorbidisce la carne e la spezia la insaporisce fino in fondo.\n\n"
-            "In una padella larga rosola cipolla, aglio e zenzero tritati in olio a fiamma dolce, finche' non sono dorati.\n\n"
-            "Aggiungi la passata di pomodoro e cuoci 10 minuti, finche' il sugo non si e' ristretto.\n\n"
-            "Unisci il pollo con tutta la marinata e rosolalo a fiamma viva 5 minuti, girandolo.\n\n"
-            "Abbassa la fiamma, aggiungi la panna e cuoci 20 minuti, finche' il pollo e' tenero e la salsa cremosa. Se serve, allunga con un po' d'acqua. Completa con coriandolo fresco e servi con riso basmati."
-        ),
-        "items": [
-            {"name": "Pollo", "quantity": 600, "unit": "g", "category": CARNE},
-            {"name": "Yogurt", "quantity": 200, "unit": "g", "category": LATTICINI},
-            {"name": "Panna", "quantity": 200, "unit": "ml", "category": LATTICINI},
-            {"name": "Passata di pomodoro", "quantity": 400, "unit": "g", "category": DISPENSA},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
-            {"name": "Zenzero", "quantity": 20, "unit": "g", "category": FRUTTA},
-            {"name": "Curry", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-            {"name": "Garam masala", "quantity": 1, "unit": "cucchiaio", "category": DISPENSA},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
-    {
-        "name": "Shakshuka", "servings": 2, "time_minutes": 30, "difficulty": "facile",
-        "instructions": (
-            "Scalda l'olio in una padella larga con i bordi alti. Soffriggi la cipolla a fette sottili 5 minuti, finche' non e' morbida e dorata.\n\n"
-            "Aggiungi i peperoni a strisciette e l'aglio tritato, poi le spezie: cumino, paprica e, se piace, un pizzico di peperoncino. Falli tostare 1 minuto nell'olio: e' il momento in cui sprigionano il profumo.\n\n"
-            "Versa la passata di pomodoro, sala e cuoci 10 minuti a fiamma media, finche' il sugo non si e' ristretto e il liquido in eccesso e' evaporato.\n\n"
-            "Con il dorso di un cucchiaio crea delle piccole conche nel sugo e apri un uovo in ciascuna, con delicatezza per non rompere il tuorlo.\n\n"
-            "Copri la padella e cuoci 5-7 minuti a fiamma dolce: l'albume deve essere rappreso, il tuorlo ancora liquido. Servi direttamente in padella con pane abbrustolito da intingere."
-        ),
-        "items": [
-            {"name": "Uova", "quantity": 4, "unit": "pz", "category": LATTICINI},
-            {"name": "Passata di pomodoro", "quantity": 500, "unit": "g", "category": DISPENSA},
-            {"name": "Peperoni", "quantity": 200, "unit": "g", "category": FRUTTA},
-            {"name": "Cipolla", "quantity": 1, "unit": "pz", "category": FRUTTA},
-            {"name": "Aglio", "quantity": 2, "unit": "pz", "category": FRUTTA},
-            {"name": "Cumino", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
-            {"name": "Paprica", "quantity": 1, "unit": "cucchiaino", "category": DISPENSA},
-            {"name": "Pane", "quantity": 4, "unit": "fetta", "category": CEREALI},
-            {"name": "Olio", "quantity": 2, "unit": "cucchiaio", "category": DISPENSA},
-        ],
-    },
 ]
 
 
@@ -910,7 +731,6 @@ PREPARAZIONI_PRECEDENTI = {
     'Parmigiana di melanzane': 'Griglia le melanzane. Alterna melanzane, passata, mozzarella e parmigiano. Inforna a 180°C per 35 minuti.',
     'Minestrone di verdure': "Soffriggi la cipolla, aggiungi le verdure a pezzi e la passata. Copri d'acqua e cuoci 30 minuti, poi aggiungi la pasta.",
     'Pollo al limone': 'Infarina il pollo e rosolalo nel burro. Sfuma con il succo di limone e completa la cottura, poi cospargi di prezzemolo.',
-    'Insalata di riso': 'Lessa il riso e raffreddalo. Unisci tonno, mais, pomodorini, olive e mozzarella a pezzi, condisci con olio.',
     'Frittata di zucchine': 'Salta le zucchine con la cipolla. Sbatti le uova col parmigiano, unisci le zucchine e cuoci la frittata in padella.',
     'Cotoletta alla milanese': "Passa le fette nell'uovo e nel pangrattato. Cuocile nel burro finché sono dorate, servi con limone.",
     'Orata al forno': "Disponi le patate a fette in teglia, adagia l'orata e condisci con olio, limone e prezzemolo. Inforna a 200°C per 25 minuti.",
@@ -935,24 +755,26 @@ PREPARAZIONI_PRECEDENTI = {
     "Bucatini all'amatriciana": 'Rosola il guanciale, sfuma con il vino e aggiungi il pomodoro. Lessa i bucatini, condiscili con la salsa e completa con pecorino romano e peperoncino.',
     "Penne all'arrabbiata": 'Scalda olio, aglio e peperoncino. Unisci la passata e cuoci 15 minuti. Lessa le penne, condiscile con la salsa e cospargi di prezzemolo.',
     'Pasta fredda alla mediterranea': "Lessa la pasta, scolala e raffreddala sotto l'acqua. Condiscila con pomodorini, mozzarella a cubetti, olive, cetriolo e basilico, poi lasciala riposare in frigorifero.",
-    'Casoncelli alla bergamasca': 'Lessa i casoncelli. Sciogli il burro con la salvia e la pancetta, poi saltaci la pasta. Completa con grana grattugiato.',
-    'Malloreddus alla campidanese': 'Sbriciola la salsiccia e rosolala con la cipolla. Aggiungi la passata e lo zafferano. Lessa i malloreddus e condiscili con il ragù e una spolverata di pecorino.',
     'Tagliolini al tartufo': 'Sciogli il burro con un mestolo di acqua di cottura. Lessa i tagliolini e saltali nel burro, poi completa con tartufo affettato e parmigiano.',
-    'Marry me chicken': "Rosola i petti di pollo e mettili da parte. Nella stessa padella scalda panna, aglio, pomodori secchi e parmigiano, rimetti il pollo e cuoci finche' la salsa si addensa.",
-    'Lasagna soup': 'Rosola il macinato con cipolla e aglio. Aggiungi passata e brodo, poi rompi le sfoglie di lasagne nella zuppa e cuoci. Servi con ricotta e parmigiano.',
     'Poke bowl': 'Cuoci il riso e lascialo intiepidire. Taglia il salmone a cubetti e marinatelo con salsa di soia, sesamo e lime. Componi la ciotola con riso, salmone, avocado, cetriolo ed edamame.',
-    'Riso alla cantonese': 'Sbatti le uova e strapazzale in padella. Salta cipolla, piselli e prosciutto, aggiungi il riso lessato e la salsa di soia, poi unisci le uova e salta tutto insieme.',
     'Gulasch': "Rosola la carne con la cipolla, sfuma con un po' di brodo e aggiungi la paprica. Cuoci a fuoco lento per un'ora, poi unisci le patate e prosegui finche' sono tenere.",
     'Pizza napoletana': 'Impasta farina, acqua, lievito e sale e lascia lievitare. Stendi i panetti, condisci con passata, mozzarella e basilico e cuoci alla massima temperatura per 6-8 minuti.',
-    'Paella': "Rosola il pollo, poi aggiungi peperoni, pomodoro e riso. Copri con il brodo e lo zafferano e non mescolare piu'. A meta' cottura aggiungi gamberi, cozze e piselli.",
     'Ramen': 'Scalda il brodo con miso, salsa di soia, zenzero e cipolla. Cuoci i noodles a parte e lessa le uova. Componi la ciotola con brodo, noodles, maiale, uova e alga nori.',
-    'Chicken tikka masala': 'Marina il pollo nello yogurt con curry e garam masala. Rosola cipolla, aglio e zenzero, aggiungi passata e panna, poi unisci il pollo e cuoci 20 minuti.',
-    'Shakshuka': "Scalda olio, cipolla, peperoni, aglio e spezie. Aggiungi la passata e cuoci 10 minuti, poi apri le uova nel sugo, copri e prosegui finche' l'albume e' rappreso. Servi con il pane.",
 }
 
 # Ricette non più in elenco: vengono rimosse dal database per evitare che
 # restino selezionabili nel piano pasti.
-REMOVED = ["Pasta e fagioli", "Gnocchi al pesto", "Tiramisù"]
+#
+# Attenzione: `semina()` gira solo quando un database nasce, quindi questa lista
+# non basta per chi ha già i dati. Le stesse ricette vanno tolte anche da
+# `app._rimuovi_ricette_tolte`, che passa a ogni richiesta su ogni casa: senza,
+# sparirebbero solo dalle case nuove e resterebbero su quella in uso.
+REMOVED = [
+    "Pasta e fagioli", "Gnocchi al pesto", "Tiramisù",
+    "Casoncelli alla bergamasca", "Chicken tikka masala", "Insalata di riso",
+    "Lasagna soup", "Malloreddus alla campidanese", "Marry me chicken",
+    "Paella", "Riso alla cantonese", "Shakshuka",
+]
 
 # Foto delle ricette: file in static/recipes/ con autore, licenza e provenienza.
 # Sono immagini da Wikimedia Commons; dove l'abbinamento e' approssimativo il
@@ -1004,8 +826,6 @@ PHOTOS = {
         'Katrin Morenz from Aachen, Deutschland — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Minestrone_soup.jpg'),
     'Pollo al limone': ('7-chicken-piccata.jpg',
         'Parkerman & Christie from San Diego, USA — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Chicken_piccata.jpg (immagine indicativa: piatto analogo)'),
-    'Insalata di riso': ('8-insalata-di-riso.jpg',
-        'The original uploader was Auryg at Italian Wikipedia. — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Insalata_di_riso.jpg'),
     'Frittata di zucchine': ('9-omelette-aux-courgettes-ao-t-2020.jpg',
         'Benoît Prieur — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Omelette_aux_courgettes_(ao%C3%BBt_2020).jpg (immagine indicativa: frittata di zucchine)'),
     'Pasta alla Norma': ('26-pasta-alla-norma.jpg',
@@ -1022,32 +842,16 @@ PHOTOS = {
         'Petar Milošević — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Penne_Arrabbiata.jpg'),
     'Pasta fredda alla mediterranea': ('32-pasta-fredda-alla-mediterranea.jpg',
         'Brynn — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Pasta_salad_closeup.JPG (immagine indicativa: insalata di pasta)'),
-    'Casoncelli alla bergamasca': ('33-casoncelli-alla-bergamasca.jpg',
-        'Florixc — Public domain — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Casoncelli_in_una_grande_padella.jpg'),
-    'Malloreddus alla campidanese': ('34-malloreddus-alla-campidanese.jpg',
-        'Ewan Munro from London, UK — CC BY-SA 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Sardo_Cucina,_Fitzrovia,_London_(5147126888).jpg'),
     'Tagliolini al tartufo': ('35-tagliolini-al-tartufo.jpg',
         'Popo le Chien — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Taglioni_side.png (immagine indicativa: tagliolini, senza tartufo)'),
-    'Marry me chicken': ('36-marry-me-chicken.jpg',
-        'Andy Li — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:%22Marry_Me%22_Chicken_-_PizzaExpress,_Stanford_Cottage,_Worthing_2026-06-16.jpg'),
-    'Lasagna soup': ('37-lasagna-soup.jpg',
-        'Alessio Sbarbaro User_talk:Yoggysot — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Perbureira_01.jpg (immagine indicativa: zuppa di lasagne (perbureira), non la lasagna soup americana)'),
     'Poke bowl': ('38-poke-bowl.jpg',
         'Andy Li — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Salmon_Poke_Bowl_(S)_with_Spicy_mayo_sauce_-_Kitokito.jpg'),
-    'Riso alla cantonese': ('39-riso-alla-cantonese.jpg',
-        'Arnaud 25 — CC0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Riz_cantonais.jpg'),
     'Gulasch': ('40-gulasch.jpg',
         'Nikkol — CC BY-SA 1.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:%D0%93%D1%83%D0%BB%D1%8F%D1%88_78.jpg'),
     'Pizza napoletana': ('41-pizza-napoletana.jpg',
         'Valerio Capello at English Wikipedia — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Eq_it-na_pizza-margherita_sep2005_sml.jpg'),
-    'Paella': ('42-paella.jpg',
-        'Jan Harenburg — CC BY-SA 4.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:01_Paella_Valenciana_original.jpg'),
     'Ramen': ('43-ramen.jpg',
         'Lombroso — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Shoyu_ramen,_at_Kasukabe_Station_(2014.05.05)_2.jpg'),
-    'Chicken tikka masala': ('44-chicken-tikka-masala.jpg',
-        'Michael Hays — CC BY 2.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Chicken_tikka_masala_(cropped).jpg'),
-    'Shakshuka': ('45-shakshuka.jpg',
-        'Calliopejen1 — CC BY-SA 3.0 — Wikimedia Commons — https://commons.wikimedia.org/wiki/File:Shakshuka_by_Calliopejen1.jpg'),
 }
 
 

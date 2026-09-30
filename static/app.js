@@ -302,13 +302,22 @@ $('#gen-week').addEventListener('click', () => {
 });
 
 /* ---------- RICETTE ---------- */
+// Le ricette con la foto vengono prima, quelle senza in fondo. L'elenco arriva
+// gia' in ordine di nome dall'API, e `sort` in JS e' stabile: dentro i due
+// gruppi l'ordine resta alfabetico. Una ricetta senza foto e' un dato incompleto
+// da completare, non deve stare in mezzo a quelle pronte.
+function conFotoPrima(list) {
+  return [...list].sort((a, b) => (a.image ? 0 : 1) - (b.image ? 0 : 1));
+}
+
 async function renderRecipes() {
   const hideUnsafe = $('#pf-filter') && $('#pf-filter').checked;
   const onlyFav = $('#fav-only') && $('#fav-only').checked;
   recipesCache = await api(hideUnsafe ? '/api/recipes?full=1&safe=1' : '/api/recipes?full=1');
   const q = $('#recipe-search').value.toLowerCase();
-  const list = recipesCache.filter((r) => r.name.toLowerCase().includes(q))
-    .filter((r) => !onlyFav || r.favorite);
+  const list = conFotoPrima(
+    recipesCache.filter((r) => r.name.toLowerCase().includes(q))
+      .filter((r) => !onlyFav || r.favorite));
   $('#recipe-list').innerHTML = list.map((r) => {
     const bad = r.conflicts && r.conflicts.length;
     const allerg = r.allergens && r.allergens.length

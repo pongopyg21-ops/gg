@@ -596,6 +596,32 @@ Conseguenze pratiche per chi mette mano al codice:
   `PHOTOS` per altre voci. Non inventare un abbinamento: una foto sbagliata in
   una scheda è peggio di un riquadro vuoto. Una foto che è già di un'altra
   ricetta non si riusa (sarebbe un doppione).
+- **Le ricette con la foto vengono prima nell'elenco**, quelle senza in fondo
+  (`conFotoPrima` in `static/app.js`). L'ordine è del client, non dell'API, che
+  resta alfabetico: `sort` in JS è stabile, quindi dentro i due gruppi l'ordine
+  non cambia. Una ricetta senza foto è un dato incompleto da completare, e non
+  deve stare in mezzo a quelle pronte. La tendina del piano pasti **non** segue
+  questo ordine: lì resta l'ordine dell'API, perché scegliere un pasto è un'altra
+  cosa dal guardare il ricettario.
+- **Togliere una ricetta dal ricettario richiede due passaggi, non uno.** Va
+  messa in `seed.REMOVED` **e** tolta da `RECIPES` (con `PHOTOS`,
+  `PREPARAZIONI_PRECEDENTI` e il file in `static/recipes/`). Solo `REMOVED` non
+  basta: in `semina()` la cancellazione avviene **prima** dell'inserimento,
+  quindi una ricetta presente in entrambe le liste verrebbe tolta e subito
+  rimessa. Solo toglierla da `RECIPES` non basta dall'altra parte:
+  `seed.semina()` gira solo quando un database nasce, e `windows\avvia.bat` non
+  lo chiama affatto, quindi chi ha già i dati se la terrebbe per sempre. Il
+  passaggio che copre i database esistenti è `app._rimuovi_ricette_tolte`,
+  chiamato da `migrate()` — che `get_db()` esegue a ogni richiesta su ogni casa.
+  La cancellazione si fa solo se una delle ricette è davvero presente, quindi una
+  richiesta normale non paga il `rebuild_shopping`.
+- **`init_db()` accende le foreign key**, come `get_db()` e `seed.semina()`.
+  SQLite le tiene spente per default e `executescript` non le accende: senza,
+  il `ON DELETE CASCADE` non scatta e una ricetta cancellata lascia righe orfane
+  in `meal_plan`, `recipe_items` e `favorites` — un danno che non si vede, perché
+  il database resta «valido» e le query continuano a rispondere. Il test
+  `test_le_ricette_tolte_spariscono_anche_dai_database_esistenti` verifica proprio
+  che non resti niente che punti a una ricetta che non esiste più.
 - I giorni in cui serve una voce della spesa (`days` in `/api/shopping`) si calcolano
   a ogni lettura dal piano con `_need_by_day`/`_day_breakdown`, non si salvano: una
   tabella di appoggio si disallineerebbe appena si modifica un pasto. L'invariante

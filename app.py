@@ -260,6 +260,14 @@ def migrate(db):
     # tocca le righe gia' presenti, cosi' le modifiche dell'utente restano.
     _semina_pulizie(db)
 
+    # Le ricette tolte dal ricettario vanno via anche dai database che esistono
+    # gia'. `seed.semina()` gira solo quando il file nasce (e `windows\avvia.bat`
+    # non lo chiama affatto), quindi senza questo passaggio una ricetta tolta
+    # sparirebbe solo dalle case nuove e resterebbe selezionabile su quella in
+    # uso. Qui il passaggio c'e' sempre, perche' `get_db()` chiama `migrate()` a
+    # ogni richiesta su ogni casa.
+    _rimuovi_ricette_tolte(db)
+
     # Le voci create prima che esistesse la distinzione non dicono da dove
     # vengono, e non c'e' modo di ricavarlo: anche una voce scritta a mano
     # valorizza `ingredient_id`. Si marcano tutte come generate, cosi' la prima
@@ -313,6 +321,34 @@ def _semina_pulizie(db):
         )
 
 
+def _rimuovi_ricette_tolte(db):
+    """Toglie dal database le ricette che non fanno piu' parte del ricettario.
+
+    L'elenco sta in `seed.REMOVED`, in un posto solo: `seed.semina()` lo usa
+    quando il database nasce, questo lo applica a quelli che ci sono gia'. Senza
+    questo passaggio una ricetta tolta sparirebbe solo dalle case nuove, e su
+    quella in uso resterebbe selezionabile nel piano per sempre.
+
+    La cancellazione e' idempotente e non costa niente quando non c'e' nulla da
+    togliere: si chiede prima **quali** dei nomi sono presenti, e il lavoro
+    pesante (`rebuild_shopping`) si fa solo se qualcosa e' stato tolto davvero.
+    Una richiesta normale non paga niente.
+    """
+    import seed
+
+    presenti = [n for n in seed.REMOVED if one(
+        db.execute("SELECT 1 FROM recipes WHERE name = ?", (n,)))]
+    if not presenti:
+        return
+    db.executemany("DELETE FROM recipes WHERE name = ?", [(n,) for n in presenti])
+    # Il piano e le preferenze seguono via `CASCADE`; gli ingredienti che solo
+    # queste ricette usavano resterebbero orfani, e la spesa va rifatta perche'
+    # gli ingredienti di una ricetta tolta non servono piu' comprarli.
+    delete_orphan_ingredients(db)
+    rebuild_shopping(db)
+    db.commit()
+
+
 def init_db(percorso=None, con_ricettario=False):
     """Crea (se serve) il database di una casa e vi applica schema e migrazioni.
 
@@ -323,6 +359,12 @@ def init_db(percorso=None, con_ricettario=False):
     percorso = percorso or DB_PATH
     with closing(sqlite3.connect(percorso)) as db:
         db.row_factory = sqlite3.Row
+        # Le foreign key vanno accese qui come in `get_db` e in `seed.semina`:
+        # senza, il `ON DELETE CASCADE` non scatta e una ricetta cancellata
+        # lascerebbe righe orfane in `meal_plan`, `recipe_items` e `favorites`.
+        # SQLite le tiene spente per default, quindi il silenzio non e' una
+        # garanzia: e' proprio il caso in cui il danno non si vede.
+        db.execute("PRAGMA foreign_keys = ON")
         with open(SCHEMA_PATH, encoding="utf-8") as fh:
             db.executescript(fh.read())
         migrate(db)
