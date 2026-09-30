@@ -310,6 +310,30 @@ function conFotoPrima(list) {
   return [...list].sort((a, b) => (a.image ? 0 : 1) - (b.image ? 0 : 1));
 }
 
+/* Tempi e costo della ricetta.
+   Il totale e' la somma di preparazione e cottura, cosi' non puo' contraddire le
+   due parti. Le ricette salvate prima che i due tempi esistessero hanno solo
+   `time_minutes`: si mostra quello, senza inventare una divisione che non c'e'. */
+function tempiRicetta(r) {
+  const prep = r.prep_minutes || 0;
+  const cook = r.cook_minutes || 0;
+  if (prep || cook) {
+    const parti = [];
+    if (prep) parti.push(`prep ${prep} min`);
+    if (cook) parti.push(`cottura ${cook} min`);
+    const totale = prep + cook;
+    return { totale, testo: `${parti.join(' + ')} · totale ${totale} min` };
+  }
+  return r.time_minutes ? { totale: r.time_minutes, testo: `${r.time_minutes} min` } : null;
+}
+
+// "3,50" con la virgola: l'app e' in italiano, e il punto in mezzo a un prezzo
+// si legge come separatore delle migliaia
+function costoRicetta(r) {
+  if (r.cost === null || r.cost === undefined || r.cost === '') return '';
+  return `€ ${Number(r.cost).toFixed(2).replace('.', ',')} a porzione`;
+}
+
 async function renderRecipes() {
   const hideUnsafe = $('#pf-filter') && $('#pf-filter').checked;
   const onlyFav = $('#fav-only') && $('#fav-only').checked;
@@ -320,6 +344,8 @@ async function renderRecipes() {
       .filter((r) => !onlyFav || r.favorite));
   $('#recipe-list').innerHTML = list.map((r) => {
     const bad = r.conflicts && r.conflicts.length;
+    const tempi = tempiRicetta(r);
+    const costo = costoRicetta(r);
     const allerg = r.allergens && r.allergens.length
       ? `<div class="allergens">Allergeni: ${r.allergens.map(esc).join(', ')}</div>` : '';
     const warn = bad ? `<div>${r.conflicts.map((c) => `<span class="badge">⚠️ ${esc(c)}</span>`).join('')}</div>` : '';
@@ -333,7 +359,8 @@ async function renderRecipes() {
     <div class="card ${bad ? 'unsafe' : ''}" data-recipe="${r.id}">
       ${foto}
       <h3>${esc(r.name)}${stella}</h3>
-      <div class="meta">${r.servings} porzioni${r.time_minutes ? ` · ${r.time_minutes} min` : ''} · ${esc(r.difficulty)}</div>
+      <div class="meta">${r.servings} porzioni${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}</div>
+      ${costo ? `<div class="costo">${costo}</div>` : ''}
       <div class="ings">${r.items.map((i) => `${esc(i.name)} ${i.quantity}${esc(i.unit)}`).join(' · ') || 'Nessun ingrediente'}</div>
       ${allerg}${warn}
       <div class="actions">
@@ -396,6 +423,8 @@ async function showRecipeDetail(rid, contesto = {}) {
   if (!r || r.instructions === undefined || !r.items) r = await api(`/api/recipes/${rid}`);
 
   const passi = passiDa(r.instructions);
+  const tempi = tempiRicetta(r);
+  const costo = costoRicetta(r);
   const ingredienti = r.items.map((i) =>
     `<li>${esc(i.name)} <span class="qty">${esc(i.quantity)}${esc(i.unit)}</span></li>`).join('');
 
@@ -411,8 +440,9 @@ async function showRecipeDetail(rid, contesto = {}) {
   showModal(r.name, `
     ${foto}
     <div class="detail-meta meta">
-      ${r.servings} porzioni${r.time_minutes ? ` · ${r.time_minutes} min` : ''} · ${esc(r.difficulty)}
+      ${r.servings} porzioni${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}
     </div>
+    ${costo ? `<div class="detail-costo">${costo}</div>` : ''}
     <h3 class="detail-sub">Ingredienti</h3>
     <ul class="detail-ings">${ingredienti || '<li class="muted">Nessun ingrediente</li>'}</ul>
     <h3 class="detail-sub">Preparazione</h3>
@@ -549,13 +579,25 @@ async function importaRicetta(url) {
 }
 
 function recipeForm(recipe, nomeIniziale, ingredientiIniziali) {
-  const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', difficulty: 'facile', instructions: '', items: ingredientiIniziali || [] };
+  const r = recipe || { name: nomeIniziale || '', servings: 2, time_minutes: '', prep_minutes: '', cook_minutes: '', cost: '', difficulty: 'facile', instructions: '', items: ingredientiIniziali || [] };
   showModal(recipe ? 'Modifica ricetta' : 'Nuova ricetta', `
     <div class="field"><label>Nome</label><input id="r-name" value="${esc(r.name)}"></div>
     <div class="row" style="margin-bottom:12px">
       <input id="r-serv" type="number" min="1" value="${r.servings}" title="Porzioni">
-      <input id="r-time" type="number" min="0" value="${r.time_minutes ?? ''}" placeholder="Minuti">
       <select id="r-diff">${['facile', 'media', 'difficile'].map((d) => `<option ${d === r.difficulty ? 'selected' : ''}>${d}</option>`).join('')}</select>
+    </div>
+    <div class="field">
+      <label>Tempi e costo</label>
+      <div class="row">
+        <input id="r-prep" type="number" min="0" value="${r.prep_minutes ?? ''}" placeholder="Preparazione (min)" title="Tempo di preparazione in minuti">
+        <input id="r-cook" type="number" min="0" value="${r.cook_minutes ?? ''}" placeholder="Cottura (min)" title="Tempo di cottura in minuti">
+        <input id="r-cost" type="number" min="0" step="0.01" value="${r.cost ?? ''}" placeholder="€ a porzione" title="Costo indicativo per porzione">
+      </div>
+      <div class="muted" id="r-tempo-tot" hidden></div>
+      <div class="muted" id="r-time-legacy" ${recipe && !recipe.prep_minutes && !recipe.cook_minutes && r.time_minutes ? '' : 'hidden'}>
+        Tempo totale salvato in precedenza: ${r.time_minutes ?? ''} min
+        <input id="r-time" type="hidden" value="${r.time_minutes ?? ''}">
+      </div>
     </div>
     <div class="field"><label>Ingredienti</label><div id="ing-rows"></div>
       <button id="ing-add">+ ingrediente</button></div>
@@ -616,15 +658,40 @@ function recipeForm(recipe, nomeIniziale, ingredientiIniziali) {
     aggiornaFoto();
   });
 
+  // totale dal vivo: si vede subito se i due tempi sommano a quello che si
+  // pensava, senza doverlo calcolare a mente mentre si compila
+  const totaleBox = $('#r-tempo-tot');
+  const aggiornaTotale = () => {
+    const prep = Number($('#r-prep').value) || 0;
+    const cook = Number($('#r-cook').value) || 0;
+    if (prep || cook) {
+      totaleBox.textContent = `Totale: ${prep + cook} min`;
+      totaleBox.hidden = false;
+    } else {
+      totaleBox.hidden = true;
+    }
+  };
+  $('#r-prep').addEventListener('input', aggiornaTotale);
+  $('#r-cook').addEventListener('input', aggiornaTotale);
+  aggiornaTotale();
+
   $('#r-save').addEventListener('click', async () => {
     const items = $$('.ing-row', rowsBox).map((row) => {
       const [n, q, u] = $$('input', row);
       return { name: n.value.trim(), quantity: Number(q.value) || 0, unit: u.value.trim() || 'pz' };
     }).filter((i) => i.name);
+    const prep = $('#r-prep').value ? Number($('#r-prep').value) : null;
+    const cook = $('#r-cook').value ? Number($('#r-cook').value) : null;
+    // il totale vecchio resta finche' non si indicano i due tempi: azzerarlo
+    // significherebbe perdere un dato che l'utente non ha mai toccato
+    const legacy = (prep || cook) ? null : ($('#r-time').value ? Number($('#r-time').value) : null);
     const body = {
       name: $('#r-name').value.trim(),
       servings: Number($('#r-serv').value) || 2,
-      time_minutes: $('#r-time').value ? Number($('#r-time').value) : null,
+      time_minutes: legacy,
+      prep_minutes: prep,
+      cook_minutes: cook,
+      cost: $('#r-cost').value === '' ? null : Number($('#r-cost').value),
       difficulty: $('#r-diff').value,
       instructions: $('#r-instr').value,
       image: $('#r-photo').value,
@@ -727,10 +794,18 @@ function iconaAlimento(nome, categoria) {
   return ICONE_CATEGORIA[categoria] || '📦';
 }
 
+let pantryCache = [];
 async function renderPantry() {
-  const items = await api('/api/pantry');
+  pantryCache = await api('/api/pantry');
+  renderPantryTable();
+  renderSuggerimenti();
+}
+
+// il filtro e' locale: non deve rifare la richiesta dei suggerimenti, che non
+// dipendono da cosa si sta cercando
+function renderPantryTable() {
   const q = $('#pantry-search').value.toLowerCase();
-  const list = items.filter((i) => i.name.toLowerCase().includes(q));
+  const list = pantryCache.filter((i) => i.name.toLowerCase().includes(q));
   $('#pantry-table tbody').innerHTML = list.map((i) => `
     <tr>
       <td data-label="Ingrediente">
@@ -745,11 +820,63 @@ async function renderPantry() {
     </tr>`).join('') || '<tr><td colspan="4">Dispensa vuota</td></tr>';
 }
 
-$('#pantry-search').addEventListener('input', renderPantry);
+/* Suggerimenti sotto l'elenco: cosa si puo' cucinare con quello che c'e'.
+   Il calcolo sta sul server (modulo dispensa.py) perche' il filtro allergie e'
+   una regola, non una preferenza: un suggerimento sbagliato non deve dipendere
+   da cosa il browser decide di mostrare. */
+async function renderSuggerimenti() {
+  const box = $('#pantry-suggerimenti');
+  if (!box) return;
+  let dati;
+  try {
+    dati = await api('/api/pantry/suggerimenti');
+  } catch (e) {
+    box.innerHTML = '';
+    return;
+  }
+  if (!dati.suggerimenti.length) {
+    box.innerHTML = '';
+    return;
+  }
+  const schede = dati.suggerimenti.map((s) => {
+    const stato = s.pronta
+      ? '<span class="sug-pronta">✓ hai tutto</span>'
+      : `<span class="sug-manca">${s.mancanti === 1
+          ? `manca 1 ingrediente su ${s.totale}`
+          : `mancano ${s.mancanti} ingredienti su ${s.totale}`}</span>`;
+    // la lista e' troncata a MAX_NOMI dal server: senza il resto sembrerebbe
+    // completa, e l'utente crederebbe di dover comprare solo quelli
+    const altri = s.mancanti - s.mancano.length;
+    const mancano = s.pronta ? ''
+      : `<div class="sug-mancano">Senza: ${s.mancano.map(esc).join(', ')}` +
+        `${altri > 0 ? ` e altri ${altri}` : ''}</div>`;
+    return `
+      <div class="sug-card" data-recipe="${s.id}">
+        <h4>${esc(s.name)}</h4>
+        <div class="sug-meta">${stato}${s.time_minutes ? ` · ${s.time_minutes} min` : ''}</div>
+        ${mancano}
+      </div>`;
+  }).join('');
+  box.innerHTML = `
+    <h3 class="sug-title">Con quello che hai in dispensa</h3>
+    <div class="sug-grid">${schede}</div>`;
+}
+
+$('#pantry-suggerimenti').addEventListener('click', (e) => {
+  const card = e.target.closest('.sug-card');
+  if (card) showRecipeDetail(Number(card.dataset.recipe));
+});
+
+$('#pantry-search').addEventListener('input', renderPantryTable);
 
 $('#pantry-table').addEventListener('change', async (e) => {
   const id = e.target.dataset.qty;
-  if (id) { await api(`/api/pantry/${id}`, { method: 'PATCH', body: { quantity: Number(e.target.value) } }); toast('Aggiornato'); }
+  if (id) {
+    await api(`/api/pantry/${id}`, { method: 'PATCH', body: { quantity: Number(e.target.value) } });
+    toast('Aggiornato');
+    // cambiando una quantita' cambia cosa risulta coperto: i suggerimenti seguono
+    renderSuggerimenti();
+  }
 });
 $('#pantry-table').addEventListener('click', async (e) => {
   const id = e.target.dataset.del;

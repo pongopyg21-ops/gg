@@ -24,6 +24,7 @@ import app as app_module  # noqa: E402
 import allergens  # noqa: E402
 import comprensione  # noqa: E402
 import copie  # noqa: E402
+import dispensa  # noqa: E402
 import houses  # noqa: E402
 import igiene  # noqa: E402
 import units  # noqa: E402
@@ -2623,6 +2624,312 @@ def test_voce_magazzino_eliminata(client):
 
 def test_magazzino_inesistente_da_404(client):
     assert client.delete("/api/storage/999").status_code == 404
+
+
+# --------------------------------------------- suggerimenti dalla dispensa
+def test_suggerimenti_vuoti_con_dispensa_vuota(client):
+    """Senza niente in casa non c'e' niente da suggerire, e nessun errore."""
+    import seed
+    for r in seed.RECIPES:
+        client.post("/api/recipes", json=r)
+    r = client.get("/api/pantry/suggerimenti")
+    assert r.status_code == 200
+    assert r.get_json() == {"dispensa": 0, "suggerimenti": []}
+
+
+def test_suggerisce_le_ricette_che_usa_la_dispensa(client):
+    """La ricetta i cui ingredienti sono in casa viene suggerita, e risulta pronta."""
+    import seed
+    for r in seed.RECIPES:
+        client.post("/api/recipes", json=r)
+    cacio = next(r for r in client.get("/api/recipes?full=1").get_json()
+                 if r["name"] == "Cacio e pepe")
+    for i in cacio["items"]:
+        client.post("/api/pantry", json={"name": i["name"], "quantity": i["quantity"],
+                                        "unit": i["unit"]})
+    dati = client.get("/api/pantry/suggerimenti").get_json()
+    nomi = [s["name"] for s in dati["suggerimenti"]]
+    assert "Cacio e pepe" in nomi
+    cacio_sug = next(s for s in dati["suggerimenti"] if s["name"] == "Cacio e pepe")
+    assert cacio_sug["pronta"] is True
+    assert cacio_sug["mancanti"] == 0
+    assert cacio_sug["punteggio"] == 1.0
+    # e' la prima: con tutti gli ingredienti in casa non puo' essere superata
+    assert nomi[0] == "Cacio e pepe"
+
+
+def test_una_ricetta_coperta_in_parte_non_e_pronta(client):
+    """Mezza scorta non copre: la ricetta si suggerisce, ma non come pronta.
+
+    E' il caso in cui l'errore sarebbe peggiore: dire «hai tutto» con 100 g di
+    farina al posto di 500 manda a cucinare una ricetta che non si fa.
+    """
+    import seed
+    for r in seed.RECIPES:
+        client.post("/api/recipes", json=r)
+    cacio = next(r for r in client.get("/api/recipes?full=1").get_json()
+                 if r["name"] == "Cacio e pepe")
+    # meta' quantita' per ogni ingrediente: nessuno e' coperto del tutto
+    for i in cacio["items"]:
+        client.post("/api/pantry", json={"name": i["name"], "quantity": i["quantity"] / 2,
+                                        "unit": i["unit"]})
+    cacio_sug = next(s for s in client.get("/api/pantry/suggerimenti").get_json()["suggerimenti"]
+                     if s["name"] == "Cacio e pepe")
+    assert cacio_sug["pronta"] is False
+    assert cacio_sug["parziali"] == len(cacio["items"])
+    assert cacio_sug["coperti"] == 0
+    assert cacio_sug["punteggio"] == 0.5
+
+
+def test_le_quantita_si_confrontano_solo_fra_unita_convertibili(client):
+    """500 g coprono mezzo chilo, ma una confezione non copre un pezzo.
+
+    Se le unita' non convertibili venissero sommate lo stesso, un ingrediente
+    senza scorta risulterebbe coperto e la ricetta direbbe «hai tutto» a vuoto.
+    """
+    import seed
+    for r in seed.RECIPES:
+        client.post("/api/recipes", json=r)
+    cacio = next(r for r in client.get("/api/recipes?full=1").get_json()
+                 if r["name"] == "Cacio e pepe")
+    spaghetti = next(i for i in cacio["items"] if i["name"] == "Spaghetti")
+    # in dispensa mezzo chilo, in ricetta 180 g: stesso peso, unita' diverse
+    client.post("/api/pantry", json={"name": "Spaghetti", "quantity": 0.5, "unit": "kg"})
+    for i in cacio["items"]:
+        if i["name"] != "Spaghetti":
+            client.post("/api/pantry", json={"name": i["name"], "quantity": i["quantity"],
+                                            "unit": i["unit"]})
+    cacio_sug = next(s for s in client.get("/api/pantry/suggerimenti").get_json()["suggerimenti"]
+                     if s["name"] == "Cacio e pepe")
+    assert cacio_sug["pronta"] is True, "0,5 kg doveva coprire 180 g"
+
+    # e una confezione non copre un pezzo: si cambia l'unita' della riga di
+    # dispensa direttamente sul database della casa collegata
+    percorso = houses.db_path(CASA_TEST)
+    with closing(sqlite3.connect(percorso)) as db:
+        db.execute("""UPDATE pantry SET unit = 'confezione'
+                      WHERE ingredient_id = (SELECT id FROM ingredients
+                                             WHERE name = 'Spaghetti')""")
+        db.commit()
+    cacio_sug = next(s for s in client.get("/api/pantry/suggerimenti").get_json()["suggerimenti"]
+                     if s["name"] == "Cacio e pepe")
+    assert cacio_sug["pronta"] is False, "una confezione non copre 180 g"
+
+
+def test_il_suggerimento_rispetta_le_allergie(client):
+    """Una ricetta con un allergene dichiarato non viene suggerita.
+
+    Qui l'app dice «cucina questa»: proporre un allergene non e' una svista da
+    correggere, e' un errore. Il filtro sta sul server, quindi non dipende da
+    cosa il browser decide di mostrare.
+    """
+    import seed
+    for r in seed.RECIPES:
+        client.post("/api/recipes", json=r)
+    client.put("/api/profile", json={"restrictions": "glutine"})
+    cacio = next(r for r in client.get("/api/recipes?full=1").get_json()
+                 if r["name"] == "Cacio e pepe")
+    for i in cacio["items"]:
+        client.post("/api/pantry", json={"name": i["name"], "quantity": i["quantity"],
+                                        "unit": i["unit"]})
+    nomi = [s["name"] for s in client.get("/api/pantry/suggerimenti").get_json()["suggerimenti"]]
+    assert "Cacio e pepe" not in nomi, "suggerita una ricetta con glutine"
+
+
+def test_una_ricetta_corta_e_completa_batte_una_lunga_e_incompleta():
+    """Il punteggio e' una frazione, non un conteggio di ingredienti coperti.
+
+    Contando gli ingredienti coperti vincerebbe la ricetta piu' lunga: una da
+    dodici con sette in dispensa batterebbe una da quattro con quattro, che e'
+    invece quella che si puo' cucinare stasera. E' il motivo per cui il
+    punteggio e' una frazione.
+    """
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    percorso = os.path.join(tempfile.mkdtemp(), "punteggio.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        # ingredienti una volta sola: la copertura si misura sull'ingrediente,
+        # quindi le due ricette devono condividere le stesse righe
+        ids = {}
+        for nome_ing in "abcdefghijkl":
+            ids[nome_ing] = db.execute("INSERT INTO ingredients (name) VALUES (?)",
+                                       (nome_ing,)).lastrowid
+        def ricetta(nome, lettere):
+            rid = db.execute("INSERT INTO recipes (name) VALUES (?)", (nome,)).lastrowid
+            for lettera in lettere:
+                db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                           " VALUES (?, ?, 1, 'pz')", (rid, ids[lettera]))
+        ricetta("Corta e completa", "abcd")
+        ricetta("Lunga e incompleta", "abcdefghijkl")
+        # in casa ci sono solo a, b, c, d
+        for lettera in "abcd":
+            db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, 1, 'pz')",
+                       (ids[lettera],))
+        db.commit()
+        esito = dispensa.suggerimenti(db)
+    nomi = [s["name"] for s in esito["suggerimenti"]]
+    assert nomi[0] == "Corta e completa", nomi
+    lunga = next(s for s in esito["suggerimenti"] if s["name"] == "Lunga e incompleta")
+    corta = next(s for s in esito["suggerimenti"] if s["name"] == "Corta e completa")
+    assert corta["coperti"] == 4 and corta["punteggio"] == 1.0
+    assert lunga["coperti"] == 4 and lunga["punteggio"] < 1.0
+
+
+def test_una_ricetta_senza_ingredienti_non_e_un_suggerimento():
+    """Senza ingredienti non c'e' niente da consumare, quindi non si suggerisce."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    percorso = os.path.join(tempfile.mkdtemp(), "vuota.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        db.execute("INSERT INTO recipes (name) VALUES ('Solo un nome')")
+        iid = db.execute("INSERT INTO ingredients (name) VALUES ('qualcosa')").lastrowid
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, 1, 'pz')",
+                   (iid,))
+        db.commit()
+        esito = dispensa.suggerimenti(db)
+    assert esito["suggerimenti"] == []
+
+
+# --------------------------------------------- tempi e costo della ricetta
+def test_i_due_tempi_e_il_costo_si_salvano_e_si_rileggono(client):
+    r = client.post("/api/recipes", json={
+        "name": "Prova tempi", "servings": 4,
+        "prep_minutes": 20, "cook_minutes": 45, "cost": 2.5,
+        "items": [{"name": "Farina", "quantity": 200, "unit": "g"}],
+    })
+    assert r.status_code == 201
+    rec = r.get_json()
+    assert rec["prep_minutes"] == 20
+    assert rec["cook_minutes"] == 45
+    assert rec["cost"] == 2.5
+    # si rileggono dalla scheda, non solo dalla risposta della creazione
+    letto = client.get(f"/api/recipes/{rec['id']}").get_json()
+    assert (letto["prep_minutes"], letto["cook_minutes"], letto["cost"]) == (20, 45, 2.5)
+
+
+def test_i_tempi_non_validi_non_diventano_numeri_inventati(client):
+    """Vuoto, zero, negativo e testo non sono tempi: restano «non indicato».
+
+    Zero e' il caso che conta: salvarlo mostrerebbe «0 min» al posto di niente,
+    e l'utente crederebbe che la ricetta si faccia in zero minuti.
+    """
+    for valore in ("", 0, -10, "boh", None):
+        rec = client.post("/api/recipes", json={
+            "name": f"Prova {valore}", "prep_minutes": valore, "cook_minutes": valore,
+        }).get_json()
+        assert rec["prep_minutes"] is None, valore
+        assert rec["cook_minutes"] is None, valore
+
+
+def test_il_costo_non_valido_non_diventa_un_prezzo(client):
+    """Un costo vuoto, negativo o non numerico resta «non indicato».
+
+    Zero invece si tiene: e' un'informazione vera — «non costa niente», tipico di
+    una ricetta fatta con gli avanzi — e non va confusa con «non lo so». Il
+    campo vuoto e' l'unico modo per dire che il costo non si conosce.
+    """
+    for valore in ("", -1, "boh", None):
+        rec = client.post("/api/recipes", json={
+            "name": f"Costo {valore}", "cost": valore,
+        }).get_json()
+        assert rec["cost"] is None, valore
+    zero = client.post("/api/recipes", json={"name": "Costo zero", "cost": 0}).get_json()
+    assert zero["cost"] == 0, "lo zero e' un costo, non un dato mancante"
+
+
+def test_il_totale_vecchio_non_si_perde_quando_i_due_tempi_sono_vuoti(client):
+    """Le ricette salvate prima dei due tempi hanno solo `time_minutes`.
+
+    Se il form lo azzerasse, aprire e salvare una ricetta vecchia cancellerebbe
+    un dato che l'utente non ha mai toccato. Sparisce solo quando i due tempi
+    vengono indicati, perche' allora il totale si ricava da quelli.
+    """
+    rec = client.post("/api/recipes", json={"name": "Vecchia", "time_minutes": 40}).get_json()
+    assert rec["time_minutes"] == 40
+    # salvataggio parziale: i due tempi restano vuoti, il totale resta
+    rec2 = client.put(f"/api/recipes/{rec['id']}", json={"name": "Vecchia", "time_minutes": 40}).get_json()
+    assert rec2["time_minutes"] == 40
+    # indicando i due tempi, il totale non serve piu'
+    rec3 = client.put(f"/api/recipes/{rec['id']}", json={
+        "name": "Vecchia", "time_minutes": None, "prep_minutes": 15, "cook_minutes": 25,
+    }).get_json()
+    assert rec3["time_minutes"] is None
+    assert rec3["prep_minutes"] == 15 and rec3["cook_minutes"] == 25
+
+
+def test_tempi_e_costo_arrivano_anche_nell_elenco_completo(client):
+    """La scheda mostra tempi e costo senza una seconda richiesta."""
+    client.post("/api/recipes", json={"name": "Con tempi", "prep_minutes": 10,
+                                      "cook_minutes": 20, "cost": 3})
+    elenco = client.get("/api/recipes?full=1").get_json()
+    rec = next(r for r in elenco if r["name"] == "Con tempi")
+    assert rec["prep_minutes"] == 10
+    assert rec["cook_minutes"] == 20
+    assert rec["cost"] == 3
+
+
+def test_le_colonne_dei_tempi_arrivano_ai_database_esistenti():
+    """Un database creato prima non ha le colonne: `migrate()` le aggiunge."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    percorso = os.path.join(tempfile.mkdtemp(), "vecchio.db")
+    with cl(sq.connect(percorso)) as db:
+        db.executescript("""
+            CREATE TABLE recipes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+                servings INTEGER NOT NULL DEFAULT 2, time_minutes INTEGER,
+                difficulty TEXT NOT NULL DEFAULT 'facile',
+                instructions TEXT NOT NULL DEFAULT '');
+        """)
+        db.execute("INSERT INTO recipes (name, time_minutes) VALUES ('Vecchia', 40)")
+        db.commit()
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        colonne = {r[1] for r in db.execute("PRAGMA table_info(recipes)")}
+        assert {"prep_minutes", "cook_minutes", "cost"} <= colonne
+        riga = db.execute("SELECT time_minutes, prep_minutes, cost FROM recipes").fetchone()
+        assert riga == (40, None, None), "il totale vecchio non e' stato toccato"
+
+
+def test_tempiRicetta_e_costoRicetta_funzionano_davvero(client):
+    """Le due funzioni del client, eseguite con node sul caso vero.
+
+    Il totale e' la somma dei due tempi; con solo il totale vecchio si mostra
+    quello; senza niente non si mostra nulla. Un test sulle stringhe non
+    accorgerebbe di una somma sbagliata.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function tempiRicetta")
+    blocco = js[inizio:js.index("\n}\n", inizio) + 3]
+    inizio2 = js.index("function costoRicetta")
+    blocco += js[inizio2:js.index("\n}\n", inizio2) + 3]
+    prova = blocco + """
+const casi = [
+  {prep_minutes: 20, cook_minutes: 45},
+  {prep_minutes: 15},
+  {time_minutes: 40},
+  {},
+];
+console.log(JSON.stringify({
+  tempi: casi.map((r) => tempiRicetta(r)),
+  costi: [costoRicetta({cost: 2.5}), costoRicetta({cost: 0}), costoRicetta({cost: null})],
+}));
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    # in JSON: una stringa vuota stampata da sola sparirebbe nello strip()
+    esito_js = json.loads(esito.stdout)
+    tempi = esito_js["tempi"]
+    assert tempi[0] == {"totale": 65, "testo": "prep 20 min + cottura 45 min · totale 65 min"}
+    assert tempi[1] == {"totale": 15, "testo": "prep 15 min · totale 15 min"}
+    assert tempi[2] == {"totale": 40, "testo": "40 min"}
+    assert tempi[3] is None
+    assert esito_js["costi"] == ["€ 2,50 a porzione", "€ 0,00 a porzione", ""]
 
 
 def test_magazzino_non_entra_nella_spesa(client):

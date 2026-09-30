@@ -421,6 +421,9 @@ button:focus-visible {
   font-size: 17px; font-weight: 500; letter-spacing: -.005em; line-height: 1.25;
 }
 .card .meta { font-size: 12px; color: var(--muted); letter-spacing: .01em; }
+/* Il costo ha una riga sua: nella riga dei tempi il numero si perdeva fra le
+   parole, e il costo e' il dato che si confronta fra due ricette. */
+.card .costo { font-size: 12px; color: var(--accent-deep); font-weight: 600; }
 .card .ings { font-size: 12.5px; color: var(--muted); }
 /* I quattro pulsanti non entrano in una scheda da 250px: senza il ritorno a
    capo l'ultimo ("Elimina") sporgeva fuori dalla scheda e finiva sul testo
@@ -443,6 +446,33 @@ button:focus-visible {
   transition: transform .35s ease;
 }
 .card:hover .card-photo img { transform: scale(1.025); }
+
+/* Suggerimenti della dispensa: sotto l'elenco, stessa griglia delle ricette.
+   Stanno in fondo perche' rispondono a "cosa ci faccio con questo", che e' la
+   domanda successiva al guardare la lista. */
+.pantry-sug { margin-top: 22px; }
+.pantry-sug:empty { margin-top: 0; }
+.sug-title {
+  margin: 0 0 10px; font-family: var(--font-display);
+  font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: -.005em;
+}
+.sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.sug-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.sug-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.sug-card h4 {
+  margin: 0 0 4px; font-family: var(--font-display);
+  font-size: 14.5px; font-weight: 500; letter-spacing: -.005em; line-height: 1.25;
+}
+.sug-meta { font-size: 12px; color: var(--muted); }
+.sug-pronta { color: var(--green); font-weight: 600; }
+.sug-manca { color: var(--muted); }
+.sug-card .sug-mancano {
+  font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4;
+}
 
 /* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */
 .photo-field { display: flex; gap: 12px; align-items: flex-start; }
@@ -560,6 +590,10 @@ tr:last-child td { border-bottom: none; }
 }
 .detail-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .detail-meta { margin-bottom: 16px; }
+.detail-costo {
+  margin: -10px 0 16px; font-size: 13px;
+  color: var(--accent-deep); font-weight: 600;
+}
 .detail-sub {
   margin: 18px 0 8px; font-family: var(--font-display);
   font-size: 13px; font-weight: 600; text-transform: uppercase;

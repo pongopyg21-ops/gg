@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS recipes (
     image        TEXT NOT NULL DEFAULT '',   -- nome file in static/recipes/
     image_credit TEXT NOT NULL DEFAULT '',   -- autore, licenza e provenienza della foto
     source       TEXT NOT NULL DEFAULT '',   -- da dove viene la ricetta importata
+    prep_minutes INTEGER,                    -- preparazione: assorbe l'attenzione
+    cook_minutes INTEGER,                    -- cottura: si puo' lasciare andare
+    cost         REAL,                       -- costo indicativo per porzione, in euro
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -39,7 +39,8 @@ App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `houses.py`, conversione unità in `units.py`, riconoscimento allergeni in
 `allergens.py`, comandi vocali in `voice.py`, comprensione facoltativa col
 modello in `comprensione.py`, dati iniziali in `seed.py`, pulizie
-in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`.
+in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
+suggerimenti dalla dispensa in `dispensa.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
 **Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa,
@@ -641,6 +642,38 @@ Conseguenze pratiche per chi mette mano al codice:
   quantità o scorte e non la richiama, la lista resta indietro senza che l'utente
   abbia un modo per accorgersene. La dispensa è compresa perché quello che si
   compra e si mette via non deve restare anche in lista.
+- **Suggerimenti dalla dispensa** (`dispensa.py`, `GET /api/pantry/suggerimenti`):
+  sotto l'elenco compare cosa si può cucinare con quello che c'è. Il criterio è la
+  **copertura**, e il punteggio è una **frazione**, non un conteggio di ingredienti
+  coperti: contando gli ingredienti vincerebbe la ricetta più lunga — una da dodici
+  con sette in dispensa batterebbe una da quattro con quattro, che è invece quella
+  che si può fare stasera. A parità vince la spesa più corta.
+  Un ingrediente coperto **in parte** conta mezzo punto: con 100 g di farina e 500 g
+  richiesti la ricetta non si fa, ma non è nemmeno da comprare tutta; contarlo intero
+  direbbe «hai tutto» quando non è vero.
+  Le quantità si confrontano solo fra unità **convertibili** (`units.convert`): 200 g
+  coprono 0,2 kg, ma una confezione non copre un pezzo, e lì non si indovina.
+  Il filtro allergie sta **sul server**, non nel client: qui l'app dice «cucina
+  questa», e proporre un allergene non è una svista da correggere, è un errore. Una
+  ricetta senza ingredienti non è un suggerimento (non c'è niente da consumare), e
+  nemmeno una che non usa niente di quello che c'è.
+  La riga dei mancanti è troncata a `MAX_NOMI` ma **dice quanti ne restano**
+  («e altri 3»): senza, l'elenco sembrerebbe completo e l'utente comprerebbe solo
+  quelli. Nel client `renderPantry()` carica tabella **e** suggerimenti, mentre il
+  filtro di ricerca (`renderPantryTable`) è locale: non deve rifare la richiesta dei
+  suggerimenti, che non dipendono da cosa si sta cercando. Modificare una quantità
+  dalla tabella invece li aggiorna, perché cambia cosa risulta coperto.
+- **Tempi e costo della ricetta**: `prep_minutes` e `cook_minutes` sono due colonne
+  separate perché dicono cose diverse — la cottura si può lasciare andare da sola, la
+  preparazione assorbe l'attenzione — e il totale è la loro somma, calcolata nel
+  client (`tempiRicetta`) così non può contraddire le due parti. `cost` è per porzione.
+  `time_minutes` **resta com'è**: è il totale delle ricette salvate prima, e
+  reinterpretarlo vorrebbe dire riscrivere dati inseriti a mano. Una ricetta vecchia
+  mostra `time_minutes`; il campo sparisce solo quando si indicano i due tempi, perché
+  allora il totale si ricava da quelli (`test_il_totale_vecchio_non_si_perde...`).
+  Zero minuti non è un tempo e diventa `None`; zero **euro** invece è un costo — «non
+  costa niente», tipico di una ricetta con gli avanzi — e si tiene. `parse_minutes` e
+  `parse_cost` in `app.py` sono l'unico posto dove questa distinzione è scritta.
 - Le ricette preferite stanno nella tabella `favorites`, non in una colonna di
   `recipes`: sono una scelta dell'utente e la FK con `ON DELETE CASCADE` evita
   preferenze orfane. In `PUT /api/profile` i campi si toccano solo se presenti

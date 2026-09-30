@@ -19,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 import allergens
 import comprensione
 import copie
+import dispensa
 import faq
 import houses
 import igiene
@@ -238,6 +239,13 @@ def migrate(db):
         ("image", "ALTER TABLE recipes ADD COLUMN image TEXT NOT NULL DEFAULT ''"),
         ("image_credit", "ALTER TABLE recipes ADD COLUMN image_credit TEXT NOT NULL DEFAULT ''"),
         ("source", "ALTER TABLE recipes ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+        # i due tempi sono separati perche' dicono cose diverse: la cottura si
+        # puo' lasciare andare da sola, la preparazione assorbe l'attenzione.
+        # `time_minutes` resta com'e' (il tempo totale di prima): toccarlo
+        # vorrebbe dire reinterpretare i dati gia' salvati a mano.
+        ("prep_minutes", "ALTER TABLE recipes ADD COLUMN prep_minutes INTEGER"),
+        ("cook_minutes", "ALTER TABLE recipes ADD COLUMN cook_minutes INTEGER"),
+        ("cost", "ALTER TABLE recipes ADD COLUMN cost REAL"),
     ):
         if col not in have:
             db.execute(ddl)
@@ -588,6 +596,29 @@ def parse_float(value, default=0.0):
         return default
 
 
+def parse_minutes(value):
+    """Minuti come intero positivo, o None se il campo e' vuoto o non valido.
+
+    Un tempo a zero non esiste: `None` (non indicato) e 0 sono la stessa cosa
+    per l'utente, e salvare 0 significherebbe mostrare "0 min" al posto di
+    niente. Il negativo e' un errore di battitura, non un dato.
+    """
+    try:
+        minuti = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return minuti if minuti > 0 else None
+
+
+def parse_cost(value):
+    """Costo come numero non negativo, o None se non indicato."""
+    try:
+        costo = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(costo, 2) if costo >= 0 else None
+
+
 def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
     name = (name or "").strip()
     if not name:
@@ -795,6 +826,19 @@ def ingredients():
 
 
 # ---------------------------------------------------------------- pantry
+@app.route("/api/pantry/suggerimenti", methods=["GET"])
+def pantry_suggerimenti():
+    """Cosa si puo' cucinare con quello che c'e' in dispensa, a casa collegata.
+
+    La restrizione allergica la decide il server dal profilo: il client non deve
+    poterla aggirare per farsi suggerire una ricetta che contiene un allergene.
+    """
+    db = get_db()
+    limite = int(parse_float(request.args.get("limite"), 6))
+    restrizioni = get_profile(db)["restriction_list"]
+    return jsonify(dispensa.suggerimenti(db, restrizioni, max(1, min(limite, 20))))
+
+
 @app.route("/api/pantry", methods=["GET"])
 def pantry_list():
     db = get_db()
@@ -909,12 +953,15 @@ def recipes():
             return bad_request("Il nome è obbligatorio")
         image = clean_image(data.get("image"))
         cur = db.execute(
-            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions, image, image_credit, source)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO recipes (name, servings, time_minutes, difficulty, instructions,"
+            " image, image_credit, source, prep_minutes, cook_minutes, cost)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (name, int(parse_float(data.get("servings"), 2)), data.get("time_minutes") or None,
              data.get("difficulty") or "facile", data.get("instructions") or "",
              image, (data.get("image_credit") or "").strip() if image else "",
-             (data.get("source") or "").strip()),
+             (data.get("source") or "").strip(),
+             parse_minutes(data.get("prep_minutes")), parse_minutes(data.get("cook_minutes")),
+             parse_cost(data.get("cost"))),
         )
         rid = cur.lastrowid
         for it in data.get("items") or []:
@@ -976,10 +1023,13 @@ def recipe_detail(rid):
         fonte = (data.get("source") or "").strip() if "source" in data else attuale["source"]
         db.execute(
             """UPDATE recipes SET name = ?, servings = ?, time_minutes = ?, difficulty = ?,
-               instructions = ?, image = ?, image_credit = ?, source = ? WHERE id = ?""",
+               instructions = ?, image = ?, image_credit = ?, source = ?,
+               prep_minutes = ?, cook_minutes = ?, cost = ? WHERE id = ?""",
             ((data.get("name") or "").strip(), int(parse_float(data.get("servings"), 2)),
              data.get("time_minutes") or None, data.get("difficulty") or "facile",
-             data.get("instructions") or "", image, credito, fonte, rid),
+             data.get("instructions") or "", image, credito, fonte,
+             parse_minutes(data.get("prep_minutes")), parse_minutes(data.get("cook_minutes")),
+             parse_cost(data.get("cost")), rid),
         )
         db.execute("DELETE FROM recipe_items WHERE recipe_id = ?", (rid,))
         for it in data.get("items") or []:
