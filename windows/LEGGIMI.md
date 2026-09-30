@@ -3,7 +3,7 @@
 Questa cartella serve a far girare l'app su un computer di casa, sempre accesa,
 così il telefono e gli altri dispositivi la trovano sempre allo stesso indirizzo.
 
-Sono cinque file:
+I file di questa cartella sono questi:
 
 | File | A cosa serve |
 | --- | --- |
@@ -12,6 +12,8 @@ Sono cinque file:
 | `indirizzo.ps1` | Usato da `avvia.bat`, non serve toccarlo |
 | `dominio.bat` | Attiva l'indirizzo pubblico con HTTPS (vedi *Un indirizzo da fuori casa*) |
 | `dominio.ps1` | Usato da `dominio.bat`, non serve toccarlo |
+| `verifica-pubblico.bat` | Controlla se l'app è raggiungibile da fuori (vedi *Controllare in un colpo solo*) |
+| `verifica-pubblico.ps1` | Usato da `verifica-pubblico.bat`, non serve toccarlo |
 | `voce.bat` | Imposta chiave e area della voce neurale Azure |
 | `ripara-voce.bat` | Corregge solo l'area della voce, senza toccare la chiave |
 
@@ -259,6 +261,36 @@ richieste non trovano nessuno, e sembra che il tunnel non funzioni.
   protezione è il nome dell'indirizzo, che è lungo e difficile da indovinare, più
   la password della casa. Per un'app di famiglia basta, ma non è una fortezza. Se
   un giorno vuoi qualcosa di più solido, si mette una pagina di accesso davanti.
+
+### Controllare in un colpo solo
+
+Doppio clic su **`verifica-pubblico.bat`**. Non modifica niente e non tocca i
+segreti: legge lo stato e dice cosa manca. In una schermata:
+
+1. **l'indirizzo pubblico** (o l'avviso che Funnel non è attivo);
+2. **se l'app risponde** su `127.0.0.1:12000`;
+3. **se `avvia.bat` dichiara `DIETRO_PROXY=1`** — dietro il tunnel è un proxy, e
+   senza quella riga il freno ai tentativi conta tutti i dispositivi su un
+   indirizzo solo.
+
+Se i primi due dicono sì, **dovresti poter accedere da fuori**.
+
+Le tre cose che devono essere vere insieme, perché il tunnel da solo non basta:
+
+| Cosa | Come si ottiene | Come si controlla |
+| --- | --- | --- |
+| L'indirizzo pubblico è attivo | `dominio.bat`, una volta sola | `verifica-pubblico.bat`, punto 1 |
+| L'app è in esecuzione | `avvia.bat` (o `installa.bat`) | `verifica-pubblico.bat`, punto 2 |
+| Il computer è sveglio | sospensione su «Mai» quando è collegato alla corrente | — |
+
+**Il computer acceso da solo non basta:** o è sospeso e il tunnel non ha nessuno
+a cui inoltrare, o l'app è chiusa e la pagina non risponde. Il tunnel resta
+attivo anche se l'app è spenta — è il motivo per cui «sembra che il tunnel non
+funzioni» quando invece manca solo l'app.
+
+**La password della casa non si tocca per farlo funzionare.** L'app è raggiungibile
+da fuori *con* la sua password: è la protezione normale. E resta valido il
+consiglio di usare una password non banale, perché l'indirizzo è pubblico.
 
 ---
 
@@ -551,6 +583,22 @@ già estratto, puoi farlo sui singoli file dentro la cartella `windows`.
 3. L'indirizzo del computer può essere cambiato: rileggilo da `avvia.bat`. Se
    succede spesso, la cura è la prenotazione nel router descritta in **L'indirizzo
    fisso** qui sopra: da lì l'indirizzo non cambia più.
+
+**Da fuori casa non funziona (o il telefono non carica l'indirizzo `ts.net`).**
+Quasi sempre manca una delle tre cose, e si distinguono con
+**`verifica-pubblico.bat`**:
+1. **Funnel non è attivo**: si riattiva con `dominio.bat`. Il tunnel non parte da
+   solo al riavvio del computer — una volta attivato con `--bg` resta, ma se è
+   stato spento va riacceso.
+2. **L'app è spenta**: il tunnel resta attivo anche senza app, ma non c'è nessuno
+   a cui inoltrare. Avvia `avvia.bat` (o installa l'avvio automatico con
+   `installa.bat`).
+3. **Il computer è sospeso**: sospensione e ibernazione interrompono tutto. Metti
+   la sospensione su «Mai» quando è collegato alla corrente.
+
+Se invece l'indirizzo risponde **subito dopo l'attivazione** con un errore di
+sito non trovato, è normale: il nome può impiegare fino a dieci minuti a
+propagarsi. Riprova poco dopo.
 
 **La pagina si apre ma i dati non ci sono.**
 Il database è finito nella cartella sbagliata. Guarda dove hai messo il file

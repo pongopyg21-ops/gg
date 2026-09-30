@@ -505,7 +505,10 @@ non serve**: si scarica l'app come ZIP.
    dipendenze, e mostra sia l'indirizzo per il computer sia quello per il telefono.
 4. `windows\installa.bat` — registra l'app perché parta **da sola a ogni accesso**
    e **si riavvii se cade**.
-5. `windows\installa.bat rimuovi` — toglie l'avvio automatico.
+5. `windows\dominio.bat` — attiva l'indirizzo pubblico con HTTPS (Tailscale
+   Funnel), per usarla **da fuori casa** e **dettare dal telefono**.
+   `windows\verifica-pubblico.bat` controlla poi che tutto regga.
+6. `windows\installa.bat rimuovi` — toglie l'avvio automatico.
 
 Le istruzioni complete, inclusi i dati da riportare sul computer e i problemi
 tipici (permesso del firewall, microfono dal telefono), stanno in

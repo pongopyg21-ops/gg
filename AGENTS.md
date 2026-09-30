@@ -307,6 +307,12 @@ cose con gli strumenti di Windows.
 - `windows\installa.bat` — registra un'**attivita' pianificata** che parte
   all'accesso e riavvia se cade.
 - `windows\indirizzo.ps1` — trova l'indirizzo di rete.
+- `windows\verifica-pubblico.bat` (+ `.ps1`) — controlla in una schermata se
+  l'app e' raggiungibile **da fuori**: stato di Funnel, risposta su
+  `127.0.0.1:12000`, e presenza di `DIETRO_PROXY=1` in `avvia.bat`. Non modifica
+  niente e non tocca i segreti. Serve perche' le tre cause (tunnel, app spenta,
+  proxy non dichiarato) si confondono fra loro, e il tunnel resta attivo anche
+  ad app spenta.
 
 Cose che sembrano dettagli e non lo sono:
 

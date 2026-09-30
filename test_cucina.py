@@ -5885,6 +5885,27 @@ def test_windows_avvia_dietro_il_tunnel(client):
     assert "DIETRO_PROXY" in app_py and "ProxyFix" in app_py
 
 
+def test_verifica_pubblico_controlla_le_tre_cose(client):
+    """`verifica-pubblico.bat` e' il controllo da fare quando il tunnel sembra
+    attivo ma il telefono non carica: le tre cause si confondono fra loro, e se
+    ne dimenticasse una il suo verdetto mentirebbe. Deve guardare il tunnel, se
+    l'app risponde, e se `DIETRO_PROXY` e' dichiarato in `avvia.bat`.
+
+    Si guarda il file vero: il lavoro sta nel `.ps1` e il `.bat` lo chiama, per
+    la stessa ragione per cui esiste `indirizzo.ps1`."""
+    bat = open(f"{BASE_APP}/windows/verifica-pubblico.bat", encoding="utf-8").read()
+    ps1 = open(f"{BASE_APP}/windows/verifica-pubblico.ps1", encoding="utf-8").read()
+    # il .bat non fa il lavoro: chiama il .ps1 accanto a se'
+    assert "verifica-pubblico.ps1" in bat
+    # 1. il tunnel: si cerca l'indirizzo https invece di fidarsi del codice di
+    # uscita, che cambia fra versioni di Tailscale
+    assert "funnel status" in ps1 and "https://" in ps1
+    # 2. l'app che risponde
+    assert "Invoke-WebRequest" in ps1
+    # 3. DIETRO_PROXY dichiarato nel file che comanda davvero
+    assert 'set "DIETRO_PROXY=1"' in ps1
+
+
 def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
     """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
     proprio quando non si possono usare le mani, e un'area senza pulsante e' una
