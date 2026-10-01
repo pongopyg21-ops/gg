@@ -210,6 +210,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'profile') renderProfile();
   if (btn.dataset.tab === 'igiene') renderIgiene();
   if (btn.dataset.tab === 'progetti') renderProgetti();
+  if (btn.dataset.tab === 'calendario') renderCalendario();
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
   if (btn.dataset.tab === 'intrattenimento') renderTv();
@@ -1619,6 +1620,232 @@ function apriProgettoForm(p) {
 
 $('#pr-new').addEventListener('click', () => apriProgettoForm(null));
 $('#pr-show-done').addEventListener('change', renderProgetti);
+
+/* ---------- CALENDARIO ----------
+   Gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei Progetti, in una
+   scheda a parte: un progetto ha un periodo, un impegno ha un giorno preciso.
+   In cima gli avvisi (promemoria scattati e cose in ritardo), sotto la griglia
+   del mese e l'elenco del giorno scelto. La griglia arriva dal server: e' li'
+   che si calcolano le settimane intere e i giorni di distanza, dove si provano
+   senza browser. */
+let calDati = { mese: null, appointments: [], prossimi: [] };
+let calMeta = { categories: [], category_labels: {}, category_colors: {}, months: [] };
+let calGiorno = null;       // il giorno scelto nella griglia (ISO)
+let calVista = null;        // il mese mostrato (YYYY-MM)
+
+async function renderCalendario() {
+  if (!calMeta.categories.length) calMeta = await api('/api/calendario/meta');
+  const q = calVista ? `?mese=${calVista}` : '';
+  calDati = await api('/api/appointments' + q);
+  if (!calVista) calVista = `${calDati.mese.anno}-${pad(calDati.mese.mese)}`;
+  // il giorno scelto resta se e' nel mese mostrato, altrimenti si torna a oggi
+  const nelMese = calDati.mese.celle.some((c) => c.nel_mese && c.iso === calGiorno);
+  if (!nelMese) calGiorno = calDati.mese.celle.find((c) => c.nel_mese && c.iso === iso(new Date()))?.iso
+    || calDati.mese.primo;
+  renderCalAvvisi();
+  renderCalGriglia();
+  renderCalGiorno();
+}
+
+function renderCalAvvisi() {
+  const voci = calDati.prossimi || [];
+  if (!voci.length) { $('#cal-avvisi').innerHTML = ''; return; }
+  const inRitardo = voci.filter((v) => v.stato.in_ritardo);
+  $('#cal-avvisi').innerHTML = `
+    <div class="cal-alert">
+      <span class="cal-alert-icona" aria-hidden="true">🔔</span>
+      <div class="cal-alert-testo">
+        <strong>${voci.length === 1 ? 'Un impegno' : `${voci.length} impegni`} da ricordare</strong>
+        <span>${inRitardo.length
+          ? `${inRitardo.length} in ritardo, il resto è imminente.`
+          : 'Il promemoria è scattato.'}</span>
+      </div>
+    </div>
+    <ul class="cal-avvisi-list">${voci.map((v) => `
+      <li class="cal-avviso${v.stato.in_ritardo ? ' late' : ''}">
+        <span class="cal-dot" style="background:var(${calMeta.category_colors[v.category]})"></span>
+        <span class="cal-avviso-quando">${esc(v.quando_detto)}</span>
+        <span class="cal-avviso-titolo">${esc(v.title)}</span>
+        ${v.time ? `<span class="cal-avviso-ora">${esc(v.time)}</span>` : ''}
+        <button class="ghost cal-avviso-ok" data-ok="${v.id}" title="Segna come fatto">✓</button>
+      </li>`).join('')}</ul>`;
+}
+
+function renderCalGriglia() {
+  const m = calDati.mese;
+  $('#cal-mese').textContent = `${calMeta.months[m.mese - 1]} ${m.anno}`;
+  // un impegno per giorno, per il puntino: la griglia dice *che* giorni sono
+  // occupati, l'elenco sotto dice *cosa*
+  const perGiorno = {};
+  (calDati.appointments || []).forEach((a) => {
+    (perGiorno[a.when_date] = perGiorno[a.when_date] || []).push(a);
+  });
+  const oggi = iso(new Date());
+  const sett = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
+  $('#cal-grid').innerHTML = `
+    <div class="cal-sett">${sett.map((s) => `<span>${s}</span>`).join('')}</div>
+    <div class="cal-celle">${m.celle.map((c) => {
+      const voci = perGiorno[c.iso] || [];
+      const cls = [
+        'cal-cella',
+        c.nel_mese ? '' : 'fuori',
+        c.weekend ? 'weekend' : '',
+        c.iso === oggi ? 'oggi' : '',
+        c.iso === calGiorno ? 'scelto' : '',
+        voci.length ? 'occupato' : '',
+      ].filter(Boolean).join(' ');
+      return `<button class="${cls}" data-giorno="${c.iso}">
+          <span class="cal-num">${c.giorno}</span>
+          <span class="cal-punti">${voci.slice(0, 3).map((v) =>
+            `<span class="cal-dot" style="background:var(${calMeta.category_colors[v.category]})"></span>`).join('')}</span>
+        </button>`;
+    }).join('')}</div>`;
+}
+
+function renderCalGiorno() {
+  const voci = (calDati.appointments || []).filter((a) => a.when_date === calGiorno);
+  const g = calDati.mese.celle.find((c) => c.iso === calGiorno);
+  const etichetta = g ? fmtDay(new Date(calGiorno + 'T00:00:00')) : calGiorno;
+  $('#cal-giorno').innerHTML = `
+    <div class="cal-giorno-head">
+      <h3>${esc(etichetta)}</h3>
+      <button id="cal-giorno-new" class="ghost">+ Aggiungi qui</button>
+    </div>
+    ${voci.length ? `<ul class="cal-lista">${voci.map(rigaImpegno).join('')}</ul>`
+      : '<p class="cal-vuoto">Nessun impegno in questo giorno.</p>'}`;
+  $('#cal-giorno-new').addEventListener('click', () => apriImpegnoForm(null, calGiorno));
+}
+
+function rigaImpegno(a) {
+  const col = calMeta.category_colors[a.category] || '--muted';
+  return `
+    <li class="cal-riga${a.done ? ' done' : ''}" data-id="${a.id}">
+      <button class="cal-check${a.done ? ' on' : ''}" data-act="done"
+        title="${a.done ? 'Riapri' : 'Segna come fatto'}">${a.done ? '✓' : ''}</button>
+      <span class="cal-bar" style="background:var(${col})"></span>
+      <div class="cal-riga-main">
+        <span class="cal-riga-titolo">${esc(a.title)}</span>
+        <span class="cal-riga-meta">
+          <span class="cal-tag" style="border-color:var(${col})">${esc(a.category_label)}</span>
+          ${a.time ? `<span class="cal-ora">🕒 ${esc(a.time)}</span>` : '<span class="cal-ora">tutto il giorno</span>'}
+          ${a.reminder_days ? `<span class="cal-prom">🔔 ${esc(etichettaPromemoria(a.reminder_days))}</span>` : ''}
+        </span>
+        ${a.notes ? `<p class="cal-note">${esc(a.notes)}</p>` : ''}
+      </div>
+      <div class="cal-azioni">
+        <button data-act="edit" title="Modifica">✏️</button>
+        <button data-act="del" title="Elimina">🗑️</button>
+      </div>
+    </li>`;
+}
+
+function etichettaPromemoria(giorni) {
+  const r = (calMeta.reminders || []).find((x) => x.giorni === giorni);
+  return r ? r.label : `${giorni} giorni prima`;
+}
+
+$('#cal-grid').addEventListener('click', (e) => {
+  const cella = e.target.closest('.cal-cella');
+  if (!cella) return;
+  calGiorno = cella.dataset.giorno;
+  renderCalGriglia();
+  renderCalGiorno();
+});
+
+$('#cal-giorno').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = Number(btn.closest('.cal-riga').dataset.id);
+  const a = calDati.appointments.find((x) => x.id === id);
+  if (!a) return;
+  if (btn.dataset.act === 'done') {
+    await api(`/api/appointments/${id}`, { method: 'PUT', body: { done: !a.done } });
+    toast(a.done ? 'Impegno riaperto' : 'Impegno segnato come fatto');
+    renderCalendario();
+  } else if (btn.dataset.act === 'edit') {
+    apriImpegnoForm(a);
+  } else if (btn.dataset.act === 'del') {
+    if (!confirm(`Eliminare "${a.title}"?`)) return;
+    await api(`/api/appointments/${id}`, { method: 'DELETE' });
+    toast('Impegno eliminato');
+    renderCalendario();
+  }
+});
+
+$('#cal-avvisi').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-ok]');
+  if (!btn) return;
+  await api(`/api/appointments/${Number(btn.dataset.ok)}`, { method: 'PUT', body: { done: true } });
+  toast('Impegno segnato come fatto');
+  renderCalendario();
+});
+
+$('#cal-prev').addEventListener('click', () => cambiaMese(-1));
+$('#cal-next').addEventListener('click', () => cambiaMese(1));
+$('#cal-oggi').addEventListener('click', () => { calVista = null; calGiorno = null; renderCalendario(); });
+
+function cambiaMese(passo) {
+  const [a, m] = calVista.split('-').map(Number);
+  const d = new Date(a, m - 1 + passo, 1);
+  calVista = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  calGiorno = null;
+  renderCalendario();
+}
+
+function apriImpegnoForm(a, giorno) {
+  const cat = a ? a.category : (calMeta.default_category || 'altro');
+  const rem = a ? a.reminder_days : 0;
+  showModal(a ? 'Modifica impegno' : 'Nuovo impegno', `
+    <div class="field"><label>Titolo</label>
+      <input id="calf-title" value="${esc(a ? a.title : '')}" placeholder="Es. Dentista, rinnovo patente"></div>
+    <div class="row" style="margin-bottom:12px; align-items:flex-end">
+      <div class="field" style="flex:1; margin:0"><label>Giorno</label>
+        <input id="calf-date" type="date" value="${a ? a.when_date : (giorno || calGiorno || '')}"></div>
+      <div class="field" style="flex:1; margin:0"><label>Ora (facoltativa)</label>
+        <input id="calf-time" type="time" value="${a ? a.time : ''}"></div>
+    </div>
+    <div class="row" style="margin-bottom:12px; align-items:flex-end">
+      <div class="field" style="flex:1; margin:0"><label>Categoria</label>
+        <select id="calf-cat" class="plain">${calMeta.categories.map((c) =>
+          `<option value="${esc(c)}"${c === cat ? ' selected' : ''}>${esc(calMeta.category_labels[c])}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1; margin:0"><label>Promemoria</label>
+        <select id="calf-rem" class="plain">${calMeta.reminders.map((r) =>
+          `<option value="${r.giorni}"${r.giorni === rem ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Note</label>
+      <textarea id="calf-notes" rows="2" placeholder="Indirizzo, cosa portare, numero...">${esc(a ? a.notes : '')}</textarea></div>
+    <div class="modal-foot">
+      <button id="calf-save" class="primary">${a ? 'Salva' : 'Aggiungi'}</button>
+      <button id="calf-cancel">Annulla</button>
+    </div>`);
+
+  $('#calf-cancel').addEventListener('click', hideModal);
+  $('#calf-save').addEventListener('click', async () => {
+    const corpo = {
+      title: $('#calf-title').value.trim(),
+      when_date: $('#calf-date').value,
+      time: $('#calf-time').value,
+      category: $('#calf-cat').value,
+      notes: $('#calf-notes').value.trim(),
+      reminder_days: Number($('#calf-rem').value),
+    };
+    if (!corpo.title) return toast('Inserisci un titolo');
+    if (!corpo.when_date) return toast('Scegli un giorno');
+    try {
+      if (a) await api(`/api/appointments/${a.id}`, { method: 'PUT', body: corpo });
+      else await api('/api/appointments', { method: 'POST', body: corpo });
+      hideModal();
+      toast(a ? 'Impegno salvato' : 'Impegno aggiunto');
+      // se si e' aggiunto in un altro mese, si va a vederlo
+      const nuovoMese = corpo.when_date.slice(0, 7);
+      if (nuovoMese !== calVista) calVista = nuovoMese;
+      calGiorno = corpo.when_date;
+      renderCalendario();
+    } catch (err) { toast(err.message); }
+  });
+}
+
+$('#cal-new').addEventListener('click', () => apriImpegnoForm(null));
 
 /* ---------- MAGAZZINO ----------
    Quello che si tiene in casa e non si mangia: sapone, ferramenta, batterie.

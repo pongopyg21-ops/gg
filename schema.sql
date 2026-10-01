@@ -234,3 +234,32 @@ CREATE TABLE IF NOT EXISTS tv_cache (
     aggiornato REAL NOT NULL DEFAULT 0    -- secondi dall'epoca: e' un confronto, non una data
 );
 
+-- ------------------------------------------------------------ calendario
+-- Gli impegni: appuntamenti, scadenze, ricorrenze. Vivono dentro Progetti
+-- perche' sono cose da fare, ma in una tabella a parte: un progetto ha un
+-- periodo e una priorita', un impegno ha un giorno preciso e un'ora. Sono due
+-- forme diverse, e mescolarle costringerebbe meta' delle righe ad avere campi
+-- vuoti che non significano niente.
+--
+-- `when_date` non si chiama `date` perche' `date` e' una funzione di SQLite
+-- (come `time` e `datetime`): un nome cosi' funziona finche' non lo si usa in
+-- un'espressione, e allora l'errore arriva nel posto meno aspettato.
+--
+-- `reminder_days` e' quanti giorni **prima** avvisare, non una data: spostando
+-- l'impegno si sposta anche il promemoria, invece di lasciarlo indietro. `time`
+-- e' facoltativa: un impegno di giornata intera e' legittimo.
+CREATE TABLE IF NOT EXISTS appointments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    when_date     TEXT NOT NULL,
+    time          TEXT NOT NULL DEFAULT '',
+    category      TEXT NOT NULL DEFAULT 'altro',
+    notes         TEXT NOT NULL DEFAULT '',
+    reminder_days INTEGER NOT NULL DEFAULT 0,
+    done          INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(when_date);
+CREATE INDEX IF NOT EXISTS idx_appointments_done ON appointments(done, when_date);
+

@@ -120,7 +120,7 @@
       <span class="home-emoji">📋</span>
       <span class="home-name">Progetti</span>
       <span class="home-desc">Lavori in corso, idee e cose da fare, con il
-        magazzino di quello che si tiene in casa.</span>
+        calendario degli impegni e il magazzino di casa.</span>
       <span class="home-go">Apri →</span>
     </button>
     <button class="home-card" data-section="faq">
@@ -156,6 +156,7 @@
   <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
   <button data-tab="igiene" data-section="igiene">🧽 Pulizie</button>
   <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
+  <button data-tab="calendario" data-section="progetti">📆 Calendario</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
@@ -329,6 +330,27 @@
       <label class="check-inline"><input type="checkbox" id="pr-show-done"> Mostra conclusi</label>
     </div>
     <div id="pr-list" class="project-list"></div>
+  </section>
+
+  <!-- CALENDARIO — gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei
+       Progetti perche' e' una cosa da fare, come i progetti e il magazzino, ma
+       in una scheda a parte: un progetto ha un periodo, un impegno ha un giorno
+       preciso. In cima gli avvisi (promemoria scattati e cose in ritardo), sotto
+       la griglia del mese e l'elenco del giorno scelto. -->
+  <section id="tab-calendario" class="tab">
+    <div id="cal-avvisi" class="cal-avvisi"></div>
+    <div class="toolbar">
+      <button id="cal-new" class="primary">+ Nuovo impegno</button>
+      <span class="spacer"></span>
+      <div class="cal-nav">
+        <button id="cal-prev" class="ghost" title="Mese precedente" aria-label="Mese precedente">‹</button>
+        <span id="cal-mese" class="cal-mese"></span>
+        <button id="cal-next" class="ghost" title="Mese successivo" aria-label="Mese successivo">›</button>
+        <button id="cal-oggi" class="ghost">Oggi</button>
+      </div>
+    </div>
+    <div id="cal-grid" class="cal-grid"></div>
+    <div id="cal-giorno" class="cal-giorno"></div>
   </section>
 
   <!-- MAGAZZINO — quello che si tiene in casa e non si mangia: sapone,

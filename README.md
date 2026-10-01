@@ -9,7 +9,7 @@ L'app si apre su una **pagina iniziale** con cinque aree:
 
 - **🍳 Cucina** — piano pasti, ricette, dispensa, lista della spesa, profilo e comandi vocali.
 - **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
-- **📋 Progetti** — lavori in corso e idee, con il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
+- **📋 Progetti** — lavori in corso e idee, con il **Calendario** degli impegni (appuntamenti, scadenze e promemoria) e il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
 - **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
 - **📺 TV** — intrattenimento: i video della playlist di casa e le notizie dal mondo (ANSA), aggiornate una volta al giorno.
 
@@ -20,14 +20,14 @@ un pulsante **Parla al maggiordomo** accanto al titolo.
 ## Case separate
 
 L'app non ha un solo insieme di dati: ogni **casa** ha il suo, con ricette,
-dispensa, piano, spesa, pulizie, FAQ, progetti e magazzino propri. Si entra
+dispensa, piano, spesa, pulizie, FAQ, progetti, calendario e magazzino propri. Si entra
 scrivendo il nome della casa e la sua password; la sessione resta in un biscotto
 firmato, quindi **si scrive una volta sola** e si rimane collegati anche
 riaprendo il browser giorni dopo. Il pulsante **Esci**, in testata, riporta alla
 schermata di accesso per cambiare casa.
 
 La separazione è un **file di database distinto** per casa (`case/case-<slug>.db`),
-non una colonna `house_id` sulle tabelle. Le tabelle sono tredici e le query
+non una colonna `house_id` sulle tabelle. Le tabelle sono diciassette e le query
 cinquanta: una colonna dimenticata da qualche parte mostrerebbe i dati di una casa
 a un'altra. Cambiando il file, invece, tutte le query restano identiche a prima —
 è `get_db()` (`app.py`) che apre quello giusto, e non c'è modo di dimenticare un
@@ -80,6 +80,8 @@ lasciarla di comodo.
 - **Conversione automatica delle unità** — le unità compatibili vengono convertite da sole, quindi funziona mescolare `kg` e `g`, oppure `l`, `ml` e `cucchiai`.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 - **Ricette preferite** — in fase di profilazione l'app dice che il ricettario di partenza è già pronto (45 ricette italiane) e si limita a chiedere quali preferisci, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. Nessuna ricetta va inserita a mano per cominciare. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
+- **Progetti e Magazzino** — lavori in corso e idee da fare, con priorità e periodo, più il magazzino di quello che si tiene in casa e non si mangia (categorie, luoghi, scorte e foto).
+- **Calendario** — gli impegni con un giorno preciso e, se serve, un'ora: appuntamenti, scadenze, ricorrenze. La griglia del mese mostra a colpo d'occhio i giorni occupati (un puntino per categoria), l'elenco del giorno dice cosa c'è, e in cima compaiono gli **avvisi**: i promemoria scattati e le cose in ritardo. Il promemoria si imposta **quanti giorni prima** (dal giorno stesso a un mese), così spostando un impegno si sposta anche l'avviso.
 - **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia, cercare una ricetta o **detta la ricetta nuova**: «crea la ricetta pasta al forno» apre il modulo già col nome scritto, e si completano ingredienti e preparazione. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La conferma può arrivare da una **voce neurale cloud**, uguale su ogni dispositivo, o dalla voce del sistema come ripiego.
 
 ## Allergie e intolleranze
@@ -296,7 +298,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Duecentoventuno test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta. La copia dei dati ha i suoi: l'archivio contiene il database della casa collegata e da esso si ricostruisce un database vero, richiede l'accesso, e non contiene ne' il registro delle case ne' altre case. I percorsi dei dati hanno il loro: `MAGGIORDOMO_DATA` sposta registro, case e database storico insieme.
+Cinquecentotrentanove test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta. La copia dei dati ha i suoi: l'archivio contiene il database della casa collegata e da esso si ricostruisce un database vero, richiede l'accesso, e non contiene ne' il registro delle case ne' altre case. I percorsi dei dati hanno il loro: `MAGGIORDOMO_DATA` sposta registro, case e database storico insieme. Il calendario ha i suoi: griglia del mese con settimane intere, giorni di distanza e segno (come le pulizie), promemoria che scatta da N giorni prima e non per una cosa già passata, ritardo che resta finché non si chiude, categoria sconosciuta che ricade sulla predefinita, limiti del promemoria, ora tollerante, `done` che non cancella il resto, e la tabella `appointments` che arriva anche a un database vecchio.
 
 
 ## Interfaccia
@@ -462,6 +464,12 @@ Per una casa con più dispositivi in modo stabile conviene una **macchina sempre
 | POST | `/api/voice` | Interpreta un comando dettato `{text}` (`voice.py`) e lo esegue: `pantry_add`, `shopping_add`, `term_add`, `recipe_search`. Risponde 422 se la frase non è un comando |
 | GET | `/api/voce/config` | Se la voce neurale cloud è attiva e quali voci offre. Non espone la chiave. Richiede l'accesso |
 | POST | `/api/voce/parla` | Restituisce l'audio MP3 di `{text, voice, rate, pitch}` dalla voce neurale. 503 se non configurata, 400 su voce o testo non validi. Richiede l'accesso |
+| GET/POST | `/api/projects` | Progetti: elenco (aperti prima, per priorità) / creazione |
+| GET/PUT/DELETE | `/api/projects/<id>` | Dettaglio, modifica (anche solo `done`), eliminazione |
+| GET/POST | `/api/appointments` | Impegni del mese corrente (`?mese=YYYY-MM`) o di un giorno (`?giorno=YYYY-MM-DD`); la risposta include la griglia del mese e `prossimi` (promemoria scattati e cose in ritardo) |
+| GET/PUT/DELETE | `/api/appointments/<id>` | Dettaglio, modifica (anche solo `done`), eliminazione |
+| GET | `/api/calendario/meta` | Categorie degli impegni con etichetta e colore, scelte del promemoria, mesi |
+| GET/POST | `/api/storage` | Magazzino |
 | GET | `/api/backup` | Scarica i dati della **casa collegata** (ZIP col database e un `LEGGIMI.txt`). Non include il registro né le altre case. Richiede l'accesso |
 | GET | `/api/copie` | Quante copie automatiche esistono per la **casa collegata**, quante se ne conservano e quando è stata presa l'ultima. Richiede l'accesso |
 
@@ -479,6 +487,9 @@ voice.py            # comprensione dei comandi vocali
 voce_cloud.py       # sintesi vocale neurale (Azure), con la chiave sul server
 allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
+magazzino.py        # magazzino: cose di casa che non si mangiano
+calendario.py       # calendario degli impegni e promemoria
+tv.py               # sezione TV: video della playlist e notizie
 schema.sql          # schema SQLite
 test_cucina.py      # test
 avvia.sh            # avvio dell'app (dipendenze, seed, server)

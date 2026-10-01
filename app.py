@@ -17,6 +17,7 @@ from flask import Flask, g, jsonify, request, send_file, send_from_directory, se
 from werkzeug.exceptions import HTTPException
 
 import allergens
+import calendario
 import comprensione
 import copie
 import dispensa
@@ -292,10 +293,11 @@ def migrate(db):
     # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
     # aggiunge una **colonna** a quella tabella la aggiunga anche in questo blocco.
     #
-    # Vale lo stesso per `tv_cache`: e' nuova, quindi la crea lo schema su ogni
-    # casa. `tv.py` legge comunque in modo tollerante (una tabella assente si
-    # comporta come cache vuota), cosi' la sezione non cade se `get_db()` non e'
-    # ancora passata di li'.
+    # Vale lo stesso per `tv_cache` e per `appointments`: sono nuove, quindi le
+    # crea lo schema su ogni casa. `tv.py` legge comunque in modo tollerante (una
+    # tabella assente si comporta come cache vuota), cosi' la sezione non cade se
+    # `get_db()` non e' ancora passata di li'. Il calendario invece passa sempre
+    # da `get_db()`, quindi la tabella c'e' sempre.
 
 
 def _semina_pulizie(db):
@@ -1709,6 +1711,160 @@ def storage_detail(sid):
 @app.route("/api/magazzino/meta", methods=["GET"])
 def magazzino_meta():
     return jsonify(magazzino.meta())
+
+
+# ------------------------------------------------------------- calendario
+# Gli impegni: appuntamenti, scadenze, ricorrenze. Stanno dentro Progetti come
+# il magazzino, ma la logica delle date sta in `calendario.py`, dove si prova
+# senza browser: la griglia del mese, i giorni di distanza e il promemoria sono
+# le parti che sbagliano, e sono tutte funzioni pure.
+def appointment_row(r, oggi=None):
+    """Un impegno con il suo stato calcolato. `stato` non si salva: si ricava
+    dalla data a ogni lettura, come le scadenze delle pulizie e i giorni della
+    spesa. Una colonna di appoggio si disallineerebbe al primo cambio d'ora."""
+    d = dict(r)
+    d["done"] = bool(r["done"])
+    d["category"] = calendario.categoria_valida(r["category"])
+    d["category_label"] = calendario.categoria(r["category"])["label"]
+    d["stato"] = calendario.stato_impegno(
+        r["when_date"], oggi=oggi, promemoria=r["reminder_days"])
+    d["quando_detto"] = calendario.quando_detto(d["stato"])
+    return d
+
+
+def appointment_payload(data, attuale=None):
+    """Normalizza e valida i campi di un impegno. Restituisce (campi, errore)."""
+    base = dict(attuale) if attuale else {}
+    # il titolo si tocca solo se presente, come per i progetti: spuntare un
+    # impegno non deve richiedere di rimandare tutto il resto
+    title = (data.get("title") if "title" in data else base.get("title", "")) or ""
+    title = title.strip()
+    if not title:
+        return None, "Il titolo è obbligatorio"
+    quando = (data.get("when_date") if "when_date" in data else base.get("when_date", "")) or ""
+    if not calendario._data(quando):
+        return None, "Serve una data valida"
+    return {
+        "title": title,
+        "when_date": str(quando)[:10],
+        "time": calendario._ora(data.get("time") if "time" in data else base.get("time", "")),
+        "category": calendario.categoria_valida(
+            data.get("category") if "category" in data else base.get("category", "")),
+        "notes": ((data.get("notes") if "notes" in data else base.get("notes", "")) or "").strip(),
+        "reminder_days": calendario.promemoria_giorni(
+            data.get("reminder_days") if "reminder_days" in data else base.get("reminder_days", 0)),
+    }, None
+
+
+def appointment_by_id(db, aid):
+    return one(db.execute("SELECT * FROM appointments WHERE id = ?", (aid,)))
+
+
+@app.route("/api/appointments", methods=["GET", "POST"])
+def appointments():
+    db = get_db()
+    if request.method == "POST":
+        campi, errore = appointment_payload(request.get_json(force=True) or {})
+        if errore:
+            return bad_request(errore)
+        cur = db.execute(
+            """INSERT INTO appointments
+               (title, when_date, time, category, notes, reminder_days)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (campi["title"], campi["when_date"], campi["time"], campi["category"],
+             campi["notes"], campi["reminder_days"]),
+        )
+        db.commit()
+        return jsonify(appointment_row(appointment_by_id(db, cur.lastrowid))), 201
+
+    # Il mese si chiede con `?mese=YYYY-MM`, oppure un giorno preciso con
+    # `?giorno=YYYY-MM-DD`. Senza, si serve il mese corrente: e' quello che si
+    # guarda aprendo il calendario. La griglia del mese si costruisce **sempre**,
+    # anche quando si chiede un giorno solo: il client disegna il calendario e
+    # l'elenco del giorno insieme, e senza griglia non saprebbe dove mettere il
+    # giorno scelto.
+    mese = (request.args.get("mese") or "").strip()
+    giorno = (request.args.get("giorno") or "").strip()
+    oggi = datetime.date.today().isoformat()
+    riferimento = calendario._data(giorno) or calendario._data(mese + "-01") or calendario._data(oggi)
+    griglia = calendario.mese_di(riferimento.year, riferimento.month)
+    if giorno and calendario._data(giorno):
+        righe = db.execute(
+            "SELECT * FROM appointments WHERE when_date = ? "
+            "ORDER BY done, time = '', time, id", (giorno,))
+    else:
+        righe = db.execute(
+            "SELECT * FROM appointments WHERE when_date BETWEEN ? AND ? "
+            "ORDER BY done, when_date, time = '', time, id",
+            (griglia["primo"], griglia["ultimo"]))
+    impegni = [appointment_row(r, oggi=oggi) for r in righe]
+    return jsonify({
+        "mese": {"anno": griglia["anno"], "mese": griglia["mese"],
+                 "primo": griglia["primo"], "ultimo": griglia["ultimo"],
+                 "celle": griglia["celle"]},
+        "appointments": impegni,
+        "prossimi": _prossimi_impegni(db, oggi),
+    })
+
+
+def _prossimi_impegni(db, oggi):
+    """Cosa avvisa adesso: i promemoria scattati e le cose in ritardo.
+
+    Non e' "tutti i prossimi impegni": e' quello che merita di essere visto
+    aprendo l'area. Un promemoria per una cosa fra sei mesi non e' un
+    promemoria. Le cose in ritardo restano finche' non si chiudono, perche'
+    altrimenti un impegno mancato sparisce in silenzio, che e' il modo peggiore
+    di fallire un promemoria.
+    """
+    limite = (calendario._data(oggi) + datetime.timedelta(days=calendario.GIORNI_AVVISO)).isoformat()
+    righe = db.execute(
+        """SELECT * FROM appointments
+           WHERE done = 0 AND when_date <= ?
+           ORDER BY when_date, time = '', time, id""", (limite,))
+    voci = []
+    for r in righe:
+        stato = calendario.stato_impegno(r["when_date"], oggi=oggi,
+                                         promemoria=r["reminder_days"])
+        if stato["avvisa"] or stato["in_ritardo"]:
+            voci.append(appointment_row(r, oggi=oggi))
+    return voci
+
+
+@app.route("/api/appointments/<int:aid>", methods=["PUT", "DELETE"])
+def appointment_detail(aid):
+    db = get_db()
+    attuale = appointment_by_id(db, aid)
+    if not attuale:
+        return bad_request("Impegno non trovato", 404)
+
+    if request.method == "DELETE":
+        db.execute("DELETE FROM appointments WHERE id = ?", (aid,))
+        db.commit()
+        return jsonify({"ok": True})
+
+    data = request.get_json(force=True) or {}
+    # `done` si tocca da solo, come per i progetti: spuntare un impegno non deve
+    # richiedere di rimandare titolo, data e promemoria.
+    if "done" in data:
+        db.execute("UPDATE appointments SET done = ? WHERE id = ?",
+                   (1 if data["done"] else 0, aid))
+    if set(data) - {"done"}:
+        campi, errore = appointment_payload(data, attuale)
+        if errore:
+            return bad_request(errore)
+        db.execute(
+            """UPDATE appointments SET title = ?, when_date = ?, time = ?,
+               category = ?, notes = ?, reminder_days = ? WHERE id = ?""",
+            (campi["title"], campi["when_date"], campi["time"], campi["category"],
+             campi["notes"], campi["reminder_days"], aid),
+        )
+    db.commit()
+    return jsonify(appointment_row(appointment_by_id(db, aid)))
+
+
+@app.route("/api/calendario/meta", methods=["GET"])
+def calendario_meta():
+    return jsonify(calendario.meta())
 
 
 # ------------------------------------------------------- foto del magazzino

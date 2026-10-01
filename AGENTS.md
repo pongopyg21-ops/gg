@@ -40,15 +40,17 @@ App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `allergens.py`, comandi vocali in `voice.py`, comprensione facoltativa col
 modello in `comprensione.py`, dati iniziali in `seed.py`, pulizie
 in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
-suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`.
+suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`,
+impegni e promemoria in `calendario.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
 **Cucina**, **Igiene**, **Progetti**, **FAQ**, **TV**. Piano, ricette, dispensa,
 spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
 **Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
-**Magazzino**; **FAQ** raccoglie le informazioni utili da consultare (Wi-Fi,
-indirizzi, contatti, codici); **TV** raccoglie l'intrattenimento, cioè i video
-della playlist di casa e le notizie dal mondo (vedi `tv.py`).
+**Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
+informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
+raccoglie l'intrattenimento, cioè i video della playlist di casa e le notizie
+dal mondo (vedi `tv.py`).
 
 ## Comandi
 
@@ -497,7 +499,7 @@ puo' passare.
 Ogni **casa** ha il suo database: ricette, dispensa, piano, spesa, pulizie, FAQ,
 progetti e magazzino non si vedono fra case diverse. La separazione è un **file di
 database distinto** (`case/case-<slug>.db`), non una colonna `house_id`: le tabelle
-sono tredici e le query cinquanta, e una colonna dimenticata da qualche parte
+sono diciassette e le query cinquanta, e una colonna dimenticata da qualche parte
 mostrerebbe i dati di una casa a un'altra. `get_db()` (`app.py`) apre il file giusto
 e tutte le query restano com'erano: **non aggiungere filtri per casa alle query**, la
 separazione è già nel file.
@@ -1648,4 +1650,81 @@ sono la playlist **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_
 il feed Atom vuole il solo `list=...`) e le notizie **ANSA mondo**. I test non
 toccano la rete: sostituiscono `tv._apri` con risposte preparate e provano
 l'interpretazione e la tenuta della cache, che sono le parti che sbagliano.
+
+
+
+## Il Calendario: gli impegni con un promemoria
+
+`calendario.py` tiene gli impegni — appuntamenti, scadenze, ricorrenze — dentro
+**Progetti**, in una scheda a parte. Perché non è una colonna dei progetti: un
+progetto ha un **periodo** (inizio e fine) e una priorità, un impegno ha un
+**giorno preciso** e un'ora. Sono due forme diverse — un progetto può durare un
+mese, un impegno no — e tenerli nella stessa tabella costringerebbe metà delle
+righe ad avere campi vuoti che non significano niente. È la stessa scelta del
+magazzino: sta in Progetti perché è una cosa da fare, ma in una tabella sua.
+
+La logica delle date sta nel modulo e non nelle rotte: la griglia del mese, i
+giorni di distanza e il promemoria sono **funzioni pure**, e si provano senza
+browser. Le rotte aggiungono solo persistenza, validazione e stato calcolato.
+
+Tre scelte deliberate, tutte con un motivo:
+
+- **Il promemoria è quanti giorni prima** (`reminder_days`), non una data di
+  avviso. Spostando l'impegno si sposta anche il promemoria, invece di lasciarlo
+  indietro: una data di avviso salvata a parte si disallinea al primo rinvio, ed è
+  proprio il caso in cui il promemoria smette di servire. Zero è "il giorno
+  stesso", una scelta legittima, non "nessun promemoria".
+- **`when_date` non si chiama `date`.** `date` è una funzione di SQLite (come
+  `time` e `datetime`): il nome funziona finché non lo si usa in un'espressione,
+  e allora l'errore arriva nel posto meno aspettato. Vale anche per la colonna
+  `time`, che convive con la funzione `time()`.
+- **Il colore è una categoria, non una decorazione.** Lavoro, casa, salute,
+  famiglia, altro: serve a leggere il mese a colpo d'occhio. La categoria è
+  **testo libero con suggerimenti**, e una chiave sconosciuta **ricade** sulla
+  predefinita invece di far perdere l'appuntamento — la stessa scelta fatta per
+  le FAQ. Il colore è un **nome di variabile CSS** (`--cat-lavoro`), non un
+  esadecimale: così il tema scuro la schiarisce da sola.
+
+Lo stato non si salva: si ricava dalla data a ogni lettura, come le scadenze
+delle pulizie e i giorni della spesa. Una colonna di appoggio si disallineerebbe
+al primo cambio d'ora. `stato_impegno` segue la **stessa convenzione di
+`igiene.scadenza`** — `giorni` negativo se è passato, 0 oggi, positivo se deve
+venire — così chi legge i due moduli non deve ricordarsi due regole diverse. E
+distingue due cose che sembrano una:
+
+- **`avvisa`** è il promemoria scattato: da `reminder_days` giorni prima fino al
+  giorno stesso. Dopo non avvisa più, perché un promemoria per una cosa già
+  successa non è un promemoria.
+- **`in_ritardo`** è la cosa passata e non chiusa: resta negli avvisi finché non
+  si spunta. Altrimenti un impegno mancato sparisce in silenzio, che è il modo
+  peggiore di fallire un promemoria.
+
+Gli avvisi in cima alla scheda (`prossimi`) **non sono "tutti i prossimi
+impegni"**: sono solo quelli scattati o in ritardo. Un promemoria per una cosa
+fra sei mesi non è un promemoria, e mostrarlo toglierebbe valore a quelli veri.
+
+Nella griglia del mese le **settimane sono intere**: si includono i giorni fuori
+dal mese (le code del precedente e del successivo), perché una riga che comincia
+a metà confonde più di quanto aiuti. `nel_mese` distingue quelli veri, così le
+code si mostrano spente. La griglia è **sette colonne fisse** anche su telefono —
+è un calendario, e un mese che comincia a metà riga deve lasciare il vuoto.
+
+`GET /api/appointments` serve il mese corrente, o quello chiesto con `?mese=`,
+o un giorno con `?giorno=`. La griglia si costruisce **sempre**, anche quando si
+chiede un giorno solo: il client disegna calendario ed elenco insieme, e senza
+griglia non saprebbe dove mettere il giorno scelto. Questo è stato trovato da un
+test, non leggendo il codice: il ramo `?giorno=` rispondeva senza `mese`, e il
+client andava in `KeyError`.
+
+`done` si tocca da solo, come per i progetti: spuntare un impegno non deve
+richiedere di rimandare titolo, data, categoria e promemoria. Un'ora scritta male
+si scarta (`_ora`), non fa rifiutare l'impegno: l'ora è facoltativa e l'impegno è
+la parte che conta.
+
+I test coprono la griglia (settimane intere, weekend, primo e ultimo giorno), i
+giorni di distanza, il promemoria, il ritardo, le frasi di quando, la categoria
+che ricade, i limiti del promemoria e l'ora tollerante — tutte funzioni pure — e
+poi le rotte per ciò che aggiungono: persistenza, validazione, `done` isolato,
+gli avvisi che sono solo i promemoria scattati, il 401 senza accesso e la tabella
+`appointments` che arriva anche a un database vecchio.
 
