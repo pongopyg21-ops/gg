@@ -34,6 +34,12 @@ from urllib.parse import urlparse
 # La playlist dell'utente e il feed delle notizie. Sono due indirizzi che
 # cambiano con la casa, non con il codice: si possono sostituire dall'ambiente
 # senza toccare il modulo, come le chiavi dei servizi.
+#
+# La playlist e' "GIAGIA-Max":
+#   https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R
+# Il feed Atom vuole il solo id (`list=...`), non l'indirizzo intero: l'id da
+# solo e' opaco, quindi l'indirizzo completo resta qui accanto perche' si possa
+# risalire a quale playlist sia.
 PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
 FEED_PREDEFINITO = "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml"
 

@@ -1643,7 +1643,9 @@ Le scelte che contano:
   numero di voci.
 
 Il feed e la playlist si possono sostituire dall'ambiente (`TV_FEED`,
-`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. I test non
+`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. I predefiniti
+sono la playlist **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
+il feed Atom vuole il solo `list=...`) e le notizie **ANSA mondo**. I test non
 toccano la rete: sostituiscono `tv._apri` con risposte preparate e provano
 l'interpretazione e la tenuta della cache, che sono le parti che sbagliano.
 
