@@ -40,14 +40,15 @@ App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 `allergens.py`, comandi vocali in `voice.py`, comprensione facoltativa col
 modello in `comprensione.py`, dati iniziali in `seed.py`, pulizie
 in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
-suggerimenti dalla dispensa in `dispensa.py`.
+suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso quattro sezioni:
-**Cucina**, **Igiene**, **Progetti**, **FAQ**. Piano, ricette, dispensa,
+L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
+**Cucina**, **Igiene**, **Progetti**, **FAQ**, **TV**. Piano, ricette, dispensa,
 spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
 **Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
 **Magazzino**; **FAQ** raccoglie le informazioni utili da consultare (Wi-Fi,
-indirizzi, contatti, codici).
+indirizzi, contatti, codici); **TV** raccoglie l'intrattenimento, cioè i video
+della playlist di casa e le notizie dal mondo (vedi `tv.py`).
 
 ## Comandi
 
@@ -1585,4 +1586,64 @@ Tre trappole, tutte già pagate:
 
 I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte col
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
+
+
+## La sezione TV: video e notizie
+
+`tv.py` tiene insieme due cose che non sono dati dell'app — la playlist YouTube
+della casa e le notizie dal mondo (ANSA) — perché vivono nella stessa sezione e
+hanno lo stesso problema: **la rete**. Un feed si sposta, un sito cambia, e la
+casa può restare senza connessione. La regola è una e vale per entrambe: quello
+che si è già scaricato **resta**, e un guasto di rete non deve svuotare la
+sezione. Si mostra l'ultima copia buona e si riprova più tardi.
+
+Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per i
+due formati (Atom per la playlist, RSS per le notizie). Sono formati semplici, e
+una libreria in più sarebbe una cosa da aggiornare per leggere cinque campi.
+
+Le notizie sono **max dieci** e si rinnovano **una volta al giorno**; i video una
+volta al giorno anche loro. Si mostra titolo, sommario breve e rimando alla
+fonte, non l'articolo: il testo è di chi lo scrive.
+
+Le scelte che contano:
+
+- **La copia sta nel database della casa** (`tv_cache`, due righe: `video` e
+  `notizie`), non in memoria: un riavvio del server non deve costringere a
+  riscaricare, e soprattutto la sezione non deve restare vuota se in quel
+  momento la rete non c'è. È la stessa idea delle copie automatiche.
+- **`GET /api/tv` non aspetta la rete.** Serve la cache e, se è vecchia, riprova
+  in un filo **dopo** aver risposto. Una pagina che aspetta il feed di un sito
+  altrui si pianta quando quel sito è lento, ed è proprio il momento in cui
+  l'utente pensa che l'app sia rotta. Il pulsante **Aggiorna** (`POST
+  /api/tv/aggiorna`) invece aspetta, perché è l'utente a chiederlo, e riporta
+  l'esito: un aggiornamento che non ha portato niente di nuovo non deve sembrare
+  riuscito.
+- **Lo scaricamento fallito non svuota la cache.** `_aggiorna` cattura
+  `NonDisponibile` e lascia la copia vecchia: è l'unica cosa che non si deve
+  perdere, perché è quella che fa funzionare la sezione senza rete. Una playlist
+  senza voci (privata, cancellata) è `NonDisponibile`, non una lista vuota, per
+  lo stesso motivo.
+- **Un lucchetto per chiave** (`_lucchetto`): il giro di avvio, la richiesta
+  della pagina e il pulsante possono chiedere lo stesso scaricamento insieme, e
+  senza questo partirebbero due volte per la stessa cosa.
+- **All'avvio si aggiornano tutte le case** (`avvia_tv`, come
+  `avvia_copie_automatiche`), non solo quella che si sta guardando: la sezione
+  deve essere pronta quando si entra.
+- **Il player è `youtube-nocookie`**: la pagina della casa non deve consegnare a
+  YouTube i cookie di chi la apre per il solo fatto di mostrare un video. Gli
+  iframe sono `loading="lazy"`: quindici player caricati insieme sono quindici
+  volte il lavoro di uno.
+- **La fonte si legge dal nome, non dal titolo del feed.** Il titolo di un feed
+  è per un lettore di feed — "RSS di Mondo  - ANSA.it" — e accanto a una notizia
+  ci vuole "ANSA.it": `_nome_fonte` prende l'ultimo pezzo dopo il trattino.
+- **Il namespace si passa a `find`.** Nel feed Atom di YouTube l'id è `yt:videoId`:
+  senza la mappa dei namespace `find` cerca il tag letterale, non trova niente, e
+  la playlist sembra senza video. È un difetto che non si vede leggendo il codice
+  e che è già costato un giro: per questo c'è un test sui campi, non solo sul
+  numero di voci.
+
+Il feed e la playlist si possono sostituire dall'ambiente (`TV_FEED`,
+`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. I test non
+toccano la rete: sostituiscono `tv._apri` con risposte preparate e provano
+l'interpretazione e la tenuta della cache, che sono le parti che sbagliano.
 

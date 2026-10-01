@@ -5,12 +5,13 @@ della spesa — insieme alle altre aree di casa.
 
 ## Sezioni
 
-L'app si apre su una **pagina iniziale** con quattro aree:
+L'app si apre su una **pagina iniziale** con cinque aree:
 
 - **🍳 Cucina** — piano pasti, ricette, dispensa, lista della spesa, profilo e comandi vocali.
 - **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
 - **📋 Progetti** — lavori in corso e idee, con il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
 - **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
+- **📺 TV** — intrattenimento: i video della playlist di casa e le notizie dal mondo (ANSA), aggiornate una volta al giorno.
 
 Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non si
 mescolano. Il pulsante vocale 🎙 resta raggiungibile da ogni area, e in home c'è

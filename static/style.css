@@ -1594,3 +1594,49 @@ button { transition: transform .12s ease; }
   .storage-head { flex-wrap: wrap; }
   .storage-qty { order: 3; }
 }
+
+/* ---------- TV ----------
+   I video sono incorporati, quindi ognuno e' un riquadro 16:9. La griglia ne
+   mette due per riga sullo schermo largo e **uno** sul telefono: due player
+   affiancati su 390px sarebbero due francobolli. */
+.tv-video {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px; margin-bottom: 28px;
+}
+
+.tv-video-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+/* Il rapporto lo tiene il contenitore, non l'iframe: e' il modo che non
+   dipende da un'altezza fissa, e il player resta 16:9 a ogni larghezza. */
+.tv-embed { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+.tv-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+.tv-video-info { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; }
+.tv-video-titolo { font-weight: 600; font-size: 14px; line-height: 1.35; }
+.tv-video-sotto { font-size: 12px; color: var(--muted); }
+
+.tv-notizie { display: flex; flex-direction: column; gap: 2px; }
+.tv-notizia a {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 12px; text-decoration: none; color: inherit;
+  border: 1px solid transparent; border-radius: var(--radius);
+  border-bottom: 1px solid var(--line);
+  /* il bersaglio toccabile: sotto i 42px una voce di elenco si manca */
+  min-height: 42px;
+}
+.tv-notizia a:hover { border-color: var(--accent); background: var(--accent-soft); }
+.tv-notizia-titolo { font-weight: 600; font-size: 14px; line-height: 1.4; }
+.tv-notizia-sommario { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.tv-notizia-fonte { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
+
+.tv-vuoto { color: var(--muted); font-size: 14px; padding: 10px 0; }
+.tv-aggiornato { font-size: 12px; color: var(--muted); }
+
+@media (max-width: 560px) {
+  .tv-video { grid-template-columns: 1fr; }
+}
+

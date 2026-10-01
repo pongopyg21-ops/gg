@@ -80,10 +80,10 @@
   </div>
 </section>
 
-<!-- Pagina iniziale: smista verso le quattro aree dell'app. Gli ambiti sono
-     diversi (la cucina, l'igiene, i progetti, le informazioni) e le funzioni di
-     ciascuno vivono dentro la propria sezione: qui non c'e' nessuna scheda,
-     solo la scelta. -->
+<!-- Pagina iniziale: smista verso le aree dell'app. Gli ambiti sono
+     diversi (la cucina, l'igiene, i progetti, le informazioni, lo svago) e le
+     funzioni di ciascuno vivono dentro la propria sezione: qui non c'e' nessuna
+     scheda, solo la scelta. -->
 <section id="home" class="home hidden">
   <header class="home-hero">
     <p class="home-kicker">Benvenuto</p>
@@ -130,6 +130,13 @@
         contatti e codici, senza doverli cercare ogni volta.</span>
       <span class="home-go">Apri →</span>
     </button>
+    <button class="home-card" data-section="tv">
+      <span class="home-emoji">📺</span>
+      <span class="home-name">TV</span>
+      <span class="home-desc">Intrattenimento: la playlist di casa e le notizie
+        dal mondo, aggiornate ogni giorno.</span>
+      <span class="home-go">Apri →</span>
+    </button>
   </div>
 </section>
 
@@ -151,6 +158,7 @@
   <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
+  <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
 </nav>
 
 <main>
@@ -394,6 +402,28 @@
         </button>
       </div>
     </div>
+  </section>
+
+  <!-- TV -->
+  <section id="tab-intrattenimento" class="tab">
+    <div class="toolbar">
+      <strong>Intrattenimento</strong>
+      <span class="spacer"></span>
+      <span id="tv-aggiornato" class="tv-aggiornato"></span>
+      <button id="tv-aggiorna" type="button" title="Riscarica video e notizie">Aggiorna</button>
+    </div>
+
+    <!-- I video partono qui dentro, senza uscire dall'app: e' quello che rende
+         la sezione utile in cucina, dove si vuole schiacciare «play» e basta.
+         `loading="lazy"` fa scaricare il player solo quando lo si raggiunge
+         scorrendo: quindici player caricati insieme sono quindici volte il
+         lavoro di uno. -->
+    <h3 class="section-title">Playlist di casa</h3>
+    <div id="tv-video" class="tv-video"></div>
+
+    <h3 class="section-title">Notizie dal mondo</h3>
+    <p class="hint">Le ultime dieci, aggiornate una volta al giorno.</p>
+    <div id="tv-notizie" class="tv-notizie"></div>
   </section>
 
 </main>

@@ -143,6 +143,7 @@ const SEZIONI = {
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
+  tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
 };
 
 function apriSezione(nome) {
@@ -211,7 +212,88 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'progetti') renderProgetti();
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
+  if (btn.dataset.tab === 'intrattenimento') renderTv();
 }));
+
+/* ---------- TV ----------
+   La sezione TV: i video della playlist incorporati (si guardano dentro l'app,
+   senza passare da YouTube) e sotto le notizie del giorno.
+
+   Il server serve sempre quello che ha gia' in cache e aggiorna in sottofondo,
+   quindi qui non c'e' nessuna attesa di rete da gestire: si disegna quello che
+   arriva, anche quando e' vuoto. Il pulsante «Aggiorna» invece aspetta, perche'
+   e' l'utente a chiederlo. */
+async function renderTv() {
+  try {
+    let d = await api('/api/tv');
+    // Al primissimo avvio in assoluto la cache puo' essere ancora vuota mentre
+    // il server la riempie in sottofondo: si riprova qualche volta invece di
+    // mostrare «nessun video» e sembrare rotta. Non si chiama l'aggiornamento
+    // bloccante: la sezione non deve mai restare appesa a un sito esterno.
+    for (let tentativo = 0; tentativo < 4 && !d.video.length && !d.notizie.length; tentativo++) {
+      $('#tv-video').innerHTML = '<p class="tv-vuoto">Sto caricando…</p>';
+      await new Promise((r) => setTimeout(r, 2000));
+      d = await api('/api/tv');
+    }
+    disegnaTv(d);
+  } catch (_e) {
+    $('#tv-video').innerHTML = '';
+    $('#tv-notizie').innerHTML = '';
+    toast('Non riesco a caricare la sezione TV.');
+  }
+}
+
+function disegnaTv(d) {
+  const video = d.video || [];
+  const notizie = d.notizie || [];
+
+  $('#tv-video').innerHTML = video.length ? video.map((v) => `
+    <article class="tv-video-card">
+      <div class="tv-embed">
+        <iframe src="${esc(v.embed)}" title="${esc(v.titolo)}" loading="lazy"
+                allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen></iframe>
+      </div>
+      <div class="tv-video-info">
+        <span class="tv-video-titolo">${esc(v.titolo)}</span>
+        <span class="tv-video-sotto">${esc(v.autore || '')}${v.data ? ` · ${esc(v.data)}` : ''}</span>
+      </div>
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessun video disponibile. Premi «Aggiorna» fra poco.</p>`;
+
+  $('#tv-notizie').innerHTML = notizie.length ? notizie.map((n) => `
+    <article class="tv-notizia">
+      <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
+        <span class="tv-notizia-titolo">${esc(n.titolo)}</span>
+        ${n.sommario ? `<span class="tv-notizia-sommario">${esc(n.sommario)}</span>` : ''}
+        <span class="tv-notizia-fonte">${esc(n.fonte || '')}${
+          n.data ? ` · ${esc(n.data.slice(0, 10))}` : ''} · apri la fonte ↗</span>
+      </a>
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessuna notizia disponibile. Premi «Aggiorna» fra poco.</p>`;
+
+  // quando sono state prese le copie: senza, non si sa se si sta guardando
+  // quello di oggi o quello di una settimana fa
+  const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
+  $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
+}
+
+$('#tv-aggiorna').addEventListener('click', async () => {
+  const btn = $('#tv-aggiorna');
+  btn.disabled = true;
+  btn.textContent = 'Aggiorno…';
+  try {
+    const d = await api('/api/tv/aggiorna', { method: 'POST' });
+    disegnaTv(d);
+    const nuovo = d.aggiornati && (d.aggiornati.video || d.aggiornati.notizie);
+    if (!nuovo) toast('Niente di nuovo: la fonte non ha risposto.');
+  } catch (_e) {
+    toast('Aggiornamento non riuscito.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aggiorna';
+  }
+});
 
 /* ---------- PIANO ---------- */
 let planCache = [];

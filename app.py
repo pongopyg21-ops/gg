@@ -25,6 +25,7 @@ import houses
 import igiene
 import magazzino
 import ricette_online
+import tv
 import units
 import voice
 import voce_cloud
@@ -290,6 +291,11 @@ def migrate(db):
     # `llm_prefs` e' una tabella **nuova**: `CREATE TABLE IF NOT EXISTS` la crea
     # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
     # aggiunge una **colonna** a quella tabella la aggiunga anche in questo blocco.
+    #
+    # Vale lo stesso per `tv_cache`: e' nuova, quindi la crea lo schema su ogni
+    # casa. `tv.py` legge comunque in modo tollerante (una tabella assente si
+    # comporta come cache vuota), cosi' la sezione non cade se `get_db()` non e'
+    # ancora passata di li'.
 
 
 def _semina_pulizie(db):
@@ -521,6 +527,89 @@ def api_copie():
 
     file = copie.elenco(slug)
     return jsonify({"attive": True, **file})
+
+
+@app.route("/api/tv")
+def api_tv():
+    """La sezione TV: i video della playlist e le notizie del giorno.
+
+    Non si aspetta la rete: si serve quello che c'e' in cache (che `avvia_tv()`
+    ha gia' aggiornato all'avvio) e si riprova **dopo** aver risposto, in un
+    filo. Una pagina che aspetta il feed di un sito altrui si pianta quando quel
+    sito e' lento, ed e' esattamente il momento in cui l'utente pensa che l'app
+    sia rotta.
+
+    Se la cache e' vuota e la rete non c'e', la risposta e' comunque 200 con due
+    elenchi vuoti: e' una sezione da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_tv_in_sottofondo(db)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
+        "notizie": tv.notizie(db),
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+    })
+
+
+@app.route("/api/tv/aggiorna", methods=["POST"])
+def api_tv_aggiorna():
+    """Riscarica subito video e notizie, senza aspettare il giro quotidiano.
+
+    Il pulsante "Aggiorna" della sezione. A differenza di `/api/tv` questo
+    **aspetta** la rete: e' l'utente che l'ha chiesto, quindi la risposta lenta
+    e' quello che si aspetta di vedere. Se non c'e' rete risponde lo stesso, con
+    quello che aveva, e lo dice: un aggiornamento che non ha portato niente
+    nuovo non deve sembrare riuscito.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    esito = tv.aggiorna(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "aggiornati": esito,
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
+        "notizie": tv.notizie(db),
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+    })
+
+
+def _iso(quando):
+    """Da secondi dall'epoca a una data leggibile, per dirlo nella sezione."""
+    if not quando:
+        return None
+    return datetime.datetime.fromtimestamp(quando).isoformat(timespec="minutes")
+
+
+def _aggiorna_tv_in_sottofondo(db):
+    """Riprova a scaricare senza far aspettare chi ha aperto la sezione.
+
+    Il filo e' un demone e non tocca il database di questa richiesta: ne apre
+    uno suo, perche' la connessione di Flask vive quanto la richiesta e chiuderla
+    sotto i piedi del filo sarebbe un errore. Lo scaricamento e' `forse=False`
+    solo quando la copia e' vecchia, quindi nella pratica quasi sempre non fa
+    niente.
+    """
+    _, quando = tv._leggi(db, "notizie")
+    _, video_quando = tv._leggi(db, "video")
+    if tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO):
+        return
+    percorso = db.execute("PRAGMA database_list").fetchone()[2]
+
+    def scarica():
+        try:
+            with closing(sqlite3.connect(percorso)) as suo:
+                suo.row_factory = sqlite3.Row
+                tv.aggiorna(suo, forse=True)
+        except Exception:
+            # un guasto di rete non deve lasciare traccia di errore in un
+            # percorso che l'utente non ha nemmeno chiesto
+            app.logger.debug("Aggiornamento TV in sottofondo non riuscito")
+
+    threading.Thread(target=scarica, name="tv-aggiornamento", daemon=True).start()
 
 
 @app.route("/api/houses")
@@ -2847,6 +2936,45 @@ def avvia_copie_automatiche():
     threading.Thread(target=ciclo, name="copie-automatiche", daemon=True).start()
 
 
+def avvia_tv():
+    """Scarica video e notizie all'avvio, e poi una volta al giorno.
+
+    Il primo giro parte **subito**: un server appena installato non ha ancora
+    nessuna copia, ed e' proprio la prima che serve quando si apre la sezione.
+    I giri successivi non scaricano a vuoto, perche' `tv.aggiorna` salta quello
+    che e' gia' fresco.
+
+    Si aggiornano **tutte le case**, non solo quella che si sta guardando: la
+    sezione deve essere pronta quando si entra, invece di scaricarsi davanti a
+    chi l'ha aperta. E' lo stesso motivo per cui la copia automatica non si fa
+    quando l'utente preme un pulsante.
+    """
+    def giro():
+        for casa in houses.elenco():
+            slug = casa.get("slug")
+            try:
+                percorso = houses.db_path(slug)
+                if not os.path.exists(percorso):
+                    continue
+                # la tabella della cache puo' non esistere ancora, su una casa
+                # che nessuno ha mai aperto dopo l'aggiornamento
+                init_db(percorso)
+                with closing(sqlite3.connect(percorso)) as db:
+                    db.row_factory = sqlite3.Row
+                    tv.aggiorna(db, forse=True)
+            except Exception:
+                # un guasto di rete su una casa non deve fermare le altre
+                app.logger.debug("TV non aggiornata per la casa %s", slug)
+
+    def ciclo():
+        giro()
+        while True:
+            time.sleep(3600)
+            giro()
+
+    threading.Thread(target=ciclo, name="tv", daemon=True).start()
+
+
 def avvia():
     """Avvia il server.
 
@@ -2907,4 +3035,5 @@ if __name__ == "__main__":
     migra_case()
     prepara_database_storico()
     avvia_copie_automatiche()
+    avvia_tv()
     avvia()

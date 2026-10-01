@@ -7326,3 +7326,211 @@ async function avviaAccesso() { log.push('avviaAccesso'); }
     assert e["anonimo"] == ["avviaAccesso"], e
     assert e["init-giu"] == ["registra", "mostraErroreApp"], e
     assert e["collegato"] == ["init-ok"], e
+
+
+# ---------------------------------------------------------------- tv
+# La sezione TV legge due fonti esterne: la playlist YouTube e il feed ANSA.
+# I test non toccano la rete: sostituiscono `tv._apri` con risposte preparate.
+# Si prova l'interpretazione e la tenuta della cache, che sono le parti che
+# sbagliano; che YouTube e ANSA rispondano non e' una cosa che si prova qui.
+import tv  # noqa: E402
+
+FEED_PLAYLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"
+      xmlns="http://www.w3.org/2005/Atom">
+  <title>GIAGIA-Max</title>
+  <entry>
+    <yt:videoId>aaa111</yt:videoId>
+    <title>Primo video</title>
+    <author><name>Canale Uno</name></author>
+    <published>2026-01-02T10:00:00+00:00</published>
+  </entry>
+  <entry>
+    <yt:videoId>bbb222</yt:videoId>
+    <title>Secondo video</title>
+    <author><name>Canale Due</name></author>
+    <published>2026-03-04T10:00:00+00:00</published>
+  </entry>
+</feed>"""
+
+FEED_NOTIZIE = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>RSS di Mondo  - ANSA.it</title>
+  <item>
+    <title>Notizia vecchia</title>
+    <link>https://esempio.invalid/vecchia</link>
+    <description>Sommario vecchio</description>
+    <pubDate>Mon, 01 Jan 2026 08:00:00 +0100</pubDate>
+  </item>
+  <item>
+    <title>Notizia nuova</title>
+    <link>https://esempio.invalid/nuova</link>
+    <description>Sommario nuovo</description>
+    <pubDate>Thu, 02 Apr 2026 09:30:00 +0200</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def finta_tv(monkeypatch, risposte):
+    """Sostituisce la lettura di rete di `tv` con risposte preparate.
+
+    Le chiavi sono gli indirizzi; un indirizzo non previsto solleva
+    `NonDisponibile`, cosi' un test che sbaglia indirizzo se ne accorge invece
+    di scaricare davvero."""
+    def apri(url):
+        if url not in risposte:
+            raise tv.NonDisponibile(f"indirizzo di prova non previsto: {url}")
+        return risposte[url].encode("utf-8")
+    monkeypatch.setattr(tv, "_apri", apri)
+
+
+def _url_playlist():
+    return f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.playlist_id()}"
+
+
+def test_i_video_della_playlist_si_leggono_con_i_loro_campi(client, monkeypatch):
+    """Il feed Atom della playlist: id, titolo, autore e data.
+
+    La trappola e' il namespace `yt:`: senza passare la mappa dei namespace a
+    `find`, ogni campo torna vuoto e la playlist sembra senza video — e' il
+    difetto che c'e' stato davvero, e non si vede leggendo il codice."""
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST})
+    video = tv.video_playlist()
+    assert [v["id"] for v in video] == ["aaa111", "bbb222"]
+    assert video[0]["titolo"] == "Primo video"
+    assert video[0]["autore"] == "Canale Uno"
+    assert video[0]["data"] == "2026-01-02"
+
+
+def test_una_playlist_senza_video_e_un_guasto_non_una_sezione_vuota(client, monkeypatch):
+    """Una playlist privata o cancellata risponde senza voci: e' `NonDisponibile`,
+    non una lista vuota, cosi' chi chiama tiene la copia vecchia invece di
+    sovrascriverla con il vuoto."""
+    finta_tv(monkeypatch, {_url_playlist(): "<feed xmlns='http://www.w3.org/2005/Atom'></feed>"})
+    with pytest.raises(tv.NonDisponibile):
+        tv.video_playlist()
+
+
+def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatch):
+    """Il tetto e' dieci e l'ordine e' per data, non quello del feed: una fonte
+    che cambia ordine non deve mostrare le notizie vecchie in cima."""
+    voci = "".join(
+        f"<item><title>N{i}</title><link>https://esempio.invalid/{i}</link>"
+        f"<description>S{i}</description>"
+        f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
+        for i in range(1, 16))
+    feed = f"<rss version='2.0'><channel><title>Prova</title>{voci}</channel></rss>"
+    finta_tv(monkeypatch, {tv.feed_url(): feed})
+    notizie = tv.notizie_dal_feed()
+    assert len(notizie) == tv.MAX_NOTIZIE == 10
+    date = [n["data"] for n in notizie]
+    assert date == sorted(date, reverse=True)
+
+
+def test_il_nome_della_fonte_e_quello_che_si_mostra_non_il_titolo_del_feed(client, monkeypatch):
+    """Il titolo di un feed e' per un lettore di feed: "RSS di Mondo  - ANSA.it".
+    Accanto a una notizia ci vuole "ANSA.it"."""
+    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    notizie = tv.notizie_dal_feed()
+    assert notizie[0]["fonte"] == "ANSA.it"
+    assert notizie[0]["titolo"] == "Notizia nuova"
+
+
+def test_il_sommario_lungo_si_taglia_sulla_parola(client, monkeypatch):
+    """Un sommario tagliato a meta' parola si nota subito: si taglia sul confine."""
+    lungo = "parola " * 60
+    feed = (f"<rss version='2.0'><channel><title>Prova</title><item>"
+            f"<title>T</title><link>https://esempio.invalid/a</link>"
+            f"<description>{lungo}</description>"
+            f"<pubDate>Thu, 02 Apr 2026 09:30:00 +0200</pubDate></item>"
+            f"</channel></rss>")
+    finta_tv(monkeypatch, {tv.feed_url(): feed})
+    sommario = tv.notizie_dal_feed()[0]["sommario"]
+    assert sommario.endswith("…")
+    assert len(sommario) <= tv.MAX_SOMMARIO + 1
+    assert not sommario[:-1].endswith(" ")
+
+
+def test_la_cache_tiene_la_copia_vecchia_se_la_rete_non_risponde(client, monkeypatch):
+    """E' la proprieta' che tiene in piedi la sezione: se la rete manca, quello
+    che si era scaricato **resta**. Svuotarlo sarebbe il danno peggiore, perche'
+    e' proprio la copia che serve quando non c'e' connessione."""
+    db = app_module.get_db()
+    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    assert tv.aggiorna_notizie(db, forse=False) is True
+    quante = len(tv.notizie(db))
+    assert quante == 2
+
+    # ora la rete non risponde piu': la copia deve restare
+    monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    assert tv.aggiorna_notizie(db, forse=False) is False
+    assert len(tv.notizie(db)) == quante
+
+
+def test_non_si_riscarica_se_la_copia_e_fresca(client, monkeypatch):
+    """Una volta al giorno, non a ogni apertura: senza questo, ogni volta che si
+    apre la sezione si chiamerebbe un sito altrui."""
+    db = app_module.get_db()
+    chiamate = {"n": 0}
+
+    def apri(url):
+        chiamate["n"] += 1
+        return FEED_NOTIZIE.encode("utf-8")
+    monkeypatch.setattr(tv, "_apri", apri)
+
+    assert tv.aggiorna_notizie(db, forse=True) is True
+    assert chiamate["n"] == 1
+    assert tv.aggiorna_notizie(db, forse=True) is False
+    assert chiamate["n"] == 1, "una copia fresca non si riscarica"
+
+
+def test_l_endpoint_tv_richiede_l_accesso(anon):
+    """La sezione TV sta dietro l'accesso come tutto il resto: non e' un dato
+    della casa, ma nemmeno una pagina pubblica da lasciare aperta."""
+    assert anon.get("/api/tv").status_code == 401
+    assert anon.post("/api/tv/aggiorna").status_code == 401
+
+
+def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
+    """L'endpoint non aspetta la rete: serve quello che c'e' e basta. Ogni video
+    porta anche l'indirizzo del player, e il player e' `youtube-nocookie`, cosi'
+    la pagina della casa non consegna i cookie a YouTube per il solo fatto di
+    mostrare un video."""
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_url(): FEED_NOTIZIE})
+    db = app_module.get_db()
+    tv.aggiorna(db, forse=False)
+
+    d = client.get("/api/tv").get_json()
+    assert len(d["video"]) == 2
+    assert d["video"][0]["embed"] == "https://www.youtube-nocookie.com/embed/aaa111"
+    assert len(d["notizie"]) == 2
+    assert d["aggiornato"]["notizie"]
+
+
+def test_l_endpoint_tv_non_cade_se_non_c_e_niente(client, monkeypatch):
+    """Cache vuota e rete assente: 200 con due elenchi vuoti. E' una sezione da
+    riempire, non un guasto da mostrare a chi apre l'app."""
+    monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    r = client.get("/api/tv")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["video"] == [] and d["notizie"] == []
+
+
+def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkeypatch):
+    """Il pulsante «Aggiorna» aspetta la rete e riporta l'esito: un aggiornamento
+    che non ha portato niente di nuovo non deve sembrare riuscito."""
+    monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    d = client.post("/api/tv/aggiorna").get_json()
+    assert d["aggiornati"] == {"video": False, "notizie": False}
+
+
+def test_il_database_vecchio_riceve_la_tabella_della_cache(client):
+    """`tv_cache` e' una tabella nuova: `CREATE TABLE IF NOT EXISTS` la crea su
+    ogni casa, vecchia o nuova. Se non arrivasse, la sezione TV fallirebbe solo
+    sulle case con piu' dati — il posto peggiore."""
+    db = app_module.get_db()
+    tabelle = {r["name"] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "tv_cache" in tabelle
+
