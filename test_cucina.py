@@ -6542,6 +6542,40 @@ def test_verifica_pubblico_controlla_le_tre_cose(client):
     assert 'set "DIETRO_PROXY=1"' in ps1
 
 
+def test_avvia_bat_annuncia_il_modello(client):
+    """`avvia.bat` deve dire da solo se il modello di casa e' pronto.
+
+    Il sintomo «il modello non capisce» ha tre cause (Ollama spento, modello non
+    scaricato, interruttore spento) e l'app le confonde in silenzio: senza un
+    controllo all'avvio si crede che Ollama sia configurato mentre l'interruttore
+    e' spento. Il lavoro sta in `modello.ps1` (come `indirizzo.ps1`), e il `.bat`
+    lo chiama."""
+    bat = open(f"{BASE_APP}/windows/avvia.bat", encoding="utf-8").read()
+    assert "modello.ps1" in bat, "avvia.bat non annuncia lo stato del modello"
+
+
+def test_verifica_modello_guarda_le_tre_cause(client):
+    """`verifica-modello.bat` separa le tre cause che danno lo stesso sintomo.
+
+    Deve guardare: se Ollama risponde, se il modello che l'app si aspetta e'
+    scaricato, e — quando tutto e' pronto — che resta l'interruttore. La
+    configurazione si chiede all'app (`comprensione`), non si riscrive nello
+    script: due copie della stessa regola divergono, e allora lo stato mente."""
+    bat = open(f"{BASE_APP}/windows/verifica-modello.bat", encoding="utf-8").read()
+    ps1 = open(f"{BASE_APP}/windows/modello.ps1", encoding="utf-8").read()
+    # il .bat non fa il lavoro: chiama il .ps1 accanto a se'
+    assert "modello.ps1" in bat
+    # 1. Ollama che risponde: l'elenco dei modelli sta in /api/tags, non in /v1
+    assert "/api/tags" in ps1
+    # 2. il modello atteso: chiesto all'app, non scritto a mano qui
+    assert "import comprensione" in ps1
+    assert "c.modello()" in ps1
+    # 3. l'interruttore, che e' la causa piu' frequente del "non capisce"
+    assert "Capire i comandi" in ps1
+    # e l'invito a scaricare il modello giusto, quando manca
+    assert "ollama pull" in ps1
+
+
 def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
     """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
     proprio quando non si possono usare le mani, e un'area senza pulsante e' una

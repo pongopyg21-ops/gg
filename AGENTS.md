@@ -319,6 +319,17 @@ cose con gli strumenti di Windows.
   niente e non tocca i segreti. Serve perche' le tre cause (tunnel, app spenta,
   proxy non dichiarato) si confondono fra loro, e il tunnel resta attivo anche
   ad app spenta.
+- `windows\verifica-modello.bat` (+ `windows\modello.ps1`) — controlla se il
+  modello di casa (Ollama) e' pronto: se risponde, se il modello che l'app si
+  aspetta e' scaricato, e — quando tutto c'e' — che resta da accendere
+  l'interruttore in **Profilo > Capire i comandi**. `avvia.bat` lo chiama a ogni
+  avvio (poche righe, senza fermare la finestra). La configurazione si **chiede
+  all'app** (`import comprensione`), non si riscrive nello script: due copie
+  della stessa regola divergono, e allora lo stato all'avvio mente — la stessa
+  scelta di `avvia.sh` per la voce Azure. Serve perche' il sintomo «il modello
+  non capisce» ha tre cause (Ollama spento, modello non scaricato, interruttore
+  spento) che danno lo stesso effetto, e l'interruttore spento — il piu'
+  frequente, perche' parte a `0` — non produce nessun avviso.
 
 Cose che sembrano dettagli e non lo sono:
 
