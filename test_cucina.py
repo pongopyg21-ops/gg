@@ -2795,6 +2795,36 @@ def test_una_ricetta_senza_ingredienti_non_e_un_suggerimento():
     assert esito["suggerimenti"] == []
 
 
+def test_la_dispensa_vuota_lo_dice_invece_di_tacere(client):
+    """Il riquadro dei suggerimenti con la dispensa vuota resta nascosto e sembra
+    che la funzione non esista: si esegue `renderSuggerimenti` vera con node, con
+    la risposta del server, e si guarda cosa finisce nella pagina."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    codice = _estrai_funzione_js(js, "renderSuggerimenti")
+    preludio = """
+let contenuto = '';
+function $(sel) { return { set innerHTML(v) { contenuto = v; },
+                            get innerHTML() { return contenuto; } }; }
+function esc(s) { return String(s); }
+let risposta = { dispensa: 0, suggerimenti: [] };
+async function api() { return risposta; }
+"""
+    coda = """
+(async () => {
+  await renderSuggerimenti();
+  const vuota = contenuto;
+  risposta = { dispensa: 4, suggerimenti: [] };
+  await renderSuggerimenti();
+  console.log(JSON.stringify({ vuota: vuota, piena: contenuto }));
+})();
+"""
+    d = _esegui_node(preludio + codice + coda)
+    # con la dispensa vuota si dice cosa fare, invece di lasciare il vuoto
+    assert "Aggiungi qualche ingrediente" in d["vuota"]
+    # con la dispensa piena ma nessuna ricetta fattibile il riquadro resta pulito
+    assert d["piena"] == ""
+
+
 # --------------------------------------------- tempi e costo della ricetta
 def test_i_due_tempi_e_il_costo_si_salvano_e_si_rileggono(client):
     r = client.post("/api/recipes", json={
@@ -7421,7 +7451,7 @@ def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatc
         f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
         for i in range(1, 16))
     feed = f"<rss version='2.0'><channel><title>Prova</title>{voci}</channel></rss>"
-    finta_tv(monkeypatch, {tv.feed_url(): feed})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: feed})
     notizie = tv.notizie_dal_feed()
     assert len(notizie) == tv.MAX_NOTIZIE == 10
     date = [n["data"] for n in notizie]
@@ -7431,7 +7461,7 @@ def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatc
 def test_il_nome_della_fonte_e_quello_che_si_mostra_non_il_titolo_del_feed(client, monkeypatch):
     """Il titolo di un feed e' per un lettore di feed: "RSS di Mondo  - ANSA.it".
     Accanto a una notizia ci vuole "ANSA.it"."""
-    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
     notizie = tv.notizie_dal_feed()
     assert notizie[0]["fonte"] == "ANSA.it"
     assert notizie[0]["titolo"] == "Notizia nuova"
@@ -7445,7 +7475,7 @@ def test_il_sommario_lungo_si_taglia_sulla_parola(client, monkeypatch):
             f"<description>{lungo}</description>"
             f"<pubDate>Thu, 02 Apr 2026 09:30:00 +0200</pubDate></item>"
             f"</channel></rss>")
-    finta_tv(monkeypatch, {tv.feed_url(): feed})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: feed})
     sommario = tv.notizie_dal_feed()[0]["sommario"]
     assert sommario.endswith("…")
     assert len(sommario) <= tv.MAX_SOMMARIO + 1
@@ -7457,7 +7487,7 @@ def test_la_cache_tiene_la_copia_vecchia_se_la_rete_non_risponde(client, monkeyp
     che si era scaricato **resta**. Svuotarlo sarebbe il danno peggiore, perche'
     e' proprio la copia che serve quando non c'e' connessione."""
     db = app_module.get_db()
-    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
     assert tv.aggiorna_notizie(db, forse=False) is True
     quante = len(tv.notizie(db))
     assert quante == 2
@@ -7479,10 +7509,11 @@ def test_non_si_riscarica_se_la_copia_e_fresca(client, monkeypatch):
         return FEED_NOTIZIE.encode("utf-8")
     monkeypatch.setattr(tv, "_apri", apri)
 
+    quanti_feed = len(tv.feed_urls())
     assert tv.aggiorna_notizie(db, forse=True) is True
-    assert chiamate["n"] == 1
+    assert chiamate["n"] == quanti_feed
     assert tv.aggiorna_notizie(db, forse=True) is False
-    assert chiamate["n"] == 1, "una copia fresca non si riscarica"
+    assert chiamate["n"] == quanti_feed, "una copia fresca non si riscarica"
 
 
 def test_l_endpoint_tv_richiede_l_accesso(anon):
@@ -7497,7 +7528,7 @@ def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
     porta anche l'indirizzo del player, e il player e' `youtube-nocookie`, cosi'
     la pagina della casa non consegna i cookie a YouTube per il solo fatto di
     mostrare un video."""
-    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_urls()[0]: FEED_NOTIZIE})
     db = app_module.get_db()
     tv.aggiorna(db, forse=False)
 
@@ -7516,6 +7547,96 @@ def test_l_endpoint_tv_non_cade_se_non_c_e_niente(client, monkeypatch):
     assert r.status_code == 200
     d = r.get_json()
     assert d["video"] == [] and d["notizie"] == []
+
+
+def _feed(titolo, voci):
+    return (f"<rss version='2.0'><channel><title>{titolo}</title>"
+            + "".join(voci) + "</channel></rss>")
+
+
+def _voce(n, data="Mon, 01 Jan 2026 08:00:00 +0100"):
+    return (f"<item><title>{n}</title><link>https://esempio.invalid/{n}</link>"
+            f"<description>S {n}</description><pubDate>{data}</pubDate></item>")
+
+
+def test_le_notizie_vengono_da_piu_sezioni_e_si_unisono(client, monkeypatch):
+    """Le notizie arrivano da piu' sezioni ANSA (mondo, cronaca, politica,
+    economia): con una sola il mondo lascia fuori quello che succede in Italia.
+    L'elenco unico si riordina per data, non per sezione."""
+    u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/cronaca"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it",
+                  [_voce("mondo-vecchia", "Mon, 01 Jan 2026 08:00:00 +0100")]),
+        u2: _feed("RSS di Cronaca  - ANSA.it",
+                  [_voce("italia-nuova", "Thu, 02 Apr 2026 09:00:00 +0200")]),
+    })
+    notizie = tv.notizie_dal_feed()
+    assert [n["titolo"] for n in notizie] == ["italia-nuova", "mondo-vecchia"]
+    # la fonte resta quella della sezione di provenienza
+    assert notizie[0]["fonte"] == "ANSA.it"
+
+
+def test_una_sezione_ferma_non_svuota_le_altre(client, monkeypatch):
+    """Se una sezione non risponde, le altre si mostrano lo stesso: una ferma non
+    deve portare via le notizie che si sono lette."""
+    u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/giu"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    finta_tv(monkeypatch, {u1: _feed("RSS di Mondo  - ANSA.it", [_voce("buona")])})
+    # `u2` non e' previsto da finta_tv: solleva NonDisponibile
+    notizie = tv.notizie_dal_feed()
+    assert [n["titolo"] for n in notizie] == ["buona"]
+
+
+def test_se_nessun_feed_risponde_e_un_guasto(client, monkeypatch):
+    """Nessuna sezione risponde: e' `NonDisponibile`, non una lista vuota, cosi'
+    la cache buona di ieri non viene sovrascritta con il vuoto."""
+    monkeypatch.setattr(tv, "feed_urls", lambda: ["https://esempio.invalid/a",
+                                                  "https://esempio.invalid/b"])
+    finta_tv(monkeypatch, {})
+    with pytest.raises(tv.NonDisponibile):
+        tv.notizie_dal_feed()
+
+
+def test_la_stessa_notizia_non_compare_due_volte(client, monkeypatch):
+    """Lo stesso fatto compare in piu' sezioni con titoli diversi: il link e' la
+    chiave stabile, e il doppione occuperebbe il posto di un'altra notizia."""
+    u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    voce = ("<item><title>Stesso fatto</title>"
+            "<link>https://esempio.invalid/uguale</link>"
+            "<description>S</description>"
+            "<pubDate>Thu, 02 Apr 2026 09:00:00 +0200</pubDate></item>")
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it", [voce]),
+        u2: _feed("RSS di Cronaca  - ANSA.it", [voce]),
+    })
+    notizie = tv.notizie_dal_feed()
+    assert len(notizie) == 1
+
+
+def test_i_feed_predefiniti_includono_l_italia(client):
+    """Le sezioni predefinite non sono il solo «mondo»: dentro c'e' quello che
+    succede in Italia, che e' la prima cosa che si guarda."""
+    urls = tv.feed_urls()
+    assert len(urls) >= 2
+    assert any("mondo" in u for u in urls)
+    assert any("cronaca" in u or "politica" in u for u in urls)
+    # niente doppioni e tutti feed veri
+    assert len(urls) == len(set(urls))
+    assert all(u.startswith("https://") for u in urls)
+
+
+def test_tv_feed_dall_ambiente_ne_accetta_piu_d_uno(client, monkeypatch):
+    """`TV_FEED` puo' indicare piu' indirizzi, separati da virgola o a capo:
+    cosi' una casa puo' scegliere le proprie sezioni senza toccare il modulo."""
+    monkeypatch.setenv("TV_FEED", "https://a.invalid/rss, https://b.invalid/rss\n"
+                                  "https://c.invalid/rss")
+    assert tv.feed_urls() == ["https://a.invalid/rss", "https://b.invalid/rss",
+                              "https://c.invalid/rss"]
+    # e il tetto vale anche qui: non si moltiplicano le richieste a un sito altrui
+    monkeypatch.setenv("TV_FEED", ",".join(f"https://x{i}.invalid/rss" for i in range(50)))
+    assert len(tv.feed_urls()) == tv.MAX_FEED
 
 
 def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkeypatch):

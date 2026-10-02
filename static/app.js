@@ -918,7 +918,13 @@ async function renderSuggerimenti() {
     return;
   }
   if (!dati.suggerimenti.length) {
-    box.innerHTML = '';
+    // Il riquadro non c'e' e basta: sembra che la funzione non esista. Con la
+    // dispensa vuota si dice cosa fare, perche' e' li' che si parte.
+    box.innerHTML = dati.dispensa === 0
+      ? `<h3 class="sug-title">Con quello che hai in dispensa</h3>
+         <p class="sug-vuoto">Aggiungi qualche ingrediente qui sopra: i
+         suggerimenti su cosa cucinare compaiono da soli.</p>`
+      : '';
     return;
   }
   const schede = dati.suggerimenti.map((s) => {
