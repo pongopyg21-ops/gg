@@ -49,11 +49,21 @@ FEED_PREDEFINITI = (
     "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
     "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
     "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
+    # Una seconda testata, non una seconda sezione: le quattro ANSA sono la
+    # stessa linea editoriale, e un fatto raccontato da un'altra redazione si
+    # legge in modo diverso. RaiNews e' il servizio pubblico, un feed solo e
+    # generalista.
+    "https://www.rainews.it/rss/tutti",
 )
 
 # Quante notizie si tengono. Dieci e' quello che si legge davvero; oltre, la
 # sezione diventa un giornale e non la si scorre piu'.
 MAX_NOTIZIE = 10
+
+# Quante voci puo' portare un singolo feed al totale. Senza, un feed
+# generalista (RaiNews ne pubblica decine) riempirebbe da solo le dieci notizie
+# e le sezioni ANSA sparirebbero: le fonti si mescolano, non si sostituiscono.
+MAX_PER_FEED = 4
 
 # Tetto ai feed dichiarati: con `TV_FEED` se ne possono indicare altri, ma non
 # un numero che moltiplichi le richieste a un sito altrui a ogni aggiornamento.
@@ -226,12 +236,16 @@ def notizie_dal_feed() -> list:
     Al massimo `MAX_NOTIZIE`. Un feed fermo non ferma gli altri: si tiene quello
     che si e' letto, e solo se **nessuno** risponde si solleva `NonDisponibile`,
     cosi' la cache buona non viene sovrascritta con il vuoto.
+
+    Ogni feed porta al massimo `MAX_PER_FEED` voci: un generalista pubblica
+    decine di notizie e senza tetto occuperebbe da solo l'elenco, facendo
+    sparire le sezioni. Cosi' invece le fonti convivono.
     """
     voci = []
     letti = 0
     for url in feed_urls():
         try:
-            voci.extend(_voci_del_feed(url))
+            voci.extend(_voci_del_feed(url)[:MAX_PER_FEED])
             letti += 1
         except NonDisponibile:
             continue

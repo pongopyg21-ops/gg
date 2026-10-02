@@ -237,6 +237,25 @@ body {
 
 .home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 
+/* Riepilogo della giornata in home. Sta sopra le schede e resta compatto: la
+   home deve restare un posto dove si sceglie, non una pagina da leggere. */
+.home-oggi {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.oggi-titolo {
+  margin: 0 0 10px; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+.oggi-riga { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
+.oggi-riga + .oggi-riga { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 5px; }
+.oggi-ico { font-size: 16px; line-height: 1.3; flex: none; }
+.oggi-txt { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.oggi-meal { color: var(--muted); font-weight: 400; }
+
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
@@ -394,6 +413,30 @@ button:focus-visible {
 .qty-input { width: 90px; }
 .unit-input { width: 110px; }
 .qty-cell { width: 90px; }
+.date-input, .date-cell { font-variant-numeric: tabular-nums; }
+.date-input { width: 150px; }
+.date-cell { width: 140px; }
+/* Porzioni nel dettaglio ricetta: si scrive il numero e le quantita' seguono.
+   Piccolo e in linea col testo, perche' e' una regolazione, non un campo. */
+.porz-input {
+  width: 56px; padding: 2px 6px; font: inherit; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line-strong); border-radius: 7px;
+  background: var(--surface); color: var(--ink); text-align: center;
+}
+
+/* Scadenza in dispensa: il colore dice l'urgenza senza dover leggere la data.
+   Il rosso e' per quello che e' scaduto, l'ambra per quello che scade a breve:
+   sono le due cose che richiedono una decisione, il resto e' rumore. */
+.scad-cell { white-space: nowrap; }
+.scad-testo {
+  margin-left: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em;
+}
+.scad-testo.scad-niente { color: var(--muted); font-weight: 400; }
+.scad-testo.scad-oltre { color: var(--errore-testo); }
+.scad-testo.scad-vicino { color: #d98a2b; }
+.scad-testo.scad-lontano { color: var(--muted); font-weight: 400; }
+.date-cell.scad-oltre { border-color: var(--errore-bordo); }
+.date-cell.scad-vicino { border-color: #d98a2b; }
 
 /* ---------- piano settimanale ---------- */
 .plan-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
@@ -492,6 +535,12 @@ button:focus-visible {
 .sug-manca { color: var(--muted); }
 .sug-card .sug-mancano {
   font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4;
+}
+/* Le scorte in scadenza che questa ricetta consumerebbe: e' il motivo per cui
+   sta in cima, quindi si dice invece di lasciarlo intuire dall'ordine. */
+.sug-card .sug-scade {
+  font-size: 11.5px; font-weight: 600; margin-top: 5px; line-height: 1.4;
+  color: #d98a2b;
 }
 
 /* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */

@@ -101,6 +101,10 @@
     <p class="home-voice-hint">Acceso l'ascolto continuo, basta dire «Hey GG» e il
       comando: niente da premere. Si accende dal pannello 🎙, la prima volta.</p>
   </div>
+  <!-- Riepilogo della giornata: cosa si mangia, cosa c'e' da fare in casa, cosa
+       avvisa. Si riempie da solo all'avvio e resta nascosto finche' non c'e'
+       niente da dire: una home con un riquadro vuoto e' peggio di una senza. -->
+  <section id="home-oggi" class="home-oggi hidden" aria-label="Riepilogo di oggi"></section>
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
       <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/icona.svg" alt=""></span>
@@ -193,6 +197,8 @@
       <input id="pantry-name" placeholder="Ingrediente" list="ingredient-list">
       <input id="pantry-qty" class="qty-input" type="number" step="0.1" value="1">
       <input id="pantry-unit" class="unit-input" list="unit-list" value="pz">
+      <input id="pantry-scade" class="date-input" type="date"
+             title="Scadenza (facoltativa)" aria-label="Scadenza (facoltativa)">
       <button id="pantry-add" class="primary">Aggiungi</button>
       <span class="spacer"></span>
       <input id="pantry-search" type="search" placeholder="Filtra...">
@@ -200,7 +206,7 @@
     <datalist id="unit-list"></datalist>
     <datalist id="ingredient-list"></datalist>
     <table id="pantry-table">
-      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th></th></tr></thead>
+      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th>Scade</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="pantry-suggerimenti" class="pantry-sug"></div>
@@ -444,8 +450,8 @@
     <div id="tv-video" class="tv-video"></div>
 
     <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>
-    <p class="hint">Le ultime dieci, dalle sezioni ANSA: cronaca, politica,
-      economia e mondo. Aggiornate una volta al giorno.</p>
+    <p class="hint">Le ultime dieci, da ANSA (cronaca, politica, economia, mondo)
+      e RaiNews. Aggiornate una volta al giorno.</p>
     <div id="tv-notizie" class="tv-notizie"></div>
   </section>
 
@@ -564,5 +570,16 @@
 </div>
 
 <script src="/static/app.js"></script>
+<script>
+/* Il service worker si registra da qui e non dal codice dell'app: cosi' parte
+   anche se `app.js` non e' stato ancora caricato. Non e' indispensabile — senza
+   il service worker l'app funziona lo stesso — quindi un errore non si mostra.
+   Da `/sw.js` e non da `/static/sw.js`: da li' non controllerebbe la pagina. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+</script>
 </body>
 </html>

@@ -649,6 +649,35 @@ def test_migrazione_aggiunge_fav_prompted_a_un_db_esistente():
         app_module.migrate(db)
 
 
+def test_migrazione_aggiunge_expires_at_a_un_db_esistente():
+    """Un database creato prima non ha `expires_at` in `pantry`, e
+    `CREATE TABLE IF NOT EXISTS` non aggiunge una colonna a una tabella che
+    esiste gia': la migrazione deve farlo, senza toccare le scorte presenti."""
+    path = os.path.join(tempfile.mkdtemp(), "vecchio-pantry.db")
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
+        db.executescript("""
+            CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+            CREATE TABLE ingredients (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE pantry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+                quantity REAL NOT NULL DEFAULT 0,
+                unit TEXT NOT NULL DEFAULT 'pz',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(ingredient_id, unit)
+            );
+            INSERT INTO ingredients (name) VALUES ('Farina');
+            INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (1, 500, 'g');
+        """)
+        app_module.migrate(db)
+        cols = {r[1] for r in db.execute("PRAGMA table_info(pantry)")}
+        assert "expires_at" in cols
+        row = db.execute("SELECT quantity, unit, expires_at FROM pantry").fetchone()
+        assert tuple(row) == (500, "g", None)
+        app_module.migrate(db)  # rieseguire non deve fallire
+
+
 def test_filtro_ricette_per_allergia(client):
     buona = ricetta(client, "Verdure", 2, [{"name": "Zucchine", "quantity": 300, "unit": "g"}])
     cattiva = ricetta(client, "Carbonara", 2, [
@@ -2795,6 +2824,124 @@ def test_una_ricetta_senza_ingredienti_non_e_un_suggerimento():
     assert esito["suggerimenti"] == []
 
 
+# ------------------------------------------------------- scadenze in dispensa
+# La scadenza e' un dato della dispensa come la quantita': si salva, si cambia e
+# si toglie. La regola che conta e' che "non lo so" (vuoto) resti diverso da "non
+# scade", perche' una data inventata farebbe buttare cibo buono.
+
+def test_la_scadenza_si_salva_e_si_rilegge(client):
+    r = client.post("/api/pantry", json={"name": "Yogurt", "quantity": 1, "unit": "pz",
+                                        "expires_at": "2026-10-05"})
+    assert r.status_code == 201
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["expires_at"] == "2026-10-05"
+
+
+def test_una_scadenza_non_valida_non_entra_nel_database(client):
+    """Un testo che non e' una data non deve salvarvisi: romperebbe l'ordinamento
+    e i confronti, e l'utente vedrebbe una data che non ha scritto."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 1, "unit": "pz",
+                                     "expires_at": "domani"})
+    assert client.get("/api/pantry").get_json()[0]["expires_at"] is None
+
+
+def test_la_scadenza_si_puo_togliere_senza_toccare_la_quantita(client):
+    """Il campo della scadenza e' separato dalla quantita': svuotarlo la toglie,
+    e non deve azzerare la quantita' scritta nell'altro campo."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 3, "unit": "pz",
+                                     "expires_at": "2026-10-05"})
+    pid = client.get("/api/pantry").get_json()[0]["id"]
+    client.patch(f"/api/pantry/{pid}", json={"expires_at": ""})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["expires_at"] is None
+    assert voce["quantity"] == 3
+
+
+def test_la_quantita_si_cambia_senza_cancellare_la_scadenza(client):
+    """Aggiornare la quantita' non manda il campo scadenza: senza la regola del
+    "tocca solo se presente", la scadenza sparirebbe a ogni cambio di quantita'."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 3, "unit": "pz",
+                                     "expires_at": "2026-10-05"})
+    pid = client.get("/api/pantry").get_json()[0]["id"]
+    client.patch(f"/api/pantry/{pid}", json={"quantity": 2})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["quantity"] == 2
+    assert voce["expires_at"] == "2026-10-05"
+
+
+def test_aggiungendo_scorte_vince_la_scadenza_piu_vicina(client):
+    """Due partite dello stesso ingrediente con scadenze diverse: quella che
+    scade prima e' quella da guardare, e deve restare in evidenza."""
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-20"})
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-03"})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["quantity"] == 2
+    assert voce["expires_at"] == "2026-10-03"
+
+
+def test_una_scorta_senza_data_non_cancella_quella_con_data(client):
+    """Chi aggiunge una partita senza sapere la scadenza non deve cancellare
+    quella che sapeva: la data che c'era resta."""
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-03"})
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l"})
+    assert client.get("/api/pantry").get_json()[0]["expires_at"] == "2026-10-03"
+
+
+def test_una_ricetta_che_consuma_una_scadenza_viene_prima():
+    """Fra due ricette ugualmente coperte, va suggerita per prima quella che
+    consuma una scorta in scadenza: e' quella da cucinare adesso."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    percorso = os.path.join(tempfile.mkdtemp(), "scadenze.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        # due ingredienti: uno scade fra due giorni, l'altro non scade
+        presto = db.execute("INSERT INTO ingredients (name) VALUES ('Da consumare')").lastrowid
+        tardi = db.execute("INSERT INTO ingredients (name) VALUES ('Tranquillo')").lastrowid
+        for iid in (presto, tardi):
+            db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, 1, 'pz')",
+                       (iid,))
+        db.execute("UPDATE pantry SET expires_at = '2026-10-04' WHERE ingredient_id = ?", (presto,))
+        # due ricette da un ingrediente ciascuna, ugualmente coperte
+        for nome, iid in (("Usa il fresco", presto), ("Usa il durevole", tardi)):
+            rid = db.execute("INSERT INTO recipes (name) VALUES (?)", (nome,)).lastrowid
+            db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                       " VALUES (?, ?, 1, 'pz')", (rid, iid))
+        db.commit()
+        esito = dispensa.suggerimenti(db, oggi=__import__("datetime").date(2026, 10, 2))
+    nomi = [s["name"] for s in esito["suggerimenti"]]
+    assert nomi[0] == "Usa il fresco", nomi
+    fresco = next(s for s in esito["suggerimenti"] if s["name"] == "Usa il fresco")
+    assert fresco["scadono"] == ["Da consumare"]
+    durevole = next(s for s in esito["suggerimenti"] if s["name"] == "Usa il durevole")
+    assert durevole["scadono"] == []
+
+
+def test_una_scadenza_lontana_non_mette_in_cima_la_ricetta():
+    """Una scadenza oltre la settimana non e' un problema di stasera: non deve
+    riordinare i suggerimenti."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    import datetime as dt
+    percorso = os.path.join(tempfile.mkdtemp(), "lontana.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        iid = db.execute("INSERT INTO ingredients (name) VALUES ('Durevole')").lastrowid
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit, expires_at)"
+                   " VALUES (?, 1, 'pz', '2026-12-31')", (iid,))
+        rid = db.execute("INSERT INTO recipes (name) VALUES ('Una ricetta')").lastrowid
+        db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                   " VALUES (?, ?, 1, 'pz')", (rid, iid))
+        db.commit()
+        esito = dispensa.suggerimenti(db, oggi=dt.date(2026, 10, 2))
+    assert esito["suggerimenti"][0]["scadono"] == []
+
+
 def test_la_dispensa_vuota_lo_dice_invece_di_tacere(client):
     """Il riquadro dei suggerimenti con la dispensa vuota resta nascosto e sembra
     che la funzione non esista: si esegue `renderSuggerimenti` vera con node, con
@@ -4518,6 +4665,47 @@ def test_le_immagini_dei_dati_restano_in_memoria(client):
     # cambiano, scelgono da sole la loro scadenza in una rotta apposita
     r = client.get("/api/recipes")
     assert "no-cache" in r.headers.get("Cache-Control", "")
+
+
+def test_gli_asset_hanno_la_versione_nell_indirizzo(client):
+    """`app.js` e `style.css` non hanno un indirizzo che cambia: senza un numero
+    di versione il browser non sa che sono nuovi e continua a usarne una copia.
+    La versione e' un'impronta del contenuto, quindi cambia solo quando il file
+    cambia."""
+    html = client.get("/").get_data(as_text=True)
+    assert "/static/app.js?v=" in html
+    assert "/static/style.css?v=" in html
+    # la versione e' quella vera del file: la stessa cosa che darebbe l'impronta
+    js = client.get("/static/app.js").get_data(as_text=True)
+    import hashlib
+    attesa = hashlib.sha256(js.encode("utf-8")).hexdigest()[:10]
+    assert f"/static/app.js?v={attesa}" in html
+
+
+def test_un_asset_versionato_resta_in_memoria_a_lungo(client):
+    """Con la versione nell'indirizzo tenere la copia a lungo e' sicuro: se il
+    file cambia cambia anche l'indirizzo, quindi non si vede mai una versione
+    vecchia. E' quello che evita di riscaricare 200 KB a ogni apertura."""
+    r = client.get("/static/app.js?v=qualsiasi")
+    assert "max-age=31536000" in r.headers.get("Cache-Control", "")
+    assert "immutable" in r.headers.get("Cache-Control", "")
+
+
+def test_il_service_worker_si_serve_dalla_radice_e_senza_accesso(anon):
+    """Il service worker controlla solo il percorso da cui e' servito: da
+    `/static/` non potrebbe mostrare la pagina `/` senza rete. E non chiede
+    l'accesso, perche' deve poter partire prima del login."""
+    r = anon.get("/sw.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers.get("Content-Type", "")
+    assert "caches" in r.get_data(as_text=True)
+
+
+def test_la_pagina_registra_il_service_worker(client):
+    """La registrazione sta nella pagina, non in `app.js`: cosi' parte anche se
+    il codice dell'app non e' stato ancora caricato."""
+    html = client.get("/").get_data(as_text=True)
+    assert "serviceWorker" in html and "register('/sw.js')" in html
 
 
 def test_una_domanda_non_diventa_un_ordine(client):
@@ -6667,6 +6855,113 @@ console.log(JSON.stringify({ chiuso, aperto }));
     assert d["aperto"]["nascosto"] is True, "col pannello aperto la riga non si raddoppia"
 
 
+def test_le_quantita_si_riscalano_sulle_porzioni(client):
+    """Il dettaglio ricetta ha un campo porzioni: le quantita' seguono. Si esegue
+    `qtaScalata` vera con node, perche' il conto e' la funzione, e una stringa
+    letta nel codice non dice se il risultato e' giusto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "qtaScalata")
+    prova = (blocco + "\nconsole.log(JSON.stringify(["
+             "qtaScalata(100, 2), qtaScalata(100, 0.5), qtaScalata(3, 1),"
+             "qtaScalata(1, 3), qtaScalata('q.b.', 2), qtaScalata(0.5, 3),"
+             "qtaScalata(2, 1.5)]));")
+    d = _esegui_node(prova)
+    assert d == ["200", "50", 3, "3", "q.b.", "1.5", "3"]
+
+
+def test_il_riepilogo_di_oggi_mette_insieme_le_fonti(client):
+    """La home mostra un riepilogo (pasti, pulizie, impegni, scadenze). Si esegue
+    `renderHomeOggi` vera con node e risposte preparate: il riquadro deve
+    comparire con i pezzi giusti, e restare nascosto se non c'e' niente da dire."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza(e) {
+  if (!e) return { testo: '—', classe: 'scad-niente' };
+  return { testo: 'fra 1 giorno', classe: 'scad-vicino' };
+}
+const risposte = {
+  '/api/plan?start=2026-10-02&end=2026-10-02':
+    [{ recipe_name: 'Pasta', meal: 'cena' }],
+  '/api/chores': { piano: { da_fare: 2 } },
+  '/api/appointments?giorno=2026-10-02':
+    { prossimi: [{ title: 'Dentista', quando_detto: 'oggi' }] },
+  '/api/pantry': [{ name: 'Latte', expires_at: '2026-10-03' }],
+};
+async function api(url) { return risposte[url]; }
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False, "con qualcosa da dire il riquadro deve vedersi"
+    assert "Pasta" in d["html"] and "cena" in d["html"]
+    assert "2 attività di casa" in d["html"]
+    assert "Dentista" in d["html"]
+    assert "Latte" in d["html"]
+
+
+def test_il_riepilogo_di_oggi_tace_se_non_c_e_niente(client):
+    """Senza pasti, pulizie, impegni o scadenze il riquadro resta nascosto: una
+    home con un riquadro vuoto e' peggio di una home senza riquadro."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: 'vecchio', nascosto: false };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
+async function api() { return []; }
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+    assert d["html"] == ""
+
+
+def test_il_riepilogo_non_cade_se_una_fonte_non_risponde(client):
+    """Se il calendario non risponde, i pasti si mostrano lo stesso: un errore su
+    una fonte non deve far sparire le altre."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
+async function api(url) {
+  if (url.startsWith('/api/plan')) return [{ recipe_name: 'Pasta', meal: 'cena' }];
+  throw new Error('rete assente');
+}
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False
+    assert "Pasta" in d["html"]
+
+
 def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
     """La latenza riferita: il comando partiva solo **dopo** la fine di
     "Comandi.", quindi l'esecuzione restava ferma per tutta la voce — e col
@@ -7444,18 +7739,50 @@ def test_una_playlist_senza_video_e_un_guasto_non_una_sezione_vuota(client, monk
 
 def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatch):
     """Il tetto e' dieci e l'ordine e' per data, non quello del feed: una fonte
-    che cambia ordine non deve mostrare le notizie vecchie in cima."""
-    voci = "".join(
-        f"<item><title>N{i}</title><link>https://esempio.invalid/{i}</link>"
-        f"<description>S{i}</description>"
-        f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
-        for i in range(1, 16))
-    feed = f"<rss version='2.0'><channel><title>Prova</title>{voci}</channel></rss>"
-    finta_tv(monkeypatch, {tv.feed_urls()[0]: feed})
+    che cambia ordine non deve mostrare le notizie vecchie in cima.
+
+    Servono piu' feed: un singolo feed e' limitato a `MAX_PER_FEED` (vedi
+    `test_un_feed_generalista_non_occupa_tutto_l_elenco`)."""
+    urls = [f"https://esempio.invalid/f{i}" for i in range(3)]
+    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    risposte = {}
+    for f, u in enumerate(urls):
+        voci = "".join(
+            f"<item><title>N{f}-{i}</title><link>https://esempio.invalid/{f}/{i}</link>"
+            f"<description>S</description>"
+            f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
+            for i in range(1, 16))
+        risposte[u] = f"<rss version='2.0'><channel><title>Prova{f}</title>{voci}</channel></rss>"
+    finta_tv(monkeypatch, risposte)
     notizie = tv.notizie_dal_feed()
     assert len(notizie) == tv.MAX_NOTIZIE == 10
     date = [n["data"] for n in notizie]
     assert date == sorted(date, reverse=True)
+
+
+def test_un_feed_generalista_non_occupa_tutto_l_elenco(client, monkeypatch):
+    """Un feed generalista (RaiNews pubblica decine di voci) senza tetto
+    riempirebbe da solo le dieci notizie, facendo sparire le sezioni ANSA: ogni
+    feed contribuisce al massimo `MAX_PER_FEED`."""
+    urls = [f"https://esempio.invalid/f{i}" for i in range(4)]
+    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    risposte = {}
+    for f, u in enumerate(urls):
+        voci = "".join(
+            f"<item><title>N{f}-{i}</title><link>https://esempio.invalid/{f}/{i}</link>"
+            f"<description>S</description>"
+            f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
+            for i in range(1, 16))
+        risposte[u] = f"<rss version='2.0'><channel><title>Prova{f}</title>{voci}</channel></rss>"
+    finta_tv(monkeypatch, risposte)
+    notizie = tv.notizie_dal_feed()
+    per_fonte = {}
+    for n in notizie:
+        per_fonte[n["fonte"]] = per_fonte.get(n["fonte"], 0) + 1
+    assert all(q <= tv.MAX_PER_FEED for q in per_fonte.values())
+    # con quattro fonti e il tetto a quattro, l'elenco e' pieno e misto
+    assert len(notizie) == tv.MAX_NOTIZIE
+    assert len(per_fonte) == 4
 
 
 def test_il_nome_della_fonte_e_quello_che_si_mostra_non_il_titolo_del_feed(client, monkeypatch):

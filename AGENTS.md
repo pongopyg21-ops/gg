@@ -669,6 +669,32 @@ Conseguenze pratiche per chi mette mano al codice:
   Con la dispensa **vuota** il riquadro non resta muto: dice di aggiungere qualche
   ingrediente. Prima spariva e basta, e sembrava che i suggerimenti non esistessero
   — che è esattamente quello che si vede al primo avvio, quando la dispensa è vuota.
+- **La scadenza in dispensa** (`pantry.expires_at`, `parse_data`). È una data
+  facoltativa: vuoto significa «non lo so», che è **diverso** da «non scade». Non
+  si indovina mai una data, perché una scadenza inventata farebbe buttare cibo
+  buono. Nel `PATCH` ogni campo si tocca solo se presente nel corpo (`quantity`,
+  `expires_at`): mandare la sola scadenza non deve azzerare la quantità, e
+  cambiare la quantità non deve cancellare la scadenza; per toglierla si manda
+  vuota. Aggiungendo scorte dello stesso ingrediente vince la scadenza **più
+  vicina** (`_scadenza_piu_vicina`): è quella che va guardata prima, e una partita
+  senza data non cancella quella che si sapeva. Nel client il colore dice
+  l'urgenza (`statoScadenza`: rosso scaduto, ambra entro pochi giorni) senza
+  dover leggere la data.
+  I suggerimenti **tengono conto delle scadenze**: a parità di copertura sale in
+  cima la ricetta che consuma una scorta in scadenza entro `GIORNI_SCADENZA` (7),
+  perché è quella da cucinare adesso. La card dice quali (`sug-scade`), invece di
+  lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
+  è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
+- **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
+  mostra i pasti di oggi, le attività di casa da fare, i prossimi impegni e cosa
+  sta per scadere in dispensa. Le fonti si chiedono **in parallelo** e ognuna
+  fallisce per conto suo (`.catch`): un errore sul calendario non deve far sparire
+  i pasti. Se non c'è niente da dire il riquadro resta nascosto — una home con un
+  riquadro vuoto è peggio di una home senza riquadro.
+- **Le porzioni si scalano nel dettaglio ricetta** (`qtaScalata`). La ricetta è
+  scritta per `servings`; cambiando il numero nel dettaglio, le quantità seguono
+  (frazione rispetto al numero base). Una quantità non numerica («q.b.») resta
+  com'è: riscalarla non vorrebbe dire niente.
 - **Tempi e costo della ricetta**: `prep_minutes` e `cook_minutes` sono due colonne
   separate perché dicono cose diverse — la cottura si può lasciare andare da sola, la
   preparazione assorbe l'attenzione — e il totale è la loro somma, calcolata nel
@@ -1069,6 +1095,25 @@ che non c'era.
 Il sintomo, per riconoscerlo: la pagina è vecchia **solo** in un browser che l'ha
 già aperta, e ricaricando con forza si aggiorna. Il rimedio immediato per l'utente
 è aggiungere `?v=2` all'indirizzo, che per il browser è una pagina mai vista.
+
+**Gli asset hanno la versione nell'indirizzo.** La pagina è servita da `/` (non da
+`send_from_directory`) e inietta in `app.js` e `style.css` un `?v=<impronta>`:
+l'impronta è un hash del contenuto, calcolato una volta e tenuto in memoria finché
+mtime e dimensione non cambiano (`_versione_asset`). Così il browser può tenere
+quei file **a lungo** (`max-age=31536000, immutable`) senza mai vedere una
+versione vecchia: se il file cambia, cambia l'indirizzo. Le immagini dei dati non
+hanno la versione e continuano a scegliere da sole la loro scadenza.
+
+**Il service worker (`static/sw.js`, servito da `/sw.js`).** Salva la **scocca**
+(pagina, CSS, JS, icone) per farla aprire anche senza rete. Tre cose da non
+rompere: (1) è servito da `/sw.js` e non da `/static/`, perché un service worker
+controlla solo il percorso da cui è servito e da `/static/` non potrebbe mostrare
+la pagina `/`; (2) `/sw.js` è in `ROTTE_PUBBLICHE`, perché deve partire prima del
+login; (3) le **API non si salvano mai**: un dato vecchio mostrato come fresco è
+peggio di un dato mancante — la dispensa di ieri non è la dispensa di oggi. Le
+pagine vanno prima in rete (un aggiornamento arriva subito) e solo se la rete
+manca dalla copia; i file statici, che hanno già la versione nell'indirizzo, prima
+dalla copia.
 
 ## Capire i comandi con un modello (facoltativo)
 
@@ -1647,10 +1692,15 @@ Le scelte che contano:
   e che è già costato un giro: per questo c'è un test sui campi, non solo sul
   numero di voci.
 
-- **Le notizie vengono da più sezioni, non da un feed solo.** `FEED_PREDEFINITI`
-  raccoglie mondo, cronaca, politica ed economia di ANSA: il solo «mondo» lascia
-  fuori quello che succede in Italia, che è la prima cosa che si guarda. Le
-  sezioni sono argomenti della stessa fonte, non fonti diverse.
+- **Le notizie vengono da più sezioni e da più testate.** `FEED_PREDEFINITI`
+  raccoglie mondo, cronaca, politica ed economia di ANSA, più il feed
+  generalista di **RaiNews**: il solo «mondo» lascia fuori quello che succede in
+  Italia, che è la prima cosa che si guarda, e quattro sezioni ANSA sono la stessa
+  linea editoriale — una seconda testata racconta gli stessi fatti in modo diverso.
+- **Un feed generalista non occupa tutto l'elenco.** RaiNews pubblica decine di
+  voci: senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le dieci
+  notizie e le sezioni ANSA sparirebbero. Le fonti si mescolano, non si
+  sostituiscono.
 - **Una sezione ferma non svuota le altre.** `notizie_dal_feed` legge ogni feed
   per conto suo e salta quelli che non rispondono; solo se **nessuno** risponde
   solleva `NonDisponibile`, così la cache buona non viene sovrascritta con il
@@ -1664,9 +1714,9 @@ accetta **più indirizzi** separati da virgola o a capo (con un tetto `MAX_FEED`
 così una casa sceglie le proprie sezioni. I predefiniti sono la playlist
 **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
 il feed Atom vuole il solo `list=...`) e le notizie dalle sezioni ANSA **mondo,
-cronaca, politica, economia**. I test non toccano la rete: sostituiscono
-`tv._apri` con risposte preparate e provano l'interpretazione e la tenuta della
-cache, che sono le parti che sbagliano.
+cronaca, politica, economia** più **RaiNews**. I test non toccano la rete:
+sostituiscono `tv._apri` con risposte preparate e provano l'interpretazione e la
+tenuta della cache, che sono le parti che sbagliano.
 
 
 

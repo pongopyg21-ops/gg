@@ -508,8 +508,7 @@ async function showRecipeDetail(rid, contesto = {}) {
   const passi = passiDa(r.instructions);
   const tempi = tempiRicetta(r);
   const costo = costoRicetta(r);
-  const ingredienti = r.items.map((i) =>
-    `<li>${esc(i.name)} <span class="qty">${esc(i.quantity)}${esc(i.unit)}</span></li>`).join('');
+  const base = Number(r.servings) > 0 ? Number(r.servings) : 1;
 
   const foto = r.image
     ? `<figure class="detail-photo" title="${esc(r.image_credit || '')}">
@@ -523,11 +522,15 @@ async function showRecipeDetail(rid, contesto = {}) {
   showModal(r.name, `
     ${foto}
     <div class="detail-meta meta">
-      ${r.servings} porzioni${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}
+      <span id="rd-porz-wrap">Per
+        <input id="rd-porz" class="porz-input" type="number" min="1" step="1"
+               value="${base}" aria-label="Numero di porzioni"> porzioni
+      </span>
+      ${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}
     </div>
     ${costo ? `<div class="detail-costo">${costo}</div>` : ''}
     <h3 class="detail-sub">Ingredienti</h3>
-    <ul class="detail-ings">${ingredienti || '<li class="muted">Nessun ingrediente</li>'}</ul>
+    <ul class="detail-ings" id="rd-ings"></ul>
     <h3 class="detail-sub">Preparazione</h3>
     ${preparazione}
     ${contesto.conflicts?.length ? `<p class="detail-unsafe">⚠️ Contiene: ${contesto.conflicts.map(esc).join(', ')}</p>` : ''}
@@ -538,6 +541,19 @@ async function showRecipeDetail(rid, contesto = {}) {
     </div>
   `);
 
+  // gli ingredienti si ridisegnano al cambio porzioni: la ricetta e' scritta per
+  // `base`, e chi cucina per un numero diverso di persone non deve fare il conto
+  const disegnaIngredienti = (porzioni) => {
+    $('#rd-ings').innerHTML = r.items.map((i) =>
+      `<li>${esc(i.name)} <span class="qty">${esc(qtaScalata(i.quantity, porzioni / base))}${esc(i.unit)}</span></li>`
+    ).join('') || '<li class="muted">Nessun ingrediente</li>';
+  };
+  disegnaIngredienti(base);
+  $('#rd-porz').addEventListener('input', (e) => {
+    const n = Number(e.target.value);
+    disegnaIngredienti(n > 0 ? n : base);
+  });
+
   $('#rd-edit').addEventListener('click', () => recipeForm(r));
   if (contesto.onRemove) {
     $('#rd-remove').addEventListener('click', async () => {
@@ -545,6 +561,16 @@ async function showRecipeDetail(rid, contesto = {}) {
       await contesto.onRemove();
     });
   }
+}
+
+/** Una quantita' riscalata sulle porzioni, con al massimo due decimali.
+    Una quantita' non numerica (es. "q.b.") resta com'e': riscalarla non
+    vorrebbe dire niente. */
+function qtaScalata(quantita, fattore) {
+  const n = Number(quantita);
+  if (!Number.isFinite(n) || quantita === '' || quantita === null || quantita === undefined) return quantita;
+  if (fattore === 1) return quantita;
+  return String(Math.round(n * fattore * 100) / 100);
 }
 
 /* Foto disponibili in static/recipes/, caricate all'avvio. */
@@ -884,12 +910,30 @@ async function renderPantry() {
   renderSuggerimenti();
 }
 
+/* Quanto manca alla scadenza, in parole e con un colore.
+   Vuoto vuol dire "non lo so", non "non scade": non si mostra niente invece di
+   inventare una data. Il rosso e' per quello che e' scaduto, l'ambra per quello
+   che scade entro pochi giorni — le due cose che richiedono una decisione. */
+function statoScadenza(expiresAt) {
+  if (!expiresAt) return { testo: '—', classe: 'scad-niente' };
+  const oggi = new Date();
+  oggi.setHours(0, 0, 0, 0);
+  const quando = new Date(expiresAt + 'T00:00:00');
+  const giorni = Math.round((quando - oggi) / 86400000);
+  if (giorni < 0) return { testo: giorni === -1 ? 'scaduto ieri' : `scaduto da ${-giorni} gg`, classe: 'scad-oltre' };
+  if (giorni === 0) return { testo: 'scade oggi', classe: 'scad-vicino' };
+  if (giorni <= 3) return { testo: `fra ${giorni} ${giorni === 1 ? 'giorno' : 'giorni'}`, classe: 'scad-vicino' };
+  return { testo: expiresAt.slice(5).split('-').reverse().join('/'), classe: 'scad-lontano' };
+}
+
 // il filtro e' locale: non deve rifare la richiesta dei suggerimenti, che non
 // dipendono da cosa si sta cercando
 function renderPantryTable() {
   const q = $('#pantry-search').value.toLowerCase();
   const list = pantryCache.filter((i) => i.name.toLowerCase().includes(q));
-  $('#pantry-table tbody').innerHTML = list.map((i) => `
+  $('#pantry-table tbody').innerHTML = list.map((i) => {
+    const scad = statoScadenza(i.expires_at);
+    return `
     <tr>
       <td data-label="Ingrediente">
         <span class="riga-alimento">
@@ -899,8 +943,15 @@ function renderPantryTable() {
       </td>
       <td data-label="Categoria">${esc(i.category)}</td>
       <td data-label="Quantità"><input type="number" step="0.1" value="${i.quantity}" data-qty="${i.id}" class="qty-cell"> ${esc(i.unit)}</td>
+      <td data-label="Scade" class="scad-cell">
+        <input type="date" value="${esc(i.expires_at || '')}" data-scad="${i.id}"
+               class="date-cell ${scad.classe}" title="${esc(scad.testo)}"
+               aria-label="Scadenza di ${esc(i.name)}">
+        <span class="scad-testo ${scad.classe}">${esc(scad.testo)}</span>
+      </td>
       <td><button data-del="${i.id}" title="Togli dalla dispensa" aria-label="Togli ${esc(i.name)} dalla dispensa">🗑</button></td>
-    </tr>`).join('') || '<tr><td colspan="4">Dispensa vuota</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="5">Dispensa vuota</td></tr>';
 }
 
 /* Suggerimenti sotto l'elenco: cosa si puo' cucinare con quello che c'e'.
@@ -939,10 +990,15 @@ async function renderSuggerimenti() {
     const mancano = s.pronta ? ''
       : `<div class="sug-mancano">Senza: ${s.mancano.map(esc).join(', ')}` +
         `${altri > 0 ? ` e altri ${altri}` : ''}</div>`;
+    // chi consuma scorte in scadenza: e' il motivo per cui sta in cima
+    const scade = (s.scadono && s.scadono.length)
+      ? `<div class="sug-scade">⏳ Da consumare: ${s.scadono.map(esc).join(', ')}</div>`
+      : '';
     return `
       <div class="sug-card" data-recipe="${s.id}">
         <h4>${esc(s.name)}</h4>
         <div class="sug-meta">${stato}${s.time_minutes ? ` · ${s.time_minutes} min` : ''}</div>
+        ${scade}
         ${mancano}
       </div>`;
   }).join('');
@@ -965,6 +1021,14 @@ $('#pantry-table').addEventListener('change', async (e) => {
     toast('Aggiornato');
     // cambiando una quantita' cambia cosa risulta coperto: i suggerimenti seguono
     renderSuggerimenti();
+    return;
+  }
+  const sid = e.target.dataset.scad;
+  if (sid) {
+    // vuoto vuol dire "togli la scadenza": il campo c'e' sempre, e mandarlo
+    // vuoto la cancella invece di lasciare la data vecchia
+    await api(`/api/pantry/${sid}`, { method: 'PATCH', body: { expires_at: e.target.value } });
+    renderPantry();
   }
 });
 $('#pantry-table').addEventListener('click', async (e) => {
@@ -977,9 +1041,15 @@ $('#pantry-add').addEventListener('click', async () => {
   if (!name) return toast('Inserisci un ingrediente');
   await api('/api/pantry', {
     method: 'POST',
-    body: { name, quantity: Number($('#pantry-qty').value) || 0, unit: $('#pantry-unit').value.trim() || 'pz' },
+    body: {
+      name,
+      quantity: Number($('#pantry-qty').value) || 0,
+      unit: $('#pantry-unit').value.trim() || 'pz',
+      expires_at: $('#pantry-scade').value || null,
+    },
   });
   $('#pantry-name').value = '';
+  $('#pantry-scade').value = '';
   toast('Aggiunto alla dispensa');
   renderPantry();
   loadIngredientsDatalist();
@@ -4674,6 +4744,76 @@ async function init() {
   // preferite) riguardano la cucina, quindi si aprono entrando in Cucina e non
   // addosso a chi sta andando in Igiene o Progetti.
   mostraInvitoProfilo();
+  // il riepilogo si riempie da solo: se una delle fonti non risponde, le altre
+  // si mostrano lo stesso (vedi renderHomeOggi)
+  renderHomeOggi();
+}
+
+/* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi e gli
+   avvisi del calendario. Non e' una nuova sezione, e' la home che dice qualcosa
+   invece di essere solo un menu.
+
+   Le tre fonti si chiedono in parallelo e ognuna fallisce per conto suo: un
+   errore sul calendario non deve far sparire i pasti. Se non c'e' niente da
+   dire il riquadro resta nascosto. */
+async function renderHomeOggi() {
+  const box = $('#home-oggi');
+  if (!box) return;
+  const oggi = iso(new Date());
+  const esiti = await Promise.all([
+    api(`/api/plan?start=${oggi}&end=${oggi}`).catch(() => []),
+    api('/api/chores').catch(() => null),
+    api(`/api/appointments?giorno=${oggi}`).catch(() => null),
+    api('/api/pantry').catch(() => []),
+  ]);
+  const [pasti, chores, appuntamenti, dispensa] = esiti;
+
+  const pastiHtml = pasti.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
+         <span class="oggi-txt">Oggi si mangia: <strong>${
+           pasti.map((p) => `${esc(p.recipe_name)} <span class="oggi-meal">(${esc(p.meal)})</span>`).join(', ')
+         }</strong></span></div>`
+    : '';
+
+  const daFare = chores ? (chores.piano?.da_fare || 0) : 0;
+  const choresHtml = daFare
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🧽</span>
+         <span class="oggi-txt">${daFare === 1
+           ? 'C\'è <strong>1 attività di casa</strong> da fare oggi'
+           : `Ci sono <strong>${daFare} attività di casa</strong> da fare oggi`}</span></div>`
+    : '';
+
+  const avvisi = appuntamenti?.prossimi || [];
+  const appHtml = avvisi.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">📆</span>
+         <span class="oggi-txt">${
+           avvisi.slice(0, 3).map((a) =>
+             `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`
+           ).join('<br>')
+         }${avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
+    : '';
+
+  // quello che scade entro pochi giorni: e' l'informazione che si perde piu'
+  // facilmente restando in dispensa
+  const inScadenza = (dispensa || []).filter((v) => {
+    const s = statoScadenza(v.expires_at);
+    return s.classe === 'scad-oltre' || s.classe === 'scad-vicino';
+  });
+  const scadHtml = inScadenza.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">⏳</span>
+         <span class="oggi-txt">In dispensa sta per scadere: <strong>${
+           inScadenza.slice(0, 4).map((v) => esc(v.name)).join(', ')
+         }</strong>${inScadenza.length > 4 ? ` e altri ${inScadenza.length - 4}` : ''}</span></div>`
+    : '';
+
+  const contenuto = pastiHtml + choresHtml + appHtml + scadHtml;
+  if (!contenuto) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `<h2 class="oggi-titolo">Oggi</h2>${contenuto}`;
+  box.classList.remove('hidden');
 }
 
 // All'avvio non si carica niente: prima si chiede al server chi e' collegato.

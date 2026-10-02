@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS pantry (
     ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
     quantity      REAL NOT NULL DEFAULT 0,
     unit          TEXT NOT NULL DEFAULT 'pz',
+    -- La scadenza e' una data, non un istante: quello che scade si guarda al
+    -- giorno. Vuota vuol dire "non lo so", che e' diverso da "non scade": una
+    -- scadenza inventata farebbe buttare cibo buono, quindi non si indovina.
+    expires_at    TEXT,
     updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(ingredient_id, unit)
 );

@@ -62,6 +62,13 @@ if os.environ.get("DIETRO_PROXY") in ("1", "si", "sì", "true"):
 # toccate: là la memoria serve, e il tempo lo decidono le rotte che le servono.
 @app.after_request
 def _non_tenere_in_memoria(risposta):
+    # Un asset chiesto con `?v=...` è **quello di una versione precisa**: il
+    # numero cambia quando il file cambia, quindi tenerlo in memoria a lungo è
+    # sicuro e non fa mai vedere una versione vecchia. È il caso di `app.js` e
+    # `style.css`, che senza questo si riscaricano a ogni apertura.
+    if request.path.startswith("/static/") and request.args.get("v"):
+        risposta.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return risposta
     if "Cache-Control" not in risposta.headers:
         risposta.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         risposta.headers["Pragma"] = "no-cache"
@@ -289,6 +296,12 @@ def migrate(db):
         db.execute("ALTER TABLE shopping_items ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
         db.execute("UPDATE shopping_items SET generated = 1")
 
+    # La scadenza in dispensa: i database nati prima non hanno la colonna, e
+    # `CREATE TABLE IF NOT EXISTS` non la aggiunge a una tabella che esiste gia'.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(pantry)")}
+    if have and "expires_at" not in have:
+        db.execute("ALTER TABLE pantry ADD COLUMN expires_at TEXT")
+
     # `llm_prefs` e' una tabella **nuova**: `CREATE TABLE IF NOT EXISTS` la crea
     # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
     # aggiunge una **colonna** a quella tabella la aggiunga anche in questo blocco.
@@ -414,7 +427,7 @@ def one(cur):
 # file statici e l'accesso. Tutto il resto richiede una sessione. La difesa sta
 # qui, in un punto solo, invece che su ogni rotta: dimenticarsene una
 # significherebbe esporre i dati di una casa, e sono cinquanta.
-ROTTE_PUBBLICHE = {"/", "/api/houses", "/api/login", "/api/logout", "/api/session"}
+ROTTE_PUBBLICHE = {"/", "/sw.js", "/api/houses", "/api/login", "/api/logout", "/api/session"}
 
 
 @app.before_request
@@ -710,6 +723,21 @@ def parse_cost(value):
     return round(costo, 2) if costo >= 0 else None
 
 
+def parse_data(value):
+    """Una data `AAAA-MM-GG`, o None se il campo e' vuoto o non e' una data.
+
+    La scadenza e' facoltativa: vuoto vuol dire "non lo so", e un testo che non
+    e' una data non deve entrare nel database per poi rompere l'ordinamento.
+    """
+    testo = (value or "").strip()
+    if not testo:
+        return None
+    try:
+        return datetime.date.fromisoformat(testo).isoformat()
+    except ValueError:
+        return None
+
+
 def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
     name = (name or "").strip()
     if not name:
@@ -863,9 +891,66 @@ def recipe_safety(db, rid, restriction_list):
 
 
 # ---------------------------------------------------------------- index
+def _versione_asset(nome):
+    """Un'impronta breve del file statico, per l'indirizzo `?v=...`.
+
+    Si legge a ogni richiesta della pagina ma si tiene in memoria finché il file
+    non cambia (mtime e dimensione): un `app.js` da 200 KB non si rilegge per
+    intero a ogni apertura, e la versione cambia appena il file cambia.
+    """
+    percorso = os.path.join(BASE_DIR, "static", nome)
+    try:
+        stato = os.stat(percorso)
+    except OSError:
+        return ""
+    chiave = (nome, stato.st_mtime_ns, stato.st_size)
+    with _versione_guardia:
+        if chiave in _versioni:
+            return _versioni[chiave]
+    try:
+        with open(percorso, "rb") as f:
+            impronta = hashlib.sha256(f.read()).hexdigest()[:10]
+    except OSError:
+        return ""
+    with _versione_guardia:
+        _versioni.clear()  # poche voci: una per file, non serve una cache grande
+        _versioni[chiave] = impronta
+    return impronta
+
+
+_versioni = {}
+_versione_guardia = threading.Lock()
+
+# Gli asset della pagina a cui si aggiunge la versione. Non tutte le immagini:
+# quelle dei dati scelgono da sole la loro scadenza e non hanno bisogno di un
+# indirizzo che cambia.
+_ASSET_VERSIONATI = ("style.css", "app.js")
+
+
 @app.route("/")
 def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    percorso = os.path.join(BASE_DIR, "static", "index.html")
+    with open(percorso, "r", encoding="utf-8") as f:
+        html = f.read()
+    for nome in _ASSET_VERSIONATI:
+        versione = _versione_asset(nome)
+        if versione:
+            html = html.replace(f'/static/{nome}"', f'/static/{nome}?v={versione}"')
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Il service worker, servito dalla radice.
+
+    Un service worker controlla solo il percorso da cui e' servito e quelli
+    sotto: servito da `/static/` non potrebbe intercettare la pagina `/`, che e'
+    proprio quella da mostrare senza rete. Quindi si serve da `/sw.js`, anche se
+    il file sta in `static/`.
+    """
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"), "sw.js",
+        mimetype="text/javascript")
 
 
 @app.route("/api/meta")
@@ -934,7 +1019,7 @@ def pantry_suggerimenti():
 def pantry_list():
     db = get_db()
     cur = db.execute(
-        """SELECT p.id, p.quantity, p.unit, p.updated_at,
+        """SELECT p.id, p.quantity, p.unit, p.expires_at, p.updated_at,
                   i.id AS ingredient_id, i.name, i.category
            FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
            ORDER BY i.name"""
@@ -952,6 +1037,7 @@ def pantry_add():
     unit = units.normalize(data.get("unit"))
     iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
     qty = parse_float(data.get("quantity"), 0)
+    scade = parse_data(data.get("expires_at"))
     existing = one(db.execute(
         "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
     if not existing:
@@ -959,22 +1045,42 @@ def pantry_add():
         for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
             converted = units.convert(qty, unit, cand["unit"])
             if converted is not None:
+                # la scadenza piu' vicina e' quella che conta: aggiungendo altra
+                # roba con una data piu' stretta, e' quella che va guardata prima
+                nuova = _scadenza_piu_vicina(cand["expires_at"], scade)
                 db.execute(
-                    "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                    (converted, cand["id"]))
+                    "UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (converted, nuova, cand["id"]))
                 db.commit()
                 rebuild_shopping(db)
                 db.commit()
                 return jsonify({"ok": True}), 201
-        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit, expires_at) "
+                   "VALUES (?, ?, ?, ?)", (iid, qty, unit, scade))
     else:
-        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                   (qty, existing["id"]))
+        nuova = _scadenza_piu_vicina(existing["expires_at"], scade)
+        db.execute("UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                   "updated_at = datetime('now') WHERE id = ?",
+                   (qty, nuova, existing["id"]))
     db.commit()
     # quello che entra in dispensa non serve piu' comprarlo: la lista segue
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True}), 201
+
+
+def _scadenza_piu_vicina(una, altra):
+    """La scadenza piu' vicina fra due date, ignorando le vuote.
+
+    Se una delle due non c'e', vale l'altra: non sapere quando scade qualcosa
+    non cancella quello che si sa di un'altra partita.
+    """
+    if not una:
+        return altra
+    if not altra:
+        return una
+    return min(una, altra)
 
 
 @app.route("/api/pantry/<int:pid>", methods=["PATCH", "DELETE"])
@@ -988,8 +1094,20 @@ def pantry_modify(pid):
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
-    db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
-               (parse_float(data.get("quantity"), 0), pid))
+    # ogni campo si tocca solo se c'e' nel corpo: mandare la sola scadenza non
+    # deve azzerare la quantita', e cambiare la quantita' non deve cancellare la
+    # scadenza. Per togliere la scadenza si manda vuota, che e' diverso dal non
+    # mandarla.
+    campi, valori = [], []
+    if "quantity" in data:
+        campi.append("quantity = ?")
+        valori.append(parse_float(data.get("quantity"), 0))
+    if "expires_at" in data:
+        campi.append("expires_at = ?")
+        valori.append(parse_data(data.get("expires_at")))
+    if campi:
+        campi.append("updated_at = datetime('now')")
+        db.execute(f"UPDATE pantry SET {', '.join(campi)} WHERE id = ?", (*valori, pid))
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True})
