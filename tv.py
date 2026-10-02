@@ -41,11 +41,23 @@ from urllib.parse import urlparse
 # solo e' opaco, quindi l'indirizzo completo resta qui accanto perche' si possa
 # risalire a quale playlist sia.
 PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
-FEED_PREDEFINITO = "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml"
+# Le notizie vengono da piu' sezioni ANSA: il mondo da solo lascia fuori quello
+# che succede in Italia, che e' la prima cosa che si guarda. Le sezioni sono
+# argomenti, non fonti diverse: tutte ANSA, tutte in italiano.
+FEED_PREDEFINITI = (
+    "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
+    "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
+    "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
+    "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
+)
 
 # Quante notizie si tengono. Dieci e' quello che si legge davvero; oltre, la
 # sezione diventa un giornale e non la si scorre piu'.
 MAX_NOTIZIE = 10
+
+# Tetto ai feed dichiarati: con `TV_FEED` se ne possono indicare altri, ma non
+# un numero che moltiplichi le richieste a un sito altrui a ogni aggiornamento.
+MAX_FEED = 12
 
 # Il sommario si accorcia: la notizia e' il titolo, il resto e' un assaggio con
 # il rimando alla fonte.
@@ -74,8 +86,19 @@ def playlist_id() -> str:
     return os.environ.get("TV_PLAYLIST") or PLAYLIST_PREDEFINITA
 
 
-def feed_url() -> str:
-    return os.environ.get("TV_FEED") or FEED_PREDEFINITO
+def feed_urls() -> list:
+    """Gli indirizzi dei feed delle notizie, in ordine.
+
+    `TV_FEED` ne puo' indicare piu' d'uno separati da virgola o da a capo, cosi'
+    si sostituiscono i predefiniti senza toccare il modulo (come `TV_PLAYLIST`).
+    Senza `TV_FEED` si usano le sezioni ANSA predefinite.
+    """
+    dichiarati = os.environ.get("TV_FEED", "").strip()
+    if dichiarati:
+        urls = [u.strip() for u in re.split(r"[,\n]", dichiarati) if u.strip()]
+    else:
+        urls = list(FEED_PREDEFINITI)
+    return urls[:MAX_FEED]
 
 
 def _apri(url: str) -> bytes:
@@ -159,9 +182,13 @@ def _nome_fonte(titolo: str, url: str) -> str:
     return urlparse(url).netloc or "Notizie"
 
 
-def notizie_dal_feed() -> list:
-    """Le ultime notizie, dalla piu' recente. Al massimo `MAX_NOTIZIE`."""
-    url = feed_url()
+def _voci_del_feed(url: str) -> list:
+    """Le notizie di **un** feed, con la fonte gia' risolta.
+
+    Un feed che non risponde o non si legge solleva `NonDisponibile`: chi chiama
+    lo salta e tiene gli altri, perche' le sezioni sono indipendenti e una ferma
+    non deve svuotare le altre.
+    """
     dati = _apri(url)
     try:
         radice = ET.fromstring(dati)
@@ -190,10 +217,41 @@ def notizie_dal_feed() -> list:
             "fonte": fonte,
             "data": _data_iso(_testo(item, "pubDate")),
         })
-    # il feed e' gia' in ordine, ma non ci si appoggia: una fonte che cambia
-    # ordine mostrerebbe le notizie vecchie in cima
-    voci.sort(key=lambda v: v["data"], reverse=True)
-    return voci[:MAX_NOTIZIE]
+    return voci
+
+
+def notizie_dal_feed() -> list:
+    """Le ultime notizie di tutte le sezioni, dalla piu' recente.
+
+    Al massimo `MAX_NOTIZIE`. Un feed fermo non ferma gli altri: si tiene quello
+    che si e' letto, e solo se **nessuno** risponde si solleva `NonDisponibile`,
+    cosi' la cache buona non viene sovrascritta con il vuoto.
+    """
+    voci = []
+    letti = 0
+    for url in feed_urls():
+        try:
+            voci.extend(_voci_del_feed(url))
+            letti += 1
+        except NonDisponibile:
+            continue
+    if not letti:
+        raise NonDisponibile("Nessun feed delle notizie risponde")
+
+    # lo stesso fatto compare in piu' sezioni con titoli diversi: il link e' la
+    # chiave stabile, e tenere due volte la stessa notizia occupa il posto di
+    # un'altra che si sarebbe letta
+    visti = set()
+    uniche = []
+    for voce in voci:
+        if voce["link"] in visti:
+            continue
+        visti.add(voce["link"])
+        uniche.append(voce)
+
+    # l'ordine si rifa': con piu' feed quello di partenza non e' piu' globale
+    uniche.sort(key=lambda v: v["data"], reverse=True)
+    return uniche[:MAX_NOTIZIE]
 
 
 def _data_iso(testo: str) -> str:

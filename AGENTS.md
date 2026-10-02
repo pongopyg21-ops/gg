@@ -666,6 +666,9 @@ Conseguenze pratiche per chi mette mano al codice:
   filtro di ricerca (`renderPantryTable`) è locale: non deve rifare la richiesta dei
   suggerimenti, che non dipendono da cosa si sta cercando. Modificare una quantità
   dalla tabella invece li aggiorna, perché cambia cosa risulta coperto.
+  Con la dispensa **vuota** il riquadro non resta muto: dice di aggiungere qualche
+  ingrediente. Prima spariva e basta, e sembrava che i suggerimenti non esistessero
+  — che è esattamente quello che si vede al primo avvio, quando la dispensa è vuota.
 - **Tempi e costo della ricetta**: `prep_minutes` e `cook_minutes` sono due colonne
   separate perché dicono cose diverse — la cottura si può lasciare andare da sola, la
   preparazione assorbe l'attenzione — e il totale è la loro somma, calcolata nel
@@ -1644,12 +1647,26 @@ Le scelte che contano:
   e che è già costato un giro: per questo c'è un test sui campi, non solo sul
   numero di voci.
 
+- **Le notizie vengono da più sezioni, non da un feed solo.** `FEED_PREDEFINITI`
+  raccoglie mondo, cronaca, politica ed economia di ANSA: il solo «mondo» lascia
+  fuori quello che succede in Italia, che è la prima cosa che si guarda. Le
+  sezioni sono argomenti della stessa fonte, non fonti diverse.
+- **Una sezione ferma non svuota le altre.** `notizie_dal_feed` legge ogni feed
+  per conto suo e salta quelli che non rispondono; solo se **nessuno** risponde
+  solleva `NonDisponibile`, così la cache buona non viene sovrascritta con il
+  vuoto. Lo stesso fatto compare in più sezioni con titoli diversi: si deduplica
+  sul link, che è la chiave stabile, perché il doppione occuperebbe il posto di
+  un'altra notizia.
+
 Il feed e la playlist si possono sostituire dall'ambiente (`TV_FEED`,
-`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. I predefiniti
-sono la playlist **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
-il feed Atom vuole il solo `list=...`) e le notizie **ANSA mondo**. I test non
-toccano la rete: sostituiscono `tv._apri` con risposte preparate e provano
-l'interpretazione e la tenuta della cache, che sono le parti che sbagliano.
+`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. `TV_FEED`
+accetta **più indirizzi** separati da virgola o a capo (con un tetto `MAX_FEED`),
+così una casa sceglie le proprie sezioni. I predefiniti sono la playlist
+**GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
+il feed Atom vuole il solo `list=...`) e le notizie dalle sezioni ANSA **mondo,
+cronaca, politica, economia**. I test non toccano la rete: sostituiscono
+`tv._apri` con risposte preparate e provano l'interpretazione e la tenuta della
+cache, che sono le parti che sbagliano.
 
 
 

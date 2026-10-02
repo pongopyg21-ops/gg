@@ -473,6 +473,9 @@ button:focus-visible {
   margin: 0 0 10px; font-family: var(--font-display);
   font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: -.005em;
 }
+.sug-vuoto {
+  margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; max-width: 46ch;
+}
 .sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
 .sug-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
