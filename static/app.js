@@ -3017,7 +3017,7 @@ function speak(text) {
       rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
 
 let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map(), avvisato: false,
-                  llmDisponibile: false, llmAbilitato: false };
+                  llmPronto: false, llmManca: '', llmAbilitato: false };
 
 // oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
 const CLOUD_CACHE_MAX = 40;
@@ -3161,7 +3161,8 @@ async function caricaVoceCloud() {
     voceCloud.voci = d.voci || [];
     voceCloud.predefinita = d.predefinita;
     voceCloud.maxCaratteri = d.max_caratteri || 600;
-    voceCloud.llmDisponibile = !!d.llm_disponibile;
+    voceCloud.llmPronto = !!d.llm_pronto;
+    voceCloud.llmManca = d.llm_manca || '';
     voceCloud.llmAbilitato = !!d.llm_abilitato;
     popolaLlm();
     mostraAvvisoRobotica();
@@ -3171,24 +3172,28 @@ async function caricaVoceCloud() {
   } catch (_e) { /* resta la voce del browser */ }
 }
 
-/** Mostra l'interruttore della comprensione col modello, se c'e' la chiave.
+/** Mostra l'interruttore della comprensione col modello, se il modello risponde.
 
-    Se la chiave manca, il blocco sparisce e resta un avviso con il nome esatto
-    della variabile da registrare: e' l'unica cosa che l'utente puo' fare, e
-    indovinarla e' impossibile. Un interruttore che non fa niente sarebbe peggio
-    di nessun interruttore. */
+    Ci sono due casi diversi e prima si confondevano: la **configurazione** c'e'
+    (chiave registrata, oppure l'endpoint locale predefinito, che c'e' sempre) e
+    il modello **risponde**. Il secondo caso e' quello che conta: con Ollama
+    spento l'interruttore si accendeva a vuoto e ogni comando finiva in silenzio
+    sulle regole. Se non risponde, il blocco sparisce e resta un avviso che dice
+    la causa e cosa fare (`llm_manca`), che e' l'unica cosa che serve per uscirne. */
 function popolaLlm() {
   const blocco = $('#voice-llm-block');
   const avviso = $('#voice-llm-avviso');
   if (!blocco) return;
-  blocco.hidden = !voceCloud.llmDisponibile;
-  if (avviso) avviso.hidden = voceCloud.llmDisponibile;
-  if (avviso) avviso.textContent = voceCloud.llmDisponibile ? '' :
-    'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.';
+  blocco.hidden = !voceCloud.llmPronto;
+  if (avviso) {
+    avviso.hidden = voceCloud.llmPronto;
+    avviso.textContent = voceCloud.llmPronto ? '' : (voceCloud.llmManca ||
+      'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.');
+  }
   const sel = $('#voice-llm');
   if (sel) {
     sel.checked = voceCloud.llmAbilitato;
-    sel.disabled = !voceCloud.llmDisponibile;
+    sel.disabled = !voceCloud.llmPronto;
   }
 }
 
@@ -4581,7 +4586,10 @@ if (llmToggle) {
         return;
       }
       voceCloud.llmAbilitato = !!d.llm_abilitato;
+      voceCloud.llmPronto = !!d.llm_pronto;
+      voceCloud.llmManca = d.llm_manca || '';
       e.target.checked = voceCloud.llmAbilitato;
+      popolaLlm();
       toast(voceCloud.llmAbilitato
         ? 'Comandi compresi anche dal modello.'
         : 'Uso di nuovo il riconoscitore a regole.');

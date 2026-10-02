@@ -2634,9 +2634,12 @@ def voce_config():
     l'elenco delle voci fra cui scegliere. Il client decide in base a questo se
     usare il cloud o ripiegare sulla voce del browser.
 
-    Dice anche se la comprensione col modello e' **disponibile** (chiave
-    configurata) e se questa casa l'ha accesa: le due cose sono diverse, e il
-    pannello le distingue.
+    Dice anche tre cose sulla comprensione col modello, che sono diverse fra
+    loro e il pannello non deve confondere: se la configurazione **c'e'**
+    (`llm_disponibile`), se il modello **risponde adesso** (`llm_pronto`) e —
+    quando non risponde — **cosa manca** (`llm_manca`). L'interruttore si mostra
+    solo se il modello risponde: un endpoint locale c'e' sempre, anche a Ollama
+    spento, e senza `llm_pronto` si accendeva a vuoto.
     """
     db = get_db()
     return jsonify({
@@ -2647,7 +2650,13 @@ def voce_config():
         "voci": voce_cloud.elenco_voci(),
         "predefinita": voce_cloud.VOCE_PREDEFINITA,
         "max_caratteri": voce_cloud.MAX_CARATTERI,
+        # `disponibile` dice che la configurazione c'e'; `pronto` che il modello
+        # risponde **adesso**. Un endpoint locale c'e' sempre (il predefinito),
+        # anche a Ollama spento: senza la seconda, l'interruttore si accendeva a
+        # vuoto e ogni comando finiva in silenzio sulle regole.
         "llm_disponibile": comprensione.configurato(),
+        "llm_pronto": comprensione.raggiungibile(),
+        "llm_manca": comprensione.messaggio_stato(),
         "llm_abilitato": _llm_abilitato(db),
     })
 
@@ -2658,19 +2667,21 @@ def voce_llm():
 
     La chiave non si tocca da qui: entra solo dall'ambiente o da un file, prima
     dell'avvio, come quella di Azure. Questa rotta cambia **solo** se usarla.
-    Senza chiave configurata l'interruttore non ha effetto, e risponde 400
-    dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
+    Si accende solo se il modello **risponde**: una configurazione che c'e' ma
+    non risponde (Ollama spento) e' il caso che faceva credere di aver capito i
+    comandi mentre ogni frase finiva in silenzio sulle regole. Se non risponde si
+    risponde 400 dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
     """
     db = get_db()
     data = request.get_json(force=True) or {}
     abilitato = bool(data.get("abilitato"))
-    if abilitato and not comprensione.configurato():
-        return jsonify({"error": "Nessun modello configurato. Un modello in casa "
-                                 "(Ollama) non richiede chiave: avvialo e assicurati "
-                                 "che LLM_BASE_URL punti a http://127.0.0.1:11434/v1. "
-                                 "Per un servizio in rete registra LLM_API_KEY."}), 400
+    if abilitato and not comprensione.raggiungibile():
+        return jsonify({"error": comprensione.messaggio_stato()
+                                 or "Nessun modello raggiungibile. Avvialo e riprova."}), 400
     imposta_llm(db, abilitato)
     return jsonify({"llm_disponibile": comprensione.configurato(),
+                    "llm_pronto": comprensione.raggiungibile(),
+                    "llm_manca": comprensione.messaggio_stato(),
                     "llm_abilitato": _llm_abilitato(db)})
 
 

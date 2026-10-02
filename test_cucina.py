@@ -7354,6 +7354,26 @@ class _RispostaLlm:
     def __exit__(self, *a): return False
 
 
+class _ModelloFinto:
+    """Un modello che **risponde**: sia alla verifica di raggiungibilita'
+    (`/api/tags` o `/models`), sia alla chat (`/chat/completions`).
+
+    Serve perche' le due cose ora sono distinte: la chiave dice che la
+    configurazione c'e', ma l'interruttore si accende solo se il modello
+    risponde. Questa classe finge entrambe, cosi' i test provano il percorso
+    vero invece di dipendere dalla rete."""
+
+    def __init__(self, contenuto: str = '{"intent": "unknown"}'):
+        self.contenuto = contenuto
+        self.url = []
+
+    def __call__(self, richiesta, timeout=None):
+        self.url.append(richiesta.full_url)
+        if richiesta.full_url.endswith(("/api/tags", "/models")):
+            return _RispostaLlm('{"models": []}')
+        return _RispostaLlm(self.contenuto)
+
+
 def test_comprensione_valida_solo_un_intento_che_esiste():
     """Un intento inventato dal modello non deve arrivare all'esecuzione."""
     assert comprensione._ripulisci({"intent": "spegni_la_luce"})["intent"] == "unknown"
@@ -7400,6 +7420,51 @@ def test_un_modello_in_casa_non_richiede_una_chiave(monkeypatch):
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
     assert comprensione.configurato()
+
+
+def test_la_disponibilita_non_basta_serve_che_il_modello_risponda(monkeypatch):
+    """Il difetto che questo corregge: l'endpoint locale predefinito c'e' sempre,
+    quindi `configurato()` era vero anche a Ollama spento. L'app diceva
+    "disponibile" e l'interruttore si accendeva, ma ogni comando finiva in
+    silenzio sulle regole. `raggiungibile()` guarda davvero se risponde."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    # configurazione presente, ma nessuno risponde
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("connessione rifiutata")))
+    assert comprensione.configurato() is True
+    assert comprensione.raggiungibile() is False
+    # e l'avviso dice la causa vera, non "manca la chiave"
+    msg = comprensione.messaggio_stato()
+    assert "Ollama non risponde" in msg and "ollama pull" in msg
+
+
+def test_se_il_modello_risponde_la_verifica_passa(monkeypatch):
+    """Con Ollama che risponde la verifica passa, e l'indirizzo interrogato e'
+    quello giusto: l'elenco dei modelli sta in `/api/tags`, non in `/v1`."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    finto = _ModelloFinto()
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", finto)
+    assert comprensione.raggiungibile() is True
+    assert finto.url and finto.url[0].endswith("/api/tags")
+    assert comprensione.messaggio_stato() == ""
+
+
+def test_con_una_chiave_ma_servizio_muto_l_avviso_nomina_la_chiave(monkeypatch):
+    """Un servizio in rete con la chiave ma che non risponde: la causa non e'
+    Ollama, quindi l'avviso non deve parlare di Ollama."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setenv("LLM_BASE_URL", "https://esempio.invalid/v1")
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("rete assente")))
+    assert comprensione.raggiungibile() is False
+    # con la chiave presente l'avviso e' vuoto: la configurazione e' completa,
+    # e' solo il servizio a non rispondere. Non si accusa la chiave.
+    assert comprensione.messaggio_stato() == ""
 
 
 def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch):
@@ -7478,8 +7543,12 @@ def test_senza_modello_l_interruttore_non_si_accende(client, monkeypatch):
 
 
 def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
-    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta."""
+    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta.
+
+    Il modello e' finto ma **risponde**: da quando l'interruttore si accende solo
+    se risponde, una chiave da sola non basta piu'."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     r = client.put("/api/voce/llm", json={"abilitato": True})
     assert r.status_code == 200 and r.get_json()["llm_abilitato"] is True
     cfg = client.get("/api/voce/config").get_json()
@@ -7508,6 +7577,7 @@ def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(cli
     Il modello e' finto: si prova l'**integrazione** — che la sua risposta vinca
     su quella del parser e finisca davvero nel database."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {
         "intent": "storage_add", "name": "vino", "quantity": None, "unit": None,
@@ -7526,6 +7596,7 @@ def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(cli
 def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
     """`unknown` dal modello non cancella quello che il parser sapeva gia' fare."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {"intent": "unknown"})
     r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
@@ -7535,6 +7606,36 @@ def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
 def test_la_comprensione_e_disattiva_di_partenza(client):
     """Nessuna chiamata a consumo senza che l'utente l'abbia accesa."""
     assert client.get("/api/voce/config").get_json()["llm_abilitato"] is False
+
+
+def test_non_si_accende_l_interruttore_se_il_modello_non_risponde(client, monkeypatch):
+    """L'endpoint locale predefinito c'e' sempre, anche a Ollama spento: senza
+    questa guardia l'interruttore si accendeva e ogni comando finiva in silenzio
+    sulle regole. Ora la rotta chiede che il modello **risponda**, e se no dice
+    la causa (Ollama spento / modello non scaricato), non "manca la chiave"."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("connessione rifiutata")))
+    r = client.put("/api/voce/llm", json={"abilitato": True})
+    assert r.status_code == 400
+    assert "Ollama non risponde" in r.get_json()["error"]
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_pronto"] is False and cfg["llm_abilitato"] is False
+
+
+def test_lo_stato_distingue_configurato_da_raggiungibile(client, monkeypatch):
+    """`/api/voce/config` espone le due cose separatamente: `disponibile` (c'e'
+    la configurazione) e `pronto` (il modello risponde). E' la distinzione che
+    mancava e che faceva mentire il pannello."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_disponibile"] is True and cfg["llm_pronto"] is True
+    assert cfg["llm_manca"] == ""
 
 
 def _nomi_chiamati_senza_definizione(js):

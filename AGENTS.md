@@ -1189,10 +1189,21 @@ Le tre scelte che contano:
   E' una scelta dell'utente, non del dispositivo, per questo sta nella casa e non
   in `localStorage`.
 - **L'interruttore non accende una cosa che non c'e'.** `PUT /api/voce/llm` con
-  `abilitato: true` e nessun modello risponde **400** dicendo cosa manca (per un
-  servizio in rete il nome della variabile, `LLM_API_KEY`; per un modello di casa
-  l'indirizzo da controllare). L'alternativa — accettare e non fare niente — e'
-  peggio di un rifiuto: l'utente crederebbe di aver acceso qualcosa.
+  `abilitato: true` e nessun modello **raggiungibile** risponde **400** dicendo
+  cosa manca: per un servizio in rete il nome della variabile (`LLM_API_KEY`),
+  per un modello di casa la causa vera (Ollama spento / modello non scaricato).
+  L'alternativa — accettare e non fare niente — e' peggio di un rifiuto: l'utente
+  crederebbe di aver acceso qualcosa.
+- **`configurato()` non e' `raggiungibile()`.** Sono due cose diverse, e
+  confonderle faceva mentire il pannello: un endpoint locale c'e' **sempre** (e'
+  il predefinito), quindi `configurato()` era vero anche a Ollama spento.
+  `/api/voce/config` espone `llm_disponibile` (c'e' la configurazione),
+  `llm_pronto` (il modello risponde **adesso**) e `llm_manca` (la causa, se
+  manca). L'interruttore si mostra — e si accende — solo se `llm_pronto`, che e'
+  una verifica di rete breve (`raggiungibile()`, `TIMEOUT_VERIFICA` 1.5 s) contro
+  l'elenco dei modelli: `/api/tags` per Ollama (porta 11434), `/models` per un
+  servizio in rete. Un guasto di rete qui non e' un errore, e' "non pronto": si
+  resta sulle regole senza rompere niente.
 
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
 (`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una
@@ -1216,7 +1227,10 @@ rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
   `configurato()` pretendesse `LLM_API_KEY` resterebbe spenta proprio la
   configurazione predefinita. `_e_locale()` riconosce 127.0.0.1/localhost
   nell'indirizzo. Nei test, per simulare "nessun modello", va impostato un
-  `LLM_BASE_URL` in rete e tolta la chiave.
+  `LLM_BASE_URL` in rete e tolta la chiave; per un modello che **risponde**
+  (necessario ora che l'interruttore lo richiede) si sostituisce
+  `comprensione.urllib.request.urlopen` con `_ModelloFinto`, che finge sia
+  `/api/tags` sia la chat.
 
 Le variabili sono `LLM_API_KEY` (serve solo ai servizi in rete), `LLM_MODEL`
 (default `qwen2.5:7b-instruct`) e `LLM_BASE_URL` (default Ollama in locale; lo
