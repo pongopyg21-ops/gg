@@ -12,9 +12,10 @@ leggere i due formati (Atom per la playlist, RSS per le notizie). Sono formati
 semplici, e una libreria in piu' sarebbe una cosa da aggiornare per leggere
 cinque campi.
 
-Le notizie sono **max dieci** e si rinnovano una volta al giorno: un titolo, una
-riga di sommario e un rimando alla fonte, non l'articolo. Il testo e' di chi lo
-scrive, e la casa non e' il posto per ricopiarlo.
+Le notizie sono **max venti**, da piu' testate (ANSA e RaiNews), mescolate e si
+rinnovano una volta al giorno: un titolo, una riga di sommario e un rimando alla
+fonte, non l'articolo. Il testo e' di chi lo scrive, e la casa non e' il posto
+per ricopiarlo.
 
 Il modulo non apre database per conto suo: riceve una connessione. Cosi' non
 importa `app` (che importa questo) e resta provabile da solo.
@@ -56,14 +57,16 @@ FEED_PREDEFINITI = (
     "https://www.rainews.it/rss/tutti",
 )
 
-# Quante notizie si tengono. Dieci e' quello che si legge davvero; oltre, la
-# sezione diventa un giornale e non la si scorre piu'.
-MAX_NOTIZIE = 10
+# Quante notizie si tengono. Venti: dieci riempiono la prima schermata e il
+# resto si scorre, ma il taglio non e' piu' cosi' stretto che una testata sola
+# lo occupi tutto — con piu' fonti le notizie si alternano, e alternandosi ne
+# servono di piu' perche' ognuna ne porti abbastanza.
+MAX_NOTIZIE = 20
 
 # Quante voci puo' portare un singolo feed al totale. Senza, un feed
-# generalista (RaiNews ne pubblica decine) riempirebbe da solo le dieci notizie
-# e le sezioni ANSA sparirebbero: le fonti si mescolano, non si sostituiscono.
-MAX_PER_FEED = 4
+# generalista (RaiNews ne pubblica decine) riempirebbe da solo le notizie e le
+# sezioni ANSA sparirebbero: le fonti si mescolano, non si sostituiscono.
+MAX_PER_FEED = 10
 
 # Tetto ai feed dichiarati: con `TV_FEED` se ne possono indicare altri, ma non
 # un numero che moltiplichi le richieste a un sito altrui a ogni aggiornamento.
@@ -230,16 +233,58 @@ def _voci_del_feed(url: str) -> list:
     return voci
 
 
+def _chiave_titolo(titolo: str) -> str:
+    """La chiave di confronto di un titolo, per i quasi-doppioni.
+
+    Lo stesso fatto esce in piu' sezioni con titoli che differiscono per un
+    dettaglio minimo: "Giuseppe Graviano: 'Mio nonno...'" e "Giuseppe Graviano,
+    'mio nonno...'". Il link cambia, il titolo no: si confronta il titolo
+    ridotto a lettere minuscole e spazi, senza punteggiatura. Non e' la stessa
+    cosa del link — quello prende i doppioni identici, questa i titoli uguali a
+    meno di virgolette e trattini.
+    """
+    return re.sub(r"[^a-z0-9 ]", "", (titolo or "").lower()).strip()
+
+
+def _ordina_per_data(voci: list) -> list:
+    """Dalla piu' recente. Una data vuota (illeggibile) finisce in fondo, non in
+    cima: senza data una notizia non e' «nuova», e' solo senza data."""
+    return sorted(voci, key=lambda v: v["data"] or "", reverse=True)
+
+
+def _mescola_per_fonte(voci: list) -> list:
+    """Alterna le testate, partendo dalla notizia piu' recente.
+
+    Un elenco ordinato solo per data diventa una testata sola: ANSA pubblica
+    molto piu' spesso di RaiNews, quindi le sue voci occupano tutto il tetto e
+    RaiNews non si vede mai — e' il difetto che c'e' stato davvero. Qui si
+    prende a turno la notizia piu' recente di ogni testata, cosi' le fonti si
+    alternano, e dentro ogni testata l'ordine resta per data.
+    """
+    per_fonte = {}
+    for voce in _ordina_per_data(voci):
+        per_fonte.setdefault(voce["fonte"], []).append(voce)
+    gruppi = list(per_fonte.values())
+    totale = sum(len(g) for g in gruppi)
+    miste = []
+    while len(miste) < totale:
+        for gruppo in gruppi:
+            if gruppo:
+                miste.append(gruppo.pop(0))
+    return miste
+
+
 def notizie_dal_feed() -> list:
-    """Le ultime notizie di tutte le sezioni, dalla piu' recente.
+    """Le ultime notizie, mescolate fra le testate, dalla piu' recente.
 
     Al massimo `MAX_NOTIZIE`. Un feed fermo non ferma gli altri: si tiene quello
     che si e' letto, e solo se **nessuno** risponde si solleva `NonDisponibile`,
     cosi' la cache buona non viene sovrascritta con il vuoto.
 
-    Ogni feed porta al massimo `MAX_PER_FEED` voci: un generalista pubblica
-    decine di notizie e senza tetto occuperebbe da solo l'elenco, facendo
-    sparire le sezioni. Cosi' invece le fonti convivono.
+    Ogni feed porta al massimo `MAX_PER_FEED` voci e ogni **testata** una fetta
+    del totale: un generalista pubblica decine di notizie e senza tetto
+    occuperebbe da solo l'elenco, facendo sparire le sezioni. Cosi' invece le
+    fonti convivono e si alternano (`_mescola_per_fonte`).
     """
     voci = []
     letti = 0
@@ -252,20 +297,39 @@ def notizie_dal_feed() -> list:
     if not letti:
         raise NonDisponibile("Nessun feed delle notizie risponde")
 
-    # lo stesso fatto compare in piu' sezioni con titoli diversi: il link e' la
-    # chiave stabile, e tenere due volte la stessa notizia occupa il posto di
-    # un'altra che si sarebbe letta
-    visti = set()
+    # lo stesso fatto compare in piu' sezioni, con lo stesso link o con titoli
+    # che differiscono di poco: due chiavi, e tenere due volte la stessa notizia
+    # occuperebbe il posto di un'altra che si sarebbe letta
+    visti_link = set()
+    visti_titoli = set()
     uniche = []
     for voce in voci:
-        if voce["link"] in visti:
+        chiave = _chiave_titolo(voce["titolo"])
+        if voce["link"] in visti_link or (chiave and chiave in visti_titoli):
             continue
-        visti.add(voce["link"])
+        visti_link.add(voce["link"])
+        if chiave:
+            visti_titoli.add(chiave)
         uniche.append(voce)
 
-    # l'ordine si rifa': con piu' feed quello di partenza non e' piu' globale
-    uniche.sort(key=lambda v: v["data"], reverse=True)
-    return uniche[:MAX_NOTIZIE]
+    # Si scelgono prima le piu' recenti, poi si taglia per testata: il tetto per
+    # feed non basta, perche' ANSA ha quattro sezioni e le sue voci recenti
+    # (piu' numerose) terrebbero comunque fuori RaiNews. La fetta per testata e'
+    # **proporzionale al numero di testate** — con una sola fonte non si taglia
+    # niente, con due si fa meta' per uno — cosi' la promessa «ANSA e RaiNews»
+    # regge anche quando una pubblica molto piu' spesso dell'altra.
+    testate = {v["fonte"] for v in uniche}
+    tetto = max(1, MAX_NOTIZIE // len(testate)) if testate else MAX_NOTIZIE
+    per_testata = {}
+    scelte = []
+    for voce in _ordina_per_data(uniche):
+        fonte = voce["fonte"]
+        if per_testata.get(fonte, 0) >= tetto:
+            continue
+        per_testata[fonte] = per_testata.get(fonte, 0) + 1
+        scelte.append(voce)
+
+    return _mescola_per_fonte(scelte)[:MAX_NOTIZIE]
 
 
 def _data_iso(testo: str) -> str:

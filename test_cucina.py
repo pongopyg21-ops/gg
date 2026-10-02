@@ -7737,9 +7737,10 @@ def test_una_playlist_senza_video_e_un_guasto_non_una_sezione_vuota(client, monk
         tv.video_playlist()
 
 
-def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatch):
-    """Il tetto e' dieci e l'ordine e' per data, non quello del feed: una fonte
-    che cambia ordine non deve mostrare le notizie vecchie in cima.
+def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, monkeypatch):
+    """Il tetto e' venti e le fonti si **alternano**, non si ordinano solo per
+    data: un elenco per sola data diventa una testata sola, perche' ANSA pubblica
+    molto piu' spesso di RaiNews — ed e' il difetto che c'e' stato davvero.
 
     Servono piu' feed: un singolo feed e' limitato a `MAX_PER_FEED` (vedi
     `test_un_feed_generalista_non_occupa_tutto_l_elenco`)."""
@@ -7755,9 +7756,52 @@ def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatc
         risposte[u] = f"<rss version='2.0'><channel><title>Prova{f}</title>{voci}</channel></rss>"
     finta_tv(monkeypatch, risposte)
     notizie = tv.notizie_dal_feed()
-    assert len(notizie) == tv.MAX_NOTIZIE == 10
-    date = [n["data"] for n in notizie]
-    assert date == sorted(date, reverse=True)
+    assert len(notizie) <= tv.MAX_NOTIZIE
+    # le fonti si alternano: due notizie di fila non vengono dalla stessa testata
+    fonti = [n["fonte"] for n in notizie]
+    assert all(a != b for a, b in zip(fonti, fonti[1:]))
+    # e dentro ogni testata l'ordine resta per data
+    for fonte in set(fonti):
+        date = [n["data"] for n in notizie if n["fonte"] == fonte]
+        assert date == sorted(date, reverse=True)
+
+
+def test_due_testate_si_alternano_e_riempiono_le_venti(client, monkeypatch):
+    """Il difetto vero: ANSA ha quattro sezioni e pubblica piu' spesso, quindi
+    ordinando solo per data le sue voci recenti occupano tutto l'elenco e RaiNews
+    non si vede mai. Il taglio per testata tiene la promessa: dieci e dieci."""
+    u1, u2 = "https://esempio.invalid/ansa", "https://esempio.invalid/rai"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    ansa = [_voce(f"ansa-{i}", f"Thu, 02 Apr 2026 09:{i:02d}:00 +0200") for i in range(15)]
+    rai = [_voce(f"rai-{i}", f"Wed, 01 Apr 2026 08:{i:02d}:00 +0200") for i in range(15)]
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it", ansa),
+        u2: _feed("RaiNews", rai),
+    })
+    notizie = tv.notizie_dal_feed()
+    fonti = [n["fonte"] for n in notizie]
+    assert len(notizie) == tv.MAX_NOTIZIE
+    assert fonti.count("ANSA.it") == fonti.count("RaiNews") == tv.MAX_NOTIZIE // 2
+    assert all(a != b for a, b in zip(fonti, fonti[1:]))
+
+
+def test_i_titoli_quasi_uguali_non_si_ripetono(client, monkeypatch):
+    """Lo stesso fatto esce in due sezioni con titoli che differiscono per un
+    apostrofo o una virgola, e con link diversi: si riconosce dal titolo ridotto,
+    altrimenti il doppione occupa il posto di un'altra notizia."""
+    u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    v1 = ("<item><title>Giuseppe Graviano: 'Mio nonno fece una societa'</title>"
+          "<link>https://esempio.invalid/1</link><description>S</description>"
+          "<pubDate>Thu, 02 Apr 2026 09:00:00 +0200</pubDate></item>")
+    v2 = ("<item><title>Giuseppe Graviano, 'Mio nonno fece una societa'</title>"
+          "<link>https://esempio.invalid/2</link><description>S</description>"
+          "<pubDate>Thu, 02 Apr 2026 08:00:00 +0200</pubDate></item>")
+    finta_tv(monkeypatch, {u1: _feed("RSS di Mondo  - ANSA.it", [v1]),
+                           u2: _feed("RSS di Cronaca  - ANSA.it", [v2])})
+    notizie = tv.notizie_dal_feed()
+    assert len(notizie) == 1
+    assert notizie[0]["link"] == "https://esempio.invalid/1"
 
 
 def test_un_feed_generalista_non_occupa_tutto_l_elenco(client, monkeypatch):

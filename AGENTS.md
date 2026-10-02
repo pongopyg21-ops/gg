@@ -1663,9 +1663,10 @@ Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per i
 due formati (Atom per la playlist, RSS per le notizie). Sono formati semplici, e
 una libreria in più sarebbe una cosa da aggiornare per leggere cinque campi.
 
-Le notizie sono **max dieci** e si rinnovano **una volta al giorno**; i video una
-volta al giorno anche loro. Si mostra titolo, sommario breve e rimando alla
-fonte, non l'articolo: il testo è di chi lo scrive.
+Le notizie sono **max venti**, da più testate (ANSA e RaiNews), mescolate fra
+loro, e si rinnovano **una volta al giorno**; i video una volta al giorno anche
+loro. Si mostra titolo, sommario breve e rimando alla fonte, non l'articolo: il
+testo è di chi lo scrive.
 
 Le scelte che contano:
 
@@ -1710,15 +1711,25 @@ Le scelte che contano:
   Italia, che è la prima cosa che si guarda, e quattro sezioni ANSA sono la stessa
   linea editoriale — una seconda testata racconta gli stessi fatti in modo diverso.
 - **Un feed generalista non occupa tutto l'elenco.** RaiNews pubblica decine di
-  voci: senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le dieci
-  notizie e le sezioni ANSA sparirebbero. Le fonti si mescolano, non si
-  sostituiscono.
+  voci: senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le notizie e
+  le sezioni ANSA sparirebbero. Le fonti si mescolano, non si sostituiscono.
+- **Le testate si alternano e si tagliano per testata.** Il solo ordinamento per
+  data non basta: ANSA ha quattro sezioni e pubblica molto più spesso di RaiNews,
+  quindi le sue voci recenti occupano tutto l'elenco e RaiNews non si vede mai —
+  è il difetto che c'è stato davvero, con venti notizie tutte ANSA. Due rimedi:
+  `_mescola_per_fonte` prende a turno la più recente di ogni testata, e la fetta
+  per testata è **proporzionale al numero di testate** (`MAX_NOTIZIE // n`), così
+  con una sola fonte non si taglia niente e con due si fa metà per uno. Dentro
+  ogni testata l'ordine resta per data.
+- **I quasi-doppioni si riconoscono dal titolo.** Lo stesso fatto esce in più
+  sezioni con lo stesso link (deduplica sul link) ma anche con titoli che
+  differiscono per un apostrofo o una virgola e con link diversi: `_chiave_titolo`
+  riduce il titolo a lettere minuscole e spazi, senza punteggiatura, e il
+  doppione non occupa il posto di un'altra notizia.
 - **Una sezione ferma non svuota le altre.** `notizie_dal_feed` legge ogni feed
   per conto suo e salta quelli che non rispondono; solo se **nessuno** risponde
   solleva `NonDisponibile`, così la cache buona non viene sovrascritta con il
-  vuoto. Lo stesso fatto compare in più sezioni con titoli diversi: si deduplica
-  sul link, che è la chiave stabile, perché il doppione occuperebbe il posto di
-  un'altra notizia.
+  vuoto.
 
 Il feed e la playlist si possono sostituire dall'ambiente (`TV_FEED`,
 `TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. `TV_FEED`
