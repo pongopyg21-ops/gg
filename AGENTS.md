@@ -26,6 +26,18 @@ ogni comando e `./avvia.sh` la trova. `./avvia.sh diagnosi` deve dire
 `da: ambiente`. Su una macchina propria, invece, il file accanto al programma è
 la via normale e non sparisce.
 
+**Il segreto si esporta solo per i comandi che ne scrivono il nome.** L'iniezione
+scatta sul **nome esatto** che compare nel testo del comando: `./avvia.sh restart`
+da solo non basta, e il server riparte **senza** la chiave — l'app dice "il browser
+non riesce a raggiungere il servizio di ascolto" e sembra un firewall, mentre è
+solo un riavvio senza chiave. Per riavviare con la voce attiva:
+
+    AZURE_SPEECH_KEY="$AZURE_SPEECH_KEY" AZURE_SPEECH_REGION="$AZURE_SPEECH_REGION" ./avvia.sh restart
+
+Il segno che è andata bene: `avvia.sh` stampa `voce neurale Azure attiva`. Un
+nome generico (`AZURE_SPEECH`) **non** innesca l'iniezione: va scritto il nome
+registrato per intero.
+
 **Fili aperti**: (a) la casa `Gian` è stata rimossa dal registro su richiesta
 dell'utente; il file `case/case-gian.db` resta su disco (scelta voluta, vedi
 `houses.elimina`), quindi se un domani servisse si può ancora registrare; (b) la
