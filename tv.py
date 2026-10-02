@@ -32,9 +32,13 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
-# La playlist dell'utente e il feed delle notizie. Sono due indirizzi che
+# La playlist di partenza e il feed delle notizie. Sono due indirizzi che
 # cambiano con la casa, non con il codice: si possono sostituire dall'ambiente
 # senza toccare il modulo, come le chiavi dei servizi.
+#
+# La playlist vera la sceglie la casa (tabella `tv_prefs`): all'ambiente resta
+# il ruolo di **predefinita** per le case che non l'hanno ancora scelta, cosi'
+# un'installazione esistente continua a funzionare senza toccare niente.
 #
 # La playlist e' "GIAGIA-Max":
 #   https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R
@@ -95,8 +99,76 @@ class NonDisponibile(Exception):
     """La fonte non risponde o risponde male. Chi chiama serve la copia vecchia."""
 
 
-def playlist_id() -> str:
-    return os.environ.get("TV_PLAYLIST") or PLAYLIST_PREDEFINITA
+def normalizza_playlist(valore: str) -> str:
+    """Estrae e valida l'id di una playlist da quello che l'utente ha incollato.
+
+    Nessuno incolla `PLQKkPe...`: si incolla l'indirizzo della barra del
+    browser, o un indirizzo con altri parametri dentro. L'id e' il valore di
+    `list=`, l'unica cosa che il feed Atom accetta; restituirlo sbagliato vuol
+    dire una sezione vuota senza spiegazione, quindi si accettano le forme note
+    e per il resto si prende il testo cosi' com'e' (potrebbe gia' essere un id).
+
+    Solleva `ValueError` se non si capisce.
+    """
+    valore = (valore or "").strip()
+    if not valore:
+        return ""
+    m = re.search(r"[?&]list=([A-Za-z0-9_-]+)", valore)
+    if m:
+        return m.group(1)
+    if re.match(r"^https?://", valore):
+        # un indirizzo senza `list=`: e' un video, un canale o una pagina, non
+        # una playlist — meglio dirlo che costruire un feed che non esiste
+        raise ValueError("Nell'indirizzo non c'è una playlist (manca «list=»)")
+    # gia' un id: gli id di YouTube sono alfanumerici con `-` e `_`
+    if re.fullmatch(r"[A-Za-z0-9_-]{10,60}", valore):
+        return valore
+    raise ValueError("Playlist non riconosciuta: incolla l'indirizzo o l'id")
+
+
+def playlist_id(db=None) -> str:
+    """L'id della playlist della casa.
+
+    L'ordine: quello **scelto dalla casa** (`tv_prefs`), poi `TV_PLAYLIST`
+    dall'ambiente, poi la predefinita. La casa viene prima dell'ambiente perche'
+    e' una scelta dell'utente, e l'ambiente e' il valore di partenza per chi non
+    ha ancora scelto.
+    """
+    scelta = _playlist_salvata(db)
+    return scelta or os.environ.get("TV_PLAYLIST") or PLAYLIST_PREDEFINITA
+
+
+def _playlist_salvata(db) -> str:
+    if db is None:
+        return ""
+    try:
+        riga = db.execute("SELECT playlist FROM tv_prefs WHERE id = 1").fetchone()
+    except Exception:
+        # tabella assente (database non ancora migrato): si ricade sui valori
+        # di partenza invece di far cadere la richiesta
+        return ""
+    if riga is None:
+        return ""
+    valore = riga[0] if not hasattr(riga, "keys") else riga["playlist"]
+    return (valore or "").strip()
+
+
+def imposta_playlist(db, valore: str) -> str:
+    """Salva la playlist scelta dalla casa e azzera la copia dei video.
+
+    L'id si valida **prima** di salvarlo: una playlist storta salvata sarebbe
+    una sezione vuota che non si capisce da dove venga. La cache si azzera
+    perche' i video di prima sono di un'altra playlist: tenerli mostrerebbe la
+    scelta vecchia fino al prossimo giro, e `aggiorna` li salta perche' la copia
+    e' ancora fresca.
+    """
+    scelto = normalizza_playlist(valore)
+    db.execute(
+        "INSERT INTO tv_prefs (id, playlist) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET playlist = excluded.playlist", (scelto,))
+    db.execute("DELETE FROM tv_cache WHERE chiave = 'video'")
+    db.commit()
+    return scelto
 
 
 def feed_urls() -> list:
@@ -142,14 +214,16 @@ def _testo(elemento, percorso, ns=None, predefinito=""):
     return (trovato.text or "").strip() if trovato is not None and trovato.text else predefinito
 
 
-def video_playlist() -> list:
+def video_playlist(db=None) -> list:
     """I video della playlist, nell'ordine in cui sono.
 
     Si legge il feed Atom che YouTube espone per ogni playlist pubblica. Non si
     interpreta la pagina: quella dipende dal consenso ai cookie e dal JavaScript,
     e cambia formato — il feed no.
+
+    L'id lo risolve `playlist_id(db)`: la playlist della casa, se c'e'.
     """
-    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist_id()}"
+    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist_id(db)}"
     dati = _apri(url)
     try:
         radice = ET.fromstring(dati)
@@ -274,7 +348,7 @@ def _mescola_per_fonte(voci: list) -> list:
     return miste
 
 
-def notizie_dal_feed() -> list:
+def notizie_dal_feed(db=None) -> list:
     """Le ultime notizie, mescolate fra le testate, dalla piu' recente.
 
     Al massimo `MAX_NOTIZIE`. Un feed fermo non ferma gli altri: si tiene quello
@@ -407,7 +481,7 @@ def _aggiorna(db, chiave, ore, scarica, forse=True):
         if forse and _fresco(quando, ore):
             return False
         try:
-            nuovi = scarica()
+            nuovi = scarica(db)
         except NonDisponibile:
             # rete assente o fonte cambiata: si tiene quello che c'e' e si riprova
             # al giro dopo. Nessuna eccezione al chiamante: la sezione si apre lo

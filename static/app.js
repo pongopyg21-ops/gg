@@ -248,6 +248,12 @@ function disegnaTv(d) {
   const video = d.video || [];
   const notizie = d.notizie || [];
 
+  // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
+  // guardando. Non si riscrive sopra quello che l'utente sta digitando.
+  if (d.playlist && document.activeElement !== $('#tv-playlist')) {
+    $('#tv-playlist').value = d.playlist;
+  }
+
   $('#tv-video').innerHTML = video.length ? video.map((v) => `
     <article class="tv-video-card">
       <div class="tv-embed">
@@ -278,6 +284,27 @@ function disegnaTv(d) {
   const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
   $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
 }
+
+$('#tv-playlist-salva').addEventListener('click', async () => {
+  const btn = $('#tv-playlist-salva');
+  const valore = $('#tv-playlist').value.trim();
+  if (!valore) return toast('Incolla l\'indirizzo o l\'id della playlist.');
+  btn.disabled = true;
+  btn.textContent = 'Cambio…';
+  try {
+    const d = await api('/api/tv/playlist', { method: 'PUT', body: { playlist: valore } });
+    $('#tv-playlist').value = d.playlist;
+    disegnaTv(d);
+    toast(d.video && d.video.length
+      ? `Playlist cambiata: ${d.video.length} video.`
+      : 'Playlist salvata. I video arrivano al prossimo aggiornamento.');
+  } catch (e) {
+    toast(e.message || 'Playlist non riconosciuta.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Cambia playlist';
+  }
+});
 
 $('#tv-aggiorna').addEventListener('click', async () => {
   const btn = $('#tv-aggiorna');
@@ -4692,7 +4719,11 @@ async function creaCasa(evento) {
   try {
     await api('/api/houses', {
       method: 'POST',
-      body: { nome: $('#new-nome').value, password: $('#new-password').value },
+      body: {
+        nome: $('#new-nome').value,
+        password: $('#new-password').value,
+        playlist: $('#new-playlist').value.trim(),
+      },
     });
     await avviaApp();
   } catch (e) {

@@ -69,6 +69,12 @@
         <input id="new-password" type="password" autocomplete="new-password"
                placeholder="Almeno 4 caratteri" required>
       </div>
+      <div class="field">
+        <label for="new-playlist">Playlist YouTube per la TV <span class="muted">(facoltativa)</span></label>
+        <input id="new-playlist" placeholder="Incolla l'indirizzo della playlist o il suo id">
+      </div>
+      <p class="home-lead">Senza playlist, la TV parte con quella predefinita:
+        si può cambiare quando si vuole dalla sezione TV.</p>
       <p id="new-errore" class="accesso-errore" hidden></p>
       <div class="accesso-bottoni">
         <button id="new-crea" class="primary" type="submit">Crea la casa</button>
@@ -463,6 +469,14 @@
          scorrendo: quindici player caricati insieme sono quindici volte il
          lavoro di uno. -->
     <h3 class="section-title">Playlist di casa</h3>
+    <div class="tv-playlist-riga">
+      <input id="tv-playlist" type="text"
+             placeholder="Indirizzo o id della playlist YouTube"
+             aria-label="Playlist YouTube della casa">
+      <button id="tv-playlist-salva" type="button">Cambia playlist</button>
+    </div>
+    <p class="hint">La playlist è della casa: cambiandola qui, la TV scarica
+      subito i video della nuova.</p>
     <div id="tv-video" class="tv-video"></div>
 
     <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>

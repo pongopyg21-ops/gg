@@ -1754,6 +1754,39 @@ cronaca, politica, economia** più **RaiNews**. I test non toccano la rete:
 sostituiscono `tv._apri` con risposte preparate e provano l'interpretazione e la
 tenuta della cache, che sono le parti che sbagliano.
 
+### La playlist è della casa, non del modulo
+
+La playlist è una **preferenza dell'utente**, quindi sta nel database della casa
+(`tv_prefs`, riga singola) e non in una costante né in `localStorage`: due case
+sullo stesso server non devono vedersi i video l'una dell'altra, e la scelta è
+della casa, non del dispositivo da cui la si guarda. Alla variabile d'ambiente
+`TV_PLAYLIST` resta il ruolo di **predefinita** per chi non ha ancora scelto,
+così un'installazione esistente continua a funzionare senza toccare niente.
+
+L'ordine con cui `playlist_id(db)` risolve la playlist è: scelta della casa,
+poi `TV_PLAYLIST`, poi `PLAYLIST_PREDEFINITA`. La casa viene prima dell'ambiente
+perché è la volontà dell'utente; l'ambiente è il punto di partenza.
+
+La playlist si chiede **alla creazione della casa** (campo `playlist`, facoltativo
+in `POST /api/houses`) e si può cambiare dopo con `PUT /api/tv/playlist`, dalla
+sezione TV. In entrambi i casi l'id si **valida prima di salvarlo**: si accetta
+l'indirizzo incollato dalla barra del browser (`normalizza_playlist` ne estrae
+il `list=`) o l'id nudo, e un video o un canale vengono rifiutati con un errore
+chiaro. Alla creazione la validazione viene **prima** di registrare la casa, così
+una playlist storta non lascia una casa a metà; al cambio, prima di salvare, così
+non si resta con una sezione vuota che non si capisce da dove venga.
+
+Cambiare playlist **azzera la copia dei video** (`DELETE FROM tv_cache`): i video
+di prima sono di un'altra playlist, e `aggiorna` li salterebbe perché la copia è
+ancora fresca. Poi `aggiorna_video(db, forse=False)` scarica subito, come il
+pulsante «Aggiorna»: è l'utente che l'ha chiesto.
+
+I test dell'endpoint usano `_niente_rete(monkeypatch)`, che spegne sia `tv._apri`
+sia `_aggiorna_tv_in_sottofondo`. Il filo di sottofondo di `/api/tv` sopravvive
+alla richiesta e, quando `monkeypatch` ha già rimesso a posto `_apri`, scarica
+davvero tenendo aperto il database di prova: la fixture lo cancella sotto e il
+test dopo fallisce con «disk I/O error». È un difetto del test, non dell'app.
+
 
 
 ## Il Calendario: gli impegni con un promemoria

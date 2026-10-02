@@ -238,6 +238,18 @@ CREATE TABLE IF NOT EXISTS tv_cache (
     aggiornato REAL NOT NULL DEFAULT 0    -- secondi dall'epoca: e' un confronto, non una data
 );
 
+-- La playlist YouTube scelta dalla casa. Sta nella casa e non in `localStorage`
+-- ne' in una costante del modulo: e' una preferenza dell'utente, e due case sullo
+-- stesso server non devono vedersi i video l'una dell'altra. Alla variabile
+-- d'ambiente `TV_PLAYLIST` resta il ruolo di predefinita per chi non ha ancora
+-- scelto, cosi' un'installazione esistente non cambia da sola.
+--
+-- Una riga sola (id = 1), come `llm_prefs` e `profile`.
+CREATE TABLE IF NOT EXISTS tv_prefs (
+    id       INTEGER PRIMARY KEY CHECK (id = 1),
+    playlist TEXT NOT NULL DEFAULT ''
+);
+
 -- ------------------------------------------------------------ calendario
 -- Gli impegni: appuntamenti, scadenze, ricorrenze. Vivono dentro Progetti
 -- perche' sono cose da fare, ma in una tabella a parte: un progetto ha un

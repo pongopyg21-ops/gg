@@ -1853,6 +1853,13 @@ button { transition: transform .12s ease; }
 .tv-vuoto { color: var(--muted); font-size: 14px; padding: 10px 0; }
 .tv-aggiornato { font-size: 12px; color: var(--muted); }
 
+/* La playlist della casa si cambia da qui: un campo e un pulsante, sulla stessa
+   riga. Sul telefono vanno a capo, perche' un indirizzo incollato e' lungo e un
+   campo stretto lo nasconde a meta'. */
+.tv-playlist-riga { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.tv-playlist-riga input { flex: 1; min-width: 220px; }
+.tv-playlist-riga button { white-space: nowrap; }
+
 @media (max-width: 560px) {
   .tv-video { grid-template-columns: 1fr; }
 }

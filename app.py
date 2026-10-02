@@ -565,6 +565,39 @@ def api_tv():
     return jsonify({
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+    })
+
+
+@app.route("/api/tv/playlist", methods=["PUT"])
+def api_tv_playlist():
+    """Cambia la playlist della casa e riscarica i video.
+
+    La scelta e' della **casa**, non del dispositivo: chi amministra decide cosa
+    si guarda in TV, e le altre case restano con la loro. L'id si valida prima di
+    salvarlo (una playlist storta sarebbe una sezione vuota senza spiegazione) e
+    la copia vecchia si azzera, perche' i video di prima sono di un'altra
+    playlist: tenerli mostrerebbe la scelta vecchia fino al prossimo giro.
+
+    Il riscaricamento aspetta la rete, come il pulsante «Aggiorna»: e' l'utente
+    che l'ha chiesto e si aspetta di vedere il risultato subito. Se la rete non
+    risponde la playlist resta salvata e i video si riproveranno dopo.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    data = request.get_json(force=True) or {}
+    try:
+        scelto = tv.imposta_playlist(db, data.get("playlist") or "")
+    except ValueError as err:
+        return bad_request(str(err))
+    tv.aggiorna_video(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "playlist": scelto,
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
+        "notizie": tv.notizie(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -588,6 +621,7 @@ def api_tv_aggiorna():
         "aggiornati": esito,
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -676,17 +710,33 @@ def api_logout():
 
 @app.route("/api/houses", methods=["POST"])
 def api_house_create():
-    """Crea una casa con il ricettario di partenza e vi collega chi la crea."""
+    """Crea una casa con il ricettario di partenza e vi collega chi la crea.
+
+    La playlist TV e' **facoltativa**: se indicata si valida **prima** di
+    registrare la casa, altrimenti si creerebbe una casa e poi si scoprirebbe
+    che la playlist non va bene, lasciandola a meta'. Se manca, la casa eredita
+    il valore d'ambiente o la predefinita.
+    """
     data = request.get_json(force=True) or {}
+    playlist = (data.get("playlist") or "").strip()
+    if playlist:
+        try:
+            playlist = tv.normalizza_playlist(playlist)
+        except ValueError as err:
+            return bad_request(str(err))
     try:
         slug = houses.crea(data.get("nome"), data.get("password"))
     except ValueError as err:
         return bad_request(str(err))
     init_db(houses.db_path(slug), con_ricettario=True)
+    if playlist:
+        with closing(sqlite3.connect(houses.db_path(slug))) as db:
+            db.row_factory = sqlite3.Row
+            tv.imposta_playlist(db, playlist)
     session.clear()
     session["casa"] = slug
     session.permanent = True
-    return jsonify({"house": slug, "nome": houses.nome_di(slug)}), 201
+    return jsonify({"house": slug, "nome": houses.nome_di(slug), "playlist": playlist}), 201
 
 
 def bad_request(msg, code=400):

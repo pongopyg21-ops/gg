@@ -7943,6 +7943,130 @@ def test_l_endpoint_tv_richiede_l_accesso(anon):
     della casa, ma nemmeno una pagina pubblica da lasciare aperta."""
     assert anon.get("/api/tv").status_code == 401
     assert anon.post("/api/tv/aggiorna").status_code == 401
+    assert anon.put("/api/tv/playlist", json={"playlist": "x" * 20}).status_code == 401
+
+
+def _niente_rete(monkeypatch):
+    """Nei test la rete non esiste e il sottofondo non deve partire.
+
+    `/api/tv` riprova a scaricare **dopo** aver risposto, in un filo che apre una
+    connessione sua. In un test quel filo sopravvive alla richiesta e, quando
+    `monkeypatch` ha gia' rimesso a posto `_apri`, scarica davvero tenendo aperto
+    il database di prova: la fixture lo cancella sotto e il test dopo fallisce
+    con «disk I/O error». Si spengono entrambe le cose: il guasto di rete e il
+    filo di sottofondo.
+    """
+    monkeypatch.setattr(tv, "_apri",
+                        lambda url: (_ for _ in ()).throw(tv.NonDisponibile("test")))
+    monkeypatch.setattr(app_module, "_aggiorna_tv_in_sottofondo", lambda db: None)
+
+
+def test_l_indirizzo_della_playlist_diventa_il_suo_id():
+    """Nessuno incolla `PLQKkPe...`: si incolla l'indirizzo della barra del
+    browser. Il feed Atom vuole il solo id, quindi va estratto — altrimenti la
+    sezione resta vuota senza che si capisca perche'."""
+    atteso = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
+    assert tv.normalizza_playlist(
+        f"https://www.youtube.com/playlist?list={atteso}") == atteso
+    # altri parametri nell'indirizzo non devono confondere
+    assert tv.normalizza_playlist(
+        f"https://www.youtube.com/watch?v=abc&list={atteso}&index=2") == atteso
+    # un id gia' nudo si accetta com'e'
+    assert tv.normalizza_playlist(atteso) == atteso
+
+
+def test_un_indirizzo_senza_playlist_non_si_accetta():
+    """Un video o un canale non sono una playlist: dirlo subito e' meglio che
+    salvare un id sbagliato e mostrare una sezione vuota."""
+    for storto in ("https://www.youtube.com/watch?v=abc123",
+                   "https://www.youtube.com/@un-canale",
+                   "non un id!!"):
+        with pytest.raises(ValueError):
+            tv.normalizza_playlist(storto)
+
+
+def test_la_playlist_e_della_casa_non_del_modulo(client, monkeypatch):
+    """La playlist scelta si salva nella casa: e' una preferenza dell'utente, e
+    due case sullo stesso server non devono vedersi i video l'una dell'altra."""
+    _niente_rete(monkeypatch)
+    scelta = "PLcasa1234567890abcdef"
+    r = client.put("/api/tv/playlist", json={"playlist": scelta})
+    assert r.status_code == 200
+    assert r.get_json()["playlist"] == scelta
+    # il modulo continua a leggere la scelta della casa, non una costante
+    assert tv.playlist_id(app_module.get_db()) == scelta
+    assert client.get("/api/tv").get_json()["playlist"] == scelta
+
+
+def test_una_playlist_non_valida_non_si_salva(client, monkeypatch):
+    """L'id si valida **prima** di salvarlo: una playlist storta salvata sarebbe
+    una sezione vuota che non si capisce da dove venga."""
+    _niente_rete(monkeypatch)
+    prima = client.get("/api/tv").get_json()["playlist"]
+    r = client.put("/api/tv/playlist", json={"playlist": "https://www.youtube.com/watch?v=abc"})
+    assert r.status_code == 400
+    assert client.get("/api/tv").get_json()["playlist"] == prima, "la scelta buona resta"
+
+
+def test_cambiare_playlist_azzera_i_video_vecchi(client, monkeypatch):
+    """I video di prima sono di un'altra playlist: tenerli mostrerebbe la scelta
+    vecchia fino al prossimo giro, perche' `aggiorna` salta la copia fresca."""
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST})
+    db = app_module.get_db()
+    tv.aggiorna_video(db, forse=False)
+    # il sottofondo di `/api/tv` non deve scaricare: la copia e' appena scritta
+    _niente_rete(monkeypatch)
+    assert len(client.get("/api/tv").get_json()["video"]) == 2
+
+    # la nuova playlist risponde con un feed diverso: si deve vedere quello
+    nuovo = "PLnuova9876543210zyxwvu"
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={nuovo}": FEED_PLAYLIST.replace(
+            "aaa111", "ccc333").replace("bbb222", "ddd444"),
+    })
+    r = client.put("/api/tv/playlist", json={"playlist": nuovo})
+    assert r.status_code == 200
+    assert [v["id"] for v in r.get_json()["video"]] == ["ccc333", "ddd444"]
+
+
+def test_la_casa_nuova_puo_nascere_con_una_playlist(anon, monkeypatch):
+    """La richiesta nasce qui: alla creazione si chiede quale playlist si
+    gradisce, cosi' la TV e' giusta fin dal primo avvio."""
+    _niente_rete(monkeypatch)
+    scelta = "PLscelta1234567890abcde"
+    r = anon.post("/api/houses", json={
+        "nome": "Casa Playlist", "password": "aaaa", "playlist": scelta})
+    assert r.status_code == 201
+    assert r.get_json()["playlist"] == scelta
+    assert anon.get("/api/tv").get_json()["playlist"] == scelta
+
+
+def test_una_playlist_non_valida_non_crea_la_casa(anon):
+    """Si valida **prima** di registrare la casa: crearla e poi scoprire che la
+    playlist non va bene la lascerebbe a meta'."""
+    r = anon.post("/api/houses", json={
+        "nome": "Casa Storta", "password": "aaaa",
+        "playlist": "https://www.youtube.com/watch?v=abc"})
+    assert r.status_code == 400
+    assert "Casa Storta" not in [c["nome"] for c in anon.get("/api/houses").get_json()]
+
+
+def test_senza_playlist_la_casa_usa_la_predefinita(anon, monkeypatch):
+    """Chi non sceglie non resta senza TV: la playlist predefinita vale per lui."""
+    _niente_rete(monkeypatch)
+    anon.post("/api/houses", json={"nome": "Casa Senza Scelta", "password": "aaaa"})
+    assert anon.get("/api/tv").get_json()["playlist"] == tv.playlist_id()
+
+
+def test_la_playlist_si_scegle_alla_creazione_e_si_cambia_dalla_tv(client):
+    """La playlist si chiede creando la casa (la richiesta nasce li'), ma si deve
+    anche poter cambiare dopo senza rifare la casa: un canale preferito cambia."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="new-playlist"' in html
+    assert 'id="tv-playlist"' in html and 'id="tv-playlist-salva"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/tv/playlist" in js
+    assert "$('#new-playlist').value" in js
 
 
 def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
