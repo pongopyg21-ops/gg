@@ -1203,6 +1203,9 @@ $('#shop-add').addEventListener('click', async () => {
 let chDati = null;       // { oggi, attivita, piano, attive }
 let chMeta = null;       // { frequencies, areas, days, months, chore_day }
 let chSummary = null;
+// La scheda aperta delle pulizie (Oggi / Routine / Calendario / Attività). Vive
+// solo in memoria: riaprendo l'app si torna su «Oggi», che è la cosa da fare.
+let chPanel = 'oggi';
 
 // il tempo si formatta in minuti finche' e' poco, poi in ore: "2 h 10 min" si
 // legge subito, "130 min" no
@@ -1236,6 +1239,7 @@ async function renderIgiene() {
   renderRoutine();
   renderAnno();
   renderChoreList();
+  mostraChPanel(chPanel);
 }
 
 function riempiGiorno() {
@@ -1244,6 +1248,19 @@ function riempiGiorno() {
   sel.innerHTML = chMeta.days.map((d) =>
     `<option value="${d.key}">${esc(d.label)}</option>`).join('');
   sel.value = String(chMeta.chore_day);
+}
+
+/* La scheda delle pulizie: si disegna solo quella aperta, le altre restano
+   nascoste. Il pulsante attivo si riconosce dal colore, non solo dal pannello:
+   senza, cambiando scheda non si saprebbe dove si e'. */
+function mostraChPanel(nome) {
+  chPanel = nome;
+  $$('.ch-nav-btn').forEach((b) => {
+    const attivo = b.dataset.chp === nome;
+    b.classList.toggle('active', attivo);
+    b.setAttribute('aria-selected', attivo ? 'true' : 'false');
+  });
+  $$('[data-chp-panel]').forEach((p) => p.classList.toggle('active', p.dataset.chpPanel === nome));
 }
 
 /* --- cosa c'e' da fare adesso --- */
@@ -1348,9 +1365,9 @@ function renderRoutine() {
 }
 
 /* --- calendario dell'anno: un mese per riga, con il suo focus ---
-   Il mese corrente e' evidenziato ma chiuso: le sue attivita' sono gia' elencate
-   per intero nel blocco qui sopra, e ripeterle due volte nella stessa schermata
-   confonde invece di aiutare. */
+   Il mese corrente e' aperto, gli altri chiusi: le sue attivita' sono anche nel
+   blocco «Oggi», ma qui si vede il mese intero e a che punto e'. Aprire tutti e
+   dodici i mesi farebbe una pagina di quarantacinque righe, che non si scorre. */
 function renderAnno() {
   const anno = chDati.piano.data.slice(0, 4);
   const meseCorrente = Number(chDati.piano.data.slice(5, 7));
@@ -1361,7 +1378,7 @@ function renderAnno() {
     const fatte = voci.filter((v) => v.ultima && v.ultima.slice(0, 4) === anno).length;
     const cls = m.mese === meseCorrente ? ' current' : '';
     return `
-      <details class="ch-month-card${cls}">
+      <details class="ch-month-card${cls}"${m.mese === meseCorrente ? ' open' : ''}>
         <summary>
           <span class="ch-month-name">${esc(m.nome)}</span>
           <span class="ch-month-title">${esc(m.titolo)}</span>
@@ -1479,6 +1496,14 @@ $('#ch-blitz').addEventListener('click', () => {
   avviaTimer(prime[0].id, prime[0].name, 15);
   switchTab('igiene');
 });
+
+/* Le schede delle pulizie: cambiando scheda si ridisegna solo quella aperta. */
+$$('.ch-nav-btn').forEach((b) => b.addEventListener('click', () => {
+  mostraChPanel(b.dataset.chp);
+  if (b.dataset.chp === 'routine') renderRoutine();
+  if (b.dataset.chp === 'anno') renderAnno();
+  if (b.dataset.chp === 'catalogo') renderChoreList();
+}));
 
 /* --- azioni sulle attività --- */
 $('#ch-oggi').addEventListener('click', choreClick);

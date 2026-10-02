@@ -299,33 +299,49 @@
   </section>
 
   <!-- IGIENE — pulizie di casa e della cucina. Il metodo e' quello del calendario
-       mensile: tre blocchi per frequenza (ogni giorno, ogni settimana, ogni mese)
-       piu' un calendario annuale con un focus per mese. La pagina apre su cosa
-       c'e' da fare adesso, perche' e' quello che serve davvero. -->
+       mensile: quattro frequenze (ogni giorno, ogni settimana, ogni mese, una
+       volta l'anno) piu' un focus per mese. -->
   <section id="tab-igiene" class="tab">
-    <div id="ch-oggi"></div>
-    <div class="ch-blitz-row">
-      <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
-      <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
+    <!-- La sezione fa tre mestieri diversi: cosa c'e' da fare adesso, cosa
+         esiste (il catalogo), cosa tocca nell'anno. In un'unica colonna
+         diventavano un catalogo lungo il doppio delle voci, con le stesse
+         attivita' ripetute in piu' blocchi. Le schede li separano: la prima
+         schermata e' solo quello che si fa oggi. -->
+    <div class="ch-nav" role="tablist" aria-label="Sezioni delle pulizie">
+      <button class="ch-nav-btn active" data-chp="oggi" role="tab" aria-selected="true">Oggi</button>
+      <button class="ch-nav-btn" data-chp="routine" role="tab" aria-selected="false">Routine</button>
+      <button class="ch-nav-btn" data-chp="anno" role="tab" aria-selected="false">Calendario</button>
+      <button class="ch-nav-btn" data-chp="catalogo" role="tab" aria-selected="false">Attività</button>
     </div>
 
-    <h3 class="section-title">Routine</h3>
-    <div class="toolbar">
-      <label class="ch-day">Giorno delle pulizie
-        <select id="ch-day"></select>
-      </label>
+    <div class="ch-panel active" data-chp-panel="oggi">
+      <div id="ch-oggi"></div>
+      <div class="ch-blitz-row">
+        <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
+        <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
+      </div>
     </div>
-    <div id="ch-routine"></div>
 
-    <h3 class="section-title">Calendario dell'anno</h3>
-    <div id="ch-year" class="ch-year"></div>
-
-    <h3 class="section-title">Attività</h3>
-    <div class="toolbar">
-      <button id="ch-new" class="ghost">+ Nuova attività</button>
-      <span id="ch-count" class="ch-count"></span>
+    <div class="ch-panel" data-chp-panel="routine">
+      <div class="toolbar">
+        <label class="ch-day">Giorno delle pulizie
+          <select id="ch-day"></select>
+        </label>
+      </div>
+      <div id="ch-routine"></div>
     </div>
-    <div id="ch-list"></div>
+
+    <div class="ch-panel" data-chp-panel="anno">
+      <div id="ch-year" class="ch-year"></div>
+    </div>
+
+    <div class="ch-panel" data-chp-panel="catalogo">
+      <div class="toolbar">
+        <button id="ch-new" class="ghost">+ Nuova attività</button>
+        <span id="ch-count" class="ch-count"></span>
+      </div>
+      <div id="ch-list"></div>
+    </div>
   </section>
 
   <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->

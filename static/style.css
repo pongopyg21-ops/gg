@@ -1003,10 +1003,33 @@ tr:last-child td { border-bottom: none; }
 .tab.active .card:nth-child(n+6), .tab.active .day:nth-child(n+6) { animation-delay: .15s; }
 
 /* ---------- pulizie e igiene ----------
-   Il metodo: tre blocchi per frequenza piu' il calendario annuale. La gerarchia
-   visiva segue l'ordine d'uso — prima cosa c'e' da fare adesso (grande, con il
-   tempo stimato), poi la routine, poi l'anno. Le righe sono liste, non tabelle:
-   si spuntano con un tocco e su telefono restano leggibili. */
+   Il metodo: quattro frequenze piu' il calendario annuale, divisi in schede
+   (Oggi / Routine / Calendario / Attività) perche' in un'unica colonna il
+   catalogo si ripeteva in piu' blocchi. La gerarchia visiva segue l'ordine
+   d'uso — prima cosa c'e' da fare adesso (grande, con il tempo stimato), poi
+   la routine, poi l'anno. Le righe sono liste, non tabelle: si spuntano con un
+   tocco e su telefono restano leggibili. */
+
+/* Le schede della sezione: Oggi, Routine, Calendario, Attività. La prima
+   schermata era lunga il doppio delle voci perché ogni blocco ripeteva il
+   catalogo; ora se ne vede uno per volta, e la riga delle schede dice dove si
+   e' senza occupare spazio. */
+.ch-nav {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); margin-bottom: 20px;
+}
+.ch-nav-btn {
+  background: none; border: none; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  padding: 9px 14px; font-family: inherit; font-size: 14px; font-weight: 500;
+  color: var(--muted);
+  transition: color .16s ease, border-color .16s ease;
+}
+.ch-nav-btn:hover { color: var(--ink); }
+.ch-nav-btn.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+
+.ch-panel { display: none; }
+.ch-panel.active { display: block; }
 
 .ch-hero {
   display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;

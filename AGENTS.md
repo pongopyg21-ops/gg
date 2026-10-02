@@ -766,6 +766,19 @@ Conseguenze pratiche per chi mette mano al codice:
   impraticabile e il piano verrebbe abbandonato: è il motivo per cui il test
   `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti` conta solo oggi,
   `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in entrambi i casi.
+- **La sezione Igiene è divisa in schede** (Oggi / Routine / Calendario / Attività),
+  e ognuna ha il suo pannello (`.ch-panel`, `data-chp-panel`). Prima erano un'unica
+  colonna: lo stesso catalogo compariva in più blocchi — le quotidiane tre volte,
+  le stagionali due — e la prima schermata arrivava a ~129 righe per 60 voci.
+  Le schede separano tre mestieri diversi: **cosa fare adesso**, **cosa esiste**
+  (il catalogo) e **cosa tocca nell'anno**. `mostraChPanel()` in `app.js` tiene
+  aperto un pannello solo; il pulsante attivo si riconosce dal colore, non solo dal
+  contenuto. La scheda aperta (`chPanel`) vive in memoria e non si salva: riaprendo
+  l'app si torna su «Oggi». I test `test_la_sezione_igiene_ha_le_schede_e_i_pannelli`
+  e `test_il_cambio_scheda_mostra_un_pannello_solo` lo tengono fermo.
+- Nel calendario annuale **solo il mese corrente è aperto** (`<details open>`), gli
+  altri chiusi: aprirli tutti faceva una pagina di quarantacinque righe che non si
+  scorre. Le attività del mese corrente restano comunque visibili nel blocco «Oggi».
 - Le scadenze delle pulizie **non si salvano**: si ricavano dall'ultima riga di
   `chore_log`, come i giorni della spesa dal piano. Una tabella di appoggio si
   disallineerebbe appena si registra un completamento. `scadenza()` restituisce

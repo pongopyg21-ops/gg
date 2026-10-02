@@ -1944,6 +1944,57 @@ def test_catalogo_copre_tutte_le_frequenze():
         assert any(v["frequency"] == chiave for v in voci), chiave
 
 
+def test_la_sezione_igiene_ha_le_schede_e_i_pannelli(client):
+    """Le schede separano tre mestieri diversi — cosa fare adesso, cosa esiste,
+    cosa tocca nell'anno — e ognuna ha il suo pannello. Senza un pannello per
+    scheda, il pulsante non avrebbe niente da mostrare e la sezione tornerebbe
+    un'unica colonna."""
+    html = client.get("/").get_data(as_text=True)
+    sezione = html[html.index('id="tab-igiene"'):]
+    sezione = sezione[:sezione.index("</section>")]
+    for chiave in ("oggi", "routine", "anno", "catalogo"):
+        assert f'data-chp="{chiave}"' in sezione, f"manca la scheda {chiave}"
+        assert f'data-chp-panel="{chiave}"' in sezione, f"manca il pannello {chiave}"
+    # una sola scheda parte aperta, e i pannelli sono tutti definiti
+    assert sezione.count('ch-nav-btn active') == 1
+    assert sezione.count('ch-panel active') == 1
+
+
+def test_il_cambio_scheda_mostra_un_pannello_solo():
+    """`mostraChPanel` e' la resa vera nel client: si esegue con node su un DOM
+    finto. Il difetto da evitare e' che i pannelli restino tutti visibili, che e'
+    esattamente cio' che rendeva la sezione dispersiva."""
+    import subprocess
+    js = open("static/app.js", encoding="utf-8").read()
+    inizio = js.index("function mostraChPanel")
+    blocco = js[inizio: js.index("\n}\n", inizio) + 3]
+    prova = blocco + """
+class Finto {
+  constructor(dataset) {
+    this.dataset = dataset;
+    this.classes = new Set();
+    this.attrs = {};
+    this.classList = { toggle: (c, on) => (on ? this.classes.add(c) : this.classes.delete(c)) };
+  }
+  setAttribute(k, v) { this.attrs[k] = v; }
+}
+const bottoni = ['oggi', 'routine', 'anno', 'catalogo'].map((k) => new Finto({ chp: k }));
+const pannelli = ['oggi', 'routine', 'anno', 'catalogo'].map((k) => new Finto({ chpPanel: k }));
+const $$ = (sel) => sel.includes('btn') ? bottoni : pannelli;
+mostraChPanel('anno');
+console.log(JSON.stringify({
+  bottoniAttivi: bottoni.filter((b) => b.classes.has('active')).map((b) => b.dataset.chp),
+  pannelliVisibili: pannelli.filter((p) => p.classes.has('active')).map((p) => p.dataset.chpPanel),
+}));
+"""
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    assert d["bottoniAttivi"] == ["anno"]
+    assert d["pannelliVisibili"] == ["anno"], "si vede piu' di un pannello"
+
+
+
 def test_catalogo_ogni_mese_dell_anno_ha_una_voce():
     """Il calendario annuale ha dodici mesi: un mese vuoto sarebbe un buco visibile."""
     mesi_con_voce = {v["month"] for v in igiene.catalogo() if v["frequency"] == "stagionale"}
