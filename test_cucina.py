@@ -7046,6 +7046,93 @@ async function api(url) {
     assert d["nascosto"] is False
     assert "Pasta" in d["html"]
 
+def test_il_calendario_in_home_mostra_il_mese_col_puntino(client):
+    """La home ripropone il calendario dei Progetti in fondo, in sola lettura. Si
+    esegue `renderHomeCalendario` vera con node: il mese compare, il giorno
+    occupato ha il puntino e il giorno di oggi e' marcato. `calMeta` e
+    `homeCalVista` sono riscritti, quindi il preludio li dichiara con `let`."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeCalendario")
+    preludio = """
+let calMeta = { categories: ['altro'], months: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+  category_colors: { altro: '--accent' } };
+let homeCalVista = null;
+const stato = { griglia: '', mese: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-cal') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  if (sel === '#home-cal-mese') return { set textContent(v) { stato.mese = v; }, get textContent() { return stato.mese; } };
+  if (sel === '#home-cal-grid') return { set innerHTML(v) { stato.griglia = v; }, get innerHTML() { return stato.griglia; } };
+  return { classList: { add() {}, remove() {} }, innerHTML: '', textContent: '' };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function pad(n) { return String(n).padStart(2, '0'); }
+async function api(url) {
+  if (url === '/api/appointments') return {
+    mese: { anno: 2026, mese: 10, celle: [
+      { giorno: 1, iso: '2026-10-01', nel_mese: true, weekend: false },
+      { giorno: 2, iso: '2026-10-02', nel_mese: true, weekend: false },
+    ] },
+    appointments: [{ when_date: '2026-10-02', category: 'altro', title: 'Dentista' }],
+  };
+  throw new Error('non previsto: ' + url);
+}
+"""
+    coda = "\nrenderHomeCalendario().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False, "col calendario il riquadro deve vedersi"
+    assert d["mese"] == "Ottobre 2026", d["mese"]
+    assert "cal-cella" in d["griglia"]
+    assert "2026-10-02" in d["griglia"]
+    assert "occupato" in d["griglia"], "il giorno con un impegno porta il puntino"
+    assert "cal-cella oggi" in d["griglia"], "il giorno di oggi e' marcato"
+
+
+def test_il_calendario_in_home_tace_se_il_server_non_risponde(client):
+    """Se gli impegni non arrivano, il riquadro in home resta nascosto: un
+    calendario vuoto e' peggio di nessun calendario."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeCalendario")
+    preludio = """
+let calMeta = { categories: [], months: [], category_colors: {} };
+let homeCalVista = null;
+const stato = { nascosto: false };
+function $(sel) {
+  if (sel === '#home-cal') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  return { classList: { add() {}, remove() {} }, innerHTML: '', textContent: '' };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function pad(n) { return String(n); }
+async function api() { throw new Error('rete assente'); }
+"""
+    coda = "\nrenderHomeCalendario().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+
+
+def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
+    """La griglia in home ha il suo mese (`homeCalVista`): sfogliare in home non
+    deve spostare il calendario dei Progetti (`calVista`)."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "homeCalVista" in js
+    assert "let homeCalVista" in js
+    # i pulsanti della home scrivono solo homeCalVista, non calVista
+    assert "$('#home-cal-prev')" in js and "$('#home-cal-next')" in js
+    assert "homeCalVista =" in js
+    # la sezione sta dentro la home, in fondo: dopo il riepilogo «Oggi» e prima
+    # delle schede delle sezioni
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="home-cal"' in html
+    assert html.index('id="home-oggi"') < html.index('id="home-cal"') < html.index('class="home-cards"')
+    # in home si sfoglia e basta: nessun pulsante per creare impegni
+    sezione = html[html.index('id="home-cal"'):html.index('class="home-cards"')]
+    assert "home-cal-apri" in sezione
+    assert "Nuovo impegno" not in sezione
+
+
+
 
 def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
     """La latenza riferita: il comando partiva solo **dopo** la fine di

@@ -182,6 +182,9 @@ function tornaAlleSezioni() {
   $('#home').classList.remove('hidden');
   document.title = 'Il Maggiordomo';
   window.scrollTo(0, 0);
+  // il calendario in home si aggiorna tornando qui: un impegno aggiunto nei
+  // Progetti deve comparire senza ricaricare la pagina
+  renderHomeCalendario();
 }
 
 /* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
@@ -1760,6 +1763,10 @@ let calDati = { mese: null, appointments: [], prossimi: [] };
 let calMeta = { categories: [], category_labels: {}, category_colors: {}, months: [] };
 let calGiorno = null;       // il giorno scelto nella griglia (ISO)
 let calVista = null;        // il mese mostrato (YYYY-MM)
+// La griglia in home ha vita propria: mostra il mese che si sfoglia li', senza
+// toccare `calVista` della scheda Calendario (altrimenti sfogliare in home
+// sposterebbe anche il calendario dei Progetti).
+let homeCalVista = null;
 
 async function renderCalendario() {
   if (!calMeta.categories.length) calMeta = await api('/api/calendario/meta');
@@ -4811,6 +4818,7 @@ async function init() {
   // il riepilogo si riempie da solo: se una delle fonti non risponde, le altre
   // si mostrano lo stesso (vedi renderHomeOggi)
   renderHomeOggi();
+  renderHomeCalendario();
 }
 
 /* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi e gli
@@ -4879,6 +4887,77 @@ async function renderHomeOggi() {
   box.innerHTML = `<h2 class="oggi-titolo">Oggi</h2>${contenuto}`;
   box.classList.remove('hidden');
 }
+
+/* Il calendario degli impegni in fondo alla home: la stessa griglia del mese
+   della scheda Calendario, ma in sola lettura. Il mese si sfoglia qui (vive in
+   `homeCalVista`, indipendente da `calVista`), i giorni occupati hanno il loro
+   puntino, e cliccando un giorno si apre il Calendario nei Progetti — dove si
+   aggiunge, si modifica e si segna come fatto. Se il server non risponde il
+   riquadro resta nascosto: un calendario vuoto in home e' peggio di nessuno. */
+async function renderHomeCalendario() {
+  const box = $('#home-cal');
+  if (!box) return;
+  if (!calMeta.categories.length) {
+    try { calMeta = await api('/api/calendario/meta'); } catch (e) { box.classList.add('hidden'); return; }
+  }
+  let dati;
+  try { dati = await api('/api/appointments' + (homeCalVista ? `?mese=${homeCalVista}` : '')); }
+  catch (e) { box.classList.add('hidden'); return; }
+  if (!homeCalVista) homeCalVista = `${dati.mese.anno}-${pad(dati.mese.mese)}`;
+  const m = dati.mese;
+  $('#home-cal-mese').textContent = `${calMeta.months[m.mese - 1]} ${m.anno}`;
+  const perGiorno = {};
+  (dati.appointments || []).forEach((a) => {
+    (perGiorno[a.when_date] = perGiorno[a.when_date] || []).push(a);
+  });
+  const oggi = iso(new Date());
+  const sett = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
+  $('#home-cal-grid').innerHTML = `
+    <div class="cal-sett">${sett.map((s) => `<span>${s}</span>`).join('')}</div>
+    <div class="cal-celle">${m.celle.map((c) => {
+      const voci = perGiorno[c.iso] || [];
+      const cls = [
+        'cal-cella',
+        c.nel_mese ? '' : 'fuori',
+        c.weekend ? 'weekend' : '',
+        c.iso === oggi ? 'oggi' : '',
+        voci.length ? 'occupato' : '',
+      ].filter(Boolean).join(' ');
+      return `<button class="${cls}" data-giorno="${c.iso}">
+          <span class="cal-num">${c.giorno}</span>
+          <span class="cal-punti">${voci.slice(0, 3).map((v) =>
+            `<span class="cal-dot" style="background:var(${calMeta.category_colors[v.category]})"></span>`).join('')}</span>
+        </button>`;
+    }).join('')}</div>`;
+  box.classList.remove('hidden');
+}
+
+$('#home-cal-prev').addEventListener('click', () => {
+  const [a, mm] = homeCalVista.split('-').map(Number);
+  const d = new Date(a, mm - 2, 1);
+  homeCalVista = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  renderHomeCalendario();
+});
+$('#home-cal-next').addEventListener('click', () => {
+  const [a, mm] = homeCalVista.split('-').map(Number);
+  const d = new Date(a, mm, 1);
+  homeCalVista = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  renderHomeCalendario();
+});
+$('#home-cal-grid').addEventListener('click', (e) => {
+  const cella = e.target.closest('.cal-cella');
+  if (!cella) return;
+  // il Calendario nei Progetti si apre sullo stesso mese e sullo stesso giorno
+  calVista = homeCalVista;
+  calGiorno = cella.dataset.giorno;
+  apriSezione('progetti');
+  switchTab('calendario');
+});
+$('#home-cal-apri').addEventListener('click', () => {
+  calVista = homeCalVista;
+  apriSezione('progetti');
+  switchTab('calendario');
+});
 
 // All'avvio non si carica niente: prima si chiede al server chi e' collegato.
 // `avviaApp` decide se mostrare la home o la schermata di accesso.

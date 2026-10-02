@@ -714,6 +714,15 @@ Conseguenze pratiche per chi mette mano al codice:
   fallisce per conto suo (`.catch`): un errore sul calendario non deve far sparire
   i pasti. Se non c'è niente da dire il riquadro resta nascosto — una home con un
   riquadro vuoto è peggio di una home senza riquadro.
+- **Il calendario degli impegni in fondo alla home** (`renderHomeCalendario`).
+  La stessa griglia del mese della scheda Calendario, ma **in sola lettura**: qui
+  si sfoglia e si vede quali giorni sono occupati, non si compila. Cliccando un
+  giorno o «Apri →» si va al Calendario nei Progetti, dove si aggiunge e si
+  modifica. Il mese mostrato vive in `homeCalVista`, **separato** da `calVista`:
+  sfogliare in home non deve spostare il calendario dei Progetti. Se gli impegni
+  non arrivano il riquadro resta nascosto (stessa regola del riepilogo «Oggi»).
+  Si ridisegna all'avvio e al ritorno in home (`tornaAlleSezioni`), così un
+  impegno aggiunto nei Progetti compare senza ricaricare la pagina.
 - **Le porzioni si scalano nel dettaglio ricetta** (`qtaScalata`). La ricetta è
   scritta per `servings`; cambiando il numero nel dettaglio, le quantità seguono
   (frazione rispetto al numero base). Una quantità non numerica («q.b.») resta

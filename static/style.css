@@ -256,6 +256,28 @@ body {
 .oggi-txt { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
 .oggi-meal { color: var(--muted); font-weight: 400; }
 
+/* Il calendario degli impegni in fondo alla home. Stessa veste del riquadro
+   «Oggi», ma con dentro la griglia del mese (le classi .cal-* sono quelle della
+   scheda Calendario). In sola lettura: la home non deve diventare un modulo. */
+.home-cal {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.home-cal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.home-cal-titolo {
+  margin: 0; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+/* la griglia e' l'ultimo elemento: toglie il margine inferiore che ha nella
+   scheda Calendario, dove sotto c'e' l'elenco del giorno */
+.home-cal .cal-grid { margin-bottom: 0; }
+
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
