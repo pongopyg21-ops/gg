@@ -214,10 +214,12 @@ body {
 
 /* Il microfono in home: il pulsante flottante e' nascosto qui, perche' non c'e'
    ancora una sezione da cui parlare. Questo lo sostituisce, con la stessa
-   promessa ma senza l'angolo dello schermo. */
-.home-voice { margin: 0 0 28px; }
+   promessa ma senza l'angolo dello schermo.
+   E' l'unica cosa centrata della home: il resto e' testo da leggere e sta a
+   sinistra, ma l'invito a parlare e' un bottone solo e va al centro. */
+.home-voice { display: flex; flex-direction: column; align-items: center; margin: 0 0 28px; }
 .home-voice-hint {
-  margin: 10px 0 0; max-width: 46ch;
+  margin: 10px 0 0; max-width: 46ch; text-align: center;
   font-size: 13.5px; line-height: 1.5; color: var(--muted);
 }
 .home-mic {
