@@ -7186,13 +7186,13 @@ def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
     # i pulsanti della home scrivono solo homeCalVista, non calVista
     assert "$('#home-cal-prev')" in js and "$('#home-cal-next')" in js
     assert "homeCalVista =" in js
-    # la sezione sta dentro la home, in fondo: dopo il riepilogo «Oggi» e prima
-    # delle schede delle sezioni
+    # l'ordine della home: prima le categorie, poi il riepilogo «Oggi», in fondo
+    # il calendario
     html = client.get("/").get_data(as_text=True)
     assert 'id="home-cal"' in html
-    assert html.index('id="home-oggi"') < html.index('id="home-cal"') < html.index('class="home-cards"')
+    assert html.index('class="home-cards"') < html.index('id="home-oggi"') < html.index('id="home-cal"')
     # in home si sfoglia e basta: nessun pulsante per creare impegni
-    sezione = html[html.index('id="home-cal"'):html.index('class="home-cards"')]
+    sezione = html[html.index('id="home-cal"'):html.index('<div id="app"')]
     assert "home-cal-apri" in sezione
     assert "Nuovo impegno" not in sezione
 

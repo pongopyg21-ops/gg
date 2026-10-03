@@ -726,6 +726,12 @@ Conseguenze pratiche per chi mette mano al codice:
   perché è quella da cucinare adesso. La card dice quali (`sug-scade`), invece di
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
+- **L'ordine della home**: categorie (le schede «Cucina, Igiene, …»), poi il
+  riepilogo «Oggi», in fondo il calendario. Le categorie stanno subito sotto
+  l'invito a parlare: si arriva in home per scegliere dove andare, e devono
+  vedersi senza scorrere. «Oggi» e il calendario vengono dopo perché sono da
+  leggere, non da premere. È un ordine scelto dall'utente, non un dettaglio di
+  stile: prima le schede erano in fondo, ed era sbagliato.
 - **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
   mostra i pasti di oggi, le attività di casa da fare, i prossimi impegni e cosa
   sta per scadere in dispensa. Le fonti si chiedono **in parallelo** e ognuna

@@ -235,9 +235,12 @@ body {
 .home-mic:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; }
 .home-mic .mic-icon { font-size: 20px; line-height: 1; pointer-events: none; }
 
-.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+/* Le schede delle categorie stanno subito sotto l'invito a parlare: si arriva
+   in home per scegliere dove andare. Il margine inferiore le stacca dal
+   riepilogo «Oggi» che segue (e dal calendario, quando «Oggi» e' nascosto). */
+.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 0 0 24px; }
 
-/* Riepilogo della giornata in home. Sta sopra le schede e resta compatto: la
+/* Riepilogo della giornata in home, sotto le categorie. Resta compatto: la
    home deve restare un posto dove si sceglie, non una pagina da leggere. */
 .home-oggi {
   margin: 0 0 24px; padding: 16px 18px;
