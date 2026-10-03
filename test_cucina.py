@@ -649,6 +649,35 @@ def test_migrazione_aggiunge_fav_prompted_a_un_db_esistente():
         app_module.migrate(db)
 
 
+def test_migrazione_aggiunge_expires_at_a_un_db_esistente():
+    """Un database creato prima non ha `expires_at` in `pantry`, e
+    `CREATE TABLE IF NOT EXISTS` non aggiunge una colonna a una tabella che
+    esiste gia': la migrazione deve farlo, senza toccare le scorte presenti."""
+    path = os.path.join(tempfile.mkdtemp(), "vecchio-pantry.db")
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
+        db.executescript("""
+            CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+            CREATE TABLE ingredients (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE pantry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+                quantity REAL NOT NULL DEFAULT 0,
+                unit TEXT NOT NULL DEFAULT 'pz',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(ingredient_id, unit)
+            );
+            INSERT INTO ingredients (name) VALUES ('Farina');
+            INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (1, 500, 'g');
+        """)
+        app_module.migrate(db)
+        cols = {r[1] for r in db.execute("PRAGMA table_info(pantry)")}
+        assert "expires_at" in cols
+        row = db.execute("SELECT quantity, unit, expires_at FROM pantry").fetchone()
+        assert tuple(row) == (500, "g", None)
+        app_module.migrate(db)  # rieseguire non deve fallire
+
+
 def test_filtro_ricette_per_allergia(client):
     buona = ricetta(client, "Verdure", 2, [{"name": "Zucchine", "quantity": 300, "unit": "g"}])
     cattiva = ricetta(client, "Carbonara", 2, [
@@ -1915,6 +1944,57 @@ def test_catalogo_copre_tutte_le_frequenze():
         assert any(v["frequency"] == chiave for v in voci), chiave
 
 
+def test_la_sezione_igiene_ha_le_schede_e_i_pannelli(client):
+    """Le schede separano tre mestieri diversi — cosa fare adesso, cosa esiste,
+    cosa tocca nell'anno — e ognuna ha il suo pannello. Senza un pannello per
+    scheda, il pulsante non avrebbe niente da mostrare e la sezione tornerebbe
+    un'unica colonna."""
+    html = client.get("/").get_data(as_text=True)
+    sezione = html[html.index('id="tab-igiene"'):]
+    sezione = sezione[:sezione.index("</section>")]
+    for chiave in ("oggi", "routine", "anno", "catalogo"):
+        assert f'data-chp="{chiave}"' in sezione, f"manca la scheda {chiave}"
+        assert f'data-chp-panel="{chiave}"' in sezione, f"manca il pannello {chiave}"
+    # una sola scheda parte aperta, e i pannelli sono tutti definiti
+    assert sezione.count('ch-nav-btn active') == 1
+    assert sezione.count('ch-panel active') == 1
+
+
+def test_il_cambio_scheda_mostra_un_pannello_solo():
+    """`mostraChPanel` e' la resa vera nel client: si esegue con node su un DOM
+    finto. Il difetto da evitare e' che i pannelli restino tutti visibili, che e'
+    esattamente cio' che rendeva la sezione dispersiva."""
+    import subprocess
+    js = open("static/app.js", encoding="utf-8").read()
+    inizio = js.index("function mostraChPanel")
+    blocco = js[inizio: js.index("\n}\n", inizio) + 3]
+    prova = blocco + """
+class Finto {
+  constructor(dataset) {
+    this.dataset = dataset;
+    this.classes = new Set();
+    this.attrs = {};
+    this.classList = { toggle: (c, on) => (on ? this.classes.add(c) : this.classes.delete(c)) };
+  }
+  setAttribute(k, v) { this.attrs[k] = v; }
+}
+const bottoni = ['oggi', 'routine', 'anno', 'catalogo'].map((k) => new Finto({ chp: k }));
+const pannelli = ['oggi', 'routine', 'anno', 'catalogo'].map((k) => new Finto({ chpPanel: k }));
+const $$ = (sel) => sel.includes('btn') ? bottoni : pannelli;
+mostraChPanel('anno');
+console.log(JSON.stringify({
+  bottoniAttivi: bottoni.filter((b) => b.classes.has('active')).map((b) => b.dataset.chp),
+  pannelliVisibili: pannelli.filter((p) => p.classes.has('active')).map((p) => p.dataset.chpPanel),
+}));
+"""
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    assert d["bottoniAttivi"] == ["anno"]
+    assert d["pannelliVisibili"] == ["anno"], "si vede piu' di un pannello"
+
+
+
 def test_catalogo_ogni_mese_dell_anno_ha_una_voce():
     """Il calendario annuale ha dodici mesi: un mese vuoto sarebbe un buco visibile."""
     mesi_con_voce = {v["month"] for v in igiene.catalogo() if v["frequency"] == "stagionale"}
@@ -2793,6 +2873,154 @@ def test_una_ricetta_senza_ingredienti_non_e_un_suggerimento():
         db.commit()
         esito = dispensa.suggerimenti(db)
     assert esito["suggerimenti"] == []
+
+
+# ------------------------------------------------------- scadenze in dispensa
+# La scadenza e' un dato della dispensa come la quantita': si salva, si cambia e
+# si toglie. La regola che conta e' che "non lo so" (vuoto) resti diverso da "non
+# scade", perche' una data inventata farebbe buttare cibo buono.
+
+def test_la_scadenza_si_salva_e_si_rilegge(client):
+    r = client.post("/api/pantry", json={"name": "Yogurt", "quantity": 1, "unit": "pz",
+                                        "expires_at": "2026-10-05"})
+    assert r.status_code == 201
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["expires_at"] == "2026-10-05"
+
+
+def test_una_scadenza_non_valida_non_entra_nel_database(client):
+    """Un testo che non e' una data non deve salvarvisi: romperebbe l'ordinamento
+    e i confronti, e l'utente vedrebbe una data che non ha scritto."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 1, "unit": "pz",
+                                     "expires_at": "domani"})
+    assert client.get("/api/pantry").get_json()[0]["expires_at"] is None
+
+
+def test_la_scadenza_si_puo_togliere_senza_toccare_la_quantita(client):
+    """Il campo della scadenza e' separato dalla quantita': svuotarlo la toglie,
+    e non deve azzerare la quantita' scritta nell'altro campo."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 3, "unit": "pz",
+                                     "expires_at": "2026-10-05"})
+    pid = client.get("/api/pantry").get_json()[0]["id"]
+    client.patch(f"/api/pantry/{pid}", json={"expires_at": ""})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["expires_at"] is None
+    assert voce["quantity"] == 3
+
+
+def test_la_quantita_si_cambia_senza_cancellare_la_scadenza(client):
+    """Aggiornare la quantita' non manda il campo scadenza: senza la regola del
+    "tocca solo se presente", la scadenza sparirebbe a ogni cambio di quantita'."""
+    client.post("/api/pantry", json={"name": "Yogurt", "quantity": 3, "unit": "pz",
+                                     "expires_at": "2026-10-05"})
+    pid = client.get("/api/pantry").get_json()[0]["id"]
+    client.patch(f"/api/pantry/{pid}", json={"quantity": 2})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["quantity"] == 2
+    assert voce["expires_at"] == "2026-10-05"
+
+
+def test_aggiungendo_scorte_vince_la_scadenza_piu_vicina(client):
+    """Due partite dello stesso ingrediente con scadenze diverse: quella che
+    scade prima e' quella da guardare, e deve restare in evidenza."""
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-20"})
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-03"})
+    voce = client.get("/api/pantry").get_json()[0]
+    assert voce["quantity"] == 2
+    assert voce["expires_at"] == "2026-10-03"
+
+
+def test_una_scorta_senza_data_non_cancella_quella_con_data(client):
+    """Chi aggiunge una partita senza sapere la scadenza non deve cancellare
+    quella che sapeva: la data che c'era resta."""
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l",
+                                     "expires_at": "2026-10-03"})
+    client.post("/api/pantry", json={"name": "Latte", "quantity": 1, "unit": "l"})
+    assert client.get("/api/pantry").get_json()[0]["expires_at"] == "2026-10-03"
+
+
+def test_una_ricetta_che_consuma_una_scadenza_viene_prima():
+    """Fra due ricette ugualmente coperte, va suggerita per prima quella che
+    consuma una scorta in scadenza: e' quella da cucinare adesso."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    percorso = os.path.join(tempfile.mkdtemp(), "scadenze.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        # due ingredienti: uno scade fra due giorni, l'altro non scade
+        presto = db.execute("INSERT INTO ingredients (name) VALUES ('Da consumare')").lastrowid
+        tardi = db.execute("INSERT INTO ingredients (name) VALUES ('Tranquillo')").lastrowid
+        for iid in (presto, tardi):
+            db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, 1, 'pz')",
+                       (iid,))
+        db.execute("UPDATE pantry SET expires_at = '2026-10-04' WHERE ingredient_id = ?", (presto,))
+        # due ricette da un ingrediente ciascuna, ugualmente coperte
+        for nome, iid in (("Usa il fresco", presto), ("Usa il durevole", tardi)):
+            rid = db.execute("INSERT INTO recipes (name) VALUES (?)", (nome,)).lastrowid
+            db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                       " VALUES (?, ?, 1, 'pz')", (rid, iid))
+        db.commit()
+        esito = dispensa.suggerimenti(db, oggi=__import__("datetime").date(2026, 10, 2))
+    nomi = [s["name"] for s in esito["suggerimenti"]]
+    assert nomi[0] == "Usa il fresco", nomi
+    fresco = next(s for s in esito["suggerimenti"] if s["name"] == "Usa il fresco")
+    assert fresco["scadono"] == ["Da consumare"]
+    durevole = next(s for s in esito["suggerimenti"] if s["name"] == "Usa il durevole")
+    assert durevole["scadono"] == []
+
+
+def test_una_scadenza_lontana_non_mette_in_cima_la_ricetta():
+    """Una scadenza oltre la settimana non e' un problema di stasera: non deve
+    riordinare i suggerimenti."""
+    import sqlite3 as sq
+    from contextlib import closing as cl
+    import datetime as dt
+    percorso = os.path.join(tempfile.mkdtemp(), "lontana.db")
+    app_module.init_db(percorso)
+    with cl(sq.connect(percorso)) as db:
+        db.row_factory = sq.Row
+        iid = db.execute("INSERT INTO ingredients (name) VALUES ('Durevole')").lastrowid
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit, expires_at)"
+                   " VALUES (?, 1, 'pz', '2026-12-31')", (iid,))
+        rid = db.execute("INSERT INTO recipes (name) VALUES ('Una ricetta')").lastrowid
+        db.execute("INSERT INTO recipe_items (recipe_id, ingredient_id, quantity, unit)"
+                   " VALUES (?, ?, 1, 'pz')", (rid, iid))
+        db.commit()
+        esito = dispensa.suggerimenti(db, oggi=dt.date(2026, 10, 2))
+    assert esito["suggerimenti"][0]["scadono"] == []
+
+
+def test_la_dispensa_vuota_lo_dice_invece_di_tacere(client):
+    """Il riquadro dei suggerimenti con la dispensa vuota resta nascosto e sembra
+    che la funzione non esista: si esegue `renderSuggerimenti` vera con node, con
+    la risposta del server, e si guarda cosa finisce nella pagina."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    codice = _estrai_funzione_js(js, "renderSuggerimenti")
+    preludio = """
+let contenuto = '';
+function $(sel) { return { set innerHTML(v) { contenuto = v; },
+                            get innerHTML() { return contenuto; } }; }
+function esc(s) { return String(s); }
+let risposta = { dispensa: 0, suggerimenti: [] };
+async function api() { return risposta; }
+"""
+    coda = """
+(async () => {
+  await renderSuggerimenti();
+  const vuota = contenuto;
+  risposta = { dispensa: 4, suggerimenti: [] };
+  await renderSuggerimenti();
+  console.log(JSON.stringify({ vuota: vuota, piena: contenuto }));
+})();
+"""
+    d = _esegui_node(preludio + codice + coda)
+    # con la dispensa vuota si dice cosa fare, invece di lasciare il vuoto
+    assert "Aggiungi qualche ingrediente" in d["vuota"]
+    # con la dispensa piena ma nessuna ricetta fattibile il riquadro resta pulito
+    assert d["piena"] == ""
 
 
 # --------------------------------------------- tempi e costo della ricetta
@@ -4488,6 +4716,89 @@ def test_le_immagini_dei_dati_restano_in_memoria(client):
     # cambiano, scelgono da sole la loro scadenza in una rotta apposita
     r = client.get("/api/recipes")
     assert "no-cache" in r.headers.get("Cache-Control", "")
+
+
+def test_gli_asset_hanno_la_versione_nell_indirizzo(client):
+    """`app.js` e `style.css` non hanno un indirizzo che cambia: senza un numero
+    di versione il browser non sa che sono nuovi e continua a usarne una copia.
+    La versione e' un'impronta del contenuto, quindi cambia solo quando il file
+    cambia."""
+    html = client.get("/").get_data(as_text=True)
+    assert "/static/app.js?v=" in html
+    assert "/static/style.css?v=" in html
+    # la versione e' quella vera del file: la stessa cosa che darebbe l'impronta
+    js = client.get("/static/app.js").get_data(as_text=True)
+    import hashlib
+    attesa = hashlib.sha256(js.encode("utf-8")).hexdigest()[:10]
+    assert f"/static/app.js?v={attesa}" in html
+
+
+def test_un_asset_versionato_resta_in_memoria_a_lungo(client):
+    """Con la versione nell'indirizzo tenere la copia a lungo e' sicuro: se il
+    file cambia cambia anche l'indirizzo, quindi non si vede mai una versione
+    vecchia. E' quello che evita di riscaricare 200 KB a ogni apertura."""
+    r = client.get("/static/app.js?v=qualsiasi")
+    assert "max-age=31536000" in r.headers.get("Cache-Control", "")
+    assert "immutable" in r.headers.get("Cache-Control", "")
+
+
+def test_il_service_worker_si_serve_dalla_radice_e_senza_accesso(anon):
+    """Il service worker controlla solo il percorso da cui e' servito: da
+    `/static/` non potrebbe mostrare la pagina `/` senza rete. E non chiede
+    l'accesso, perche' deve poter partire prima del login."""
+    r = anon.get("/sw.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers.get("Content-Type", "")
+    assert "caches" in r.get_data(as_text=True)
+
+
+def test_la_pagina_registra_il_service_worker(client):
+    """La registrazione sta nella pagina, non in `app.js`: cosi' parte anche se
+    il codice dell'app non e' stato ancora caricato."""
+    html = client.get("/").get_data(as_text=True)
+    assert "serviceWorker" in html and "register('/sw.js')" in html
+
+
+def test_i_file_statici_si_chiedono_prima_alla_rete(client):
+    """Il service worker serviva `app.js` **prima dalla copia**: `chiave()`
+    ignora `?v=...`, quindi la copia salvata all'installazione (senza versione)
+    rispondeva a qualunque richiesta, anche a una versione nuova. Risultato: la
+    pagina (`index.html`, prima la rete) si aggiornava, `app.js` restava vecchio,
+    e una funzione nuova — come il calendario in home — non veniva mai disegnata.
+    Qui si esegue `serveStatico` vera: con la rete su deve vincere la rete,
+    non la copia; con la rete giu' deve reggere la copia."""
+    js = client.get("/static/sw.js").get_data(as_text=True)
+    chiave = _estrai_funzione_js(js, "chiave")
+    blocco = _estrai_funzione_js(js, "serveStatico")
+    preludio = """
+const CACHE = 'prova';
+let reteOk = true;
+const salvati = { 'http://a/static/app.js': { corpo: 'VECCHIO' } };
+globalThis.caches = {
+  open: async () => ({
+    put: async (k, v) => { salvati[k] = v; },
+    match: async (k) => salvati[k],
+  }),
+  match: async (k) => salvati[k],
+};
+globalThis.fetch = async () => {
+  if (!reteOk) throw new Error('offline');
+  return { ok: true, corpo: 'NUOVO', clone() { return this; } };
+};
+"""
+    coda = """
+(async () => {
+  const online = await serveStatico({ url: 'http://a/static/app.js?v=123' });
+  reteOk = false;
+  const offline = await serveStatico({ url: 'http://a/static/app.js?v=999' });
+  console.log(JSON.stringify({ online: online.corpo, offline: offline.corpo,
+    salvato: salvati['http://a/static/app.js'].corpo }));
+})();
+"""
+    d = _esegui_node(preludio + chiave + blocco + coda)
+    assert d["online"] == "NUOVO", "con la rete su deve arrivare la versione nuova, non la copia"
+    assert d["salvato"] == "NUOVO", "la copia va aggiornata con la versione nuova"
+    assert d["offline"] == "NUOVO", "senza rete deve reggere l'ultima copia buona"
 
 
 def test_una_domanda_non_diventa_un_ordine(client):
@@ -6358,6 +6669,29 @@ def test_una_area_sbagliata_lo_dice_invece_di_sembrare_un_guasto_di_rete(monkeyp
         assert not voce_cloud.area_valida(area), area
 
 
+def test_avvia_accende_anche_la_sorveglianza():
+    """`./avvia.sh` da solo deve bastare: dopo ogni ricreazione del container la
+    sorveglianza andava riaccesa a mano ed era il passo che si dimenticava, così
+    il link restava a 502. Qui si guarda che l'accensione ci sia, che `stop`/lo
+    `stop` di `ferma()` la spenga (altrimenti riavvia il server appena fermato) e
+    che il richiamo dal sorvegliante non la riaccenda (ricorsione infinita)."""
+    avvia = open(f"{BASE_APP}/avvia.sh", encoding="utf-8").read()
+    sorveglia = open(f"{BASE_APP}/sorveglia.sh", encoding="utf-8").read()
+
+    assert "avvia_sorveglianza()" in avvia, "manca l'accensione della sorveglianza"
+    assert "avvia_sorveglianza" in avvia.split("avvia() {", 1)[1], \
+        "avvia() deve chiamarla, non solo definirla"
+    assert "ferma_sorveglianza" in avvia.split("ferma() {", 1)[1], \
+        "ferma() deve spegnere la sorveglianza prima del server"
+    assert "MAGGIORDOMO_SORVEGLIA_GIRO" in avvia
+    assert "MAGGIORDOMO_SORVEGLIA_GIRO" in sorveglia, \
+        "il sorvegliante deve esportare il freno prima di richiamare avvia.sh"
+    # il freno e' un export, non una semplice menzione
+    assert "export MAGGIORDOMO_SORVEGLIA_GIRO=1" in sorveglia
+    # e lo script sa accendere la sorveglianza da solo
+    assert "sorveglianza|sorveglia)" in avvia
+
+
 def test_avvio_avvisa_se_l_area_non_esiste():
     """L'avvio diceva "voce neurale Azure attiva" anche con l'area sbagliata: chi
     legge quella riga va a cercare un guasto di rete che non c'e', mentre la
@@ -6542,6 +6876,40 @@ def test_verifica_pubblico_controlla_le_tre_cose(client):
     assert 'set "DIETRO_PROXY=1"' in ps1
 
 
+def test_avvia_bat_annuncia_il_modello(client):
+    """`avvia.bat` deve dire da solo se il modello di casa e' pronto.
+
+    Il sintomo «il modello non capisce» ha tre cause (Ollama spento, modello non
+    scaricato, interruttore spento) e l'app le confonde in silenzio: senza un
+    controllo all'avvio si crede che Ollama sia configurato mentre l'interruttore
+    e' spento. Il lavoro sta in `modello.ps1` (come `indirizzo.ps1`), e il `.bat`
+    lo chiama."""
+    bat = open(f"{BASE_APP}/windows/avvia.bat", encoding="utf-8").read()
+    assert "modello.ps1" in bat, "avvia.bat non annuncia lo stato del modello"
+
+
+def test_verifica_modello_guarda_le_tre_cause(client):
+    """`verifica-modello.bat` separa le tre cause che danno lo stesso sintomo.
+
+    Deve guardare: se Ollama risponde, se il modello che l'app si aspetta e'
+    scaricato, e — quando tutto e' pronto — che resta l'interruttore. La
+    configurazione si chiede all'app (`comprensione`), non si riscrive nello
+    script: due copie della stessa regola divergono, e allora lo stato mente."""
+    bat = open(f"{BASE_APP}/windows/verifica-modello.bat", encoding="utf-8").read()
+    ps1 = open(f"{BASE_APP}/windows/modello.ps1", encoding="utf-8").read()
+    # il .bat non fa il lavoro: chiama il .ps1 accanto a se'
+    assert "modello.ps1" in bat
+    # 1. Ollama che risponde: l'elenco dei modelli sta in /api/tags, non in /v1
+    assert "/api/tags" in ps1
+    # 2. il modello atteso: chiesto all'app, non scritto a mano qui
+    assert "import comprensione" in ps1
+    assert "c.modello()" in ps1
+    # 3. l'interruttore, che e' la causa piu' frequente del "non capisce"
+    assert "Capire i comandi" in ps1
+    # e l'invito a scaricare il modello giusto, quando manca
+    assert "ollama pull" in ps1
+
+
 def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
     """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
     proprio quando non si possono usare le mani, e un'area senza pulsante e' una
@@ -6635,6 +7003,260 @@ console.log(JSON.stringify({ chiuso, aperto }));
     assert "Ti ho sentito" in d["chiuso"]["testo"]
     assert "ok" in d["chiuso"]["classi"]
     assert d["aperto"]["nascosto"] is True, "col pannello aperto la riga non si raddoppia"
+
+
+def test_le_quantita_si_riscalano_sulle_porzioni(client):
+    """Il dettaglio ricetta ha un campo porzioni: le quantita' seguono. Si esegue
+    `qtaScalata` vera con node, perche' il conto e' la funzione, e una stringa
+    letta nel codice non dice se il risultato e' giusto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "qtaScalata")
+    prova = (blocco + "\nconsole.log(JSON.stringify(["
+             "qtaScalata(100, 2), qtaScalata(100, 0.5), qtaScalata(3, 1),"
+             "qtaScalata(1, 3), qtaScalata('q.b.', 2), qtaScalata(0.5, 3),"
+             "qtaScalata(2, 1.5)]));")
+    d = _esegui_node(prova)
+    assert d == ["200", "50", 3, "3", "q.b.", "1.5", "3"]
+
+
+def test_il_riepilogo_di_oggi_mette_insieme_le_fonti(client):
+    """La home mostra un riepilogo (pasti, pulizie, impegni, scadenze). Si esegue
+    `renderHomeOggi` vera con node e risposte preparate: il riquadro deve
+    comparire con i pezzi giusti, e restare nascosto se non c'e' niente da dire."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza(e) {
+  if (!e) return { testo: '—', classe: 'scad-niente' };
+  return { testo: 'fra 1 giorno', classe: 'scad-vicino' };
+}
+const risposte = {
+  '/api/plan?start=2026-10-02&end=2026-10-02':
+    [{ recipe_name: 'Pasta', meal: 'cena' }],
+  '/api/chores': { piano: { da_fare: 2 } },
+  '/api/appointments?giorno=2026-10-02':
+    { prossimi: [{ title: 'Dentista', quando_detto: 'oggi' }] },
+  '/api/pantry': [{ name: 'Latte', expires_at: '2026-10-03' }],
+};
+async function api(url) { return risposte[url]; }
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False, "con qualcosa da dire il riquadro deve vedersi"
+    assert "Pasta" in d["html"] and "cena" in d["html"]
+    assert "2 attività di casa" in d["html"]
+    assert "Dentista" in d["html"]
+    assert "Latte" in d["html"]
+
+
+def test_il_riepilogo_di_oggi_tace_se_non_c_e_niente(client):
+    """Senza pasti, pulizie, impegni o scadenze il riquadro resta nascosto: una
+    home con un riquadro vuoto e' peggio di una home senza riquadro."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: 'vecchio', nascosto: false };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
+async function api() { return []; }
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+    assert d["html"] == ""
+
+
+def test_il_riepilogo_non_cade_se_una_fonte_non_risponde(client):
+    """Se il calendario non risponde, i pasti si mostrano lo stesso: un errore su
+    una fonte non deve far sparire le altre."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
+async function api(url) {
+  if (url.startsWith('/api/plan')) return [{ recipe_name: 'Pasta', meal: 'cena' }];
+  throw new Error('rete assente');
+}
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False
+    assert "Pasta" in d["html"]
+
+def test_il_calendario_in_home_mostra_il_mese_col_puntino(client):
+    """La home ripropone il calendario dei Progetti in fondo, in sola lettura. Si
+    esegue `renderHomeCalendario` vera con node: il mese compare, il giorno
+    occupato ha il puntino e il giorno di oggi e' marcato. `calMeta` e
+    `homeCalVista` sono riscritti, quindi il preludio li dichiara con `let`."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeCalendario")
+    preludio = """
+let calMeta = { categories: ['altro'], months: ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'],
+  category_colors: { altro: '--accent' } };
+let homeCalVista = null;
+const stato = { griglia: '', mese: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-cal') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  if (sel === '#home-cal-mese') return { set textContent(v) { stato.mese = v; }, get textContent() { return stato.mese; } };
+  if (sel === '#home-cal-grid') return { set innerHTML(v) { stato.griglia = v; }, get innerHTML() { return stato.griglia; } };
+  return { classList: { add() {}, remove() {} }, innerHTML: '', textContent: '' };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function pad(n) { return String(n).padStart(2, '0'); }
+async function api(url) {
+  if (url === '/api/appointments') return {
+    mese: { anno: 2026, mese: 10, celle: [
+      { giorno: 1, iso: '2026-10-01', nel_mese: true, weekend: false },
+      { giorno: 2, iso: '2026-10-02', nel_mese: true, weekend: false },
+    ] },
+    appointments: [{ when_date: '2026-10-02', category: 'altro', title: 'Dentista' }],
+  };
+  throw new Error('non previsto: ' + url);
+}
+"""
+    coda = "\nrenderHomeCalendario().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False, "col calendario il riquadro deve vedersi"
+    assert d["mese"] == "Ottobre 2026", d["mese"]
+    assert "cal-cella" in d["griglia"]
+    assert "2026-10-02" in d["griglia"]
+    assert "occupato" in d["griglia"], "il giorno con un impegno porta il puntino"
+    assert "cal-cella oggi" in d["griglia"], "il giorno di oggi e' marcato"
+
+
+def test_il_calendario_in_home_tace_se_il_server_non_risponde(client):
+    """Se gli impegni non arrivano, il riquadro in home resta nascosto: un
+    calendario vuoto e' peggio di nessun calendario."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeCalendario")
+    preludio = """
+let calMeta = { categories: [], months: [], category_colors: {} };
+let homeCalVista = null;
+const stato = { nascosto: false };
+function $(sel) {
+  if (sel === '#home-cal') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  return { classList: { add() {}, remove() {} }, innerHTML: '', textContent: '' };
+}
+function esc(s) { return String(s); }
+function iso(d) { return '2026-10-02'; }
+function pad(n) { return String(n); }
+async function api() { throw new Error('rete assente'); }
+"""
+    coda = "\nrenderHomeCalendario().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+
+
+def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
+    """La griglia in home ha il suo mese (`homeCalVista`): sfogliare in home non
+    deve spostare il calendario dei Progetti (`calVista`)."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "homeCalVista" in js
+    assert "let homeCalVista" in js
+    # i pulsanti della home scrivono solo homeCalVista, non calVista
+    assert "$('#home-cal-prev')" in js and "$('#home-cal-next')" in js
+    assert "homeCalVista =" in js
+    # l'ordine della home: prima le categorie, poi il riepilogo «Oggi», in fondo
+    # il calendario
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="home-cal"' in html
+    assert html.index('class="home-cards"') < html.index('id="home-oggi"') < html.index('id="home-cal"')
+    # in home si sfoglia e basta: nessun pulsante per creare impegni
+    sezione = html[html.index('id="home-cal"'):html.index('<div id="app"')]
+    assert "home-cal-apri" in sezione
+    assert "Nuovo impegno" not in sezione
+
+
+def test_le_notizie_in_home_stanno_sotto_il_calendario(client):
+    """La home finisce con le notizie del giorno: prima le categorie, poi il
+    riepilogo «Oggi», il calendario e infine le notizie. Sono da leggere e da
+    dove si e', quindi in fondo; l'elenco completo resta nella sezione TV."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="home-notizie"' in html
+    assert html.index('id="home-cal"') < html.index('id="home-notizie"')
+    # il riquadro rimanda alla TV, non duplica l'elenco con i sommari
+    sezione = html[html.index('id="home-notizie"'):html.index('<div id="app"')]
+    assert "home-notizie-apri" in sezione
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "$('#home-notizie-apri')" in js and "apriSezione('tv')" in js
+
+
+def test_l_endpoint_notizie_serve_solo_le_notizie_dalla_cache(client, monkeypatch):
+    """`/api/notizie` alimenta il riquadro in home: deve portare le notizie e
+    quando sono state prese, senza tirare dietro i video della TV (in home non
+    si mostrano, e i loro embed sono peso inutile)."""
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
+    db = app_module.get_db()
+    tv.aggiorna_notizie(db, forse=False)
+
+    r = client.get("/api/notizie")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert len(d["notizie"]) == 2
+    assert d["aggiornato"]
+    assert "video" not in d
+
+
+def test_l_endpoint_notizie_non_cade_se_non_c_e_niente(client, monkeypatch):
+    """Cache vuota e rete assente: 200 con un elenco vuoto. E' un riquadro da
+    riempire, non un guasto da mostrare in home."""
+    monkeypatch.setattr(tv, "_apri",
+                        lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    monkeypatch.setattr(app_module, "_aggiorna_notizie_in_sottofondo", lambda db: None)
+    r = client.get("/api/notizie")
+    assert r.status_code == 200
+    assert r.get_json()["notizie"] == []
+
+
+def test_il_riquadro_notizie_in_home_tace_se_non_ce_ne_sono(client):
+    """Senza notizie il riquadro resta nascosto, come il riepilogo «Oggi»: una
+    home con un riquadro vuoto e' peggio di una home senza riquadro."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeNotizie")
+    preludio = """
+const stato = { nascosto: false };
+function $(sel) {
+  if (sel === '#home-notizie') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  return { innerHTML: '' };
+}
+function esc(s) { return String(s); }
+async function api() { return { notizie: [] }; }
+"""
+    coda = "\nrenderHomeNotizie().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+
+
 
 
 def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
@@ -6944,6 +7566,26 @@ class _RispostaLlm:
     def __exit__(self, *a): return False
 
 
+class _ModelloFinto:
+    """Un modello che **risponde**: sia alla verifica di raggiungibilita'
+    (`/api/tags` o `/models`), sia alla chat (`/chat/completions`).
+
+    Serve perche' le due cose ora sono distinte: la chiave dice che la
+    configurazione c'e', ma l'interruttore si accende solo se il modello
+    risponde. Questa classe finge entrambe, cosi' i test provano il percorso
+    vero invece di dipendere dalla rete."""
+
+    def __init__(self, contenuto: str = '{"intent": "unknown"}'):
+        self.contenuto = contenuto
+        self.url = []
+
+    def __call__(self, richiesta, timeout=None):
+        self.url.append(richiesta.full_url)
+        if richiesta.full_url.endswith(("/api/tags", "/models")):
+            return _RispostaLlm('{"models": []}')
+        return _RispostaLlm(self.contenuto)
+
+
 def test_comprensione_valida_solo_un_intento_che_esiste():
     """Un intento inventato dal modello non deve arrivare all'esecuzione."""
     assert comprensione._ripulisci({"intent": "spegni_la_luce"})["intent"] == "unknown"
@@ -6990,6 +7632,51 @@ def test_un_modello_in_casa_non_richiede_una_chiave(monkeypatch):
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
     assert comprensione.configurato()
+
+
+def test_la_disponibilita_non_basta_serve_che_il_modello_risponda(monkeypatch):
+    """Il difetto che questo corregge: l'endpoint locale predefinito c'e' sempre,
+    quindi `configurato()` era vero anche a Ollama spento. L'app diceva
+    "disponibile" e l'interruttore si accendeva, ma ogni comando finiva in
+    silenzio sulle regole. `raggiungibile()` guarda davvero se risponde."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    # configurazione presente, ma nessuno risponde
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("connessione rifiutata")))
+    assert comprensione.configurato() is True
+    assert comprensione.raggiungibile() is False
+    # e l'avviso dice la causa vera, non "manca la chiave"
+    msg = comprensione.messaggio_stato()
+    assert "Ollama non risponde" in msg and "ollama pull" in msg
+
+
+def test_se_il_modello_risponde_la_verifica_passa(monkeypatch):
+    """Con Ollama che risponde la verifica passa, e l'indirizzo interrogato e'
+    quello giusto: l'elenco dei modelli sta in `/api/tags`, non in `/v1`."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    finto = _ModelloFinto()
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", finto)
+    assert comprensione.raggiungibile() is True
+    assert finto.url and finto.url[0].endswith("/api/tags")
+    assert comprensione.messaggio_stato() == ""
+
+
+def test_con_una_chiave_ma_servizio_muto_l_avviso_nomina_la_chiave(monkeypatch):
+    """Un servizio in rete con la chiave ma che non risponde: la causa non e'
+    Ollama, quindi l'avviso non deve parlare di Ollama."""
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setenv("LLM_BASE_URL", "https://esempio.invalid/v1")
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("rete assente")))
+    assert comprensione.raggiungibile() is False
+    # con la chiave presente l'avviso e' vuoto: la configurazione e' completa,
+    # e' solo il servizio a non rispondere. Non si accusa la chiave.
+    assert comprensione.messaggio_stato() == ""
 
 
 def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch):
@@ -7068,8 +7755,12 @@ def test_senza_modello_l_interruttore_non_si_accende(client, monkeypatch):
 
 
 def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
-    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta."""
+    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta.
+
+    Il modello e' finto ma **risponde**: da quando l'interruttore si accende solo
+    se risponde, una chiave da sola non basta piu'."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     r = client.put("/api/voce/llm", json={"abilitato": True})
     assert r.status_code == 200 and r.get_json()["llm_abilitato"] is True
     cfg = client.get("/api/voce/config").get_json()
@@ -7098,6 +7789,7 @@ def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(cli
     Il modello e' finto: si prova l'**integrazione** — che la sua risposta vinca
     su quella del parser e finisca davvero nel database."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {
         "intent": "storage_add", "name": "vino", "quantity": None, "unit": None,
@@ -7116,6 +7808,7 @@ def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(cli
 def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
     """`unknown` dal modello non cancella quello che il parser sapeva gia' fare."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {"intent": "unknown"})
     r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
@@ -7125,6 +7818,36 @@ def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
 def test_la_comprensione_e_disattiva_di_partenza(client):
     """Nessuna chiamata a consumo senza che l'utente l'abbia accesa."""
     assert client.get("/api/voce/config").get_json()["llm_abilitato"] is False
+
+
+def test_non_si_accende_l_interruttore_se_il_modello_non_risponde(client, monkeypatch):
+    """L'endpoint locale predefinito c'e' sempre, anche a Ollama spento: senza
+    questa guardia l'interruttore si accendeva e ogni comando finiva in silenzio
+    sulle regole. Ora la rotta chiede che il modello **risponda**, e se no dice
+    la causa (Ollama spento / modello non scaricato), non "manca la chiave"."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("connessione rifiutata")))
+    r = client.put("/api/voce/llm", json={"abilitato": True})
+    assert r.status_code == 400
+    assert "Ollama non risponde" in r.get_json()["error"]
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_pronto"] is False and cfg["llm_abilitato"] is False
+
+
+def test_lo_stato_distingue_configurato_da_raggiungibile(client, monkeypatch):
+    """`/api/voce/config` espone le due cose separatamente: `disponibile` (c'e'
+    la configurazione) e `pronto` (il modello risponde). E' la distinzione che
+    mancava e che faceva mentire il pannello."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_disponibile"] is True and cfg["llm_pronto"] is True
+    assert cfg["llm_manca"] == ""
 
 
 def _nomi_chiamati_senza_definizione(js):
@@ -7412,26 +8135,102 @@ def test_una_playlist_senza_video_e_un_guasto_non_una_sezione_vuota(client, monk
         tv.video_playlist()
 
 
-def test_le_notizie_sono_al_massimo_dieci_e_in_ordine_di_data(client, monkeypatch):
-    """Il tetto e' dieci e l'ordine e' per data, non quello del feed: una fonte
-    che cambia ordine non deve mostrare le notizie vecchie in cima."""
-    voci = "".join(
-        f"<item><title>N{i}</title><link>https://esempio.invalid/{i}</link>"
-        f"<description>S{i}</description>"
-        f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
-        for i in range(1, 16))
-    feed = f"<rss version='2.0'><channel><title>Prova</title>{voci}</channel></rss>"
-    finta_tv(monkeypatch, {tv.feed_url(): feed})
+def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, monkeypatch):
+    """Il tetto e' venti e le fonti si **alternano**, non si ordinano solo per
+    data: un elenco per sola data diventa una testata sola, perche' ANSA pubblica
+    molto piu' spesso di RaiNews — ed e' il difetto che c'e' stato davvero.
+
+    Servono piu' feed: un singolo feed e' limitato a `MAX_PER_FEED` (vedi
+    `test_un_feed_generalista_non_occupa_tutto_l_elenco`)."""
+    urls = [f"https://esempio.invalid/f{i}" for i in range(3)]
+    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    risposte = {}
+    for f, u in enumerate(urls):
+        voci = "".join(
+            f"<item><title>N{f}-{i}</title><link>https://esempio.invalid/{f}/{i}</link>"
+            f"<description>S</description>"
+            f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
+            for i in range(1, 16))
+        risposte[u] = f"<rss version='2.0'><channel><title>Prova{f}</title>{voci}</channel></rss>"
+    finta_tv(monkeypatch, risposte)
     notizie = tv.notizie_dal_feed()
-    assert len(notizie) == tv.MAX_NOTIZIE == 10
-    date = [n["data"] for n in notizie]
-    assert date == sorted(date, reverse=True)
+    assert len(notizie) <= tv.MAX_NOTIZIE
+    # le fonti si alternano: due notizie di fila non vengono dalla stessa testata
+    fonti = [n["fonte"] for n in notizie]
+    assert all(a != b for a, b in zip(fonti, fonti[1:]))
+    # e dentro ogni testata l'ordine resta per data
+    for fonte in set(fonti):
+        date = [n["data"] for n in notizie if n["fonte"] == fonte]
+        assert date == sorted(date, reverse=True)
+
+
+def test_due_testate_si_alternano_e_riempiono_le_venti(client, monkeypatch):
+    """Il difetto vero: ANSA ha quattro sezioni e pubblica piu' spesso, quindi
+    ordinando solo per data le sue voci recenti occupano tutto l'elenco e RaiNews
+    non si vede mai. Il taglio per testata tiene la promessa: dieci e dieci."""
+    u1, u2 = "https://esempio.invalid/ansa", "https://esempio.invalid/rai"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    ansa = [_voce(f"ansa-{i}", f"Thu, 02 Apr 2026 09:{i:02d}:00 +0200") for i in range(15)]
+    rai = [_voce(f"rai-{i}", f"Wed, 01 Apr 2026 08:{i:02d}:00 +0200") for i in range(15)]
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it", ansa),
+        u2: _feed("RaiNews", rai),
+    })
+    notizie = tv.notizie_dal_feed()
+    fonti = [n["fonte"] for n in notizie]
+    assert len(notizie) == tv.MAX_NOTIZIE
+    assert fonti.count("ANSA.it") == fonti.count("RaiNews") == tv.MAX_NOTIZIE // 2
+    assert all(a != b for a, b in zip(fonti, fonti[1:]))
+
+
+def test_i_titoli_quasi_uguali_non_si_ripetono(client, monkeypatch):
+    """Lo stesso fatto esce in due sezioni con titoli che differiscono per un
+    apostrofo o una virgola, e con link diversi: si riconosce dal titolo ridotto,
+    altrimenti il doppione occupa il posto di un'altra notizia."""
+    u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    v1 = ("<item><title>Giuseppe Graviano: 'Mio nonno fece una societa'</title>"
+          "<link>https://esempio.invalid/1</link><description>S</description>"
+          "<pubDate>Thu, 02 Apr 2026 09:00:00 +0200</pubDate></item>")
+    v2 = ("<item><title>Giuseppe Graviano, 'Mio nonno fece una societa'</title>"
+          "<link>https://esempio.invalid/2</link><description>S</description>"
+          "<pubDate>Thu, 02 Apr 2026 08:00:00 +0200</pubDate></item>")
+    finta_tv(monkeypatch, {u1: _feed("RSS di Mondo  - ANSA.it", [v1]),
+                           u2: _feed("RSS di Cronaca  - ANSA.it", [v2])})
+    notizie = tv.notizie_dal_feed()
+    assert len(notizie) == 1
+    assert notizie[0]["link"] == "https://esempio.invalid/1"
+
+
+def test_un_feed_generalista_non_occupa_tutto_l_elenco(client, monkeypatch):
+    """Un feed generalista (RaiNews pubblica decine di voci) senza tetto
+    riempirebbe da solo le dieci notizie, facendo sparire le sezioni ANSA: ogni
+    feed contribuisce al massimo `MAX_PER_FEED`."""
+    urls = [f"https://esempio.invalid/f{i}" for i in range(4)]
+    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    risposte = {}
+    for f, u in enumerate(urls):
+        voci = "".join(
+            f"<item><title>N{f}-{i}</title><link>https://esempio.invalid/{f}/{i}</link>"
+            f"<description>S</description>"
+            f"<pubDate>Mon, {i:02d} Jan 2026 08:00:00 +0100</pubDate></item>"
+            for i in range(1, 16))
+        risposte[u] = f"<rss version='2.0'><channel><title>Prova{f}</title>{voci}</channel></rss>"
+    finta_tv(monkeypatch, risposte)
+    notizie = tv.notizie_dal_feed()
+    per_fonte = {}
+    for n in notizie:
+        per_fonte[n["fonte"]] = per_fonte.get(n["fonte"], 0) + 1
+    assert all(q <= tv.MAX_PER_FEED for q in per_fonte.values())
+    # con quattro fonti e il tetto a quattro, l'elenco e' pieno e misto
+    assert len(notizie) == tv.MAX_NOTIZIE
+    assert len(per_fonte) == 4
 
 
 def test_il_nome_della_fonte_e_quello_che_si_mostra_non_il_titolo_del_feed(client, monkeypatch):
     """Il titolo di un feed e' per un lettore di feed: "RSS di Mondo  - ANSA.it".
     Accanto a una notizia ci vuole "ANSA.it"."""
-    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
     notizie = tv.notizie_dal_feed()
     assert notizie[0]["fonte"] == "ANSA.it"
     assert notizie[0]["titolo"] == "Notizia nuova"
@@ -7445,7 +8244,7 @@ def test_il_sommario_lungo_si_taglia_sulla_parola(client, monkeypatch):
             f"<description>{lungo}</description>"
             f"<pubDate>Thu, 02 Apr 2026 09:30:00 +0200</pubDate></item>"
             f"</channel></rss>")
-    finta_tv(monkeypatch, {tv.feed_url(): feed})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: feed})
     sommario = tv.notizie_dal_feed()[0]["sommario"]
     assert sommario.endswith("…")
     assert len(sommario) <= tv.MAX_SOMMARIO + 1
@@ -7457,7 +8256,7 @@ def test_la_cache_tiene_la_copia_vecchia_se_la_rete_non_risponde(client, monkeyp
     che si era scaricato **resta**. Svuotarlo sarebbe il danno peggiore, perche'
     e' proprio la copia che serve quando non c'e' connessione."""
     db = app_module.get_db()
-    finta_tv(monkeypatch, {tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
     assert tv.aggiorna_notizie(db, forse=False) is True
     quante = len(tv.notizie(db))
     assert quante == 2
@@ -7479,10 +8278,11 @@ def test_non_si_riscarica_se_la_copia_e_fresca(client, monkeypatch):
         return FEED_NOTIZIE.encode("utf-8")
     monkeypatch.setattr(tv, "_apri", apri)
 
+    quanti_feed = len(tv.feed_urls())
     assert tv.aggiorna_notizie(db, forse=True) is True
-    assert chiamate["n"] == 1
+    assert chiamate["n"] == quanti_feed
     assert tv.aggiorna_notizie(db, forse=True) is False
-    assert chiamate["n"] == 1, "una copia fresca non si riscarica"
+    assert chiamate["n"] == quanti_feed, "una copia fresca non si riscarica"
 
 
 def test_l_endpoint_tv_richiede_l_accesso(anon):
@@ -7490,6 +8290,131 @@ def test_l_endpoint_tv_richiede_l_accesso(anon):
     della casa, ma nemmeno una pagina pubblica da lasciare aperta."""
     assert anon.get("/api/tv").status_code == 401
     assert anon.post("/api/tv/aggiorna").status_code == 401
+    assert anon.put("/api/tv/playlist", json={"playlist": "x" * 20}).status_code == 401
+
+
+def _niente_rete(monkeypatch):
+    """Nei test la rete non esiste e il sottofondo non deve partire.
+
+    `/api/tv` riprova a scaricare **dopo** aver risposto, in un filo che apre una
+    connessione sua. In un test quel filo sopravvive alla richiesta e, quando
+    `monkeypatch` ha gia' rimesso a posto `_apri`, scarica davvero tenendo aperto
+    il database di prova: la fixture lo cancella sotto e il test dopo fallisce
+    con «disk I/O error». Si spengono entrambe le cose: il guasto di rete e il
+    filo di sottofondo.
+    """
+    monkeypatch.setattr(tv, "_apri",
+                        lambda url: (_ for _ in ()).throw(tv.NonDisponibile("test")))
+    monkeypatch.setattr(app_module, "_aggiorna_tv_in_sottofondo", lambda db: None)
+    monkeypatch.setattr(app_module, "_aggiorna_notizie_in_sottofondo", lambda db: None)
+
+
+def test_l_indirizzo_della_playlist_diventa_il_suo_id():
+    """Nessuno incolla `PLQKkPe...`: si incolla l'indirizzo della barra del
+    browser. Il feed Atom vuole il solo id, quindi va estratto — altrimenti la
+    sezione resta vuota senza che si capisca perche'."""
+    atteso = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
+    assert tv.normalizza_playlist(
+        f"https://www.youtube.com/playlist?list={atteso}") == atteso
+    # altri parametri nell'indirizzo non devono confondere
+    assert tv.normalizza_playlist(
+        f"https://www.youtube.com/watch?v=abc&list={atteso}&index=2") == atteso
+    # un id gia' nudo si accetta com'e'
+    assert tv.normalizza_playlist(atteso) == atteso
+
+
+def test_un_indirizzo_senza_playlist_non_si_accetta():
+    """Un video o un canale non sono una playlist: dirlo subito e' meglio che
+    salvare un id sbagliato e mostrare una sezione vuota."""
+    for storto in ("https://www.youtube.com/watch?v=abc123",
+                   "https://www.youtube.com/@un-canale",
+                   "non un id!!"):
+        with pytest.raises(ValueError):
+            tv.normalizza_playlist(storto)
+
+
+def test_la_playlist_e_della_casa_non_del_modulo(client, monkeypatch):
+    """La playlist scelta si salva nella casa: e' una preferenza dell'utente, e
+    due case sullo stesso server non devono vedersi i video l'una dell'altra."""
+    _niente_rete(monkeypatch)
+    scelta = "PLcasa1234567890abcdef"
+    r = client.put("/api/tv/playlist", json={"playlist": scelta})
+    assert r.status_code == 200
+    assert r.get_json()["playlist"] == scelta
+    # il modulo continua a leggere la scelta della casa, non una costante
+    assert tv.playlist_id(app_module.get_db()) == scelta
+    assert client.get("/api/tv").get_json()["playlist"] == scelta
+
+
+def test_una_playlist_non_valida_non_si_salva(client, monkeypatch):
+    """L'id si valida **prima** di salvarlo: una playlist storta salvata sarebbe
+    una sezione vuota che non si capisce da dove venga."""
+    _niente_rete(monkeypatch)
+    prima = client.get("/api/tv").get_json()["playlist"]
+    r = client.put("/api/tv/playlist", json={"playlist": "https://www.youtube.com/watch?v=abc"})
+    assert r.status_code == 400
+    assert client.get("/api/tv").get_json()["playlist"] == prima, "la scelta buona resta"
+
+
+def test_cambiare_playlist_azzera_i_video_vecchi(client, monkeypatch):
+    """I video di prima sono di un'altra playlist: tenerli mostrerebbe la scelta
+    vecchia fino al prossimo giro, perche' `aggiorna` salta la copia fresca."""
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST})
+    db = app_module.get_db()
+    tv.aggiorna_video(db, forse=False)
+    # il sottofondo di `/api/tv` non deve scaricare: la copia e' appena scritta
+    _niente_rete(monkeypatch)
+    assert len(client.get("/api/tv").get_json()["video"]) == 2
+
+    # la nuova playlist risponde con un feed diverso: si deve vedere quello
+    nuovo = "PLnuova9876543210zyxwvu"
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={nuovo}": FEED_PLAYLIST.replace(
+            "aaa111", "ccc333").replace("bbb222", "ddd444"),
+    })
+    r = client.put("/api/tv/playlist", json={"playlist": nuovo})
+    assert r.status_code == 200
+    assert [v["id"] for v in r.get_json()["video"]] == ["ccc333", "ddd444"]
+
+
+def test_la_casa_nuova_puo_nascere_con_una_playlist(anon, monkeypatch):
+    """La richiesta nasce qui: alla creazione si chiede quale playlist si
+    gradisce, cosi' la TV e' giusta fin dal primo avvio."""
+    _niente_rete(monkeypatch)
+    scelta = "PLscelta1234567890abcde"
+    r = anon.post("/api/houses", json={
+        "nome": "Casa Playlist", "password": "aaaa", "playlist": scelta})
+    assert r.status_code == 201
+    assert r.get_json()["playlist"] == scelta
+    assert anon.get("/api/tv").get_json()["playlist"] == scelta
+
+
+def test_una_playlist_non_valida_non_crea_la_casa(anon):
+    """Si valida **prima** di registrare la casa: crearla e poi scoprire che la
+    playlist non va bene la lascerebbe a meta'."""
+    r = anon.post("/api/houses", json={
+        "nome": "Casa Storta", "password": "aaaa",
+        "playlist": "https://www.youtube.com/watch?v=abc"})
+    assert r.status_code == 400
+    assert "Casa Storta" not in [c["nome"] for c in anon.get("/api/houses").get_json()]
+
+
+def test_senza_playlist_la_casa_usa_la_predefinita(anon, monkeypatch):
+    """Chi non sceglie non resta senza TV: la playlist predefinita vale per lui."""
+    _niente_rete(monkeypatch)
+    anon.post("/api/houses", json={"nome": "Casa Senza Scelta", "password": "aaaa"})
+    assert anon.get("/api/tv").get_json()["playlist"] == tv.playlist_id()
+
+
+def test_la_playlist_si_scegle_alla_creazione_e_si_cambia_dalla_tv(client):
+    """La playlist si chiede creando la casa (la richiesta nasce li'), ma si deve
+    anche poter cambiare dopo senza rifare la casa: un canale preferito cambia."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="new-playlist"' in html
+    assert 'id="tv-playlist"' in html and 'id="tv-playlist-salva"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/tv/playlist" in js
+    assert "$('#new-playlist').value" in js
 
 
 def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
@@ -7497,7 +8422,7 @@ def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
     porta anche l'indirizzo del player, e il player e' `youtube-nocookie`, cosi'
     la pagina della casa non consegna i cookie a YouTube per il solo fatto di
     mostrare un video."""
-    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_url(): FEED_NOTIZIE})
+    finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_urls()[0]: FEED_NOTIZIE})
     db = app_module.get_db()
     tv.aggiorna(db, forse=False)
 
@@ -7516,6 +8441,96 @@ def test_l_endpoint_tv_non_cade_se_non_c_e_niente(client, monkeypatch):
     assert r.status_code == 200
     d = r.get_json()
     assert d["video"] == [] and d["notizie"] == []
+
+
+def _feed(titolo, voci):
+    return (f"<rss version='2.0'><channel><title>{titolo}</title>"
+            + "".join(voci) + "</channel></rss>")
+
+
+def _voce(n, data="Mon, 01 Jan 2026 08:00:00 +0100"):
+    return (f"<item><title>{n}</title><link>https://esempio.invalid/{n}</link>"
+            f"<description>S {n}</description><pubDate>{data}</pubDate></item>")
+
+
+def test_le_notizie_vengono_da_piu_sezioni_e_si_unisono(client, monkeypatch):
+    """Le notizie arrivano da piu' sezioni ANSA (mondo, cronaca, politica,
+    economia): con una sola il mondo lascia fuori quello che succede in Italia.
+    L'elenco unico si riordina per data, non per sezione."""
+    u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/cronaca"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it",
+                  [_voce("mondo-vecchia", "Mon, 01 Jan 2026 08:00:00 +0100")]),
+        u2: _feed("RSS di Cronaca  - ANSA.it",
+                  [_voce("italia-nuova", "Thu, 02 Apr 2026 09:00:00 +0200")]),
+    })
+    notizie = tv.notizie_dal_feed()
+    assert [n["titolo"] for n in notizie] == ["italia-nuova", "mondo-vecchia"]
+    # la fonte resta quella della sezione di provenienza
+    assert notizie[0]["fonte"] == "ANSA.it"
+
+
+def test_una_sezione_ferma_non_svuota_le_altre(client, monkeypatch):
+    """Se una sezione non risponde, le altre si mostrano lo stesso: una ferma non
+    deve portare via le notizie che si sono lette."""
+    u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/giu"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    finta_tv(monkeypatch, {u1: _feed("RSS di Mondo  - ANSA.it", [_voce("buona")])})
+    # `u2` non e' previsto da finta_tv: solleva NonDisponibile
+    notizie = tv.notizie_dal_feed()
+    assert [n["titolo"] for n in notizie] == ["buona"]
+
+
+def test_se_nessun_feed_risponde_e_un_guasto(client, monkeypatch):
+    """Nessuna sezione risponde: e' `NonDisponibile`, non una lista vuota, cosi'
+    la cache buona di ieri non viene sovrascritta con il vuoto."""
+    monkeypatch.setattr(tv, "feed_urls", lambda: ["https://esempio.invalid/a",
+                                                  "https://esempio.invalid/b"])
+    finta_tv(monkeypatch, {})
+    with pytest.raises(tv.NonDisponibile):
+        tv.notizie_dal_feed()
+
+
+def test_la_stessa_notizia_non_compare_due_volte(client, monkeypatch):
+    """Lo stesso fatto compare in piu' sezioni con titoli diversi: il link e' la
+    chiave stabile, e il doppione occuperebbe il posto di un'altra notizia."""
+    u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
+    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    voce = ("<item><title>Stesso fatto</title>"
+            "<link>https://esempio.invalid/uguale</link>"
+            "<description>S</description>"
+            "<pubDate>Thu, 02 Apr 2026 09:00:00 +0200</pubDate></item>")
+    finta_tv(monkeypatch, {
+        u1: _feed("RSS di Mondo  - ANSA.it", [voce]),
+        u2: _feed("RSS di Cronaca  - ANSA.it", [voce]),
+    })
+    notizie = tv.notizie_dal_feed()
+    assert len(notizie) == 1
+
+
+def test_i_feed_predefiniti_includono_l_italia(client):
+    """Le sezioni predefinite non sono il solo «mondo»: dentro c'e' quello che
+    succede in Italia, che e' la prima cosa che si guarda."""
+    urls = tv.feed_urls()
+    assert len(urls) >= 2
+    assert any("mondo" in u for u in urls)
+    assert any("cronaca" in u or "politica" in u for u in urls)
+    # niente doppioni e tutti feed veri
+    assert len(urls) == len(set(urls))
+    assert all(u.startswith("https://") for u in urls)
+
+
+def test_tv_feed_dall_ambiente_ne_accetta_piu_d_uno(client, monkeypatch):
+    """`TV_FEED` puo' indicare piu' indirizzi, separati da virgola o a capo:
+    cosi' una casa puo' scegliere le proprie sezioni senza toccare il modulo."""
+    monkeypatch.setenv("TV_FEED", "https://a.invalid/rss, https://b.invalid/rss\n"
+                                  "https://c.invalid/rss")
+    assert tv.feed_urls() == ["https://a.invalid/rss", "https://b.invalid/rss",
+                              "https://c.invalid/rss"]
+    # e il tetto vale anche qui: non si moltiplicano le richieste a un sito altrui
+    monkeypatch.setenv("TV_FEED", ",".join(f"https://x{i}.invalid/rss" for i in range(50)))
+    assert len(tv.feed_urls()) == tv.MAX_FEED
 
 
 def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkeypatch):

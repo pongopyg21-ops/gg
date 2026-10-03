@@ -28,6 +28,7 @@ import json
 import os
 import re
 import urllib.request
+from urllib.parse import urlparse
 
 # L'endpoint e' quello compatibile con OpenAI. Il predefinito e' il **modello di
 # casa** (Ollama): nessuna chiave, nessun costo, niente che esce di casa. Chi
@@ -219,14 +220,95 @@ def _e_locale() -> bool:
 
 
 def configurato() -> bool:
-    """C'e' un modello con cui capire i comandi?
+    """C'e' una **configurazione** per capire i comandi col modello?
 
     Serve o una chiave (servizio in rete) oppure un endpoint locale (Ollama, che
     non ne usa). Senza ne' l'una ne' l'altro resta il parser a regole: l'app
     funziona lo stesso, non si rompe. E' la stessa logica di
     `voce_cloud.configurato()`.
+
+    Dice che la configurazione **c'e'**, non che il modello risponda: un
+    endpoint locale c'e' sempre (e' il predefinito), anche a Ollama spento. Per
+    sapere se risponde davvero si usa `raggiungibile()`.
     """
     return bool(chiave()) or _e_locale()
+
+
+# Il tetto della verifica di raggiungibilita', piu' corto di quello delle
+# chiamate: qui non si aspetta una risposta, solo se la porta e' aperta. Ollama
+# risponde in millisecondi; un secondo e' gia' tanto per un servizio locale.
+TIMEOUT_VERIFICA = 1.5
+
+
+def _endpoint_salute(base: str) -> str:
+    """L'indirizzo da cui chiedere l'elenco dei modelli a un endpoint compatibile
+    OpenAI.
+
+    Ollama tiene l'elenco in `/api/tags`, non nella parte compatibile OpenAI
+    (`/v1`): da `http://127.0.0.1:11434/v1` si risale a
+    `http://127.0.0.1:11434/api/tags`. Un servizio in rete che espone `/v1` di
+    solito risponde anche a `/models` con la stessa lista. Cosi' la verifica
+    vale per entrambi, senza sapere in anticipo quale sia.
+    """
+    u = urlparse(base)
+    if not u.scheme or not u.netloc:
+        return ""
+    radice = f"{u.scheme}://{u.netloc}"
+    if u.port == 11434:
+        return radice + "/api/tags"
+    return radice + "/models"
+
+
+def raggiungibile() -> bool:
+    """Il modello risponde **adesso**?
+
+    `configurato()` dice solo che c'e' una configurazione, e un endpoint locale
+    c'e' sempre (il predefinito), anche a Ollama spento. Qui si guarda davvero:
+    si chiede l'elenco dei modelli con un tetto breve. Serve all'app per non
+    offrire l'interruttore — e non dire "disponibile" — quando ogni comando
+    finirebbe in silenzio sulle regole.
+
+    Un guasto di rete non e' un errore: vuol dire "non pronto". Non si solleva
+    niente, perche' l'app funziona lo stesso col parser a regole.
+    """
+    if not configurato():
+        return False
+    indirizzo = _endpoint_salute(base_url())
+    if not indirizzo:
+        return False
+    intestazioni = {"User-Agent": "IlMaggiordomo"}
+    # La chiave non serve a Ollama, ma un servizio in rete la pretende: se c'e'
+    # si manda, se no si prova lo stesso (Ollama risponde anche senza).
+    if chiave():
+        intestazioni["Authorization"] = f"Bearer {chiave()}"
+    try:
+        richiesta = urllib.request.Request(indirizzo, headers=intestazioni)
+        with urllib.request.urlopen(richiesta, timeout=TIMEOUT_VERIFICA):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def messaggio_stato() -> str:
+    """Cosa manca per capire i comandi col modello, se manca qualcosa.
+
+    Vuoto quando e' pronto. Altrimenti dice la **causa** e cosa fare: il sintomo
+    «il modello non capisce» ha tre cause — nessuna chiave, Ollama spento,
+    modello non scaricato — che danno lo stesso effetto, e distinguerle e'
+    l'unica cosa che serve per uscirne.
+    """
+    if chiave():
+        return ""
+    if not _e_locale():
+        return ("Per capire i comandi con un modello serve una chiave: registrala "
+                "come segreto LLM_API_KEY prima di avviare l'app, oppure avvia un "
+                "modello in casa (Ollama).")
+    if raggiungibile():
+        return ""
+    modello_atteso = modello()
+    return (f"Ollama non risponde su {base_url()}. Aprilo (deve stare nella tray) "
+            f"e assicurati che il modello «{modello_atteso}» sia scaricato "
+            f"(ollama pull {modello_atteso}). Senza, l'app usa le regole.")
 
 
 def _ripulisci(dati: dict) -> dict:

@@ -69,6 +69,12 @@
         <input id="new-password" type="password" autocomplete="new-password"
                placeholder="Almeno 4 caratteri" required>
       </div>
+      <div class="field">
+        <label for="new-playlist">Playlist YouTube per la TV <span class="muted">(facoltativa)</span></label>
+        <input id="new-playlist" placeholder="Incolla l'indirizzo della playlist o il suo id">
+      </div>
+      <p class="home-lead">Senza playlist, la TV parte con quella predefinita:
+        si può cambiare quando si vuole dalla sezione TV.</p>
       <p id="new-errore" class="accesso-errore" hidden></p>
       <div class="accesso-bottoni">
         <button id="new-crea" class="primary" type="submit">Crea la casa</button>
@@ -101,6 +107,8 @@
     <p class="home-voice-hint">Acceso l'ascolto continuo, basta dire «Hey GG» e il
       comando: niente da premere. Si accende dal pannello 🎙, la prima volta.</p>
   </div>
+  <!-- Le categorie per prime: si arriva in home per scegliere dove andare, e
+       devono stare subito sotto l'invito a parlare, non in fondo. -->
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
       <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/icona.svg" alt=""></span>
@@ -134,10 +142,42 @@
       <span class="home-emoji">📺</span>
       <span class="home-name">TV</span>
       <span class="home-desc">Intrattenimento: la playlist di casa e le notizie
-        dal mondo, aggiornate ogni giorno.</span>
+        dall'Italia e dal mondo, aggiornate ogni giorno.</span>
       <span class="home-go">Apri →</span>
     </button>
   </div>
+  <!-- Riepilogo della giornata: cosa si mangia, cosa c'e' da fare in casa, cosa
+       avvisa. Si riempie da solo all'avvio e resta nascosto finche' non c'e'
+       niente da dire: una home con un riquadro vuoto e' peggio di una senza. -->
+  <section id="home-oggi" class="home-oggi hidden" aria-label="Riepilogo di oggi"></section>
+  <!-- Il calendario degli impegni in fondo alla home: la stessa griglia del
+       mese della scheda Calendario (nei Progetti), ma in sola lettura e senza
+       l'elenco del giorno. Qui non serve aggiungere o modificare: cliccando un
+       giorno si apre il Calendario, dove si fa tutto. La home resta un posto
+       dove si sceglie, non dove si compila. -->
+  <section id="home-cal" class="home-cal hidden" aria-label="Calendario degli impegni">
+    <div class="home-cal-head">
+      <h2 class="home-cal-titolo">📆 Calendario</h2>
+      <div class="cal-nav">
+        <button id="home-cal-prev" class="ghost" title="Mese precedente" aria-label="Mese precedente">‹</button>
+        <span id="home-cal-mese" class="cal-mese"></span>
+        <button id="home-cal-next" class="ghost" title="Mese successivo" aria-label="Mese successivo">›</button>
+        <button id="home-cal-apri" class="ghost">Apri →</button>
+      </div>
+    </div>
+    <div id="home-cal-grid" class="cal-grid"></div>
+  </section>
+  <!-- Le notizie del giorno, sotto il calendario. Stessa veste del riquadro
+       «Oggi»: sono da leggere, non da premere. Si mostrano solo i titoli, con
+       fonte e data; il riquadro resta nascosto se non c'e' niente, come «Oggi».
+       L'elenco completo con i sommari sta nella sezione TV. -->
+  <section id="home-notizie" class="home-notizie hidden" aria-label="Notizie del giorno">
+    <div class="home-notizie-head">
+      <h2 class="home-notizie-titolo">📰 Notizie del giorno</h2>
+      <button id="home-notizie-apri" class="ghost">Apri →</button>
+    </div>
+    <div id="home-notizie-elenco" class="tv-notizie"></div>
+  </section>
 </section>
 
 <!-- L'app vera e propria: testata e schede restano nascoste finche' non si
@@ -193,6 +233,8 @@
       <input id="pantry-name" placeholder="Ingrediente" list="ingredient-list">
       <input id="pantry-qty" class="qty-input" type="number" step="0.1" value="1">
       <input id="pantry-unit" class="unit-input" list="unit-list" value="pz">
+      <input id="pantry-scade" class="date-input" type="date"
+             title="Scadenza (facoltativa)" aria-label="Scadenza (facoltativa)">
       <button id="pantry-add" class="primary">Aggiungi</button>
       <span class="spacer"></span>
       <input id="pantry-search" type="search" placeholder="Filtra...">
@@ -200,7 +242,7 @@
     <datalist id="unit-list"></datalist>
     <datalist id="ingredient-list"></datalist>
     <table id="pantry-table">
-      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th></th></tr></thead>
+      <thead><tr><th>Ingrediente</th><th>Categoria</th><th>Quantità</th><th>Scade</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     <div id="pantry-suggerimenti" class="pantry-sug"></div>
@@ -293,33 +335,49 @@
   </section>
 
   <!-- IGIENE — pulizie di casa e della cucina. Il metodo e' quello del calendario
-       mensile: tre blocchi per frequenza (ogni giorno, ogni settimana, ogni mese)
-       piu' un calendario annuale con un focus per mese. La pagina apre su cosa
-       c'e' da fare adesso, perche' e' quello che serve davvero. -->
+       mensile: quattro frequenze (ogni giorno, ogni settimana, ogni mese, una
+       volta l'anno) piu' un focus per mese. -->
   <section id="tab-igiene" class="tab">
-    <div id="ch-oggi"></div>
-    <div class="ch-blitz-row">
-      <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
-      <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
+    <!-- La sezione fa tre mestieri diversi: cosa c'e' da fare adesso, cosa
+         esiste (il catalogo), cosa tocca nell'anno. In un'unica colonna
+         diventavano un catalogo lungo il doppio delle voci, con le stesse
+         attivita' ripetute in piu' blocchi. Le schede li separano: la prima
+         schermata e' solo quello che si fa oggi. -->
+    <div class="ch-nav" role="tablist" aria-label="Sezioni delle pulizie">
+      <button class="ch-nav-btn active" data-chp="oggi" role="tab" aria-selected="true">Oggi</button>
+      <button class="ch-nav-btn" data-chp="routine" role="tab" aria-selected="false">Routine</button>
+      <button class="ch-nav-btn" data-chp="anno" role="tab" aria-selected="false">Calendario</button>
+      <button class="ch-nav-btn" data-chp="catalogo" role="tab" aria-selected="false">Attività</button>
     </div>
 
-    <h3 class="section-title">Routine</h3>
-    <div class="toolbar">
-      <label class="ch-day">Giorno delle pulizie
-        <select id="ch-day"></select>
-      </label>
+    <div class="ch-panel active" data-chp-panel="oggi">
+      <div id="ch-oggi"></div>
+      <div class="ch-blitz-row">
+        <button id="ch-blitz" class="ghost">⏱ 15 minuti</button>
+        <span class="ch-blitz-hint">Poco tempo? Una zona sola, un quarto d'ora: è la regola dei 15 minuti.</span>
+      </div>
     </div>
-    <div id="ch-routine"></div>
 
-    <h3 class="section-title">Calendario dell'anno</h3>
-    <div id="ch-year" class="ch-year"></div>
-
-    <h3 class="section-title">Attività</h3>
-    <div class="toolbar">
-      <button id="ch-new" class="ghost">+ Nuova attività</button>
-      <span id="ch-count" class="ch-count"></span>
+    <div class="ch-panel" data-chp-panel="routine">
+      <div class="toolbar">
+        <label class="ch-day">Giorno delle pulizie
+          <select id="ch-day"></select>
+        </label>
+      </div>
+      <div id="ch-routine"></div>
     </div>
-    <div id="ch-list"></div>
+
+    <div class="ch-panel" data-chp-panel="anno">
+      <div id="ch-year" class="ch-year"></div>
+    </div>
+
+    <div class="ch-panel" data-chp-panel="catalogo">
+      <div class="toolbar">
+        <button id="ch-new" class="ghost">+ Nuova attività</button>
+        <span id="ch-count" class="ch-count"></span>
+      </div>
+      <div id="ch-list"></div>
+    </div>
   </section>
 
   <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->
@@ -441,10 +499,19 @@
          scorrendo: quindici player caricati insieme sono quindici volte il
          lavoro di uno. -->
     <h3 class="section-title">Playlist di casa</h3>
+    <div class="tv-playlist-riga">
+      <input id="tv-playlist" type="text"
+             placeholder="Indirizzo o id della playlist YouTube"
+             aria-label="Playlist YouTube della casa">
+      <button id="tv-playlist-salva" type="button">Cambia playlist</button>
+    </div>
+    <p class="hint">La playlist è della casa: cambiandola qui, la TV scarica
+      subito i video della nuova.</p>
     <div id="tv-video" class="tv-video"></div>
 
-    <h3 class="section-title">Notizie dal mondo</h3>
-    <p class="hint">Le ultime dieci, aggiornate una volta al giorno.</p>
+    <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>
+    <p class="hint">Le ultime venti, da ANSA (cronaca, politica, economia, mondo)
+      e RaiNews, mescolate fra le due testate. Aggiornate una volta al giorno.</p>
     <div id="tv-notizie" class="tv-notizie"></div>
   </section>
 
@@ -563,5 +630,16 @@
 </div>
 
 <script src="/static/app.js"></script>
+<script>
+/* Il service worker si registra da qui e non dal codice dell'app: cosi' parte
+   anche se `app.js` non e' stato ancora caricato. Non e' indispensabile — senza
+   il service worker l'app funziona lo stesso — quindi un errore non si mostra.
+   Da `/sw.js` e non da `/static/sw.js`: da li' non controllerebbe la pagina. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+</script>
 </body>
 </html>

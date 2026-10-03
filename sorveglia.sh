@@ -26,6 +26,11 @@ set -uo pipefail
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-12000}"
 INTERVALLO="${INTERVALLO:-15}"
+
+# Il segno che questo script sta facendo un giro di controllo: quando riavvia il
+# server con `./avvia.sh`, quello non deve riaccendere anche la sorveglianza (lo
+# sta gia' facendo questo stesso processo). Senza, si riavvierebbe all'infinito.
+export MAGGIORDOMO_SORVEGLIA_GIRO=1 BASE_DIR PORT
 PID_FILE="$BASE_DIR/.sorveglia.pid"
 LOCK_FILE="$BASE_DIR/.sorveglia.lock"
 LOG_FILE="$BASE_DIR/sorveglia.log"

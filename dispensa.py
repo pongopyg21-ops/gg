@@ -19,6 +19,8 @@ Le quantita' si confrontano solo fra unita' convertibili (`units.convert`):
 indovina — un ingrediente senza scorta si dice mancante.
 """
 
+import datetime
+
 import allergens
 import units
 
@@ -26,9 +28,13 @@ import units
 # il conteggio, che resta esatto
 MAX_NOMI = 5
 
+# Cosa si considera "sta per scadere". Una settimana e' il giro di una spesa:
+# oltre, non e' piu' un problema di stasera.
+GIORNI_SCADENZA = 7
+
 
 def _dispensa(db):
-    """ingredient_id -> {nome, scorte: [(quantita', unita'), ...]}.
+    """ingredient_id -> {nome, scorte: [(quantita', unita', scadenza), ...]}.
 
     Le scorte sono una lista perche' lo stesso ingrediente puo' avere piu' righe
     in unita' diverse (500 g e 1 confezione): vanno sommate solo quelle
@@ -36,11 +42,30 @@ def _dispensa(db):
     """
     out = {}
     for r in db.execute(
-            """SELECT p.ingredient_id, p.quantity, p.unit, i.name
+            """SELECT p.ingredient_id, p.quantity, p.unit, p.expires_at, i.name
                FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id"""):
         voce = out.setdefault(r["ingredient_id"], {"nome": r["name"], "scorte": []})
-        voce["scorte"].append((r["quantity"], r["unit"]))
+        voce["scorte"].append((r["quantity"], r["unit"], r["expires_at"]))
     return out
+
+
+def _scade_presto(scorte, oggi):
+    """La scorta piu' vicina alla scadenza, se e' entro `GIORNI_SCADENZA`.
+
+    Un ingrediente senza data non scade per questo: non sapere quando scade non
+    e' un motivo per metterlo in cima.
+    """
+    limite = oggi + datetime.timedelta(days=GIORNI_SCADENZA)
+    for _, _, scadenza in scorte:
+        if not scadenza:
+            continue
+        try:
+            data = datetime.date.fromisoformat(scadenza)
+        except ValueError:
+            continue
+        if data <= limite:
+            return scadenza
+    return None
 
 
 def _coperto(quantita, unita, scorte):
@@ -51,7 +76,7 @@ def _coperto(quantita, unita, scorte):
     """
     totale = 0.0
     presente = False
-    for q, u in scorte:
+    for q, u, _ in scorte:
         conv = units.convert(q, u, unita)
         if conv is not None:
             totale += conv
@@ -67,14 +92,19 @@ def _coperto(quantita, unita, scorte):
     return totale >= quantita, True
 
 
-def suggerimenti(db, restrizioni=(), limite=6):
+def suggerimenti(db, restrizioni=(), limite=6, oggi=None):
     """Ricette ordinate per quanto usano la dispensa.
 
     `restrizioni` sono i termini allergici del profilo: una ricetta che li
     contiene **non** viene suggerita. Marcarne una con un avviso andrebbe bene in
     un elenco da consultare, ma qui l'app dice «cucina questa»: proporre un
     allergene non e' un'informazione, e' un errore.
+
+    `oggi` serve per la scadenza: chi ha scorte in scadenza sale in cima, perche'
+    la ricetta che le consuma e' quella da cucinare adesso. Senza, si usa la data
+    vera — l'unico posto in cui il modulo la guarda.
     """
+    oggi = oggi or datetime.date.today()
     dispensa = _dispensa(db)
     if not dispensa:
         return {"dispensa": 0, "suggerimenti": []}
@@ -99,10 +129,13 @@ def suggerimenti(db, restrizioni=(), limite=6):
 
         coperti = parziali = 0
         mancano = []
+        scadono = []
         for i in suoi:
             voce = dispensa.get(i["ingredient_id"])
             if voce:
                 intero, presente = _coperto(i["quantity"], i["unit"], voce["scorte"])
+                if _scade_presto(voce["scorte"], oggi):
+                    scadono.append(i["name"])
             else:
                 intero, presente = False, False
             if intero:
@@ -132,7 +165,12 @@ def suggerimenti(db, restrizioni=(), limite=6):
             # una lunga e incompleta, che e' quella che si puo' cucinare stasera
             "punteggio": round((coperti + 0.5 * parziali) / totale, 3),
             "mancano": mancano[:MAX_NOMI],
+            # quante scorte in scadenza questa ricetta aiuterebbe a consumare
+            "scadono": scadono[:MAX_NOMI],
         })
 
-    fuori.sort(key=lambda s: (-s["punteggio"], s["mancanti"], s["name"]))
+    # In cima chi consuma qualcosa in scadenza: la copertura dice cosa si puo'
+    # fare, la scadenza dice cosa conviene fare adesso. A parita' di scadenze
+    # consumate, valgono copertura e spesa corta, come prima.
+    fuori.sort(key=lambda s: (-len(s["scadono"]), -s["punteggio"], s["mancanti"], s["name"]))
     return {"dispensa": len(dispensa), "suggerimenti": fuori[:limite]}

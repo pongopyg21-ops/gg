@@ -62,6 +62,13 @@ if os.environ.get("DIETRO_PROXY") in ("1", "si", "sì", "true"):
 # toccate: là la memoria serve, e il tempo lo decidono le rotte che le servono.
 @app.after_request
 def _non_tenere_in_memoria(risposta):
+    # Un asset chiesto con `?v=...` è **quello di una versione precisa**: il
+    # numero cambia quando il file cambia, quindi tenerlo in memoria a lungo è
+    # sicuro e non fa mai vedere una versione vecchia. È il caso di `app.js` e
+    # `style.css`, che senza questo si riscaricano a ogni apertura.
+    if request.path.startswith("/static/") and request.args.get("v"):
+        risposta.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return risposta
     if "Cache-Control" not in risposta.headers:
         risposta.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         risposta.headers["Pragma"] = "no-cache"
@@ -289,6 +296,12 @@ def migrate(db):
         db.execute("ALTER TABLE shopping_items ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
         db.execute("UPDATE shopping_items SET generated = 1")
 
+    # La scadenza in dispensa: i database nati prima non hanno la colonna, e
+    # `CREATE TABLE IF NOT EXISTS` non la aggiunge a una tabella che esiste gia'.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(pantry)")}
+    if have and "expires_at" not in have:
+        db.execute("ALTER TABLE pantry ADD COLUMN expires_at TEXT")
+
     # `llm_prefs` e' una tabella **nuova**: `CREATE TABLE IF NOT EXISTS` la crea
     # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
     # aggiunge una **colonna** a quella tabella la aggiunga anche in questo blocco.
@@ -414,7 +427,7 @@ def one(cur):
 # file statici e l'accesso. Tutto il resto richiede una sessione. La difesa sta
 # qui, in un punto solo, invece che su ogni rotta: dimenticarsene una
 # significherebbe esporre i dati di una casa, e sono cinquanta.
-ROTTE_PUBBLICHE = {"/", "/api/houses", "/api/login", "/api/logout", "/api/session"}
+ROTTE_PUBBLICHE = {"/", "/sw.js", "/api/houses", "/api/login", "/api/logout", "/api/session"}
 
 
 @app.before_request
@@ -552,6 +565,59 @@ def api_tv():
     return jsonify({
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+    })
+
+
+@app.route("/api/notizie")
+def api_notizie():
+    """Le notizie del giorno, per il riquadro in home.
+
+    Solo notizie: la home non ha bisogno dei video della TV, e chiedere
+    `/api/tv` tirerebbe giu' anche i loro embed per niente.
+
+    Stessa regola della sezione TV: si risponde **subito** con la copia in cache
+    e si riprova dopo, in un filo, cosi' un feed lento non blocca la home. Se la
+    copia e' vuota e non c'e' rete, la risposta e' comunque 200 con un elenco
+    vuoto: e' un riquadro da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_notizie_in_sottofondo(db)
+    _, quando = tv._leggi(db, "notizie")
+    return jsonify({"notizie": tv.notizie(db), "aggiornato": _iso(quando)})
+
+
+@app.route("/api/tv/playlist", methods=["PUT"])
+def api_tv_playlist():
+    """Cambia la playlist della casa e riscarica i video.
+
+    La scelta e' della **casa**, non del dispositivo: chi amministra decide cosa
+    si guarda in TV, e le altre case restano con la loro. L'id si valida prima di
+    salvarlo (una playlist storta sarebbe una sezione vuota senza spiegazione) e
+    la copia vecchia si azzera, perche' i video di prima sono di un'altra
+    playlist: tenerli mostrerebbe la scelta vecchia fino al prossimo giro.
+
+    Il riscaricamento aspetta la rete, come il pulsante «Aggiorna»: e' l'utente
+    che l'ha chiesto e si aspetta di vedere il risultato subito. Se la rete non
+    risponde la playlist resta salvata e i video si riproveranno dopo.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    data = request.get_json(force=True) or {}
+    try:
+        scelto = tv.imposta_playlist(db, data.get("playlist") or "")
+    except ValueError as err:
+        return bad_request(str(err))
+    tv.aggiorna_video(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "playlist": scelto,
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
+        "notizie": tv.notizie(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -575,6 +641,7 @@ def api_tv_aggiorna():
         "aggiornati": esito,
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -612,6 +679,31 @@ def _aggiorna_tv_in_sottofondo(db):
             app.logger.debug("Aggiornamento TV in sottofondo non riuscito")
 
     threading.Thread(target=scarica, name="tv-aggiornamento", daemon=True).start()
+
+
+def _aggiorna_notizie_in_sottofondo(db):
+    """Riprova a scaricare le notizie senza far aspettare chi apre la home.
+
+    Come `_aggiorna_tv_in_sottofondo`, ma solo per le notizie: la home non ha i
+    video, e chiederli tirerebbe giu' dati che non si mostrano. Il filo apre una
+    connessione sua, perche' quella di Flask vive quanto la richiesta.
+    """
+    _, quando = tv._leggi(db, "notizie")
+    if tv._fresco(quando, tv.ORE_NOTIZIE):
+        return
+    percorso = db.execute("PRAGMA database_list").fetchone()[2]
+
+    def scarica():
+        try:
+            with closing(sqlite3.connect(percorso)) as suo:
+                suo.row_factory = sqlite3.Row
+                tv.aggiorna_notizie(suo, forse=True)
+        except Exception:
+            # un guasto di rete non deve lasciare traccia di errore in un
+            # percorso che l'utente non ha nemmeno chiesto
+            app.logger.debug("Aggiornamento notizie in sottofondo non riuscito")
+
+    threading.Thread(target=scarica, name="notizie-aggiornamento", daemon=True).start()
 
 
 @app.route("/api/houses")
@@ -663,17 +755,33 @@ def api_logout():
 
 @app.route("/api/houses", methods=["POST"])
 def api_house_create():
-    """Crea una casa con il ricettario di partenza e vi collega chi la crea."""
+    """Crea una casa con il ricettario di partenza e vi collega chi la crea.
+
+    La playlist TV e' **facoltativa**: se indicata si valida **prima** di
+    registrare la casa, altrimenti si creerebbe una casa e poi si scoprirebbe
+    che la playlist non va bene, lasciandola a meta'. Se manca, la casa eredita
+    il valore d'ambiente o la predefinita.
+    """
     data = request.get_json(force=True) or {}
+    playlist = (data.get("playlist") or "").strip()
+    if playlist:
+        try:
+            playlist = tv.normalizza_playlist(playlist)
+        except ValueError as err:
+            return bad_request(str(err))
     try:
         slug = houses.crea(data.get("nome"), data.get("password"))
     except ValueError as err:
         return bad_request(str(err))
     init_db(houses.db_path(slug), con_ricettario=True)
+    if playlist:
+        with closing(sqlite3.connect(houses.db_path(slug))) as db:
+            db.row_factory = sqlite3.Row
+            tv.imposta_playlist(db, playlist)
     session.clear()
     session["casa"] = slug
     session.permanent = True
-    return jsonify({"house": slug, "nome": houses.nome_di(slug)}), 201
+    return jsonify({"house": slug, "nome": houses.nome_di(slug), "playlist": playlist}), 201
 
 
 def bad_request(msg, code=400):
@@ -708,6 +816,21 @@ def parse_cost(value):
     except (TypeError, ValueError):
         return None
     return round(costo, 2) if costo >= 0 else None
+
+
+def parse_data(value):
+    """Una data `AAAA-MM-GG`, o None se il campo e' vuoto o non e' una data.
+
+    La scadenza e' facoltativa: vuoto vuol dire "non lo so", e un testo che non
+    e' una data non deve entrare nel database per poi rompere l'ordinamento.
+    """
+    testo = (value or "").strip()
+    if not testo:
+        return None
+    try:
+        return datetime.date.fromisoformat(testo).isoformat()
+    except ValueError:
+        return None
 
 
 def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
@@ -863,9 +986,66 @@ def recipe_safety(db, rid, restriction_list):
 
 
 # ---------------------------------------------------------------- index
+def _versione_asset(nome):
+    """Un'impronta breve del file statico, per l'indirizzo `?v=...`.
+
+    Si legge a ogni richiesta della pagina ma si tiene in memoria finché il file
+    non cambia (mtime e dimensione): un `app.js` da 200 KB non si rilegge per
+    intero a ogni apertura, e la versione cambia appena il file cambia.
+    """
+    percorso = os.path.join(BASE_DIR, "static", nome)
+    try:
+        stato = os.stat(percorso)
+    except OSError:
+        return ""
+    chiave = (nome, stato.st_mtime_ns, stato.st_size)
+    with _versione_guardia:
+        if chiave in _versioni:
+            return _versioni[chiave]
+    try:
+        with open(percorso, "rb") as f:
+            impronta = hashlib.sha256(f.read()).hexdigest()[:10]
+    except OSError:
+        return ""
+    with _versione_guardia:
+        _versioni.clear()  # poche voci: una per file, non serve una cache grande
+        _versioni[chiave] = impronta
+    return impronta
+
+
+_versioni = {}
+_versione_guardia = threading.Lock()
+
+# Gli asset della pagina a cui si aggiunge la versione. Non tutte le immagini:
+# quelle dei dati scelgono da sole la loro scadenza e non hanno bisogno di un
+# indirizzo che cambia.
+_ASSET_VERSIONATI = ("style.css", "app.js")
+
+
 @app.route("/")
 def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    percorso = os.path.join(BASE_DIR, "static", "index.html")
+    with open(percorso, "r", encoding="utf-8") as f:
+        html = f.read()
+    for nome in _ASSET_VERSIONATI:
+        versione = _versione_asset(nome)
+        if versione:
+            html = html.replace(f'/static/{nome}"', f'/static/{nome}?v={versione}"')
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Il service worker, servito dalla radice.
+
+    Un service worker controlla solo il percorso da cui e' servito e quelli
+    sotto: servito da `/static/` non potrebbe intercettare la pagina `/`, che e'
+    proprio quella da mostrare senza rete. Quindi si serve da `/sw.js`, anche se
+    il file sta in `static/`.
+    """
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"), "sw.js",
+        mimetype="text/javascript")
 
 
 @app.route("/api/meta")
@@ -934,7 +1114,7 @@ def pantry_suggerimenti():
 def pantry_list():
     db = get_db()
     cur = db.execute(
-        """SELECT p.id, p.quantity, p.unit, p.updated_at,
+        """SELECT p.id, p.quantity, p.unit, p.expires_at, p.updated_at,
                   i.id AS ingredient_id, i.name, i.category
            FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
            ORDER BY i.name"""
@@ -952,6 +1132,7 @@ def pantry_add():
     unit = units.normalize(data.get("unit"))
     iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
     qty = parse_float(data.get("quantity"), 0)
+    scade = parse_data(data.get("expires_at"))
     existing = one(db.execute(
         "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
     if not existing:
@@ -959,22 +1140,42 @@ def pantry_add():
         for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
             converted = units.convert(qty, unit, cand["unit"])
             if converted is not None:
+                # la scadenza piu' vicina e' quella che conta: aggiungendo altra
+                # roba con una data piu' stretta, e' quella che va guardata prima
+                nuova = _scadenza_piu_vicina(cand["expires_at"], scade)
                 db.execute(
-                    "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                    (converted, cand["id"]))
+                    "UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (converted, nuova, cand["id"]))
                 db.commit()
                 rebuild_shopping(db)
                 db.commit()
                 return jsonify({"ok": True}), 201
-        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit, expires_at) "
+                   "VALUES (?, ?, ?, ?)", (iid, qty, unit, scade))
     else:
-        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                   (qty, existing["id"]))
+        nuova = _scadenza_piu_vicina(existing["expires_at"], scade)
+        db.execute("UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                   "updated_at = datetime('now') WHERE id = ?",
+                   (qty, nuova, existing["id"]))
     db.commit()
     # quello che entra in dispensa non serve piu' comprarlo: la lista segue
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True}), 201
+
+
+def _scadenza_piu_vicina(una, altra):
+    """La scadenza piu' vicina fra due date, ignorando le vuote.
+
+    Se una delle due non c'e', vale l'altra: non sapere quando scade qualcosa
+    non cancella quello che si sa di un'altra partita.
+    """
+    if not una:
+        return altra
+    if not altra:
+        return una
+    return min(una, altra)
 
 
 @app.route("/api/pantry/<int:pid>", methods=["PATCH", "DELETE"])
@@ -988,8 +1189,20 @@ def pantry_modify(pid):
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
-    db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
-               (parse_float(data.get("quantity"), 0), pid))
+    # ogni campo si tocca solo se c'e' nel corpo: mandare la sola scadenza non
+    # deve azzerare la quantita', e cambiare la quantita' non deve cancellare la
+    # scadenza. Per togliere la scadenza si manda vuota, che e' diverso dal non
+    # mandarla.
+    campi, valori = [], []
+    if "quantity" in data:
+        campi.append("quantity = ?")
+        valori.append(parse_float(data.get("quantity"), 0))
+    if "expires_at" in data:
+        campi.append("expires_at = ?")
+        valori.append(parse_data(data.get("expires_at")))
+    if campi:
+        campi.append("updated_at = datetime('now')")
+        db.execute(f"UPDATE pantry SET {', '.join(campi)} WHERE id = ?", (*valori, pid))
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True})
@@ -2466,9 +2679,12 @@ def voce_config():
     l'elenco delle voci fra cui scegliere. Il client decide in base a questo se
     usare il cloud o ripiegare sulla voce del browser.
 
-    Dice anche se la comprensione col modello e' **disponibile** (chiave
-    configurata) e se questa casa l'ha accesa: le due cose sono diverse, e il
-    pannello le distingue.
+    Dice anche tre cose sulla comprensione col modello, che sono diverse fra
+    loro e il pannello non deve confondere: se la configurazione **c'e'**
+    (`llm_disponibile`), se il modello **risponde adesso** (`llm_pronto`) e —
+    quando non risponde — **cosa manca** (`llm_manca`). L'interruttore si mostra
+    solo se il modello risponde: un endpoint locale c'e' sempre, anche a Ollama
+    spento, e senza `llm_pronto` si accendeva a vuoto.
     """
     db = get_db()
     return jsonify({
@@ -2479,7 +2695,13 @@ def voce_config():
         "voci": voce_cloud.elenco_voci(),
         "predefinita": voce_cloud.VOCE_PREDEFINITA,
         "max_caratteri": voce_cloud.MAX_CARATTERI,
+        # `disponibile` dice che la configurazione c'e'; `pronto` che il modello
+        # risponde **adesso**. Un endpoint locale c'e' sempre (il predefinito),
+        # anche a Ollama spento: senza la seconda, l'interruttore si accendeva a
+        # vuoto e ogni comando finiva in silenzio sulle regole.
         "llm_disponibile": comprensione.configurato(),
+        "llm_pronto": comprensione.raggiungibile(),
+        "llm_manca": comprensione.messaggio_stato(),
         "llm_abilitato": _llm_abilitato(db),
     })
 
@@ -2490,19 +2712,21 @@ def voce_llm():
 
     La chiave non si tocca da qui: entra solo dall'ambiente o da un file, prima
     dell'avvio, come quella di Azure. Questa rotta cambia **solo** se usarla.
-    Senza chiave configurata l'interruttore non ha effetto, e risponde 400
-    dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
+    Si accende solo se il modello **risponde**: una configurazione che c'e' ma
+    non risponde (Ollama spento) e' il caso che faceva credere di aver capito i
+    comandi mentre ogni frase finiva in silenzio sulle regole. Se non risponde si
+    risponde 400 dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
     """
     db = get_db()
     data = request.get_json(force=True) or {}
     abilitato = bool(data.get("abilitato"))
-    if abilitato and not comprensione.configurato():
-        return jsonify({"error": "Nessun modello configurato. Un modello in casa "
-                                 "(Ollama) non richiede chiave: avvialo e assicurati "
-                                 "che LLM_BASE_URL punti a http://127.0.0.1:11434/v1. "
-                                 "Per un servizio in rete registra LLM_API_KEY."}), 400
+    if abilitato and not comprensione.raggiungibile():
+        return jsonify({"error": comprensione.messaggio_stato()
+                                 or "Nessun modello raggiungibile. Avvialo e riprova."}), 400
     imposta_llm(db, abilitato)
     return jsonify({"llm_disponibile": comprensione.configurato(),
+                    "llm_pronto": comprensione.raggiungibile(),
+                    "llm_manca": comprensione.messaggio_stato(),
                     "llm_abilitato": _llm_abilitato(db)})
 
 
