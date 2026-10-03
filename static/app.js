@@ -183,8 +183,11 @@ function tornaAlleSezioni() {
   document.title = 'Il Maggiordomo';
   window.scrollTo(0, 0);
   // il calendario in home si aggiorna tornando qui: un impegno aggiunto nei
-  // Progetti deve comparire senza ricaricare la pagina
+  // Progetti deve comparire senza ricaricare la pagina. Le notizie hanno il
+  // loro giro (una volta al giorno), quindi si ridisegnano anche loro: se sono
+  // cambiate, si vedono subito.
   renderHomeCalendario();
+  renderHomeNotizie();
 }
 
 /* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
@@ -4819,6 +4822,7 @@ async function init() {
   // si mostrano lo stesso (vedi renderHomeOggi)
   renderHomeOggi();
   renderHomeCalendario();
+  renderHomeNotizie();
 }
 
 /* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi e gli
@@ -4958,6 +4962,30 @@ $('#home-cal-apri').addEventListener('click', () => {
   apriSezione('progetti');
   switchTab('calendario');
 });
+
+$('#home-notizie-apri').addEventListener('click', () => {
+  apriSezione('tv');
+});
+
+async function renderHomeNotizie() {
+  const box = $('#home-notizie');
+  if (!box) return;
+  let dati;
+  try { dati = await api('/api/notizie'); }
+  catch (e) { box.classList.add('hidden'); return; }
+  const notizie = dati.notizie || [];
+  if (!notizie.length) { box.classList.add('hidden'); return; }
+  // solo i titoli, con fonte e data: la home rimanda alla TV per il resto
+  $('#home-notizie-elenco').innerHTML = notizie.map((n) => `
+    <article class="tv-notizia">
+      <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
+        <span class="tv-notizia-titolo">${esc(n.titolo)}</span>
+        <span class="tv-notizia-fonte">${esc(n.fonte || '')}${
+          n.data ? ` · ${esc(n.data.slice(0, 10))}` : ''} · apri la fonte ↗</span>
+      </a>
+    </article>`).join('');
+  box.classList.remove('hidden');
+}
 
 // All'avvio non si carica niente: prima si chiede al server chi e' collegato.
 // `avviaApp` decide se mostrare la home o la schermata di accesso.

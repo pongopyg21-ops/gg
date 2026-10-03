@@ -167,6 +167,17 @@
     </div>
     <div id="home-cal-grid" class="cal-grid"></div>
   </section>
+  <!-- Le notizie del giorno, sotto il calendario. Stessa veste del riquadro
+       «Oggi»: sono da leggere, non da premere. Si mostrano solo i titoli, con
+       fonte e data; il riquadro resta nascosto se non c'e' niente, come «Oggi».
+       L'elenco completo con i sommari sta nella sezione TV. -->
+  <section id="home-notizie" class="home-notizie hidden" aria-label="Notizie del giorno">
+    <div class="home-notizie-head">
+      <h2 class="home-notizie-titolo">📰 Notizie del giorno</h2>
+      <button id="home-notizie-apri" class="ghost">Apri →</button>
+    </div>
+    <div id="home-notizie-elenco" class="tv-notizie"></div>
+  </section>
 </section>
 
 <!-- L'app vera e propria: testata e schede restano nascoste finche' non si

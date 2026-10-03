@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **589 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **593 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -727,11 +727,18 @@ Conseguenze pratiche per chi mette mano al codice:
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
 - **L'ordine della home**: categorie (le schede «Cucina, Igiene, …»), poi il
-  riepilogo «Oggi», in fondo il calendario. Le categorie stanno subito sotto
-  l'invito a parlare: si arriva in home per scegliere dove andare, e devono
-  vedersi senza scorrere. «Oggi» e il calendario vengono dopo perché sono da
-  leggere, non da premere. È un ordine scelto dall'utente, non un dettaglio di
+  riepilogo «Oggi», il calendario, infine le notizie del giorno. Le categorie
+  stanno subito sotto l'invito a parlare: si arriva in home per scegliere dove
+  andare, e devono vedersi senza scorrere. Tutto il resto è da leggere, non da
+  premere, quindi viene dopo. È un ordine scelto dall'utente, non un dettaglio di
   stile: prima le schede erano in fondo, ed era sbagliato.
+- **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
+  calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
+  stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
+  endpoint dedicato: `/api/tv` tirerebbe giù anche i video, che in home non si
+  mostrano. Stessa regola dell'endpoint TV (risposta subito dalla cache, un
+  filo riprova dopo — `_aggiorna_notizie_in_sottofondo`) e del riepilogo «Oggi»
+  (se non c'è niente, il riquadro resta nascosto).
 - **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
   mostra i pasti di oggi, le attività di casa da fare, i prossimi impegni e cosa
   sta per scadere in dispensa. Le fonti si chiedono **in parallelo** e ognuna

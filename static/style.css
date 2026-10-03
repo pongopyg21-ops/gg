@@ -281,6 +281,28 @@ body {
    scheda Calendario, dove sotto c'e' l'elenco del giorno */
 .home-cal .cal-grid { margin-bottom: 0; }
 
+/* Le notizie del giorno, sotto il calendario. Stessa veste dei riquadri sopra:
+   sono da leggere, non da premere. Si mostrano solo i titoli; il sommario e
+   l'elenco completo restano nella sezione TV, che si apre con «Apri →». */
+.home-notizie {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.home-notizie-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.home-notizie-titolo {
+  margin: 0; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+/* l'ultima voce non porta la riga di separazione: dentro un riquadro chiuso
+   sembrerebbe una riga di troppo */
+.home-notizie .tv-notizia:last-child a { border-bottom-color: transparent; }
+
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;

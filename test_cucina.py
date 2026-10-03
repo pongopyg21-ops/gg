@@ -7197,6 +7197,66 @@ def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
     assert "Nuovo impegno" not in sezione
 
 
+def test_le_notizie_in_home_stanno_sotto_il_calendario(client):
+    """La home finisce con le notizie del giorno: prima le categorie, poi il
+    riepilogo «Oggi», il calendario e infine le notizie. Sono da leggere e da
+    dove si e', quindi in fondo; l'elenco completo resta nella sezione TV."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="home-notizie"' in html
+    assert html.index('id="home-cal"') < html.index('id="home-notizie"')
+    # il riquadro rimanda alla TV, non duplica l'elenco con i sommari
+    sezione = html[html.index('id="home-notizie"'):html.index('<div id="app"')]
+    assert "home-notizie-apri" in sezione
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "$('#home-notizie-apri')" in js and "apriSezione('tv')" in js
+
+
+def test_l_endpoint_notizie_serve_solo_le_notizie_dalla_cache(client, monkeypatch):
+    """`/api/notizie` alimenta il riquadro in home: deve portare le notizie e
+    quando sono state prese, senza tirare dietro i video della TV (in home non
+    si mostrano, e i loro embed sono peso inutile)."""
+    finta_tv(monkeypatch, {tv.feed_urls()[0]: FEED_NOTIZIE})
+    db = app_module.get_db()
+    tv.aggiorna_notizie(db, forse=False)
+
+    r = client.get("/api/notizie")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert len(d["notizie"]) == 2
+    assert d["aggiornato"]
+    assert "video" not in d
+
+
+def test_l_endpoint_notizie_non_cade_se_non_c_e_niente(client, monkeypatch):
+    """Cache vuota e rete assente: 200 con un elenco vuoto. E' un riquadro da
+    riempire, non un guasto da mostrare in home."""
+    monkeypatch.setattr(tv, "_apri",
+                        lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    monkeypatch.setattr(app_module, "_aggiorna_notizie_in_sottofondo", lambda db: None)
+    r = client.get("/api/notizie")
+    assert r.status_code == 200
+    assert r.get_json()["notizie"] == []
+
+
+def test_il_riquadro_notizie_in_home_tace_se_non_ce_ne_sono(client):
+    """Senza notizie il riquadro resta nascosto, come il riepilogo «Oggi»: una
+    home con un riquadro vuoto e' peggio di una home senza riquadro."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeNotizie")
+    preludio = """
+const stato = { nascosto: false };
+function $(sel) {
+  if (sel === '#home-notizie') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  return { innerHTML: '' };
+}
+function esc(s) { return String(s); }
+async function api() { return { notizie: [] }; }
+"""
+    coda = "\nrenderHomeNotizie().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+
+
 
 
 def test_il_comando_parte_subito_senza_aspettare_la_voce(client):
@@ -8246,6 +8306,7 @@ def _niente_rete(monkeypatch):
     monkeypatch.setattr(tv, "_apri",
                         lambda url: (_ for _ in ()).throw(tv.NonDisponibile("test")))
     monkeypatch.setattr(app_module, "_aggiorna_tv_in_sottofondo", lambda db: None)
+    monkeypatch.setattr(app_module, "_aggiorna_notizie_in_sottofondo", lambda db: None)
 
 
 def test_l_indirizzo_della_playlist_diventa_il_suo_id():

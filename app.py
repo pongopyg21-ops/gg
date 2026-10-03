@@ -570,6 +570,26 @@ def api_tv():
     })
 
 
+@app.route("/api/notizie")
+def api_notizie():
+    """Le notizie del giorno, per il riquadro in home.
+
+    Solo notizie: la home non ha bisogno dei video della TV, e chiedere
+    `/api/tv` tirerebbe giu' anche i loro embed per niente.
+
+    Stessa regola della sezione TV: si risponde **subito** con la copia in cache
+    e si riprova dopo, in un filo, cosi' un feed lento non blocca la home. Se la
+    copia e' vuota e non c'e' rete, la risposta e' comunque 200 con un elenco
+    vuoto: e' un riquadro da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_notizie_in_sottofondo(db)
+    _, quando = tv._leggi(db, "notizie")
+    return jsonify({"notizie": tv.notizie(db), "aggiornato": _iso(quando)})
+
+
 @app.route("/api/tv/playlist", methods=["PUT"])
 def api_tv_playlist():
     """Cambia la playlist della casa e riscarica i video.
@@ -659,6 +679,31 @@ def _aggiorna_tv_in_sottofondo(db):
             app.logger.debug("Aggiornamento TV in sottofondo non riuscito")
 
     threading.Thread(target=scarica, name="tv-aggiornamento", daemon=True).start()
+
+
+def _aggiorna_notizie_in_sottofondo(db):
+    """Riprova a scaricare le notizie senza far aspettare chi apre la home.
+
+    Come `_aggiorna_tv_in_sottofondo`, ma solo per le notizie: la home non ha i
+    video, e chiederli tirerebbe giu' dati che non si mostrano. Il filo apre una
+    connessione sua, perche' quella di Flask vive quanto la richiesta.
+    """
+    _, quando = tv._leggi(db, "notizie")
+    if tv._fresco(quando, tv.ORE_NOTIZIE):
+        return
+    percorso = db.execute("PRAGMA database_list").fetchone()[2]
+
+    def scarica():
+        try:
+            with closing(sqlite3.connect(percorso)) as suo:
+                suo.row_factory = sqlite3.Row
+                tv.aggiorna_notizie(suo, forse=True)
+        except Exception:
+            # un guasto di rete non deve lasciare traccia di errore in un
+            # percorso che l'utente non ha nemmeno chiesto
+            app.logger.debug("Aggiornamento notizie in sottofondo non riuscito")
+
+    threading.Thread(target=scarica, name="notizie-aggiornamento", daemon=True).start()
 
 
 @app.route("/api/houses")
