@@ -6,8 +6,9 @@ Questa è la **V.8**. Il progetto è **maturo e funzionante**: non serve riscriv
 niente, serve **continuare**. Prima di tutto:
 
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
-   attivo: il container viene ricreato, è normale). Poi `./sorveglia.sh`.
-2. Test: `./avvia.sh test` → attesi **451 verdi**. Se non lo sono, fermati e dillo.
+   attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
+   quindi non serve più lanciare `./sorveglia.sh` a parte.
+2. Test: `./avvia.sh test` → attesi **588 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -67,14 +68,19 @@ dal mondo (vedi `tv.py`).
 ## Comandi
 
 ```bash
-./avvia.sh                               # avvia e verifica il server
-./avvia.sh restart                       # ferma e riavvia
-./avvia.sh status                        # attivo? su quale porta?
+./avvia.sh                               # avvia server + sorveglianza
+./avvia.sh restart                       # ferma e riavvia tutto
+./avvia.sh stop                          # ferma server e sorveglianza
+./avvia.sh status                        # attivo? su quale porta? sorveglianza?
+./avvia.sh sorveglianza                  # (ri)accende solo la sorveglianza
 ./avvia.sh log                           # ultime righe del log
 ./avvia.sh test                          # test nella venv del progetto
-./sorveglia.sh                           # riavvia il server da solo se cade
+./sorveglia.sh                           # equivalgono a './avvia.sh sorveglianza'
 ./sorveglia.sh status                    # sorveglianza attiva? server su?
 ```
+
+`MAGGIORDOMO_SENZA_SORVEGLIA=1 ./avvia.sh` avvia il solo server, senza
+sorveglianza (per un debug in primo piano).
 
 **All'inizio di ogni conversazione il server non è attivo.** L'ambiente viene
 azzerato fra una sessione e l'altra: i processi in background muoiono e i
@@ -181,15 +187,26 @@ distinzione che cambia il rimedio. Se `cat /proc/uptime` mostra pochi secondi o
 caduto: è tutto l'ambiente a essere nuovo, e allora anche `sorveglia.sh` è morto
 con lui. In quel caso non serve indagare sul perché il server sia "morto" —
 non è morto, non è mai stato avviato in questo container. `./avvia.sh` rimette
-in piedi entrambi: è il primo comando da provare, sempre.
+in piedi entrambi: è il primo comando da provare, sempre. È cambiato proprio per
+questo: dopo ogni ricreazione il link restava a 502 perché la sorveglianza andava
+riaccesa a mano ed era il passo che si dimenticava. Ora `./avvia.sh` la tira su
+da solo, e `./avvia.sh stop`/`restart` la fermano prima del server (se restasse
+su, vedrebbe il server sparire e lo riavvierebbe subito, annullando lo `stop`).
 
 `sorveglia.sh` copre il caso diverso, quello in cui **solo il server** cade
 mentre l'ambiente resta vivo: controlla la pagina ogni 15 secondi e riavvia se
-non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Scrive sul
+non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Quando
+richiama `./avvia.sh`, questo non deve riaccendere a sua volta la sorveglianza:
+lo script esporta `MAGGIORDOMO_SORVEGLIA_GIRO=1`, e `avvia_sorveglianza()` lo
+vede e non fa niente. Senza quel freno si riavvierebbe all'infinito — c'è un test
+manuale da fare dopo ogni modifica a questi due script: `./avvia.sh`, poi
+`kill -KILL` del server, e verificare che torni su **con un solo sorvegliante**
+(`pgrep -fa "sorveglia.sh --giro"` deve contarne uno). Scrive sul
 log solo quando interviene, così un log non vuoto è già un'informazione.
 
 **Se l'utente dice che l'app "prova a connettersi senza riscontro", la prima cosa
-da controllare è `./sorveglia.sh status`.** È il sintomo esatto di un server morto
+da controllare è `./avvia.sh status` o `./sorveglia.sh status`.** È il sintomo
+esatto di un server morto
 a metà sessione: la pagina non carica e sembra un guasto dell'app, mentre è solo
 il processo che non c'è più. Non è l'app a essere lenta: la pagina iniziale pesa
 ~18 KB e `app.js` ~109 KB, e il server locale risponde in circa 1 ms. Qualunque
@@ -203,7 +220,8 @@ ricreazione del container porterebbe comunque via qualsiasi cosa avviata qui.
 La continuità vera (server che riparte da solo dopo un riavvio della macchina) si
 ottiene solo su una macchina propria, con un servizio di sistema o
 `docker run --restart unless-stopped`. Qui l'unica strategia sensata è:
-all'inizio della conversazione `./avvia.sh`, poi `./sorveglia.sh`.
+all'inizio della conversazione `./avvia.sh`, che rimette su server e sorveglianza
+insieme.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.

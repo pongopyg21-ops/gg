@@ -10,15 +10,21 @@
 # volume che sopravvive all'azzeramento, quindi la venv resta e reinstalla Flask
 # solo la prima volta; se non è creabile si ripiega sui pacchetti di sistema.
 #
-#   ./avvia.sh            avvia (o riavvia se già in esecuzione)
-#   ./avvia.sh stop       ferma il server
+#   ./avvia.sh            avvia (o riavvia se già in esecuzione) e la sorveglianza
+#   ./avvia.sh stop       ferma server e sorveglianza
 #   ./avvia.sh restart    ferma e riavvia
 #   ./avvia.sh status     dice se è attivo e su quale porta
+#   ./avvia.sh sorveglianza  (ri)avvia la sola sorveglianza
 #   ./avvia.sh log        mostra le ultime righe del log
 #   ./avvia.sh test       esegue i test nella venv del progetto
 #   ./avvia.sh pubblica   fa il push su GitHub e verifica che sia arrivato
 #   ./avvia.sh nuovachiave  rigenera la chiave SSH per il push
 #   ./avvia.sh diagnosi    dice da dove vengono chiave e area della voce
+#
+# La sorveglianza (`sorveglia.sh`) sta su da sola: se il container viene
+# ricreato e il server muore, lei lo riavvia. Avviarla a mano era il passo che si
+# dimenticava, e dopo ogni ricreazione il link restava a 502. `avvia.sh` la tira
+# su da solo; `MAGGIORDOMO_SENZA_SORVEGLIA=1` la salta.
 #
 # Porta: 12000 per impostazione predefinita (è quella inoltrata dall'host).
 # Modificabile con PORT=... ./avvia.sh
@@ -232,8 +238,12 @@ ferma() {
   if [ -z "$pid" ]; then
     rm -f "$PID_FILE"
     giallo "Nessun server in esecuzione."
+    ferma_sorveglianza
     return 0
   fi
+  # ferma prima la sorveglianza: se resta su, vede il server sparire e lo
+  # riavvia subito, annullando lo `stop`
+  ferma_sorveglianza
   # il segno meno termina tutto il gruppo: così se ne va anche il reloader
   kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
   for _ in $(seq 1 20); do
@@ -248,6 +258,35 @@ ferma() {
   verde "Server fermato (pid $pid)."
 }
 
+# --- sorveglianza -----------------------------------------------------------
+# `sorveglia.sh` tiene su il server: se il container viene ricreato e il processo
+# muore, lei lo riavvia entro pochi secondi. Va avviata a mano dopo ogni
+# ricreazione — ed e' il passo che si dimentica. Qui la tira su `avvia()`, cosi'
+# un solo comando basta. Il pid lo gestisce `sorveglia.sh` (`.sorveglia.pid`).
+sorveglianza_attiva() {
+  "$BASE_DIR/sorveglia.sh" status >/dev/null 2>&1
+}
+
+avvia_sorveglianza() {
+  # il sorvegliante chiama `./avvia.sh` per riavviare il server: senza questo
+  # freno si riavvierebbe da solo all'infinito. Lo script esporta il segno.
+  if [ "${MAGGIORDOMO_SORVEGLIA_GIRO:-}" = "1" ]; then
+    return 0
+  fi
+  if [ "${MAGGIORDOMO_SENZA_SORVEGLIA:-}" = "1" ]; then
+    return 0
+  fi
+  if sorveglianza_attiva; then
+    return 0
+  fi
+  giallo "Avvio la sorveglianza: se il server muore, lo rimette su da sola."
+  "$BASE_DIR/sorveglia.sh" || rosso "La sorveglianza non è partita: avviala con ./sorveglia.sh"
+}
+
+ferma_sorveglianza() {
+  "$BASE_DIR/sorveglia.sh" stop >/dev/null 2>&1
+}
+
 avvia() {
   prepara_ambiente || return 1
 
@@ -256,6 +295,7 @@ avvia() {
   if [ -n "$pid" ] && risponde; then
     verde "Il server è già attivo (pid $pid)."
     echo "  http://127.0.0.1:$PORT/"
+    avvia_sorveglianza
     return 0
   fi
   if [ -n "$pid" ]; then
@@ -296,6 +336,7 @@ avvia() {
     # subito se e' stata letta evita di cercare un problema nell'app quando la
     # causa e' una variabile d'ambiente non passata al server
     stato_voce
+    avvia_sorveglianza
     return 0
   fi
 
@@ -314,6 +355,11 @@ stato() {
   fi
   if risponde; then
     verde "Attivo (pid $pid) su http://127.0.0.1:$PORT/"
+    if sorveglianza_attiva; then
+      echo "  sorveglianza: attiva (se il server muore, lo rimette su)"
+    else
+      giallo "  sorveglianza: non attiva — './avvia.sh sorveglianza' per accenderla"
+    fi
     stato_voce
     return 0
   fi
@@ -516,6 +562,7 @@ case "${1:-avvia}" in
   stop)          ferma ;;
   restart)       ferma && avvia ;;
   status|stato)  stato ;;
+  sorveglianza|sorveglia) avvia_sorveglianza ;;
   log|logs)      tail -n "${2:-40}" "$LOG_FILE" ;;
   test|tests)    testa ;;
   pubblica|push) pubblica "$@" ;;
@@ -526,7 +573,7 @@ case "${1:-avvia}" in
     ;;
   *)
     rosso "Comando sconosciuto: $1"
-    echo "Uso: $0 [avvia|stop|restart|status|log|test|pubblica|nuovachiave|diagnosi]"
+    echo "Uso: $0 [avvia|stop|restart|status|sorveglianza|log|test|pubblica|nuovachiave|diagnosi]"
     exit 2
     ;;
 esac

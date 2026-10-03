@@ -6627,6 +6627,29 @@ def test_una_area_sbagliata_lo_dice_invece_di_sembrare_un_guasto_di_rete(monkeyp
         assert not voce_cloud.area_valida(area), area
 
 
+def test_avvia_accende_anche_la_sorveglianza():
+    """`./avvia.sh` da solo deve bastare: dopo ogni ricreazione del container la
+    sorveglianza andava riaccesa a mano ed era il passo che si dimenticava, così
+    il link restava a 502. Qui si guarda che l'accensione ci sia, che `stop`/lo
+    `stop` di `ferma()` la spenga (altrimenti riavvia il server appena fermato) e
+    che il richiamo dal sorvegliante non la riaccenda (ricorsione infinita)."""
+    avvia = open(f"{BASE_APP}/avvia.sh", encoding="utf-8").read()
+    sorveglia = open(f"{BASE_APP}/sorveglia.sh", encoding="utf-8").read()
+
+    assert "avvia_sorveglianza()" in avvia, "manca l'accensione della sorveglianza"
+    assert "avvia_sorveglianza" in avvia.split("avvia() {", 1)[1], \
+        "avvia() deve chiamarla, non solo definirla"
+    assert "ferma_sorveglianza" in avvia.split("ferma() {", 1)[1], \
+        "ferma() deve spegnere la sorveglianza prima del server"
+    assert "MAGGIORDOMO_SORVEGLIA_GIRO" in avvia
+    assert "MAGGIORDOMO_SORVEGLIA_GIRO" in sorveglia, \
+        "il sorvegliante deve esportare il freno prima di richiamare avvia.sh"
+    # il freno e' un export, non una semplice menzione
+    assert "export MAGGIORDOMO_SORVEGLIA_GIRO=1" in sorveglia
+    # e lo script sa accendere la sorveglianza da solo
+    assert "sorveglianza|sorveglia)" in avvia
+
+
 def test_avvio_avvisa_se_l_area_non_esiste():
     """L'avvio diceva "voce neurale Azure attiva" anche con l'area sbagliata: chi
     legge quella riga va a cercare un guasto di rete che non c'e', mentre la
