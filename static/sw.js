@@ -10,12 +10,18 @@
    La strategia dipende da cosa si chiede:
    - le pagine: prima la rete, cosi' un aggiornamento arriva subito; se la rete
      manca, la copia salvata.
-   - i file statici: prima la copia, perche' hanno gia' la versione
-     nell'indirizzo (`?v=...`) e quindi non possono essere vecchi.
+   - i file statici: **anche qui prima la rete**, con la copia salvata solo come
+     ripiego. Non "prima la copia": `chiave()` ignora `?v=...`, quindi la copia
+     salvata all'installazione non ha versione e risponderebbe a qualunque
+     richiesta — anche a una versione nuova. Il risultato era che `app.js`
+     restava quello di quando l'app era stata installata, mentre `index.html`
+     (prima la rete) si aggiornava: la pagina nuova chiedeva funzioni che il
+     codice vecchio non aveva, e la sezione restava invisibile. Il `?v=...` c'e'
+     apposta, per distinguere le versioni: va usato mentre c'e' rete.
    - le API: mai la copia. Un dato vecchio mostrato come fresco e' peggio di un
      dato mancante: la dispensa di ieri non e' la dispensa di oggi. */
 
-const CACHE = 'maggiordomo-scocca-v1';
+const CACHE = 'maggiordomo-scocca-v2';
 
 // La scocca minima. `app.js` e `style.css` senza versione: la richiesta vera
 // porta `?v=...`, e la ricerca in cache ignora la parte dopo `?` (vedi sotto).
@@ -49,11 +55,26 @@ self.addEventListener('activate', (evento) => {
 });
 
 // La chiave della cache senza `?v=...`: cosi' la copia salvata all'installazione
-// (senza versione) risponde anche alla richiesta versionata della pagina.
+// (senza versione) risponde anche alla richiesta versionata quando la rete manca.
 function chiave(request) {
   const url = new URL(request.url);
   url.search = '';
   return url.toString();
+}
+
+// I file statici si chiedono prima alla rete, **anche se c'e' una copia**: le
+// versioni nuove devono poter arrivare. La copia resta solo per quando la rete
+// manca. Salvare solo le risposte `ok` evita di conservare un errore.
+function serveStatico(richiesta) {
+  return fetch(richiesta)
+    .then((risposta) => {
+      if (risposta.ok) {
+        const copia = risposta.clone();
+        caches.open(CACHE).then((cache) => cache.put(chiave(richiesta), copia));
+      }
+      return risposta;
+    })
+    .catch(() => caches.match(chiave(richiesta)));
 }
 
 self.addEventListener('fetch', (evento) => {
@@ -77,16 +98,7 @@ self.addEventListener('fetch', (evento) => {
     return;
   }
 
-  evento.respondWith(
-    caches.match(chiave(richiesta)).then((salvata) => {
-      if (salvata) return salvata;
-      return fetch(richiesta).then((risposta) => {
-        if (risposta.ok && url.pathname.startsWith('/static/')) {
-          const copia = risposta.clone();
-          caches.open(CACHE).then((cache) => cache.put(chiave(richiesta), copia));
-        }
-        return risposta;
-      });
-    })
-  );
+  // i file statici si chiedono prima alla rete: e' cosi' che una versione nuova
+  // di `app.js` arriva a chi ha gia' l'app installata (vedi `serveStatico`)
+  evento.respondWith(serveStatico(richiesta));
 });

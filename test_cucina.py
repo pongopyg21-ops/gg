@@ -4759,6 +4759,48 @@ def test_la_pagina_registra_il_service_worker(client):
     assert "serviceWorker" in html and "register('/sw.js')" in html
 
 
+def test_i_file_statici_si_chiedono_prima_alla_rete(client):
+    """Il service worker serviva `app.js` **prima dalla copia**: `chiave()`
+    ignora `?v=...`, quindi la copia salvata all'installazione (senza versione)
+    rispondeva a qualunque richiesta, anche a una versione nuova. Risultato: la
+    pagina (`index.html`, prima la rete) si aggiornava, `app.js` restava vecchio,
+    e una funzione nuova — come il calendario in home — non veniva mai disegnata.
+    Qui si esegue `serveStatico` vera: con la rete su deve vincere la rete,
+    non la copia; con la rete giu' deve reggere la copia."""
+    js = client.get("/static/sw.js").get_data(as_text=True)
+    chiave = _estrai_funzione_js(js, "chiave")
+    blocco = _estrai_funzione_js(js, "serveStatico")
+    preludio = """
+const CACHE = 'prova';
+let reteOk = true;
+const salvati = { 'http://a/static/app.js': { corpo: 'VECCHIO' } };
+globalThis.caches = {
+  open: async () => ({
+    put: async (k, v) => { salvati[k] = v; },
+    match: async (k) => salvati[k],
+  }),
+  match: async (k) => salvati[k],
+};
+globalThis.fetch = async () => {
+  if (!reteOk) throw new Error('offline');
+  return { ok: true, corpo: 'NUOVO', clone() { return this; } };
+};
+"""
+    coda = """
+(async () => {
+  const online = await serveStatico({ url: 'http://a/static/app.js?v=123' });
+  reteOk = false;
+  const offline = await serveStatico({ url: 'http://a/static/app.js?v=999' });
+  console.log(JSON.stringify({ online: online.corpo, offline: offline.corpo,
+    salvato: salvati['http://a/static/app.js'].corpo }));
+})();
+"""
+    d = _esegui_node(preludio + chiave + blocco + coda)
+    assert d["online"] == "NUOVO", "con la rete su deve arrivare la versione nuova, non la copia"
+    assert d["salvato"] == "NUOVO", "la copia va aggiornata con la versione nuova"
+    assert d["offline"] == "NUOVO", "senza rete deve reggere l'ultima copia buona"
+
+
 def test_una_domanda_non_diventa_un_ordine(client):
     """La frase che assomiglia di piu' a un comando e' una domanda: contiene un
     luogo ("dispensa") e un verbo ("c'e'"). Eseguita, scriveva in dispensa una

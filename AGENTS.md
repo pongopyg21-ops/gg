@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **588 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **589 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -1168,15 +1168,28 @@ versione vecchia: se il file cambia, cambia l'indirizzo. Le immagini dei dati no
 hanno la versione e continuano a scegliere da sole la loro scadenza.
 
 **Il service worker (`static/sw.js`, servito da `/sw.js`).** Salva la **scocca**
-(pagina, CSS, JS, icone) per farla aprire anche senza rete. Tre cose da non
+(pagina, CSS, JS, icone) per farla aprire anche senza rete. Quattro cose da non
 rompere: (1) è servito da `/sw.js` e non da `/static/`, perché un service worker
 controlla solo il percorso da cui è servito e da `/static/` non potrebbe mostrare
 la pagina `/`; (2) `/sw.js` è in `ROTTE_PUBBLICHE`, perché deve partire prima del
 login; (3) le **API non si salvano mai**: un dato vecchio mostrato come fresco è
-peggio di un dato mancante — la dispensa di ieri non è la dispensa di oggi. Le
-pagine vanno prima in rete (un aggiornamento arriva subito) e solo se la rete
-manca dalla copia; i file statici, che hanno già la versione nell'indirizzo, prima
-dalla copia.
+peggio di un dato mancante — la dispensa di ieri non è la dispensa di oggi;
+(4) **pagine e file statici vanno entrambi prima in rete**, copia solo se la rete
+manca.
+
+Il punto (4) è stato un guasto vero, non una preferenza. La versione precedente
+serviva i file statici **prima dalla copia**, ragionando che tanto hanno la
+versione nell'indirizzo (`?v=...`). Ma `chiave()` **toglie** la query per
+riconoscere la copia salvata all'installazione: così la copia vecchia rispondeva
+anche a una richiesta con versione nuova. Effetto: `index.html` (prima la rete) si
+aggiornava, `app.js` restava quello dell'installazione, e la funzione nuova — il
+calendario in home — non veniva mai disegnata. Si è visto in home: la sezione
+c'era nell'HTML e restava vuota/invisibile. La regola che ne esce: **mentre c'è
+rete, la versione servita è sempre quella nuova**; il `?v=...` esiste per
+distinguere le versioni e va onorato, non aggirato con la cache. Il
+`serveStatico()` corrispondente ha un test che esegue davvero la funzione con un
+`fetch` finto: online vince la rete, offline regge la copia. Alzando `CACHE`
+(`...-v2`) le copie vecchie vengono sfrattate al prossimo `activate`.
 
 ## Capire i comandi con un modello (facoltativo)
 
