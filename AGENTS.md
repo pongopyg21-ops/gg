@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **593 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **594 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -740,11 +740,16 @@ Conseguenze pratiche per chi mette mano al codice:
   filo riprova dopo — `_aggiorna_notizie_in_sottofondo`) e del riepilogo «Oggi»
   (se non c'è niente, il riquadro resta nascosto).
 - **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
-  mostra i pasti di oggi, le attività di casa da fare, i prossimi impegni e cosa
-  sta per scadere in dispensa. Le fonti si chiedono **in parallelo** e ognuna
-  fallisce per conto suo (`.catch`): un errore sul calendario non deve far sparire
-  i pasti. Se non c'è niente da dire il riquadro resta nascosto — una home con un
-  riquadro vuoto è peggio di una home senza riquadro.
+  mostra i pasti di oggi, le attività di casa da fare, gli impegni e cosa
+  sta per scadere in dispensa. Gli impegni di oggi li manda `prossimi` (i
+  promemoria scattati e le cose in ritardo); quelli di domani si chiedono a
+  parte con `?giorno=<domani>` e si suggeriscono come riga «Domani: …», solo
+  quelli non ancora chiusi — quelli che non avvisano ancora non stanno in
+  `prossimi`, e sapere stasera che domani c'è il dentista è utile. Le fonti si
+  chiedono **in parallelo** e ognuna fallisce per conto suo (`.catch`): un errore
+  sul calendario non deve far sparire i pasti. Se non c'è niente da dire il
+  riquadro resta nascosto — una home con un riquadro vuoto è peggio di una home
+  senza riquadro.
 - **Il calendario degli impegni in fondo alla home** (`renderHomeCalendario`).
   La stessa griglia del mese della scheda Calendario, ma **in sola lettura**: qui
   si sfoglia e si vede quali giorni sono occupati, non si compila. Cliccando un

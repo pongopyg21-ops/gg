@@ -7035,7 +7035,15 @@ function $(sel) {
   return { innerHTML: '', classList: { add() {}, remove() {} } };
 }
 function esc(s) { return String(s); }
-function iso(d) { return '2026-10-02'; }
+const VERO_DATE = Date;
+const OGGI_TS = new VERO_DATE(2026, 9, 2).getTime();
+class DataFinta extends VERO_DATE {
+  constructor(...a) { if (a.length === 0) super(OGGI_TS); else super(...a); }
+  static now() { return OGGI_TS; }
+}
+globalThis.Date = DataFinta;
+function pad(n) { return String(n).padStart(2, '0'); }
+function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function statoScadenza(e) {
   if (!e) return { testo: '—', classe: 'scad-niente' };
   return { testo: 'fra 1 giorno', classe: 'scad-vicino' };
@@ -7046,6 +7054,8 @@ const risposte = {
   '/api/chores': { piano: { da_fare: 2 } },
   '/api/appointments?giorno=2026-10-02':
     { prossimi: [{ title: 'Dentista', quando_detto: 'oggi' }] },
+  '/api/appointments?giorno=2026-10-03':
+    { appointments: [{ title: 'Riunione', done: false }] },
   '/api/pantry': [{ name: 'Latte', expires_at: '2026-10-03' }],
 };
 async function api(url) { return risposte[url]; }
@@ -7056,6 +7066,7 @@ async function api(url) { return risposte[url]; }
     assert "Pasta" in d["html"] and "cena" in d["html"]
     assert "2 attività di casa" in d["html"]
     assert "Dentista" in d["html"]
+    assert "Domani" in d["html"] and "Riunione" in d["html"]
     assert "Latte" in d["html"]
 
 
@@ -7110,6 +7121,50 @@ async function api(url) {
     d = _esegui_node(preludio + blocco + coda)
     assert d["nascosto"] is False
     assert "Pasta" in d["html"]
+
+
+def test_il_riepilogo_suggerisce_gli_impegni_di_domani(client):
+    """Gli impegni di domani si suggeriscono in «Oggi»: quelli che non sono
+    ancora scattati non stanno in `prossimi`, ma sapere stasera che domani c'e'
+    il dentista e' utile. Solo quelli da fare: un impegno gia' chiuso non e' un
+    impegno, e mostrarlo farebbe credere che domani ci sia qualcosa."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-oggi') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+const VERO_DATE = Date;
+const OGGI_TS = new VERO_DATE(2026, 9, 2).getTime();
+class DataFinta extends VERO_DATE {
+  constructor(...a) { if (a.length === 0) super(OGGI_TS); else super(...a); }
+  static now() { return OGGI_TS; }
+}
+globalThis.Date = DataFinta;
+function pad(n) { return String(n).padStart(2, '0'); }
+function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
+const risposte = {
+  '/api/plan?start=2026-10-02&end=2026-10-02': [],
+  '/api/chores': { piano: { da_fare: 0 } },
+  '/api/appointments?giorno=2026-10-02': { prossimi: [] },
+  '/api/appointments?giorno=2026-10-03':
+    { appointments: [{ title: 'Dentista', done: false }, { title: 'Vecchio', done: true }] },
+  '/api/pantry': [],
+};
+async function api(url) { return risposte[url]; }
+"""
+    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False, "solo gli impegni di domani bastano a mostrare il riquadro"
+    assert "Domani" in d["html"] and "Dentista" in d["html"]
+    assert "Vecchio" not in d["html"], "un impegno gia' fatto non si suggerisce"
 
 def test_il_calendario_in_home_mostra_il_mese_col_puntino(client):
     """La home ripropone il calendario dei Progetti in fondo, in sola lettura. Si

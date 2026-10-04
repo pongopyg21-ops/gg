@@ -260,6 +260,9 @@ body {
 .oggi-ico { font-size: 16px; line-height: 1.3; flex: none; }
 .oggi-txt { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
 .oggi-meal { color: var(--muted); font-weight: 400; }
+/* la riga di domani e' un suggerimento, non un impegno di oggi: un filo piu'
+   tenue, cosi' non si confonde con gli avvisi che scattano adesso */
+.oggi-domani .oggi-txt { color: var(--muted); }
 
 /* Il calendario degli impegni in fondo alla home. Stessa veste del riquadro
    «Oggi», ma con dentro la griglia del mese (le classi .cal-* sono quelle della

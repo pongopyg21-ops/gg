@@ -4825,24 +4825,29 @@ async function init() {
   renderHomeNotizie();
 }
 
-/* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi e gli
-   avvisi del calendario. Non e' una nuova sezione, e' la home che dice qualcosa
+/* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi, gli
+   impegni (di oggi e un suggerimento su quelli di domani) e cosa sta per
+   scadere in dispensa. Non e' una nuova sezione, e' la home che dice qualcosa
    invece di essere solo un menu.
 
-   Le tre fonti si chiedono in parallelo e ognuna fallisce per conto suo: un
-   errore sul calendario non deve far sparire i pasti. Se non c'e' niente da
-   dire il riquadro resta nascosto. */
+   Le fonti si chiedono in parallelo e ognuna fallisce per conto suo: un errore
+   sul calendario non deve far sparire i pasti. Se non c'e' niente da dire il
+   riquadro resta nascosto. */
 async function renderHomeOggi() {
   const box = $('#home-oggi');
   if (!box) return;
   const oggi = iso(new Date());
+  const domaniData = new Date();
+  domaniData.setDate(domaniData.getDate() + 1);
+  const domani = iso(domaniData);
   const esiti = await Promise.all([
     api(`/api/plan?start=${oggi}&end=${oggi}`).catch(() => []),
     api('/api/chores').catch(() => null),
     api(`/api/appointments?giorno=${oggi}`).catch(() => null),
+    api(`/api/appointments?giorno=${domani}`).catch(() => null),
     api('/api/pantry').catch(() => []),
   ]);
-  const [pasti, chores, appuntamenti, dispensa] = esiti;
+  const [pasti, chores, appuntamenti, domaniAppuntamenti, dispensa] = esiti;
 
   const pastiHtml = pasti.length
     ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
@@ -4859,14 +4864,27 @@ async function renderHomeOggi() {
            : `Ci sono <strong>${daFare} attività di casa</strong> da fare oggi`}</span></div>`
     : '';
 
+  // Gli impegni di oggi: i promemoria scattati e le cose in ritardo. Li manda
+  // `prossimi`, che copre i promemoria fino al giorno stesso e gli arretrati.
+  // Solo questi: gli impegni di oggi senza promemoria li mostra il calendario
+  // qui sotto, con il puntino sul giorno.
   const avvisi = appuntamenti?.prossimi || [];
+  const unaVoce = (a) =>
+    `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`;
   const appHtml = avvisi.length
     ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">📆</span>
-         <span class="oggi-txt">${
-           avvisi.slice(0, 3).map((a) =>
-             `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`
-           ).join('<br>')
-         }${avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
+         <span class="oggi-txt">${avvisi.slice(0, 3).map(unaVoce).join('<br>')}${
+           avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
+    : '';
+
+  // Quelli di domani, come suggerimento: quelli non ancora scattati non stanno
+  // in `prossimi`, ma sapere stasera che domani c'e' il dentista e' utile. Solo
+  // quelli da fare: un impegno di domani gia' chiuso non e' un impegno.
+  const domaniVoci = (domaniAppuntamenti?.appointments || []).filter((a) => !a.done);
+  const domaniHtml = domaniVoci.length
+    ? `<div class="oggi-riga oggi-domani"><span class="oggi-ico" aria-hidden="true">🔜</span>
+         <span class="oggi-txt">Domani: ${domaniVoci.slice(0, 3).map(unaVoce).join('<br>')}${
+           domaniVoci.length > 3 ? `<br>e altri ${domaniVoci.length - 3}` : ''}</span></div>`
     : '';
 
   // quello che scade entro pochi giorni: e' l'informazione che si perde piu'
@@ -4882,7 +4900,7 @@ async function renderHomeOggi() {
          }</strong>${inScadenza.length > 4 ? ` e altri ${inScadenza.length - 4}` : ''}</span></div>`
     : '';
 
-  const contenuto = pastiHtml + choresHtml + appHtml + scadHtml;
+  const contenuto = pastiHtml + choresHtml + appHtml + domaniHtml + scadHtml;
   if (!contenuto) {
     box.classList.add('hidden');
     box.innerHTML = '';
