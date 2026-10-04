@@ -270,6 +270,13 @@ def migrate(db):
     # il giorno fisso delle pulizie: sabato, come suggerisce l'articolo
     if have and "chore_day" not in have:
         db.execute("ALTER TABLE profile ADD COLUMN chore_day INTEGER NOT NULL DEFAULT 5")
+    # quanti bucati al giorno: 0 = non dichiarato, e la lavatrice resta a un
+    # giorno e mezzo (vedi `igiene.cadenza_lavatrice`)
+    if have and "bucati_giorno" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN bucati_giorno INTEGER NOT NULL DEFAULT 0")
+    # gli argomenti delle notizie: vuoto = tutte le sezioni ANSA
+    if have and "news_topics" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN news_topics TEXT NOT NULL DEFAULT ''")
 
     # Il catalogo delle pulizie si semina qui, non in seed.py: la sezione Igiene
     # deve funzionare anche su un database creato prima che esistesse, senza
@@ -333,21 +340,14 @@ def _semina_pulizie(db):
     # si spostano sulla sostituta prima di cancellarla: sono lavoro fatto davvero,
     # e il `CASCADE` li porterebbe via senza dire niente.
     for nome, sostituta in igiene.RIMOSSE.items():
-        db.execute(
-            """UPDATE chore_log SET chore_id = (
-                   SELECT id FROM chores WHERE name = ?)
-               WHERE chore_id IN (SELECT id FROM chores WHERE name = ?)""",
-            (sostituta, nome),
-        )
+        if sostituta:
+            db.execute(
+                """UPDATE chore_log SET chore_id = (
+                       SELECT id FROM chores WHERE name = ?)
+                   WHERE chore_id IN (SELECT id FROM chores WHERE name = ?)""",
+                (sostituta, nome),
+            )
         db.execute("DELETE FROM chores WHERE name = ?", (nome,))
-    # I minuti delle voci del catalogo si riallineano **solo dal valore vecchio**:
-    # un `UPDATE` incondizionato cancellerebbe la stima che l'utente ha corretto
-    # a mano, e lo farebbe a ogni richiesta.
-    for nome, (vecchio, nuovo) in igiene.MINUTI_CAMBIATI.items():
-        db.execute(
-            "UPDATE chores SET minutes = ? WHERE name = ? AND minutes = ?",
-            (nuovo, nome, vecchio),
-        )
 
 
 def _rimuovi_ricette_tolte(db):
@@ -977,7 +977,7 @@ def get_profile(db):
 
 
 PROFILE_FIELDS = {"full_name", "restrictions", "onboarded", "fav_prompted",
-                  "meals_per_day", "chore_day"}
+                  "meals_per_day", "chore_day", "bucati_giorno", "news_topics"}
 
 
 def save_profile(db, data):
@@ -1009,6 +1009,22 @@ def save_profile(db, data):
         if not 0 <= giorno <= 6:
             raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
         values["chore_day"] = giorno
+    if "bucati_giorno" in values:
+        try:
+            bucati = int(values["bucati_giorno"])
+        except (TypeError, ValueError):
+            raise ValueError("Numero di bucati non valido (da 0 a 5)")
+        if not 0 <= bucati <= 5:
+            raise ValueError("Numero di bucati non valido (da 0 a 5)")
+        values["bucati_giorno"] = bucati
+    if "news_topics" in values:
+        # si accettano anche liste dall'API, ma si salva testo separato da virgole:
+        # e' la forma che `tv.argomenti_scelti` legge, e una stringa vuota e'
+        # legittima (vuol dire "tutti gli argomenti")
+        grezzi = values["news_topics"]
+        if isinstance(grezzi, (list, tuple)):
+            grezzi = ", ".join(str(x) for x in grezzi)
+        values["news_topics"] = ", ".join(parse_terms(grezzi))
     if values:
         assignments = ", ".join(f"{k} = ?" for k in values)
         db.execute(
@@ -1101,7 +1117,9 @@ def meta():
                     "units": ["pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino", "confezione", "fetta"],
                     "categories": ["Frutta e Verdura", "Carne e Pesce", "Latticini", "Dispensa",
                                    "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"],
-                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()]})
+                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()],
+                    "news_topics": tv.ARGOMENTI,
+                    "bucati_opzioni": igiene.BUCATI_OPZIONI})
 
 
 # ---------------------------------------------------------------- profilo
@@ -1111,9 +1129,16 @@ def profile():
     if request.method == "PUT":
         data = request.get_json(force=True) or {}
         try:
-            return jsonify(save_profile(db, data))
+            profilo = save_profile(db, data)
         except ValueError as err:
             return bad_request(str(err) or "Valore non valido")
+        # Cambiare gli argomenti cambia i feed da leggere: la copia vecchia e' di
+        # altri argomenti, e tenerla mostrerebbe la scelta precedente fino al
+        # giro dopo. Si azzera la cache delle notizie, non quella dei video.
+        if "news_topics" in data:
+            db.execute("DELETE FROM tv_cache WHERE chiave = 'notizie'")
+            db.commit()
+        return jsonify(profilo)
     return jsonify(get_profile(db))
 
 
@@ -1972,7 +1997,7 @@ def magazzino_meta():
 
 
 # ------------------------------------------------------------- calendario
-# Gli impegni: appuntamenti, scadenze, ricorrenze. Stanno dentro Progetti come
+# Gli impegni: appuntamenti, scadenze, ricorrenze. Stanno dentro Appunti come
 # il magazzino, ma la logica delle date sta in `calendario.py`, dove si prova
 # senza browser: la griglia del mese, i giorni di distanza e il promemoria sono
 # le parti che sbagliano, e sono tutte funzioni pure.
@@ -2964,12 +2989,15 @@ def _chore_o_404(db, cid):
 def chores_meta():
     """Le scelte fisse della sezione: frequenze, ambienti, mesi, giorni."""
     db = get_db()
+    profilo = get_profile(db)
     return jsonify({
         "frequencies": igiene.FREQUENZE,
         "areas": igiene.AMBIENTI,
         "days": [{"key": i, "label": g} for i, g in enumerate(igiene.GIORNI_SETTIMANA)],
         "months": igiene.mesi(),
-        "chore_day": get_profile(db).get("chore_day") or 0,
+        "chore_day": profilo.get("chore_day") or 0,
+        "bucati_giorno": profilo.get("bucati_giorno") or 0,
+        "bucati_opzioni": igiene.BUCATI_OPZIONI,
     })
 
 
@@ -2981,10 +3009,15 @@ def chores_list():
     ultime = _ultime(db)
     attivita = rows(db.execute("SELECT * FROM chores ORDER BY frequency, area, name"))
 
+    profilo = get_profile(db)
+    bucati = profilo.get("bucati_giorno") or 0
     for voce in attivita:
-        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi, voce["month"]))
+        cadenza = (igiene.cadenza_lavatrice(bucati)
+                   if voce["name"] == igiene.LAVATRICE else None)
+        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi,
+                                    voce["month"], cadenza=cadenza))
 
-    giorno = get_profile(db).get("chore_day") or 0
+    giorno = profilo.get("chore_day") or 0
     # il catalogo porta il giorno assegnato: la sezione Routine elenca da qui, non
     # dai gruppi del piano, e senza il campo non potrebbe mostrare quando tocca
     giorni = igiene.giorni_settimanali(attivita, giorno)
@@ -2996,7 +3029,7 @@ def chores_list():
             igiene.GIORNI_SETTIMANA[assegnato] if assegnato is not None else None)
         voce["giorno_settimanale_oggi"] = (
             assegnato == oggi_d.weekday() if assegnato is not None else False)
-    piano = igiene.piano(attivita, ultime, oggi, giorno, giorni)
+    piano = igiene.piano(attivita, ultime, oggi, giorno, giorni, bucati_giorno=bucati)
     return jsonify({"oggi": oggi, "attivita": attivita, "piano": piano,
                     "attive": sum(1 for v in attivita if v["active"])})
 

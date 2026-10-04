@@ -1,7 +1,7 @@
 """Calendario degli impegni: le date che contano, con un promemoria.
 
-Appuntamenti, scadenze, ricorrenze. Sta dentro Progetti perche' e' una cosa da
-fare, come i progetti e il magazzino: non entra in nessuna ricetta e non si
+Appuntamenti, scadenze, ricorrenze. Sta dentro Appunti perche' e' una cosa da
+fare, come gli appunti e il magazzino: non entra in nessuna ricetta e non si
 scala dal fabbisogno della spesa.
 
 Perche' e' una tabella a parte e non una colonna dei progetti: un progetto ha

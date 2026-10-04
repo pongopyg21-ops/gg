@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **606 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **629 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -57,9 +57,9 @@ suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`,
 impegni e promemoria in `calendario.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
-**Cucina**, **Igiene**, **Progetti**, **FAQ**, **TV**. Piano, ricette, dispensa,
+**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**. Piano, ricette, dispensa,
 spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
-**Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
+**Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
 raccoglie l'intrattenimento, cioè i video della playlist di casa e le notizie
@@ -618,8 +618,9 @@ Conseguenze pratiche per chi mette mano al codice:
   lavoro dell'utente.** `PREPARAZIONI_PRECEDENTI` è la fotografia dei testi com'era
   prima di essere riscritti, e `semina()` sostituisce `instructions` **solo se è
   ancora esattamente quella vecchia**: una preparazione riscritta a mano è un dato
-  dell'utente e non va sovrascritta. È lo stesso metodo di `MINUTI_CAMBIATI` in
-  `igiene.py`. Senza, chi usa l'app da prima vedrebbe i testi nuovi solo creando una
+  dell'utente e non va sovrascritta. È la stessa cautela dell'aggiornamento dei
+  minuti in `igiene.py`: le stime ritoccate a mano non si riallineano mai. Senza,
+  chi usa l'app da prima vedrebbe i testi nuovi solo creando una
   casa nuova, e chi ha riscritto la ricetta di famiglia se la vedrebbe cancellare.
   Aggiungendo un testo nuovo a `RECIPES`, va aggiunto il testo vecchio anche a
   `PREPARAZIONI_PRECEDENTI`, altrimenti l'aggiornamento non scatta.
@@ -846,6 +847,12 @@ Conseguenze pratiche per chi mette mano al codice:
   contenuto. La scheda aperta (`chPanel`) vive in memoria e non si salva: riaprendo
   l'app si torna su «Oggi». I test `test_la_sezione_igiene_ha_le_schede_e_i_pannelli`
   e `test_il_cambio_scheda_mostra_un_pannello_solo` lo tengono fermo.
+- La scheda **Oggi** si apre con un riquadro-guida (`.ch-hero`): un anello
+  (`.ch-ring`, disegnato con `conic-gradient` e `--pct`) che mostra quante voci
+  sono state spuntate, e i minuti che restano. Sotto, ogni voce è una riga
+  (`.ch-row`) con la fascia di colore del suo ambiente (`.ch-area[data-area=…]`,
+  da `areaChiave` in `app.js`), così le voci della stessa zona si riconoscono a
+  colpo d'occhio senza leggerle. Prima era un'unica colonna di testo uguale.
 - Nel calendario annuale **solo il mese corrente è aperto** (`<details open>`), gli
   altri chiusi: aprirli tutti faceva una pagina di quarantacinque righe che non si
   scorre. Le attività del mese corrente restano comunque visibili nel blocco «Oggi».
@@ -869,13 +876,22 @@ Conseguenze pratiche per chi mette mano al codice:
   al primo uso rientrerebbero tutte insieme, che è l'ammasso che la distribuzione
   deve togliere. Una settimanale **saltata** invece rientra in ritardo, perché
   perdere il proprio giorno non deve nasconderla per una settimana.
-- `RIMOSSE` in `igiene.py` mappa una voce tolta dal catalogo alla sua sostituta, e
-  `MINUTI_CAMBIATI` mappa una voce al `(vecchio, nuovo)` dei minuti. Servono perché
-  il seme è idempotente e non tocca le righe esistenti: senza, chi usa l'app da prima
-  terrebbe per sempre la voce doppia e le stime vecchie. I completamenti della voce
-  tolta si **spostano** sulla sostituta prima del `DELETE`: il `CASCADE` li
-  porterebbe via, e sono lavoro fatto davvero. `MINUTI_CAMBIATI` aggiorna solo dal
-  valore vecchio, altrimenti cancellerebbe la stima ritoccata a mano a ogni richiesta.
+- `RIMOSSE` in `igiene.py` mappa una voce tolta dal catalogo alla sua sostituta
+  (o a `None` se va solo tolta). Serve perché il seme è idempotente e non tocca le
+  righe esistenti: senza, chi usa l'app da prima terrebbe per sempre la voce doppia.
+  I completamenti della voce tolta si **spostano** sulla sostituta prima del
+  `DELETE`: il `CASCADE` li porterebbe via, e sono lavoro fatto davvero. I minuti
+  delle voci del catalogo non si riallineano mai: sono una stima che l'utente può
+  correggere, e un `UPDATE` incondizionato cancellerebbe la correzione a ogni
+  richiesta.
+- Quanti **bucati al giorno** fa la casa (`profile.bucati_giorno`, 0 = non
+  dichiarato, da 1 a 5) decidono ogni quanto torna «Avviare la lavatrice»:
+  `igiene.cadenza_lavatrice()` traduce i bucati in giorni (`max(0.5, 1/bucati)`),
+  con 1,5 giorni come valore di partenza. La cadenza entra nello stato di
+  `scadenza()` come `cadenza_giorni`, così l'interfaccia dice ogni quanto tocca
+  davvero. Il minimo è mezza giornata: sotto la voce resterebbe sempre in cima al
+  piano. Le opzioni stanno in `BUCATI_OPZIONI` e si servono da `/api/meta` e
+  `/api/chores/meta`, così onboarding e Profilo non inventano i numeri.
 - La routine **quotidiana** sta in `QUOTIDIANE` e deve restare sotto i venticinque
   minuti in tutto: oltre smette di essere una routine. Il test
   `test_la_routine_quotidiana_resta_breve` lo tiene fermo.
@@ -1104,13 +1120,18 @@ Conseguenze pratiche per chi mette mano al codice:
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione
   della cucina e resta nascosto altrove.
-- L'onboarding ha tre passi (`passoPasti` dentro `openOnboarding` e
-  `openFavoritesStep`): prima quanti pasti, poi allergie, poi preferite.
-  `fav_prompted` distingue chi non ha mai visto la scelta delle preferite, così il
-  terzo passo viene riproposto a chi si era profilato prima. Lo stato dei passi vive
-  in una `bozza` condivisa, perché "Indietro" non salva. Le domande iniziali si
-  aprono entrando in Cucina (`avviaProfiloSeServe`), non sulla pagina iniziale: chi
-  sta andando in Igiene non deve vedersi chiedere cose di cucina.
+- L'onboarding ha cinque passi (`passoPasti`, `passoBucati`, `passoNotizie` dentro
+  `openOnboarding`, più `openFavoritesStep`): quanti pasti, allergie, bucati al
+  giorno, argomenti delle notizie, preferite. Il numero nell'intestazione («Passo N
+  di 5») si conta da solo, così non può mentire. `fav_prompted` distingue chi non ha
+  mai visto la scelta delle preferite, così l'ultimo passo viene riproposto a chi si
+  era profilato prima. Lo stato dei passi vive in una `bozza` condivisa, perché
+  "Indietro" non salva. Le domande iniziali si aprono entrando in Cucina
+  (`avviaProfiloSeServe`), non sulla pagina iniziale: chi sta andando in Igiene non
+  deve vedersi chiedere cose di cucina. Al primo accesso di una casa appena creata
+  si apre anche il **menù di benvenuto** (`mostraBenvenuto`, `#wb-skip` /
+  `#wb-inizia`): un elenco di cosa sa fare l'app, saltabile, per chi non sa da dove
+  cominciare.
 
 ## Interfaccia mobile
 
@@ -1278,8 +1299,23 @@ Le tre scelte che contano:
   resta sulle regole senza rompere niente.
 
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
-(`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una
-rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
+(`_leggi_file`), prima dell'avvio, come quella di Azure: non c'e' una rotta che
+la salvi, perche' l'app non deve poter riscrivere il proprio segreto. Il file e'
+`segreto.txt` (o `segreto`, `segreto.sh`, `segreto.bat`), lo stesso della voce, e
+accetta le etichette `chiave`, `modello`, `base_url` oltre ai nomi veri
+(`LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`). A differenza della voce, che
+distingue una chiave da un'area, qui una riga nuda che non sia una parola
+minuscola corta vale come chiave LLM.
+
+**Verifica di Ollama, prima di credere che sia configurato.** `configurato()` e'
+vero anche a Ollama spento (l'endpoint locale e' il predefinito): la verifica
+vera e' `raggiungibile()`, che interroga `/api/tags` sulla porta 11434. Con
+Ollama acceso e il modello `qwen2.5:7b-instruct` scaricato
+(`ollama pull qwen2.5:7b-instruct`) il percorso funziona senza chiave: una
+chiamata a `comprensione.chiama("aggiungi il latte alla spesa")` restituisce
+`{"intent": "shopping_add", "name": "latte", "quantity": 1.0, "unit": "pz"}`.
+Se `raggiungibile()` e' falso, `messaggio_stato()` dice la causa (Ollama spento
+o modello non scaricato) e l'interruttore resta spento.
 **Modelli di ragionamento e modelli locali: due trappole, entrambe misurate.**
 
 - I modelli di ragionamento spendono lo stesso budget di token prima di scrivere
@@ -1777,6 +1813,16 @@ Le notizie sono **max venti**, dalle sezioni ANSA, mescolate fra loro, e si
 rinnovano **una volta al giorno**; i video una volta al giorno anche loro. Si
 mostra titolo, sommario breve e rimando alla fonte, non l'articolo: il testo è di
 chi lo scrive.
+
+Gli **argomenti** delle notizie si scelgono dal Profilo (e dall'onboarding) e
+stanno in `profile.news_topics`, come testo separato da virgole. `feed_urls(db)`
+li legge e restringe i feed alle sezioni scelte: nessun argomento vuol dire
+**tutti**, così chi non ha ancora scelto non si trova una sezione vuota.
+`argomenti_scelti()` tiene solo le chiavi note (`FEED_PER_TEMA`), perché un refuso
+non deve svuotare l'elenco. Le etichette stanno in `ARGOMENTI` e si servono da
+`/api/meta`. Cambiare argomenti **azzera la copia** delle notizie in `tv_cache`:
+la copia vecchia è di altri argomenti, e tenerla mostrerebbe la scelta precedente
+fino al giro dopo.
 
 Le scelte che contano:
 

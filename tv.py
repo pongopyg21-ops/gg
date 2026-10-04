@@ -54,13 +54,25 @@ PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
 PLAYLIST_GYM_PREDEFINITA = "PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo"
 # Le notizie vengono dalle sezioni ANSA: il mondo da solo lascia fuori quello
 # che succede in Italia, che e' la prima cosa che si guarda. Le sezioni sono
-# argomenti, non fonti diverse: tutte ANSA, tutte in italiano.
-FEED_PREDEFINITI = (
-    "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
-    "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
-    "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
-    "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
-)
+# argomenti, non fonti diverse: tutte ANSA, tutte in italiano. Ognuna ha una
+# chiave stabile, cosi' la scelta dell'utente (`profile.news_topics`) non dipende
+# dall'indirizzo del feed, che cambia.
+FEED_PER_TEMA = {
+    "mondo": "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
+    "cronaca": "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
+    "politica": "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
+    "economia": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
+}
+FEED_PREDEFINITI = tuple(FEED_PER_TEMA.values())
+
+# Le etichette degli argomenti, per l'onboarding e il Profilo. La chiave e'
+# quella salvata in `news_topics`; l'etichetta e' quello che l'utente legge.
+ARGOMENTI = [
+    {"key": "mondo", "label": "Mondo"},
+    {"key": "cronaca", "label": "Cronaca e Italia"},
+    {"key": "politica", "label": "Politica"},
+    {"key": "economia", "label": "Economia"},
+]
 
 # Quante notizie si tengono. Venti: dieci riempiono la prima schermata e il
 # resto si scorre, ma il taglio non e' piu' cosi' stretto che una testata sola
@@ -172,19 +184,61 @@ def imposta_playlist(db, valore: str) -> str:
     return scelto
 
 
-def feed_urls() -> list:
+def argomenti_scelti(valore) -> list:
+    """Gli argomenti delle notizie scelti dall'utente, in chiavi valide.
+
+    Si accetta testo separato da virgole o una lista, e si tengono solo le chiavi
+    note: un argomento sconosciuto (o un refuso) non deve svuotare le notizie.
+    Una lista **vuota** e' legittima e significa "tutti gli argomenti" — e' il
+    caso di chi non ha ancora scelto, e non si vuole una sezione vuota.
+    """
+    if isinstance(valore, (list, tuple)):
+        parti = [str(p) for p in valore]
+    else:
+        parti = re.split(r"[,;\n]+", str(valore or ""))
+    visti = []
+    for parte in parti:
+        chiave = parte.strip().lower()
+        if chiave in FEED_PER_TEMA and chiave not in visti:
+            visti.append(chiave)
+    return visti
+
+
+def feed_urls(db=None) -> list:
     """Gli indirizzi dei feed delle notizie, in ordine.
 
     `TV_FEED` ne puo' indicare piu' d'uno separati da virgola o da a capo, cosi'
     si sostituiscono i predefiniti senza toccare il modulo (come `TV_PLAYLIST`).
-    Senza `TV_FEED` si usano le sezioni ANSA predefinite.
+    Senza `TV_FEED` si usano le sezioni ANSA predefinite, ristrette a quelle
+    scelte dalla casa: gli argomenti dichiarati in `profile.news_topics` (vuoto =
+    tutti), cosi' le notizie che non interessano non occupano l'elenco.
     """
     dichiarati = os.environ.get("TV_FEED", "").strip()
     if dichiarati:
         urls = [u.strip() for u in re.split(r"[,\n]", dichiarati) if u.strip()]
-    else:
-        urls = list(FEED_PREDEFINITI)
-    return urls[:MAX_FEED]
+        return urls[:MAX_FEED]
+    scelti = _argomenti_dal_db(db)
+    if scelti:
+        return [FEED_PER_TEMA[k] for k in scelti][:MAX_FEED]
+    return list(FEED_PREDEFINITI)[:MAX_FEED]
+
+
+def _argomenti_dal_db(db) -> list:
+    """Gli argomenti delle notizie scelti dalla casa, se c'e' un database.
+
+    Il modulo non apre database per conto suo: la lettura e' tollerante, perche'
+    `feed_urls` viene chiamata anche senza una connessione (i test, la prima
+    installazione) e un profilo assente non deve impedire di scaricare.
+    """
+    if db is None:
+        return []
+    try:
+        riga = db.execute("SELECT news_topics FROM profile WHERE id = 1").fetchone()
+    except Exception:
+        return []
+    if riga is None:
+        return []
+    return argomenti_scelti(riga[0])
 
 
 def _apri(url: str) -> bytes:
@@ -390,7 +444,7 @@ def notizie_dal_feed(db=None) -> list:
     """
     voci = []
     letti = 0
-    for url in feed_urls():
+    for url in feed_urls(db):
         try:
             voci.extend(_voci_del_feed(url)[:MAX_PER_FEED])
             letti += 1

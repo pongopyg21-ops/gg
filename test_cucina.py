@@ -1881,6 +1881,58 @@ def test_riducendo_i_pasti_la_spesa_ignora_i_pasti_nascosti(client):
     assert "Riso" not in nomi, "il pranzo non e' piu' gestito: non deve finire in lista"
 
 
+# ------------------------------------------------------------ bucati al giorno
+def test_bucati_al_giorno_regola_la_cadenza_della_lavatrice(client):
+    """I bucati dichiarati decidono ogni quanto torna «Avviare la lavatrice».
+
+    Il legame e' diretto e va provato per intero: la scelta si salva nel profilo,
+    `/api/chores` la usa, e il campo `cadenza_giorni` della voce lo dice. Senza
+    il giro completo, la scelta resterebbe scritta e non cambierebbe niente."""
+    # non dichiarato: la cadenza di partenza e' un giorno e mezzo
+    voce = next(v for v in client.get("/api/chores").get_json()["attivita"]
+                if v["name"] == "Avviare la lavatrice")
+    assert voce["cadenza_giorni"] == 1.5
+
+    r = client.put("/api/profile", json={"bucati_giorno": 1})
+    assert r.status_code == 200
+    assert r.get_json()["bucati_giorno"] == 1
+    voce = next(v for v in client.get("/api/chores").get_json()["attivita"]
+                if v["name"] == "Avviare la lavatrice")
+    assert voce["cadenza_giorni"] == 1.0
+
+    # zero torna alla cadenza di partenza: "non dico" non e' "mai"
+    client.put("/api/profile", json={"bucati_giorno": 0})
+    voce = next(v for v in client.get("/api/chores").get_json()["attivita"]
+                if v["name"] == "Avviare la lavatrice")
+    assert voce["cadenza_giorni"] == 1.5
+
+
+def test_bucati_al_giorno_non_valido_rifiutato(client):
+    for cattivo in (-1, 6, "tre", None):
+        r = client.put("/api/profile", json={"bucati_giorno": cattivo})
+        assert r.status_code == 400, cattivo
+        assert "bucati" in r.get_json()["error"].lower()
+    assert client.get("/api/profile").get_json()["bucati_giorno"] == 0
+
+
+def test_le_opzioni_dei_bucati_arrivano_dalla_meta(client):
+    """L'interfaccia non inventa i numeri: li legge dalla meta, cosi' onboarding
+    e Profilo offrono le stesse scelte del backend."""
+    meta = client.get("/api/meta").get_json()
+    assert meta["bucati_opzioni"] == [1, 2, 3, 4, 5]
+    assert client.get("/api/chores/meta").get_json()["bucati_opzioni"] == [1, 2, 3, 4, 5]
+
+
+def test_cadenza_lavatrice_dai_bucati():
+    """Il conto e' in un posto solo: piu' bucati, meno attesa. Il minimo e'
+    mezza giornata, altrimenti la voce resterebbe sempre in cima al piano."""
+    assert igiene.cadenza_lavatrice(0) == 1.5      # non dichiarato
+    assert igiene.cadenza_lavatrice(1) == 1.0
+    assert igiene.cadenza_lavatrice(2) == 0.5
+    assert igiene.cadenza_lavatrice(5) == 0.5      # il minimo regge
+    assert igiene.cadenza_lavatrice("x") == 1.5    # valore storto: si torna al default
+
+
 def test_riducendo_i_pasti_il_fabbisogno_per_giorno_ignora_i_nascosti(client):
     """Anche la ripartizione per giorno deve ignorare i pasti non piu' gestiti."""
     cena = ricetta(client, "Cena", 2, [{"name": "Farina", "quantity": 200, "unit": "g"}])
@@ -3392,16 +3444,17 @@ def test_pulizie_vecchie_si_riallineano_al_catalogo(tmp_path):
     """Una casa gia' avviata deve ricevere la nuova routine, non tenerla vecchia.
 
     Il seme non tocca le righe esistenti, quindi senza questo passaggio chi usa
-    l'app da prima continuerebbe a vedere la voce doppia e i minuti di prima:
-    il riordino non arriverebbe mai proprio a chi ha piu' da guadagnarci.
+    l'app da prima continuerebbe a vedere le voci che il catalogo ha tolto — la
+    voce unita e "Arieggiare le stanze" — e il riordino non arriverebbe mai
+    proprio a chi ha piu' da guadagnarci.
     """
     percorso = str(tmp_path / "vecchia.db")
     app_module.init_db(percorso)
     with closing(sqlite3.connect(percorso)) as con:
-        # com'era il database prima: la voce unita e i minuti vecchi
+        # com'era il database prima: la voce unita, che il catalogo ha assorbito
+        # in "Riordino generale"
         con.execute("INSERT INTO chores (name, area, frequency, minutes, month) "
                     "VALUES ('Raccogliere gli oggetti fuori posto', 'Tutta la casa', 'giornaliera', 5, NULL)")
-        con.execute("UPDATE chores SET minutes = 5 WHERE name = 'Arieggiare le stanze'")
         con.commit()
 
     app_module.init_db(percorso)
@@ -3409,8 +3462,22 @@ def test_pulizie_vecchie_si_riallineano_al_catalogo(tmp_path):
     with closing(sqlite3.connect(percorso)) as con:
         nomi = {r[0] for r in con.execute("SELECT name FROM chores")}
         assert "Raccogliere gli oggetti fuori posto" not in nomi, "la voce unita va tolta"
-        minuti = dict(con.execute("SELECT name, minutes FROM chores"))
-        assert minuti["Arieggiare le stanze"] == 2
+        assert "Arieggiare le stanze" not in nomi, "la voce non e' piu' un lavoro da spuntare"
+
+
+def test_le_quotidiane_sono_tre(tmp_path):
+    """Le attivita' quotidiane sono tre, non quattro.
+
+    La giornata fissa deve restare una routine breve: le voci che dicevano la
+    stessa cosa sono state unite e "Arieggiare le stanze" e' stata tolta, perche'
+    e' aprire le finestre mentre si fa altro, non un lavoro a se'."""
+    voci = igiene.catalogo()
+    quotidiane = [v for v in voci if v["frequency"] == "giornaliera"]
+    assert len(quotidiane) == 3
+    nomi = {v["name"] for v in quotidiane}
+    assert "Arieggiare le stanze" not in nomi
+    # e il piano di oggi non le gonfia: le tre voci restano sotto il budget
+    assert sum(v["minutes"] for v in quotidiane) <= 25
 
 
 def test_pulizie_rimozione_non_perde_i_completamenti(tmp_path):
@@ -3439,22 +3506,23 @@ def test_pulizie_rimozione_non_perde_i_completamenti(tmp_path):
 
 
 def test_pulizie_minuti_ritoccati_a_mano_non_si_perdono(tmp_path):
-    """La migrazione tocca solo il valore di partenza, non la stima dell'utente.
+    """La migrazione non riallinea i minuti: la stima dell'utente resta.
 
-    I minuti sono una stima che l'utente puo' correggere: riallinearla a forza
-    cancellerebbe la sua correzione a ogni richiesta.
+    I minuti sono una stima che l'utente puo' correggere, e il riallineamento
+    del catalogo non li tocca: correggerla a forza cancellerebbe la sua
+    correzione a ogni richiesta.
     """
     percorso = str(tmp_path / "vecchia.db")
     app_module.init_db(percorso)
     with closing(sqlite3.connect(percorso)) as con:
-        con.execute("UPDATE chores SET minutes = 7 WHERE name = 'Arieggiare le stanze'")
+        con.execute("UPDATE chores SET minutes = 7 WHERE name = 'Riordino generale'")
         con.commit()
 
     app_module.init_db(percorso)
 
     with closing(sqlite3.connect(percorso)) as con:
         minuti = dict(con.execute("SELECT name, minutes FROM chores"))
-        assert minuti["Arieggiare le stanze"] == 7, "la stima dell'utente resta"
+        assert minuti["Riordino generale"] == 7, "la stima dell'utente resta"
 
 
 def test_schema_applicato_a_una_casa_gia_esistente(tmp_path):
@@ -7790,6 +7858,100 @@ def test_con_una_chiave_ma_servizio_muto_l_avviso_nomina_la_chiave(monkeypatch):
     assert comprensione.messaggio_stato() == ""
 
 
+# ---- la chiave del modello: ambiente o file accanto all'app, mai dall'app ----
+def _con_segreto_llm(tmp_path, monkeypatch, testo, nome_file="segreto.txt"):
+    """Prepara un `segreto.txt` con la chiave del modello, senza toccare quello vero."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setenv("MAGGIORDOMO_DATA", str(tmp_path))
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": False})
+    (tmp_path / nome_file).write_text(testo)
+
+
+def test_la_chiave_del_modello_si_legge_da_segreto_txt(tmp_path, monkeypatch):
+    """`chiave: valore` come per la voce: chi configura non deve sapere i nomi
+    delle variabili. Il modello e l'indirizzo si leggono dallo stesso file."""
+    _con_segreto_llm(tmp_path, monkeypatch,
+                     "chiave: sk-llm-di-prova-123\n"
+                     "modello: qwen2.5:7b-instruct\n"
+                     "base_url: https://esempio.invalid/v1\n")
+    assert comprensione.chiave() == "sk-llm-di-prova-123"
+    assert comprensione.modello() == "qwen2.5:7b-instruct"
+    assert comprensione.base_url() == "https://esempio.invalid/v1"
+    assert comprensione.configurato()
+
+
+def test_la_chiave_del_modello_nuda_si_riconosce(tmp_path, monkeypatch):
+    """Il file piu' semplice: una riga e basta. Una parola che sembra una chiave
+    (`sk-...`) e' la chiave; una parola minuscola corta non la ruba."""
+    _con_segreto_llm(tmp_path, monkeypatch, "sk-llm-di-prova-123\n")
+    assert comprensione.chiave() == "sk-llm-di-prova-123"
+
+
+def test_una_spiegazione_nel_file_non_diventa_la_chiave_del_modello(tmp_path, monkeypatch):
+    """Le righe con spazi sono testo libero: non devono finire nell'ambiente."""
+    _con_segreto_llm(tmp_path, monkeypatch,
+                     "Questa e' la chiave del modello, non copiarla in giro\n"
+                     "chiave: sk-llm-di-prova-123\n")
+    assert comprensione.chiave() == "sk-llm-di-prova-123"
+
+
+def test_l_ambiente_vince_sul_file_per_la_chiave_del_modello(tmp_path, monkeypatch):
+    """Chi esporta la chiave a mano comanda, come per `segreto.sh`."""
+    _con_segreto_llm(tmp_path, monkeypatch, "chiave: DalFile\n")
+    monkeypatch.setenv("LLM_API_KEY", "DallAmbiente")
+    assert comprensione.chiave() == "DallAmbiente"
+
+
+def test_il_modello_e_l_indirizzo_predefiniti_sono_quelli_di_casa(monkeypatch):
+    """Senza nessuna scelta la configurazione e' Ollama in locale: nessuna
+    chiave, nessun costo, niente che esce di casa."""
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    assert comprensione.modello() == "qwen2.5:7b-instruct"
+    assert comprensione.base_url() == "http://127.0.0.1:11434/v1"
+
+
+def test_ollama_si_riconosce_dall_indirizzo_locale(monkeypatch):
+    """Un modello in casa non chiede una chiave: si riconosce dall'indirizzo,
+    perche' non c'e' altro modo di saperlo. Un servizio in rete no."""
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    for locale in ("http://127.0.0.1:11434/v1", "http://localhost:11434/v1"):
+        monkeypatch.setenv("LLM_BASE_URL", locale)
+        assert comprensione._e_locale(), locale
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.esempio.invalid/v1")
+    assert not comprensione._e_locale()
+
+
+def test_l_elenco_dei_modelli_dipende_dalla_porta_di_ollama(monkeypatch):
+    """Ollama tiene l'elenco in `/api/tags`, non nella parte compatibile OpenAI:
+    da `.../v1` si risale a `/api/tags`. Un servizio in rete risponde a `/models`."""
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    assert comprensione._endpoint_salute("http://127.0.0.1:11434/v1").endswith("/api/tags")
+    assert comprensione._endpoint_salute("http://127.0.0.1:8080/v1").endswith("/models")
+    assert comprensione._endpoint_salute("non-un-indirizzo") == ""
+
+
+def test_la_chiave_del_modello_non_si_salva_dall_app(client):
+    """Come per la voce: la chiave LLM entra solo dall'ambiente o dal file prima
+    di avviare. L'app puo' nominarla in un avviso («registrala come segreto
+    LLM_API_KEY»), ma non deve avere un campo che la scriva, ne' una rotta che la
+    salvi: chi apre la pagina potrebbe cambiarla, e la chiave finirebbe in una
+    richiesta HTTP."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    # nessun campo dove incollare la chiave del modello
+    for campo in ('id="llm-chiave"', 'id="llm-chiave-salva"', 'id="voice-llm-chiave"'):
+        assert campo not in html, campo
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "salvaChiaveLlm" not in js
+    assert "/api/llm/configura" not in js
+    # e la rotta non esiste: senza, la chiave non si potrebbe scrivere via HTTP
+    percorsi = {r.rule for r in app_module.app.url_map.iter_rules()}
+    assert not any("llm" in p.lower() and "configur" in p.lower() for p in percorsi)
+
+
 def test_comprensione_chiama_il_modello_e_ne_interpreta_la_risposta(monkeypatch):
     """Si prova la richiesta vera, non solo l'interpretazione: la chiave va
     nell'intestazione e il modello richiesto e' quello configurato."""
@@ -8347,6 +8509,82 @@ def test_la_sezione_gym_e_in_home_e_ha_il_suo_tab(client):
     assert "gym:      { titolo:" in js or "gym: { titolo:" in js
 
 
+def test_la_scheda_progetti_si_chiama_appunti(client):
+    """La sezione si chiama «Appunti» dappertutto: scheda in home, scheda nella
+    barra, titolo dell'area e testi del pannello. Un nome che resta indietro in
+    un punto solo e' peggio di non averlo cambiato, perche' fa cercare due cose."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'data-section="progetti"' in html
+    assert "Appunti" in html
+    # nessun «Progetti» visibile: i commenti sono stati aggiornati anch'essi
+    assert "Progetti" not in html, "resta del testo visibile con il vecchio nome"
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "progetti: { titolo: '\\u{1F4CB} Appunti'" in js
+    # e i messaggi del pannello parlano di appunti, non di progetti
+    for vecchio in ("Nessun progetto", "Modifica progetto", "Nuovo progetto",
+                    "Progetto salvato", "Progetto eliminato"):
+        assert vecchio not in js, vecchio
+    assert "Nuovo appunto" in js and "Appunto salvato" in js
+
+
+def test_il_riquadro_igiene_ha_l_anello_e_la_fascia_di_colore(client):
+    """La grafica dell'Igiene: il riquadro «adesso» ha una fascia d'accento e un
+    anello che mostra quanto si e' fatto. Sono la parte visibile del lavoro, e
+    vanno provati insieme al markup che li disegna."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert 'class="ch-ring"' in js
+    assert "ch-hero-main" in js and "ch-hero-meta" in js
+    assert "aria-label=" in js and "attività fatte oggi" in js
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert ".ch-ring" in css
+    assert "conic-gradient" in css, "l'anello si disegna col gradiente conico"
+    assert "--pct" in css
+    # la riga ha il colore dell'ambiente: raggruppa le voci della stessa zona
+    assert '.ch-area[data-area="cucina"]' in css
+    assert "areaChiave" in js
+
+
+def test_il_menù_di_benvenuto_si_puo_saltare(client):
+    """Subito dopo aver creato la casa l'app si presenta: un elenco di cosa sa
+    fare, con un pulsante per saltare. Chi vuole iniziare a usarla non deve
+    leggerlo tutto, e chi non sa cosa cercare lo trova qui."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function mostraBenvenuto" in js
+    assert "wb-skip" in js and "wb-inizia" in js
+    assert "welcome-list" in js
+    # si apre solo per una casa appena creata, non a ogni accesso
+    assert "casaAppenaCreata" in js
+    assert "casaAppenaCreata = true" in js
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert ".welcome-list" in css and ".welcome-ico" in css
+
+
+def test_il_profilo_ha_bucati_e_argomenti_delle_notizie(client):
+    """Le due scelte nuove si governano dal Profilo: quanti bucati al giorno e
+    quali argomenti delle notizie. I campi esistono, e i gestori li salvano."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="pf-bucati"' in html
+    assert 'id="pf-news-topics"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "meta.bucati_opzioni" in js
+    assert "meta.news_topics" in js
+    assert "$('#pf-bucati').addEventListener" in js
+    assert "$('#pf-news-topics').addEventListener" in js
+
+
+def test_l_onboarding_ha_cinque_passi(client):
+    """I passi sono cinque e si contano da soli: pasti, allergie, bucati,
+    argomenti delle notizie, preferite. Il conteggio nell'intestazione deve
+    corrispondere, altrimenti dice il falso a chi lo legge."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    for passo in ("Passo 1 di 5", "Passo 2 di 5", "Passo 3 di 5",
+                  "Passo 4 di 5", "Passo 5 di 5"):
+        assert passo in js, passo
+    # i due passi nuovi hanno la loro schermata
+    assert "passoBucati" in js and "passoNotizie" in js
+    assert 'id="ob-bucati"' in js and 'id="ob-news"' in js
+
+
 def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, monkeypatch):
     """Il tetto e' venti e le fonti si **alternano**, non si ordinano solo per
     data: un elenco per sola data puo' diventare una testata sola, quando una
@@ -8355,7 +8593,7 @@ def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, mon
     Servono piu' feed: un singolo feed e' limitato a `MAX_PER_FEED` (vedi
     `test_un_feed_generalista_non_occupa_tutto_l_elenco`)."""
     urls = [f"https://esempio.invalid/f{i}" for i in range(3)]
-    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: urls)
     risposte = {}
     for f, u in enumerate(urls):
         voci = "".join(
@@ -8380,7 +8618,7 @@ def test_due_testate_si_alternano_e_riempiono_le_venti(client, monkeypatch):
     """Due testate si alternano e riempiono l'elenco: la fetta per testata tiene
     la promessa, dieci e dieci, anche quando una pubblica piu' spesso."""
     u1, u2 = "https://esempio.invalid/ansa", "https://esempio.invalid/rai"
-    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: [u1, u2])
     ansa = [_voce(f"ansa-{i}", f"Thu, 02 Apr 2026 09:{i:02d}:00 +0200") for i in range(15)]
     rai = [_voce(f"rai-{i}", f"Wed, 01 Apr 2026 08:{i:02d}:00 +0200") for i in range(15)]
     finta_tv(monkeypatch, {
@@ -8399,7 +8637,7 @@ def test_i_titoli_quasi_uguali_non_si_ripetono(client, monkeypatch):
     apostrofo o una virgola, e con link diversi: si riconosce dal titolo ridotto,
     altrimenti il doppione occupa il posto di un'altra notizia."""
     u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
-    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: [u1, u2])
     v1 = ("<item><title>Giuseppe Graviano: 'Mio nonno fece una societa'</title>"
           "<link>https://esempio.invalid/1</link><description>S</description>"
           "<pubDate>Thu, 02 Apr 2026 09:00:00 +0200</pubDate></item>")
@@ -8418,7 +8656,7 @@ def test_un_feed_generalista_non_occupa_tutto_l_elenco(client, monkeypatch):
     facendo sparire le sezioni: ogni feed contribuisce al massimo
     `MAX_PER_FEED`."""
     urls = [f"https://esempio.invalid/f{i}" for i in range(4)]
-    monkeypatch.setattr(tv, "feed_urls", lambda: urls)
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: urls)
     risposte = {}
     for f, u in enumerate(urls):
         voci = "".join(
@@ -8669,7 +8907,7 @@ def test_le_notizie_vengono_da_piu_sezioni_e_si_unisono(client, monkeypatch):
     economia): con una sola il mondo lascia fuori quello che succede in Italia.
     L'elenco unico si riordina per data, non per sezione."""
     u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/cronaca"
-    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: [u1, u2])
     finta_tv(monkeypatch, {
         u1: _feed("RSS di Mondo  - ANSA.it",
                   [_voce("mondo-vecchia", "Mon, 01 Jan 2026 08:00:00 +0100")]),
@@ -8686,7 +8924,7 @@ def test_una_sezione_ferma_non_svuota_le_altre(client, monkeypatch):
     """Se una sezione non risponde, le altre si mostrano lo stesso: una ferma non
     deve portare via le notizie che si sono lette."""
     u1, u2 = "https://esempio.invalid/mondo", "https://esempio.invalid/giu"
-    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: [u1, u2])
     finta_tv(monkeypatch, {u1: _feed("RSS di Mondo  - ANSA.it", [_voce("buona")])})
     # `u2` non e' previsto da finta_tv: solleva NonDisponibile
     notizie = tv.notizie_dal_feed()
@@ -8696,7 +8934,7 @@ def test_una_sezione_ferma_non_svuota_le_altre(client, monkeypatch):
 def test_se_nessun_feed_risponde_e_un_guasto(client, monkeypatch):
     """Nessuna sezione risponde: e' `NonDisponibile`, non una lista vuota, cosi'
     la cache buona di ieri non viene sovrascritta con il vuoto."""
-    monkeypatch.setattr(tv, "feed_urls", lambda: ["https://esempio.invalid/a",
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: ["https://esempio.invalid/a",
                                                   "https://esempio.invalid/b"])
     finta_tv(monkeypatch, {})
     with pytest.raises(tv.NonDisponibile):
@@ -8707,7 +8945,7 @@ def test_la_stessa_notizia_non_compare_due_volte(client, monkeypatch):
     """Lo stesso fatto compare in piu' sezioni con titoli diversi: il link e' la
     chiave stabile, e il doppione occuperebbe il posto di un'altra notizia."""
     u1, u2 = "https://esempio.invalid/a", "https://esempio.invalid/b"
-    monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
+    monkeypatch.setattr(tv, "feed_urls", lambda *a, **k: [u1, u2])
     voce = ("<item><title>Stesso fatto</title>"
             "<link>https://esempio.invalid/uguale</link>"
             "<description>S</description>"
@@ -8740,6 +8978,62 @@ def test_i_feed_predefiniti_non_includono_rainews(client):
     urls = tv.feed_urls()
     assert all("rainews" not in u.lower() for u in urls)
     assert all("ansa.it" in u for u in urls)
+
+
+def test_gli_argomenti_scelti_riducono_i_feed(client):
+    """Gli argomenti del profilo restringono i feed: chi legge solo economia non
+    deve vedersi le notizie di mondo in elenco."""
+    # nessuna scelta: tutti i feed predefiniti (nessun database = nessun profilo)
+    assert tv.feed_urls() == list(tv.FEED_PREDEFINITI)
+    client.put("/api/profile", json={"news_topics": ["economia", "politica"]})
+    with closing(sqlite3.connect(houses.db_path(CASA_TEST))) as db:
+        db.row_factory = sqlite3.Row
+        urls = tv.feed_urls(db)
+    assert urls == [tv.FEED_PER_TEMA["economia"], tv.FEED_PER_TEMA["politica"]]
+    # e l'ordine e' quello dichiarato, non quello dei predefiniti
+    assert urls[0].endswith("economia_rss.xml")
+
+
+def test_argomenti_sconosciuti_non_svuotano_le_notizie():
+    """Un refuso non deve lasciare la sezione senza notizie: si tengono solo le
+    chiavi note, e se non ne resta nessuna valida si torna a "tutti"."""
+    assert tv.argomenti_scelti("economia, sport, calcio") == ["economia"]
+    assert tv.argomenti_scelti("") == []
+    assert tv.argomenti_scelti(["mondo", "mondo", "cronaca"]) == ["mondo", "cronaca"]
+    assert tv.argomenti_scelti("sport, meteo") == []
+
+
+def test_cambiare_argomenti_azzera_la_copia_vecchia(client):
+    """La copia delle notizie e' di altri argomenti: tenerla mostrerebbe la
+    scelta precedente fino al giro dopo."""
+    percorso = houses.db_path(CASA_TEST)
+    with closing(sqlite3.connect(percorso)) as db:
+        db.execute("INSERT INTO tv_cache (chiave, dati, aggiornato) "
+                   "VALUES ('notizie', '[]', datetime('now'))")
+        db.commit()
+    client.put("/api/profile", json={"news_topics": ["economia"]})
+    with closing(sqlite3.connect(percorso)) as db:
+        righe = db.execute("SELECT chiave FROM tv_cache WHERE chiave = 'notizie'").fetchall()
+    assert not righe, "la copia delle notizie va azzerata"
+
+
+def test_la_meta_porta_gli_argomenti_delle_notizie(client):
+    """Onboarding e Profilo costruiscono le scelte dalla meta, non a mano."""
+    meta = client.get("/api/meta").get_json()
+    chiavi = {a["key"] for a in meta["news_topics"]}
+    assert chiavi == set(tv.FEED_PER_TEMA)
+    assert all("label" in a for a in meta["news_topics"])
+
+
+def test_gli_argomenti_si_salvano_come_testo_o_lista(client):
+    """L'API accetta entrambe le forme, e normalizza in testo separato da virgole:
+    e' la forma che `tv.argomenti_scelti` legge."""
+    p = client.put("/api/profile", json={"news_topics": ["economia", "politica"]}).get_json()
+    assert p["news_topics"] == "economia, politica"
+    p = client.put("/api/profile", json={"news_topics": "economia; politica"}).get_json()
+    assert p["news_topics"] == "economia, politica"
+    p = client.put("/api/profile", json={"news_topics": []}).get_json()
+    assert p["news_topics"] == ""
 
 
 def test_tv_feed_dall_ambiente_ne_accetta_piu_d_uno(client, monkeypatch):

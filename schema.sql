@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS profile (
     -- giorno fisso della settimana per le pulizie (0 = lunedi' ... 6 = domenica):
     -- la routine crea costanza, dice l'articolo, e il giorno lo sceglie l'utente
     chore_day INTEGER NOT NULL DEFAULT 5,
+    -- quanti bucati al giorno fa la casa (0-5). Non e' una preferenza estetica:
+    -- da qui si ricava ogni quanto rimettere la lavatrice in moto (vedi
+    -- `igiene.cadenza_lavatrice`), cosi' la voce non resta fissa a un giorno e
+    -- mezzo quando in casa si fanno due bucati al giorno o uno ogni tre.
+    bucati_giorno INTEGER NOT NULL DEFAULT 0,
+    -- argomenti delle notizie che interessano, separati da virgola: le sezioni
+    -- ANSA da tenere. Vuoto = tutti (vedi `tv.argomenti_scelti`).
+    news_topics TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

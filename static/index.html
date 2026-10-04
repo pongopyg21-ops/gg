@@ -118,7 +118,7 @@
     </button>
     <button class="home-card" data-section="progetti">
       <span class="home-emoji">📋</span>
-      <span class="home-name">Progetti</span>
+      <span class="home-name">Appunti</span>
       <span class="home-desc">Lavori in corso, idee e cose da fare, con il
         calendario degli impegni e il magazzino di casa.</span>
       <span class="home-go">Apri →</span>
@@ -150,7 +150,7 @@
        niente da dire: una home con un riquadro vuoto e' peggio di una senza. -->
   <section id="home-oggi" class="home-oggi hidden" aria-label="Riepilogo di oggi"></section>
   <!-- Il calendario degli impegni in fondo alla home: la stessa griglia del
-       mese della scheda Calendario (nei Progetti), ma in sola lettura e senza
+       mese della scheda Calendario (negli Appunti), ma in sola lettura e senza
        l'elenco del giorno. Qui non serve aggiungere o modificare: cliccando un
        giorno si apre il Calendario, dove si fa tutto. La home resta un posto
        dove si sceglie, non dove si compila. -->
@@ -185,7 +185,7 @@
     <p class="home-kicker">Benvenuto</p>
     <h1 class="con-icona"><img class="icona-app" src="/static/icons/icona.svg" alt="" aria-hidden="true">Il Maggiordomo</h1>
     <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
-    <p class="home-lead home-mission">Progetti, informazioni e diritti, ma soprattutto
+    <p class="home-lead home-mission">Appunti, informazioni e diritti, ma soprattutto
       doveri dello stare a casa.</p>
     <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
   </header>
@@ -206,7 +206,7 @@
   <button data-tab="shopping" data-section="cucina">🛒 Spesa</button>
   <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
   <button data-tab="igiene" data-section="igiene">🧽 Pulizie</button>
-  <button data-tab="progetti" data-section="progetti">📋 Progetti</button>
+  <button data-tab="progetti" data-section="progetti">📋 Appunti</button>
   <button data-tab="calendario" data-section="progetti">📆 Calendario</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
@@ -292,6 +292,18 @@
         <select id="pf-meals"></select>
         <p class="hint">Quanti pasti vuoi pianificare ogni giorno: il piano mostra
           una casella per ciascuno.</p>
+      </div>
+      <div class="field">
+        <label>Bucati al giorno</label>
+        <select id="pf-bucati"></select>
+        <p class="hint">Quanti bucati fa la casa in un giorno: da qui si ricava
+          ogni quanto rimettere in moto la lavatrice nella scheda Pulizie.</p>
+      </div>
+      <div class="field">
+        <label>Argomenti delle notizie</label>
+        <div id="pf-news-topics" class="chips"></div>
+        <p class="hint">Scegli cosa vuoi leggere: le notizie in home e nella TV
+          mostrano solo gli argomenti selezionati. Nessuno = tutti.</p>
       </div>
       <div class="field">
         <label>Allergie e intolleranze dichiarate</label>
@@ -392,10 +404,10 @@
     </div>
   </section>
 
-  <!-- PROGETTI — lavori in corso e idee, tenuti separati dalla cucina. -->
+  <!-- APPUNTI — lavori in corso e idee, tenuti separati dalla cucina. -->
   <section id="tab-progetti" class="tab">
     <div class="toolbar">
-      <button id="pr-new" class="primary">+ Nuovo progetto</button>
+      <button id="pr-new" class="primary">+ Nuovo appunto</button>
       <span class="spacer"></span>
       <label class="check-inline"><input type="checkbox" id="pr-show-done"> Mostra conclusi</label>
     </div>
@@ -403,7 +415,7 @@
   </section>
 
   <!-- CALENDARIO — gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei
-       Progetti perche' e' una cosa da fare, come i progetti e il magazzino, ma
+       Appunti perche' e' una cosa da fare, come i progetti e il magazzino, ma
        in una scheda a parte: un progetto ha un periodo, un impegno ha un giorno
        preciso. In cima gli avvisi (promemoria scattati e cose in ritardo), sotto
        la griglia del mese e l'elenco del giorno scelto. -->
@@ -424,7 +436,7 @@
   </section>
 
   <!-- MAGAZZINO — quello che si tiene in casa e non si mangia: sapone,
-       ferramenta, batterie. Sta nei Progetti perche' non centra con la cucina:
+       ferramenta, batterie. Sta negli Appunti perche' non centra con la cucina:
        non entra in nessuna ricetta e non si scala dal fabbisogno della spesa. -->
   <section id="tab-magazzino" class="tab">
     <div class="toolbar">

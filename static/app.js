@@ -141,7 +141,7 @@ const SEZIONI = {
   // tengono la loro, che le distingue meglio di un simbolo unico.
   cucina:   { titolo: 'Cucina',   icona: '/static/icons/icona.svg', prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
-  progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
+  progetti: { titolo: '\u{1F4CB} Appunti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
   tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
   gym:      { titolo: '\u{1F3CB}\u{FE0F} GYM', prima: 'gym' },
@@ -184,7 +184,7 @@ function tornaAlleSezioni() {
   document.title = 'Il Maggiordomo';
   window.scrollTo(0, 0);
   // il calendario in home si aggiorna tornando qui: un impegno aggiunto nei
-  // Progetti deve comparire senza ricaricare la pagina. Le notizie hanno il
+  // Appunti deve comparire senza ricaricare la pagina. Le notizie hanno il
   // loro giro (una volta al giorno), quindi si ridisegnano anche loro: se sono
   // cambiate, si vedono subito.
   renderHomeCalendario();
@@ -1380,24 +1380,29 @@ function renderOggi() {
   const p = chDati.piano;
   const fatto = p.fatto_oggi;
   const totale = p.da_fare + fatto;
+  const pct = totale ? Math.round((fatto / totale) * 100) : 100;
+  const restano = p.da_fare === 0;
 
   const testa = `
-    <div class="ch-hero">
-      <div>
+    <div class="ch-hero${restano ? ' ch-hero-fatto' : ''}">
+      <div class="ch-hero-main">
         <div class="ch-hero-day">${esc(p.giorno)} ${esc(p.data)}</div>
         <div class="ch-hero-num">
-          ${p.da_fare === 0
+          ${restano
             ? '<strong>Fatto tutto</strong><span>per oggi non resta niente</span>'
             : `<strong>${p.da_fare}</strong><span>${p.da_fare === 1 ? 'attività da fare' : 'attività da fare'}</span>`}
         </div>
+        <div class="ch-hero-meta">
+          ${restano ? '' : `<span class="ch-hero-min">${durata(p.minuti_previsti)}</span>
+          <span class="ch-hero-min-lab">tempo stimato</span>`}
+          ${p.giorno_pulizie ? '<span class="ch-pill">Oggi è il giorno delle pulizie</span>' : ''}
+        </div>
       </div>
-      <div class="ch-hero-time">
-        ${p.da_fare === 0 ? '' : `<span class="ch-hero-min">${durata(p.minuti_previsti)}</span>
-        <span class="ch-hero-min-lab">tempo stimato</span>`}
-        ${fatto ? `<span class="ch-hero-done">${fatto}/${totale} già fatte</span>` : ''}
+      <div class="ch-ring" style="--pct:${pct}" role="img"
+        aria-label="${fatto} di ${totale} attività fatte oggi">
+        <span class="ch-ring-num">${fatto}<small>/${totale}</small></span>
       </div>
-    </div>
-    ${p.giorno_pulizie ? '<p class="ch-pill">Oggi è il giorno delle pulizie</p>' : ''}`;
+    </div>`;
 
   const blocco = (nome, elenco) => {
     if (!elenco.length) return '';
@@ -1443,6 +1448,10 @@ function renderOggi() {
    per le settimanali: la riga ha gia' cinque colonne fisse, quindi il giorno
    entra nella colonna dello stato invece di aggiungerne una sesta, che sul
    telefono non entrerebbe. */
+function areaChiave(area) {
+  return String(area || '').toLowerCase().replace(/[^a-z]+/g, '-');
+}
+
 function choreRiga(v, timer = true, giorno = false) {
   const quando = giorno && v.giorno_settimanale_nome
     ? (v.giorno_settimanale_oggi ? 'oggi' : `tocca ${v.giorno_settimanale_nome}`)
@@ -1453,7 +1462,7 @@ function choreRiga(v, timer = true, giorno = false) {
         ${v.fatto_oggi ? '✓' : '○'}
       </button>
       <span class="ch-name">${esc(v.name)}</span>
-      <span class="ch-area">${esc(v.area)}</span>
+      <span class="ch-area" data-area="${esc(areaChiave(v.area))}">${esc(v.area)}</span>
       <span class="ch-when${giorno ? ' ch-giorno' : ''}">${esc(quando)}</span>
       <span class="ch-min">${durata(v.minutes)}</span>
       ${timer && !v.fatto_oggi
@@ -1743,10 +1752,10 @@ async function renderProgetti() {
   if (!progetti.length) {
     $('#pr-list').innerHTML = `<div class="empty-state">
         <span class="empty-emoji">📋</span>
-        <h2>${tutti.length ? 'Nessun progetto aperto' : 'Nessun progetto'}</h2>
+        <h2>${tutti.length ? 'Nessun appunto aperto' : 'Nessun appunto'}</h2>
         <p>${tutti.length
-          ? 'Tutti i progetti sono conclusi. Spunta "Mostra conclusi" per rivederli.'
-          : 'Aggiungi il primo progetto con data di inizio, fine e priorità.'}</p>
+          ? 'Tutti gli appunti sono conclusi. Spunta "Mostra conclusi" per rivederli.'
+          : 'Aggiungi il primo appunto con data di inizio, fine e priorità.'}</p>
       </div>`;
     return;
   }
@@ -1781,20 +1790,20 @@ $('#pr-list').addEventListener('click', async (e) => {
 
   if (btn.dataset.act === 'done') {
     await api(`/api/projects/${id}`, { method: 'PUT', body: { done: !p.done } });
-    toast(p.done ? 'Progetto riaperto' : 'Progetto concluso');
+    toast(p.done ? 'Appunto riaperto' : 'Appunto concluso');
     renderProgetti();
   } else if (btn.dataset.act === 'edit') {
     apriProgettoForm(p);
   } else if (btn.dataset.act === 'del') {
     if (!confirm(`Eliminare "${p.title}"?`)) return;
     await api(`/api/projects/${id}`, { method: 'DELETE' });
-    toast('Progetto eliminato');
+    toast('Appunto eliminato');
     renderProgetti();
   }
 });
 
 function apriProgettoForm(p) {
-  showModal(p ? 'Modifica progetto' : 'Nuovo progetto', `
+  showModal(p ? 'Modifica appunto' : 'Nuovo appunto', `
     <div class="field"><label>Titolo</label>
       <input id="prf-title" value="${esc(p ? p.title : '')}" placeholder="Es. Sistemare il garage"></div>
     <div class="field"><label>Descrizione</label>
@@ -1827,7 +1836,7 @@ function apriProgettoForm(p) {
       if (p) await api(`/api/projects/${p.id}`, { method: 'PUT', body: corpo });
       else await api('/api/projects', { method: 'POST', body: corpo });
       hideModal();
-      toast(p ? 'Progetto salvato' : 'Progetto aggiunto');
+      toast(p ? 'Appunto salvato' : 'Appunto aggiunto');
       renderProgetti();
     } catch (err) { toast(err.message); }
   });
@@ -1837,7 +1846,7 @@ $('#pr-new').addEventListener('click', () => apriProgettoForm(null));
 $('#pr-show-done').addEventListener('change', renderProgetti);
 
 /* ---------- CALENDARIO ----------
-   Gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei Progetti, in una
+   Gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei Appunti, in una
    scheda a parte: un progetto ha un periodo, un impegno ha un giorno preciso.
    In cima gli avvisi (promemoria scattati e cose in ritardo), sotto la griglia
    del mese e l'elenco del giorno scelto. La griglia arriva dal server: e' li'
@@ -1849,7 +1858,7 @@ let calGiorno = null;       // il giorno scelto nella griglia (ISO)
 let calVista = null;        // il mese mostrato (YYYY-MM)
 // La griglia in home ha vita propria: mostra il mese che si sfoglia li', senza
 // toccare `calVista` della scheda Calendario (altrimenti sfogliare in home
-// sposterebbe anche il calendario dei Progetti).
+// sposterebbe anche il calendario dei Appunti).
 let homeCalVista = null;
 
 async function renderCalendario() {
@@ -2068,7 +2077,7 @@ $('#cal-new').addEventListener('click', () => apriImpegnoForm(null));
 
 /* ---------- MAGAZZINO ----------
    Quello che si tiene in casa e non si mangia: sapone, ferramenta, batterie.
-   Vive nei Progetti perche' non centra con la cucina: non entra in nessuna
+   Vive nei Appunti perche' non centra con la cucina: non entra in nessuna
    ricetta e non si scala dal fabbisogno della spesa come fa la dispensa. */
 let magazzinoDati = [];
 let magazzinoMeta = { categories: [], places: [], default_category: 'Altro', default_place: 'Ripostiglio' };
@@ -2547,6 +2556,17 @@ async function renderProfile() {
   pasti.innerHTML = [1, 2, 3, 4, 5]
     .map((n) => `<option value="${n}">${esc(etichettaPasti(n))}</option>`).join('');
   pasti.value = String(profile.meals_per_day || 2);
+  // bucati al giorno: "non dico" piu' le opzioni. La prima e' l'assenza di
+  // dichiarazione, e in quel caso la lavatrice resta a un giorno e mezzo.
+  const bucati = $('#pf-bucati');
+  const opzioniBucati = meta.bucati_opzioni || [1, 2, 3, 4, 5];
+  bucati.innerHTML = '<option value="0">Non dico</option>' + opzioniBucati
+    .map((n) => `<option value="${n}">${n}${n === 1 ? ' bucato' : ' bucati'}</option>`).join('');
+  bucati.value = String(profile.bucati_giorno || 0);
+  // argomenti delle notizie: si salvano subito, come le altre scelte del profilo
+  const scelti = new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean));
+  $('#pf-news-topics').innerHTML = (meta.news_topics || [])
+    .map((t) => `<button class="chip ${scelti.has(t.key) ? 'on' : ''}" data-news="${t.key}">${esc(t.label)}</button>`).join('');
   $('#pf-allergens').innerHTML = known.map((a) => {
     const on = declaredKeys.has(a.key.toLowerCase()) || declaredKeys.has(a.label.toLowerCase());
     return `<button class="chip ${on ? 'on' : ''}" data-allergen="${a.key}">${esc(a.label)}</button>`;
@@ -2615,6 +2635,30 @@ $('#pf-meals').addEventListener('change', async () => {
     toast(err.message);
     await renderProfile();
   }
+});
+
+// i bucati cambiano la cadenza della lavatrice: si salva subito, e la scheda
+// Pulizie legge il nuovo valore al prossimo disegno
+$('#pf-bucati').addEventListener('change', async () => {
+  const n = Number($('#pf-bucati').value);
+  try {
+    profile = await api('/api/profile', { method: 'PUT', body: { bucati_giorno: n } });
+    if (chMeta) chMeta = null;  // la prossima apertura della scheda rilegge la cadenza
+    toast(n ? `Lavatrice: ogni ${n === 1 ? 'giorno' : `${(1 / n).toFixed(1).replace('.0', '')} giorni`}`
+            : 'Lavatrice: cadenza predefinita');
+  } catch (err) { toast(err.message); await renderProfile(); }
+});
+
+// gli argomenti delle notizie: un tocco li aggiunge o li toglie, e si salvano
+// subito. Nessuno selezionato vuol dire "tutti".
+$('#pf-news-topics').addEventListener('click', async (e) => {
+  const k = e.target.dataset.news;
+  if (!k) return;
+  const cur = new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean));
+  if (cur.has(k)) cur.delete(k); else cur.add(k);
+  profile = await api('/api/profile', { method: 'PUT', body: { news_topics: [...cur] } });
+  await renderProfile();
+  toast('Argomenti delle notizie aggiornati');
 });
 
 $('#pf-custom').addEventListener('click', async (e) => {
@@ -2725,7 +2769,7 @@ async function saveFavorites(ids) {
 async function openFavoritesStep(onBack, preferite) {
   preferite = preferite || new Set(profile.favorite_ids || []);
   showModal('Quali ricette ti piacciono?', `
-    <p class="lead">${onBack ? 'Passo 3 di 3 · ' : ''}l'app parte con un
+    <p class="lead">${onBack ? 'Passo 5 di 5 · ' : ''}l'app parte con un
     <strong>ricettario italiano già pronto</strong><span id="ob-count"></span>: non devi
     inserire le ricette tu. Qui scegli quelle che ami: le ritrovi con il filtro
     <strong>Solo preferite</strong> nella scheda Ricette. Puoi cambiare la scelta quando
@@ -2779,10 +2823,11 @@ async function openFavoritesStep(onBack, preferite) {
   });
 }
 
-/* Onboarding in tre passi: prima quanti pasti al giorno, poi allergie e
-   intolleranze, infine le ricette preferite. Ogni passo salva il suo pezzo
-   appena si va avanti, quindi chi chiude a meta' ritrova quanto dichiarato
-   invece di ricominciare. */
+/* Onboarding in cinque passi: prima quanti pasti al giorno, poi allergie e
+   intolleranze, poi quanti bucati al giorno, poi gli argomenti delle notizie,
+   infine le ricette preferite. Ogni passo salva il suo pezzo appena si va
+   avanti, quindi chi chiude a meta' ritrova quanto dichiarato invece di
+   ricominciare. */
 async function openOnboarding() {
   const known = meta.allergens;
   // Bozza condivisa fra i passi. "Salta" porta al passo successivo senza salvare,
@@ -2791,6 +2836,8 @@ async function openOnboarding() {
   const bozza = {
     nome: profile.full_name || '',
     pasti: profile.meals_per_day || 2,
+    bucati: profile.bucati_giorno || 0,
+    notizie: new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean)),
     selected: known.filter((a) => (profile.restriction_list || []).some((t) =>
       t.toLowerCase() === a.key.toLowerCase() || t.toLowerCase() === a.label.toLowerCase())).map((a) => a.key),
     custom: (profile.restriction_list || []).filter((t) => !known.some((a) =>
@@ -2802,7 +2849,7 @@ async function openOnboarding() {
   const passoPasti = () => {
     const opzioni = [1, 2, 3, 4, 5];
     showModal('Quanti pasti al giorno?', `
-      <p class="lead">Passo 1 di 3 · scegli quanti pasti vuoi pianificare ogni giorno.
+      <p class="lead">Passo 1 di 5 · scegli quanti pasti vuoi pianificare ogni giorno.
       Il piano mostra una casella per ciascuno: puoi cambiare quando vuoi dalla scheda
       <strong>Profilo</strong>.</p>
       <div id="ob-meals" class="meal-choice">
@@ -2834,7 +2881,7 @@ async function openOnboarding() {
 
   const passoAllergie = () => {
     showModal('Benvenuto su Il Maggiordomo', `
-      <p class="lead">Passo 2 di 3 · dichiara allergie e intolleranze: le ricette che le
+      <p class="lead">Passo 2 di 5 · dichiara allergie e intolleranze: le ricette che le
       contengono verranno segnalate. Puoi modificare tutto in seguito dalla scheda
       <strong>Profilo</strong>.</p>
       <div class="field"><label>Nome (facoltativo)</label><input id="ob-name" placeholder="Come ti chiami?" value="${esc(bozza.nome)}"></div>
@@ -2900,15 +2947,119 @@ async function openOnboarding() {
     $('#ob-back').addEventListener('click', passoPasti);
     $('#ob-skip').addEventListener('click', () => {
       bozza.nome = $('#ob-name').value.trim();
-      openFavoritesStep(passoAllergie, preferite);
+      passoBucati();
     });
     $('#ob-next').addEventListener('click', async () => {
       await salvaRestrizioni();
-      openFavoritesStep(passoAllergie, preferite);
+      passoBucati();
     });
   };
 
+  // Passo 3: quanti bucati al giorno. Da qui si ricava ogni quanto rimettere in
+  // moto la lavatrice: una casa che fa due bucati al giorno non deve aspettare
+  // un giorno e mezzo, e una che ne fa uno ogni tanto non deve vederla ogni sera.
+  const passoBucati = () => {
+    const opzioni = meta.bucati_opzioni || [1, 2, 3, 4, 5];
+    showModal('Quanti bucati al giorno?', `
+      <p class="lead">Passo 3 di 5 · quante lavatrici fa la casa in un giorno.
+      Da qui l'app ricava ogni quanto rimettere in moto la lavatrice nella scheda
+      <strong>Pulizie</strong>. Puoi cambiarlo quando vuoi dal <strong>Profilo</strong>.</p>
+      <div id="ob-bucati" class="meal-choice">
+        ${[0, ...opzioni].map((n) => `
+          <button class="meal-opt ${bozza.bucati === n ? 'on' : ''}" data-bucati="${n}">
+            <span class="meal-num">${n === 0 ? '—' : n}</span>
+            <span class="meal-names">${n === 0 ? 'Non dico' : (n === 1 ? 'bucato al giorno' : 'bucati al giorno')}</span>
+          </button>`).join('')}
+      </div>
+      <div class="modal-foot">
+        <button id="ob-back">Indietro</button>
+        <span class="spacer"></span>
+        <button id="ob-skip">Salta</button>
+        <button class="primary" id="ob-bucati-next">Avanti</button>
+      </div>
+    `);
+    $('#ob-bucati').addEventListener('click', (e) => {
+      const b = e.target.closest('.meal-opt');
+      if (!b) return;
+      bozza.bucati = Number(b.dataset.bucati);
+      $$('#ob-bucati .meal-opt').forEach((x) => x.classList.toggle('on', x === b));
+    });
+    $('#ob-back').addEventListener('click', passoAllergie);
+    const avanti = async () => {
+      try {
+        profile = await api('/api/profile', { method: 'PUT', body: { bucati_giorno: bozza.bucati } });
+      } catch (err) { toast(err.message); }
+      passoNotizie();
+    };
+    $('#ob-skip').addEventListener('click', passoNotizie);
+    $('#ob-bucati-next').addEventListener('click', avanti);
+  };
+
+  // Passo 4: gli argomenti delle notizie. Nessuno selezionato vuol dire "tutti":
+  // non si vuole una sezione notizie vuota per chi non ha ancora scelto.
+  const passoNotizie = () => {
+    showModal('Cosa ti interessa leggere?', `
+      <p class="lead">Passo 4 di 5 · scegli gli argomenti delle notizie. Le notizie in
+      home e nella scheda TV mostreranno solo questi. Nessuno selezionato vuol dire
+      <strong>tutti</strong>.</p>
+      <div id="ob-news" class="chips">
+        ${(meta.news_topics || []).map((t) => `
+          <button class="chip ${bozza.notizie.has(t.key) ? 'on' : ''}" data-news="${t.key}">${esc(t.label)}</button>`).join('')}
+      </div>
+      <div class="modal-foot">
+        <button id="ob-back">Indietro</button>
+        <span class="spacer"></span>
+        <button id="ob-skip">Salta</button>
+        <button class="primary" id="ob-news-next">Avanti</button>
+      </div>
+    `);
+    $('#ob-news').addEventListener('click', (e) => {
+      const k = e.target.dataset.news;
+      if (!k) return;
+      if (bozza.notizie.has(k)) bozza.notizie.delete(k); else bozza.notizie.add(k);
+      e.target.classList.toggle('on', bozza.notizie.has(k));
+    });
+    $('#ob-back').addEventListener('click', passoBucati);
+    const avanti = async () => {
+      try {
+        profile = await api('/api/profile', { method: 'PUT', body: { news_topics: [...bozza.notizie] } });
+      } catch (err) { toast(err.message); }
+      openFavoritesStep(passoNotizie, preferite);
+    };
+    $('#ob-skip').addEventListener('click', () => openFavoritesStep(passoNotizie, preferite));
+    $('#ob-news-next').addEventListener('click', avanti);
+  };
+
   passoPasti();
+}
+
+/* Il menù di benvenuto: subito dopo aver creato una casa, un riepilogo di cosa
+   sa fare l'app. E' **saltabile** — chi vuole iniziare a usarla non deve leggere
+   tutto — e si mostra una volta sola, subito dopo la creazione, quando l'utente
+   non sa ancora cosa cercare e le sezioni da sole non lo dicono. */
+function mostraBenvenuto() {
+  const punti = [
+    { ico: '🍽', titolo: 'Cucina', testo: 'Piano dei pasti, ricette già pronte e una lista della spesa che si calcola da sola.' },
+    { ico: '🧽', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
+    { ico: '📋', titolo: 'Appunti', testo: 'Lavori in corso, calendario degli impegni e magazzino di quello che si tiene in casa.' },
+    { ico: '📌', titolo: 'FAQ', testo: 'Wi-Fi, contatti, codici: le informazioni utili sempre a portata di mano.' },
+    { ico: '📺', titolo: 'TV e GYM', testo: 'Playlist video e allenamento, con le notizie filtrate sui tuoi interessi.' },
+    { ico: '🎤', titolo: 'A voce', testo: 'Parla e il maggiordomo scrive, aggiunge, cerca: senza aprire il telefono.' },
+  ];
+  showModal('Benvenuto nel tuo Maggiordomo', `
+    <p class="lead">La casa è pronta. Ecco cosa puoi fare — lo ritrovi tutto
+    dalla <strong>home</strong>.</p>
+    <ul class="welcome-list">
+      ${punti.map((p) => `<li><span class="welcome-ico" aria-hidden="true">${p.ico}</span>
+        <span><strong>${p.titolo}</strong> — ${p.testo}</span></li>`).join('')}
+    </ul>
+    <div class="modal-foot">
+      <button id="wb-skip">Salta</button>
+      <button class="primary" id="wb-inizia">Inizia a usarla</button>
+    </div>
+  `);
+  $('#wb-skip').addEventListener('click', hideModal);
+  $('#wb-inizia').addEventListener('click', hideModal);
 }
 
 /* ---------- modale ---------- */
@@ -3472,6 +3623,9 @@ let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
 // distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
 // l'utente si aspetta di trovarlo acceso.
 let appenaEntrato = false;
+// Una casa appena creata: `init()` apre il menù di benvenuto al posto delle
+// domande del profilo, che sono gia' state chieste durante la creazione.
+let casaAppenaCreata = false;
 const SVEGLIA_RIPRESA_MS = 250;   // pausa minima dopo la voce, prima di riascoltare
 // Intertempo fra un giro di ascolto e il successivo: quanto basta a lasciar
 // chiudere il microfono del giro prima, non un'attesa di comodo. Ogni
@@ -3585,7 +3739,7 @@ async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
       if (typeof nuovaRicetta === 'function') nuovaRicetta(res.name || '', res.items || []);
     } else {
       // un comando puo' toccare una scheda di un'altra area (dettare una spesa
-      // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la
+      // mentre si e' nei Appunti): si apre prima l'area giusta, altrimenti la
       // scheda si attiverebbe sotto un'intestazione che non le appartiene
       for (const tab of res.reload || []) {
         const btn = $(`#tabs button[data-tab="${tab}"]`);
@@ -4824,6 +4978,9 @@ async function creaCasa(evento) {
         playlist: $('#new-playlist').value.trim(),
       },
     });
+    // La casa e' nuova: il menù di benvenuto la accoglie. `init()` lo apre da
+    // solo (vedi il flag), perche' e' li' che la home e' pronta.
+    casaAppenaCreata = true;
     await avviaApp();
   } catch (e) {
     mostraErrore('#new-errore', e.message || 'Non è stato possibile creare la casa');
@@ -4897,8 +5054,15 @@ async function init() {
   mostraTimer();
   // La prima schermata resta la home: le domande iniziali (pasti, allergie,
   // preferite) riguardano la cucina, quindi si aprono entrando in Cucina e non
-  // addosso a chi sta andando in Igiene o Progetti.
-  mostraInvitoProfilo();
+  // addosso a chi sta andando in Igiene o Appunti.
+  if (casaAppenaCreata) {
+    // casa appena creata: invece delle domande del profilo (gia' chieste durante
+    // la creazione) si accoglie con il menù che dice cosa sa fare l'app
+    casaAppenaCreata = false;
+    mostraBenvenuto();
+  } else {
+    mostraInvitoProfilo();
+  }
   // il riepilogo si riempie da solo: se una delle fonti non risponde, le altre
   // si mostrano lo stesso (vedi renderHomeOggi)
   renderHomeOggi();
@@ -4994,7 +5158,7 @@ async function renderHomeOggi() {
 /* Il calendario degli impegni in fondo alla home: la stessa griglia del mese
    della scheda Calendario, ma in sola lettura. Il mese si sfoglia qui (vive in
    `homeCalVista`, indipendente da `calVista`), i giorni occupati hanno il loro
-   puntino, e cliccando un giorno si apre il Calendario nei Progetti — dove si
+   puntino, e cliccando un giorno si apre il Calendario nei Appunti — dove si
    aggiunge, si modifica e si segna come fatto. Se il server non risponde il
    riquadro resta nascosto: un calendario vuoto in home e' peggio di nessuno. */
 async function renderHomeCalendario() {
@@ -5050,7 +5214,7 @@ $('#home-cal-next').addEventListener('click', () => {
 $('#home-cal-grid').addEventListener('click', (e) => {
   const cella = e.target.closest('.cal-cella');
   if (!cella) return;
-  // il Calendario nei Progetti si apre sullo stesso mese e sullo stesso giorno
+  // il Calendario nei Appunti si apre sullo stesso mese e sullo stesso giorno
   calVista = homeCalVista;
   calGiorno = cella.dataset.giorno;
   apriSezione('progetti');
