@@ -62,6 +62,13 @@ if os.environ.get("DIETRO_PROXY") in ("1", "si", "sì", "true"):
 # toccate: là la memoria serve, e il tempo lo decidono le rotte che le servono.
 @app.after_request
 def _non_tenere_in_memoria(risposta):
+    # Un asset chiesto con `?v=...` è **quello di una versione precisa**: il
+    # numero cambia quando il file cambia, quindi tenerlo in memoria a lungo è
+    # sicuro e non fa mai vedere una versione vecchia. È il caso di `app.js` e
+    # `style.css`, che senza questo si riscaricano a ogni apertura.
+    if request.path.startswith("/static/") and request.args.get("v"):
+        risposta.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return risposta
     if "Cache-Control" not in risposta.headers:
         risposta.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         risposta.headers["Pragma"] = "no-cache"
@@ -263,6 +270,13 @@ def migrate(db):
     # il giorno fisso delle pulizie: sabato, come suggerisce l'articolo
     if have and "chore_day" not in have:
         db.execute("ALTER TABLE profile ADD COLUMN chore_day INTEGER NOT NULL DEFAULT 5")
+    # quanti bucati al giorno: 0 = non dichiarato, e la lavatrice resta a un
+    # giorno e mezzo (vedi `igiene.cadenza_lavatrice`)
+    if have and "bucati_giorno" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN bucati_giorno INTEGER NOT NULL DEFAULT 0")
+    # gli argomenti delle notizie: vuoto = tutte le sezioni ANSA
+    if have and "news_topics" not in have:
+        db.execute("ALTER TABLE profile ADD COLUMN news_topics TEXT NOT NULL DEFAULT ''")
 
     # Il catalogo delle pulizie si semina qui, non in seed.py: la sezione Igiene
     # deve funzionare anche su un database creato prima che esistesse, senza
@@ -288,6 +302,12 @@ def migrate(db):
     if have and "generated" not in have:
         db.execute("ALTER TABLE shopping_items ADD COLUMN generated INTEGER NOT NULL DEFAULT 0")
         db.execute("UPDATE shopping_items SET generated = 1")
+
+    # La scadenza in dispensa: i database nati prima non hanno la colonna, e
+    # `CREATE TABLE IF NOT EXISTS` non la aggiunge a una tabella che esiste gia'.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(pantry)")}
+    if have and "expires_at" not in have:
+        db.execute("ALTER TABLE pantry ADD COLUMN expires_at TEXT")
 
     # `llm_prefs` e' una tabella **nuova**: `CREATE TABLE IF NOT EXISTS` la crea
     # gia' su ogni database, vecchio o nuovo. Nessun `ALTER` qui, ma chi domani
@@ -320,21 +340,14 @@ def _semina_pulizie(db):
     # si spostano sulla sostituta prima di cancellarla: sono lavoro fatto davvero,
     # e il `CASCADE` li porterebbe via senza dire niente.
     for nome, sostituta in igiene.RIMOSSE.items():
-        db.execute(
-            """UPDATE chore_log SET chore_id = (
-                   SELECT id FROM chores WHERE name = ?)
-               WHERE chore_id IN (SELECT id FROM chores WHERE name = ?)""",
-            (sostituta, nome),
-        )
+        if sostituta:
+            db.execute(
+                """UPDATE chore_log SET chore_id = (
+                       SELECT id FROM chores WHERE name = ?)
+                   WHERE chore_id IN (SELECT id FROM chores WHERE name = ?)""",
+                (sostituta, nome),
+            )
         db.execute("DELETE FROM chores WHERE name = ?", (nome,))
-    # I minuti delle voci del catalogo si riallineano **solo dal valore vecchio**:
-    # un `UPDATE` incondizionato cancellerebbe la stima che l'utente ha corretto
-    # a mano, e lo farebbe a ogni richiesta.
-    for nome, (vecchio, nuovo) in igiene.MINUTI_CAMBIATI.items():
-        db.execute(
-            "UPDATE chores SET minutes = ? WHERE name = ? AND minutes = ?",
-            (nuovo, nome, vecchio),
-        )
 
 
 def _rimuovi_ricette_tolte(db):
@@ -414,7 +427,7 @@ def one(cur):
 # file statici e l'accesso. Tutto il resto richiede una sessione. La difesa sta
 # qui, in un punto solo, invece che su ogni rotta: dimenticarsene una
 # significherebbe esporre i dati di una casa, e sono cinquanta.
-ROTTE_PUBBLICHE = {"/", "/api/houses", "/api/login", "/api/logout", "/api/session"}
+ROTTE_PUBBLICHE = {"/", "/sw.js", "/api/houses", "/api/login", "/api/logout", "/api/session"}
 
 
 @app.before_request
@@ -552,6 +565,80 @@ def api_tv():
     return jsonify({
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+    })
+
+
+@app.route("/api/notizie")
+def api_notizie():
+    """Le notizie del giorno, per il riquadro in home.
+
+    Solo notizie: la home non ha bisogno dei video della TV, e chiedere
+    `/api/tv` tirerebbe giu' anche i loro embed per niente.
+
+    Stessa regola della sezione TV: si risponde **subito** con la copia in cache
+    e si riprova dopo, in un filo, cosi' un feed lento non blocca la home. Se la
+    copia e' vuota e non c'e' rete, la risposta e' comunque 200 con un elenco
+    vuoto: e' un riquadro da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_notizie_in_sottofondo(db)
+    _, quando = tv._leggi(db, "notizie")
+    return jsonify({"notizie": tv.notizie(db), "aggiornato": _iso(quando)})
+
+
+@app.route("/api/gym")
+def api_gym():
+    """La sezione GYM: i video della playlist di esercizi.
+
+    Stessa regola della TV: si serve **subito** la copia in cache e si riprova
+    dopo, in un filo, cosi' un feed lento non blocca la sezione. Se la copia e'
+    vuota e non c'e' rete, la risposta e' comunque 200 con un elenco vuoto: e'
+    una sezione da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_tv_in_sottofondo(db)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
+        "playlist": tv.gym_playlist_id(db),
+        "aggiornato": _iso(quando["gym"]),
+    })
+
+
+@app.route("/api/tv/playlist", methods=["PUT"])
+def api_tv_playlist():
+    """Cambia la playlist della casa e riscarica i video.
+
+    La scelta e' della **casa**, non del dispositivo: chi amministra decide cosa
+    si guarda in TV, e le altre case restano con la loro. L'id si valida prima di
+    salvarlo (una playlist storta sarebbe una sezione vuota senza spiegazione) e
+    la copia vecchia si azzera, perche' i video di prima sono di un'altra
+    playlist: tenerli mostrerebbe la scelta vecchia fino al prossimo giro.
+
+    Il riscaricamento aspetta la rete, come il pulsante «Aggiorna»: e' l'utente
+    che l'ha chiesto e si aspetta di vedere il risultato subito. Se la rete non
+    risponde la playlist resta salvata e i video si riproveranno dopo.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    data = request.get_json(force=True) or {}
+    try:
+        scelto = tv.imposta_playlist(db, data.get("playlist") or "")
+    except ValueError as err:
+        return bad_request(str(err))
+    tv.aggiorna_video(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "playlist": scelto,
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
+        "notizie": tv.notizie(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -575,6 +662,7 @@ def api_tv_aggiorna():
         "aggiornati": esito,
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
     })
 
@@ -584,6 +672,28 @@ def _iso(quando):
     if not quando:
         return None
     return datetime.datetime.fromtimestamp(quando).isoformat(timespec="minutes")
+
+
+@app.route("/api/gym/aggiorna", methods=["POST"])
+def api_gym_aggiorna():
+    """Riscarica subito i video del GYM, senza aspettare il giro quotidiano.
+
+    Come `/api/tv/aggiorna`: **aspetta** la rete, perche' e' l'utente a
+    chiederlo. Se non c'e' rete risponde lo stesso con quello che aveva, e lo
+    dice (`aggiornati.gym` falso), cosi' un aggiornamento a vuoto non sembra
+    riuscito.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    esito = tv.aggiorna_gym(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "aggiornati": {"gym": esito},
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
+        "playlist": tv.gym_playlist_id(db),
+        "aggiornato": _iso(quando["gym"]),
+    })
 
 
 def _aggiorna_tv_in_sottofondo(db):
@@ -597,7 +707,9 @@ def _aggiorna_tv_in_sottofondo(db):
     """
     _, quando = tv._leggi(db, "notizie")
     _, video_quando = tv._leggi(db, "video")
-    if tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO):
+    _, gym_quando = tv._leggi(db, "gym")
+    if (tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO)
+            and tv._fresco(gym_quando, tv.ORE_VIDEO)):
         return
     percorso = db.execute("PRAGMA database_list").fetchone()[2]
 
@@ -612,6 +724,31 @@ def _aggiorna_tv_in_sottofondo(db):
             app.logger.debug("Aggiornamento TV in sottofondo non riuscito")
 
     threading.Thread(target=scarica, name="tv-aggiornamento", daemon=True).start()
+
+
+def _aggiorna_notizie_in_sottofondo(db):
+    """Riprova a scaricare le notizie senza far aspettare chi apre la home.
+
+    Come `_aggiorna_tv_in_sottofondo`, ma solo per le notizie: la home non ha i
+    video, e chiederli tirerebbe giu' dati che non si mostrano. Il filo apre una
+    connessione sua, perche' quella di Flask vive quanto la richiesta.
+    """
+    _, quando = tv._leggi(db, "notizie")
+    if tv._fresco(quando, tv.ORE_NOTIZIE):
+        return
+    percorso = db.execute("PRAGMA database_list").fetchone()[2]
+
+    def scarica():
+        try:
+            with closing(sqlite3.connect(percorso)) as suo:
+                suo.row_factory = sqlite3.Row
+                tv.aggiorna_notizie(suo, forse=True)
+        except Exception:
+            # un guasto di rete non deve lasciare traccia di errore in un
+            # percorso che l'utente non ha nemmeno chiesto
+            app.logger.debug("Aggiornamento notizie in sottofondo non riuscito")
+
+    threading.Thread(target=scarica, name="notizie-aggiornamento", daemon=True).start()
 
 
 @app.route("/api/houses")
@@ -663,17 +800,33 @@ def api_logout():
 
 @app.route("/api/houses", methods=["POST"])
 def api_house_create():
-    """Crea una casa con il ricettario di partenza e vi collega chi la crea."""
+    """Crea una casa con il ricettario di partenza e vi collega chi la crea.
+
+    La playlist TV e' **facoltativa**: se indicata si valida **prima** di
+    registrare la casa, altrimenti si creerebbe una casa e poi si scoprirebbe
+    che la playlist non va bene, lasciandola a meta'. Se manca, la casa eredita
+    il valore d'ambiente o la predefinita.
+    """
     data = request.get_json(force=True) or {}
+    playlist = (data.get("playlist") or "").strip()
+    if playlist:
+        try:
+            playlist = tv.normalizza_playlist(playlist)
+        except ValueError as err:
+            return bad_request(str(err))
     try:
         slug = houses.crea(data.get("nome"), data.get("password"))
     except ValueError as err:
         return bad_request(str(err))
     init_db(houses.db_path(slug), con_ricettario=True)
+    if playlist:
+        with closing(sqlite3.connect(houses.db_path(slug))) as db:
+            db.row_factory = sqlite3.Row
+            tv.imposta_playlist(db, playlist)
     session.clear()
     session["casa"] = slug
     session.permanent = True
-    return jsonify({"house": slug, "nome": houses.nome_di(slug)}), 201
+    return jsonify({"house": slug, "nome": houses.nome_di(slug), "playlist": playlist}), 201
 
 
 def bad_request(msg, code=400):
@@ -708,6 +861,21 @@ def parse_cost(value):
     except (TypeError, ValueError):
         return None
     return round(costo, 2) if costo >= 0 else None
+
+
+def parse_data(value):
+    """Una data `AAAA-MM-GG`, o None se il campo e' vuoto o non e' una data.
+
+    La scadenza e' facoltativa: vuoto vuol dire "non lo so", e un testo che non
+    e' una data non deve entrare nel database per poi rompere l'ordinamento.
+    """
+    testo = (value or "").strip()
+    if not testo:
+        return None
+    try:
+        return datetime.date.fromisoformat(testo).isoformat()
+    except ValueError:
+        return None
 
 
 def get_or_create_ingredient(db, name, unit="pz", category="Altro"):
@@ -809,7 +977,7 @@ def get_profile(db):
 
 
 PROFILE_FIELDS = {"full_name", "restrictions", "onboarded", "fav_prompted",
-                  "meals_per_day", "chore_day"}
+                  "meals_per_day", "chore_day", "bucati_giorno", "news_topics"}
 
 
 def save_profile(db, data):
@@ -841,6 +1009,22 @@ def save_profile(db, data):
         if not 0 <= giorno <= 6:
             raise ValueError("Giorno delle pulizie non valido (da 0 a 6)")
         values["chore_day"] = giorno
+    if "bucati_giorno" in values:
+        try:
+            bucati = int(values["bucati_giorno"])
+        except (TypeError, ValueError):
+            raise ValueError("Numero di bucati non valido (da 0 a 5)")
+        if not 0 <= bucati <= 5:
+            raise ValueError("Numero di bucati non valido (da 0 a 5)")
+        values["bucati_giorno"] = bucati
+    if "news_topics" in values:
+        # si accettano anche liste dall'API, ma si salva testo separato da virgole:
+        # e' la forma che `tv.argomenti_scelti` legge, e una stringa vuota e'
+        # legittima (vuol dire "tutti gli argomenti")
+        grezzi = values["news_topics"]
+        if isinstance(grezzi, (list, tuple)):
+            grezzi = ", ".join(str(x) for x in grezzi)
+        values["news_topics"] = ", ".join(parse_terms(grezzi))
     if values:
         assignments = ", ".join(f"{k} = ?" for k in values)
         db.execute(
@@ -863,9 +1047,66 @@ def recipe_safety(db, rid, restriction_list):
 
 
 # ---------------------------------------------------------------- index
+def _versione_asset(nome):
+    """Un'impronta breve del file statico, per l'indirizzo `?v=...`.
+
+    Si legge a ogni richiesta della pagina ma si tiene in memoria finché il file
+    non cambia (mtime e dimensione): un `app.js` da 200 KB non si rilegge per
+    intero a ogni apertura, e la versione cambia appena il file cambia.
+    """
+    percorso = os.path.join(BASE_DIR, "static", nome)
+    try:
+        stato = os.stat(percorso)
+    except OSError:
+        return ""
+    chiave = (nome, stato.st_mtime_ns, stato.st_size)
+    with _versione_guardia:
+        if chiave in _versioni:
+            return _versioni[chiave]
+    try:
+        with open(percorso, "rb") as f:
+            impronta = hashlib.sha256(f.read()).hexdigest()[:10]
+    except OSError:
+        return ""
+    with _versione_guardia:
+        _versioni.clear()  # poche voci: una per file, non serve una cache grande
+        _versioni[chiave] = impronta
+    return impronta
+
+
+_versioni = {}
+_versione_guardia = threading.Lock()
+
+# Gli asset della pagina a cui si aggiunge la versione. Non tutte le immagini:
+# quelle dei dati scelgono da sole la loro scadenza e non hanno bisogno di un
+# indirizzo che cambia.
+_ASSET_VERSIONATI = ("style.css", "app.js")
+
+
 @app.route("/")
 def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    percorso = os.path.join(BASE_DIR, "static", "index.html")
+    with open(percorso, "r", encoding="utf-8") as f:
+        html = f.read()
+    for nome in _ASSET_VERSIONATI:
+        versione = _versione_asset(nome)
+        if versione:
+            html = html.replace(f'/static/{nome}"', f'/static/{nome}?v={versione}"')
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Il service worker, servito dalla radice.
+
+    Un service worker controlla solo il percorso da cui e' servito e quelli
+    sotto: servito da `/static/` non potrebbe intercettare la pagina `/`, che e'
+    proprio quella da mostrare senza rete. Quindi si serve da `/sw.js`, anche se
+    il file sta in `static/`.
+    """
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static"), "sw.js",
+        mimetype="text/javascript")
 
 
 @app.route("/api/meta")
@@ -876,7 +1117,9 @@ def meta():
                     "units": ["pz", "g", "kg", "ml", "l", "cucchiaio", "cucchiaino", "confezione", "fetta"],
                     "categories": ["Frutta e Verdura", "Carne e Pesce", "Latticini", "Dispensa",
                                    "Pane e Cereali", "Surgelati", "Bevande", "Dolci", "Altro"],
-                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()]})
+                    "allergens": [{"key": k, "label": v} for k, v in allergens.ALLERGENS.items()],
+                    "news_topics": tv.ARGOMENTI,
+                    "bucati_opzioni": igiene.BUCATI_OPZIONI})
 
 
 # ---------------------------------------------------------------- profilo
@@ -886,9 +1129,16 @@ def profile():
     if request.method == "PUT":
         data = request.get_json(force=True) or {}
         try:
-            return jsonify(save_profile(db, data))
+            profilo = save_profile(db, data)
         except ValueError as err:
             return bad_request(str(err) or "Valore non valido")
+        # Cambiare gli argomenti cambia i feed da leggere: la copia vecchia e' di
+        # altri argomenti, e tenerla mostrerebbe la scelta precedente fino al
+        # giro dopo. Si azzera la cache delle notizie, non quella dei video.
+        if "news_topics" in data:
+            db.execute("DELETE FROM tv_cache WHERE chiave = 'notizie'")
+            db.commit()
+        return jsonify(profilo)
     return jsonify(get_profile(db))
 
 
@@ -934,7 +1184,7 @@ def pantry_suggerimenti():
 def pantry_list():
     db = get_db()
     cur = db.execute(
-        """SELECT p.id, p.quantity, p.unit, p.updated_at,
+        """SELECT p.id, p.quantity, p.unit, p.expires_at, p.updated_at,
                   i.id AS ingredient_id, i.name, i.category
            FROM pantry p JOIN ingredients i ON i.id = p.ingredient_id
            ORDER BY i.name"""
@@ -952,6 +1202,7 @@ def pantry_add():
     unit = units.normalize(data.get("unit"))
     iid = get_or_create_ingredient(db, name, unit, data.get("category") or "Altro")
     qty = parse_float(data.get("quantity"), 0)
+    scade = parse_data(data.get("expires_at"))
     existing = one(db.execute(
         "SELECT * FROM pantry WHERE ingredient_id = ? AND unit = ?", (iid, unit)))
     if not existing:
@@ -959,22 +1210,42 @@ def pantry_add():
         for cand in db.execute("SELECT * FROM pantry WHERE ingredient_id = ?", (iid,)):
             converted = units.convert(qty, unit, cand["unit"])
             if converted is not None:
+                # la scadenza piu' vicina e' quella che conta: aggiungendo altra
+                # roba con una data piu' stretta, e' quella che va guardata prima
+                nuova = _scadenza_piu_vicina(cand["expires_at"], scade)
                 db.execute(
-                    "UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                    (converted, cand["id"]))
+                    "UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                    "updated_at = datetime('now') WHERE id = ?",
+                    (converted, nuova, cand["id"]))
                 db.commit()
                 rebuild_shopping(db)
                 db.commit()
                 return jsonify({"ok": True}), 201
-        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit) VALUES (?, ?, ?)", (iid, qty, unit))
+        db.execute("INSERT INTO pantry (ingredient_id, quantity, unit, expires_at) "
+                   "VALUES (?, ?, ?, ?)", (iid, qty, unit, scade))
     else:
-        db.execute("UPDATE pantry SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
-                   (qty, existing["id"]))
+        nuova = _scadenza_piu_vicina(existing["expires_at"], scade)
+        db.execute("UPDATE pantry SET quantity = quantity + ?, expires_at = ?, "
+                   "updated_at = datetime('now') WHERE id = ?",
+                   (qty, nuova, existing["id"]))
     db.commit()
     # quello che entra in dispensa non serve piu' comprarlo: la lista segue
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True}), 201
+
+
+def _scadenza_piu_vicina(una, altra):
+    """La scadenza piu' vicina fra due date, ignorando le vuote.
+
+    Se una delle due non c'e', vale l'altra: non sapere quando scade qualcosa
+    non cancella quello che si sa di un'altra partita.
+    """
+    if not una:
+        return altra
+    if not altra:
+        return una
+    return min(una, altra)
 
 
 @app.route("/api/pantry/<int:pid>", methods=["PATCH", "DELETE"])
@@ -988,8 +1259,20 @@ def pantry_modify(pid):
         db.commit()
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
-    db.execute("UPDATE pantry SET quantity = ?, updated_at = datetime('now') WHERE id = ?",
-               (parse_float(data.get("quantity"), 0), pid))
+    # ogni campo si tocca solo se c'e' nel corpo: mandare la sola scadenza non
+    # deve azzerare la quantita', e cambiare la quantita' non deve cancellare la
+    # scadenza. Per togliere la scadenza si manda vuota, che e' diverso dal non
+    # mandarla.
+    campi, valori = [], []
+    if "quantity" in data:
+        campi.append("quantity = ?")
+        valori.append(parse_float(data.get("quantity"), 0))
+    if "expires_at" in data:
+        campi.append("expires_at = ?")
+        valori.append(parse_data(data.get("expires_at")))
+    if campi:
+        campi.append("updated_at = datetime('now')")
+        db.execute(f"UPDATE pantry SET {', '.join(campi)} WHERE id = ?", (*valori, pid))
     rebuild_shopping(db)
     db.commit()
     return jsonify({"ok": True})
@@ -1270,6 +1553,16 @@ def shopping():
         db.commit()
         return jsonify({"ok": True}), 201
 
+    return jsonify(_voci_spesa(db))
+
+
+def _voci_spesa(db):
+    """Le voci della lista, con giacenza in dispensa, giorni e deperibilita'.
+
+    Sta in un posto solo perche' la usano la lista normale e la condivisione: se
+    la scheda da mandare a chi compra mostrasse numeri diversi da quelli a
+    schermo, la condivisione sarebbe una seconda verita' invece di una copia.
+    """
     items = rows(db.execute("SELECT * FROM shopping_items ORDER BY checked, category, name"))
 
     # giacenze di tutti gli ingredienti in lista, in una sola query
@@ -1288,7 +1581,7 @@ def shopping():
         item["pantry"] = pantry_available(stock.get(item["ingredient_id"], []), item["unit"])
         item["days"] = _day_breakdown(db, item)
         item["perishable"] = item["category"] in PERISHABLE_CATEGORIES
-    return jsonify(items)
+    return items
 
 
 # categorie che deperiscono: comprarle in anticipo le fa scadere o perdere qualità
@@ -1525,6 +1818,170 @@ def shopping_generate():
     return jsonify({"added": added, "already_listed": marcate})
 
 
+# ------------------------------------------------- condivisione della spesa
+# La lista si compra al supermercato, spesso in due o piu': la scheda serve a
+# mandarla a chi va a fare la spesa. E' una **vista**, non un secondo archivio:
+# si costruisce dalle stesse voci della lista (`_voci_spesa`), quindi non puo'
+# mostrare numeri diversi da quelli a schermo.
+NOMI_MESI = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+             "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+GIORNI_BREVI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+MESI_BREVI = ["gen", "feb", "mar", "apr", "mag", "giu",
+              "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+def _giorno_leggibile(iso):
+    """'2026-10-06' -> 'martedì 6 ottobre' (vuoto se la data non e' valida)."""
+    try:
+        d = datetime.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    return f"{igiene.GIORNI_SETTIMANA[d.weekday()]} {d.day} {NOMI_MESI[d.month]}"
+
+
+def _giorno_breve(iso):
+    """'2026-10-06' -> 'mar 6 ott', per le date in una riga sola."""
+    try:
+        d = datetime.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    return f"{GIORNI_BREVI[d.weekday()]} {d.day} {MESI_BREVI[d.month - 1]}"
+
+
+def _periodo(giorno, dal, al):
+    """Come si chiama l'intervallo della scheda: un giorno solo o piu' giorni.
+
+    Restituisce (titolo, sottotitolo): il titolo e' quello che si legge grande,
+    il sottotitolo dice il perche' («per il pranzo di martedi'»).
+    """
+    if giorno:
+        testo = _giorno_leggibile(giorno)
+        return f"Spesa di {testo}", f"tutto quello che serve {testo}"
+    if dal and al and dal != al:
+        return (f"Spesa dal {_giorno_breve(dal)} al {_giorno_breve(al)}",
+                f"i giorni dal {_giorno_leggibile(dal)} al {_giorno_leggibile(al)}")
+    if dal:
+        testo = _giorno_leggibile(dal)
+        return f"Spesa di {testo}", f"tutto quello che serve {testo}"
+    return "Lista della spesa", "quello che c'e' da comprare adesso"
+
+
+def _voci_per_intervallo(db, giorno, dal, al):
+    """Le voci visibili nell'intervallo, con la quota del giorno se e' uno solo.
+
+    Stessa regola della lista a schermo: una voce entra se serve in uno dei
+    giorni richiesti, o se e' stata aggiunta a mano (non ha giorni, e quindi non
+    si puo' escludere). Le voci spuntate restano fuori: chi compra non deve
+    ricomprare quello che c'e' gia' nel carrello.
+    """
+    inizio = giorno or dal
+    fine = giorno or al or inizio
+    voci = []
+    for i in _voci_spesa(db):
+        if i["checked"]:
+            continue
+        giorni = [d for d in i["days"] if inizio <= d["date"] <= fine]
+        if i["days"] and not giorni:
+            continue
+        voce = {**i, "quota": None}
+        if giorno:
+            quota = next((d for d in i["days"] if d["date"] == giorno), None)
+            if quota:
+                voce["quota"] = quota
+        voci.append(voce)
+    return voci
+
+
+def _raggruppa_per_categoria(voci):
+    """Le voci in gruppi per categoria, nell'ordine in cui compaiono in lista."""
+    gruppi = {}
+    for v in voci:
+        gruppi.setdefault(v["category"], []).append(v)
+    return [{"categoria": c, "voci": l} for c, l in gruppi.items()]
+
+
+def _testo_condivisione(titolo, voci, nota):
+    """La lista in testo semplice, per WhatsApp, SMS o il copia-incolla."""
+    righe = [titolo, ""]
+    for g in _raggruppa_per_categoria(voci):
+        righe.append(g["categoria"].upper())
+        for v in g["voci"]:
+            q = v["quota"] or {"quantity": v["quantity"], "unit": v["unit"]}
+            righe.append(f"  [ ] {v['name']} - {units.format_quantity(q['quantity'])} {q['unit']}")
+        righe.append("")
+    if nota:
+        righe += [nota, ""]
+    righe.append("Preparata da Il Maggiordomo")
+    return "\n".join(righe)
+
+
+def _scheda_spesa(db, giorno, dal, al, nota):
+    """I dati della scheda condivisibile: periodo, voci raggruppate, totali.
+
+    Sta in un modulo suo e non dentro la rotta: cosi' la stessa scheda puo'
+    servire sia la pagina HTML sia il testo, senza due costruzioni che possono
+    divergere.
+    """
+    voci = _voci_per_intervallo(db, giorno, dal, al)
+    titolo, sottotitolo = _periodo(giorno, dal, al)
+    return {
+        "titolo": titolo,
+        "sottotitolo": sottotitolo,
+        "nota": (nota or "").strip(),
+        "gruppi": _raggruppa_per_categoria(voci),
+        "totale_voci": len(voci),
+        "deperibili": sum(1 for v in voci if v["perishable"]),
+        "data": datetime.date.today().isoformat(),
+        "testo": _testo_condivisione(titolo, voci, (nota or "").strip()),
+    }
+
+
+def _periodo_da_richiesta(db):
+    """Legge giorno/intervallo dalla query string. Restituisce (giorno, dal, al).
+
+    `giorno` esclude `dal`/`al`: sono due modi di chiedere la stessa cosa, e
+    mescolarli darebbe una scheda che non si sa da dove viene. Le date si
+    validano qui una volta sola, e un formato storto diventa 400 invece di una
+    scheda vuota che sembra "non c'e' niente da comprare".
+    """
+    giorno = (request.args.get("giorno") or "").strip()
+    dal = (request.args.get("dal") or "").strip()
+    al = (request.args.get("al") or "").strip()
+    for etichetta, valore in (("giorno", giorno), ("dal", dal), ("al", al)):
+        if not valore:
+            continue
+        try:
+            datetime.date.fromisoformat(valore)
+        except ValueError:
+            raise ValueError(f"Data non valida in «{etichetta}»: usa aaaa-mm-gg")
+    if dal and al and al < dal:
+        raise ValueError("La data di fine non puo' precedere quella di inizio")
+    if not giorno and not dal and not al:
+        oggi = _oggi(db)
+        return oggi, None, None
+    if not giorno:
+        # `al` da solo vale come un giorno solo, non si ignora in silenzio
+        return None, (dal or al), (al or dal)
+    return giorno, None, None
+
+
+@app.route("/api/shopping/condividi", methods=["GET"])
+def shopping_condividi():
+    """La spesa di oggi, di un giorno o di un intervallo, pronta da condividere.
+
+    Restituisce un **dato**, non un file: la scheda HTML si compone nel client,
+    che conosce il tema e il carattere. Il testo (`testo`) e' la stessa lista in
+    forma semplice, per copiarla o mandarla dove non arriva un'immagine.
+    """
+    db = get_db()
+    try:
+        giorno, dal, al = _periodo_da_richiesta(db)
+    except ValueError as err:
+        return bad_request(str(err))
+    nota = (request.args.get("nota") or "").strip()[:200]
+    return jsonify(_scheda_spesa(db, giorno, dal, al, nota))
+
+
 # ---------------------------------------------------------------- progetti
 def project_row(r):
     return {**dict(r), "done": bool(r["done"])}
@@ -1714,7 +2171,7 @@ def magazzino_meta():
 
 
 # ------------------------------------------------------------- calendario
-# Gli impegni: appuntamenti, scadenze, ricorrenze. Stanno dentro Progetti come
+# Gli impegni: appuntamenti, scadenze, ricorrenze. Stanno dentro Appunti come
 # il magazzino, ma la logica delle date sta in `calendario.py`, dove si prova
 # senza browser: la griglia del mese, i giorni di distanza e il promemoria sono
 # le parti che sbagliano, e sono tutte funzioni pure.
@@ -2466,9 +2923,12 @@ def voce_config():
     l'elenco delle voci fra cui scegliere. Il client decide in base a questo se
     usare il cloud o ripiegare sulla voce del browser.
 
-    Dice anche se la comprensione col modello e' **disponibile** (chiave
-    configurata) e se questa casa l'ha accesa: le due cose sono diverse, e il
-    pannello le distingue.
+    Dice anche tre cose sulla comprensione col modello, che sono diverse fra
+    loro e il pannello non deve confondere: se la configurazione **c'e'**
+    (`llm_disponibile`), se il modello **risponde adesso** (`llm_pronto`) e —
+    quando non risponde — **cosa manca** (`llm_manca`). L'interruttore si mostra
+    solo se il modello risponde: un endpoint locale c'e' sempre, anche a Ollama
+    spento, e senza `llm_pronto` si accendeva a vuoto.
     """
     db = get_db()
     return jsonify({
@@ -2479,7 +2939,13 @@ def voce_config():
         "voci": voce_cloud.elenco_voci(),
         "predefinita": voce_cloud.VOCE_PREDEFINITA,
         "max_caratteri": voce_cloud.MAX_CARATTERI,
+        # `disponibile` dice che la configurazione c'e'; `pronto` che il modello
+        # risponde **adesso**. Un endpoint locale c'e' sempre (il predefinito),
+        # anche a Ollama spento: senza la seconda, l'interruttore si accendeva a
+        # vuoto e ogni comando finiva in silenzio sulle regole.
         "llm_disponibile": comprensione.configurato(),
+        "llm_pronto": comprensione.raggiungibile(),
+        "llm_manca": comprensione.messaggio_stato(),
         "llm_abilitato": _llm_abilitato(db),
     })
 
@@ -2490,19 +2956,21 @@ def voce_llm():
 
     La chiave non si tocca da qui: entra solo dall'ambiente o da un file, prima
     dell'avvio, come quella di Azure. Questa rotta cambia **solo** se usarla.
-    Senza chiave configurata l'interruttore non ha effetto, e risponde 400
-    dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
+    Si accende solo se il modello **risponde**: una configurazione che c'e' ma
+    non risponde (Ollama spento) e' il caso che faceva credere di aver capito i
+    comandi mentre ogni frase finiva in silenzio sulle regole. Se non risponde si
+    risponde 400 dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
     """
     db = get_db()
     data = request.get_json(force=True) or {}
     abilitato = bool(data.get("abilitato"))
-    if abilitato and not comprensione.configurato():
-        return jsonify({"error": "Nessun modello configurato. Un modello in casa "
-                                 "(Ollama) non richiede chiave: avvialo e assicurati "
-                                 "che LLM_BASE_URL punti a http://127.0.0.1:11434/v1. "
-                                 "Per un servizio in rete registra LLM_API_KEY."}), 400
+    if abilitato and not comprensione.raggiungibile():
+        return jsonify({"error": comprensione.messaggio_stato()
+                                 or "Nessun modello raggiungibile. Avvialo e riprova."}), 400
     imposta_llm(db, abilitato)
     return jsonify({"llm_disponibile": comprensione.configurato(),
+                    "llm_pronto": comprensione.raggiungibile(),
+                    "llm_manca": comprensione.messaggio_stato(),
                     "llm_abilitato": _llm_abilitato(db)})
 
 
@@ -2695,12 +3163,15 @@ def _chore_o_404(db, cid):
 def chores_meta():
     """Le scelte fisse della sezione: frequenze, ambienti, mesi, giorni."""
     db = get_db()
+    profilo = get_profile(db)
     return jsonify({
         "frequencies": igiene.FREQUENZE,
         "areas": igiene.AMBIENTI,
         "days": [{"key": i, "label": g} for i, g in enumerate(igiene.GIORNI_SETTIMANA)],
         "months": igiene.mesi(),
-        "chore_day": get_profile(db).get("chore_day") or 0,
+        "chore_day": profilo.get("chore_day") or 0,
+        "bucati_giorno": profilo.get("bucati_giorno") or 0,
+        "bucati_opzioni": igiene.BUCATI_OPZIONI,
     })
 
 
@@ -2712,10 +3183,15 @@ def chores_list():
     ultime = _ultime(db)
     attivita = rows(db.execute("SELECT * FROM chores ORDER BY frequency, area, name"))
 
+    profilo = get_profile(db)
+    bucati = profilo.get("bucati_giorno") or 0
     for voce in attivita:
-        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi, voce["month"]))
+        cadenza = (igiene.cadenza_lavatrice(bucati)
+                   if voce["name"] == igiene.LAVATRICE else None)
+        voce.update(igiene.scadenza(voce["frequency"], ultime.get(voce["id"]), oggi,
+                                    voce["month"], cadenza=cadenza))
 
-    giorno = get_profile(db).get("chore_day") or 0
+    giorno = profilo.get("chore_day") or 0
     # il catalogo porta il giorno assegnato: la sezione Routine elenca da qui, non
     # dai gruppi del piano, e senza il campo non potrebbe mostrare quando tocca
     giorni = igiene.giorni_settimanali(attivita, giorno)
@@ -2727,7 +3203,7 @@ def chores_list():
             igiene.GIORNI_SETTIMANA[assegnato] if assegnato is not None else None)
         voce["giorno_settimanale_oggi"] = (
             assegnato == oggi_d.weekday() if assegnato is not None else False)
-    piano = igiene.piano(attivita, ultime, oggi, giorno, giorni)
+    piano = igiene.piano(attivita, ultime, oggi, giorno, giorni, bucati_giorno=bucati)
     return jsonify({"oggi": oggi, "attivita": attivita, "piano": piano,
                     "attive": sum(1 for v in attivita if v["active"])})
 
@@ -2843,8 +3319,14 @@ def chores_done(cid):
     except ValueError:
         return bad_request("Data non valida")
 
+    # Si salva anche l'ora: le cadenze frazionarie (un giorno e mezzo) contano
+    # mezza giornata, e con la sola data la mezza si perderebbe (vedi
+    # `igiene.scadenza`). Se il chiamante manda un istante, si conserva quello;
+    # altrimenti l'ora corrente.
+    istante = str(data.get("date") or "").strip()
+    quando = istante if len(istante) > 10 else datetime.datetime.now().isoformat(timespec="seconds")
     db.execute("INSERT INTO chore_log (chore_id, date, minutes) VALUES (?, ?, ?)",
-               (cid, giorno, minuti))
+               (cid, quando, minuti))
     db.commit()
     return jsonify({"ok": True, "date": giorno, "minutes": minuti})
 

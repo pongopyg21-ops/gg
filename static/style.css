@@ -142,6 +142,9 @@ body {
   min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
 }
 .home-hero { margin-bottom: 34px; }
+/* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non
+   aggiunge spazio sotto l'ultimo riquadro. */
+.home-hero-basso { margin: 34px 0 0; }
 .home-kicker {
   margin: 0 0 10px; font-size: 12px; font-weight: 600;
   letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
@@ -214,10 +217,12 @@ body {
 
 /* Il microfono in home: il pulsante flottante e' nascosto qui, perche' non c'e'
    ancora una sezione da cui parlare. Questo lo sostituisce, con la stessa
-   promessa ma senza l'angolo dello schermo. */
-.home-voice { margin: 0 0 28px; }
+   promessa ma senza l'angolo dello schermo.
+   E' l'unica cosa centrata della home: il resto e' testo da leggere e sta a
+   sinistra, ma l'invito a parlare e' un bottone solo e va al centro. */
+.home-voice { display: flex; flex-direction: column; align-items: center; margin: 0 0 28px; }
 .home-voice-hint {
-  margin: 10px 0 0; max-width: 46ch;
+  margin: 10px 0 0; max-width: 46ch; text-align: center;
   font-size: 13.5px; line-height: 1.5; color: var(--muted);
 }
 .home-mic {
@@ -235,7 +240,76 @@ body {
 .home-mic:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; }
 .home-mic .mic-icon { font-size: 20px; line-height: 1; pointer-events: none; }
 
-.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+/* Le schede delle categorie stanno subito sotto l'invito a parlare: si arriva
+   in home per scegliere dove andare. Il margine inferiore le stacca dal
+   riepilogo «Oggi» che segue (e dal calendario, quando «Oggi» e' nascosto). */
+.home-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 0 0 24px; }
+
+/* Riepilogo della giornata in home, sotto le categorie. Resta compatto: la
+   home deve restare un posto dove si sceglie, non una pagina da leggere. */
+.home-oggi {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.oggi-titolo {
+  margin: 0 0 10px; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+.oggi-riga { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; }
+.oggi-riga + .oggi-riga { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 5px; }
+.oggi-ico { font-size: 16px; line-height: 1.3; flex: none; }
+.oggi-txt { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.oggi-meal { color: var(--muted); font-weight: 400; }
+/* la riga di domani e' un suggerimento, non un impegno di oggi: un filo piu'
+   tenue, cosi' non si confonde con gli avvisi che scattano adesso */
+.oggi-domani .oggi-txt { color: var(--muted); }
+
+/* Il calendario degli impegni in fondo alla home. Stessa veste del riquadro
+   «Oggi», ma con dentro la griglia del mese (le classi .cal-* sono quelle della
+   scheda Calendario). In sola lettura: la home non deve diventare un modulo. */
+.home-cal {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.home-cal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.home-cal-titolo {
+  margin: 0; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+/* la griglia e' l'ultimo elemento: toglie il margine inferiore che ha nella
+   scheda Calendario, dove sotto c'e' l'elenco del giorno */
+.home-cal .cal-grid { margin-bottom: 0; }
+
+/* Le notizie del giorno, sotto il calendario. Stessa veste dei riquadri sopra:
+   sono da leggere, non da premere. Si mostrano solo i titoli; il sommario e
+   l'elenco completo restano nella sezione TV, che si apre con «Apri →». */
+.home-notizie {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.home-notizie-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.home-notizie-titolo {
+  margin: 0; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
+/* l'ultima voce non porta la riga di separazione: dentro un riquadro chiuso
+   sembrerebbe una riga di troppo */
+.home-notizie .tv-notizia:last-child a { border-bottom-color: transparent; }
 
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
@@ -394,6 +468,30 @@ button:focus-visible {
 .qty-input { width: 90px; }
 .unit-input { width: 110px; }
 .qty-cell { width: 90px; }
+.date-input, .date-cell { font-variant-numeric: tabular-nums; }
+.date-input { width: 150px; }
+.date-cell { width: 140px; }
+/* Porzioni nel dettaglio ricetta: si scrive il numero e le quantita' seguono.
+   Piccolo e in linea col testo, perche' e' una regolazione, non un campo. */
+.porz-input {
+  width: 56px; padding: 2px 6px; font: inherit; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line-strong); border-radius: 7px;
+  background: var(--surface); color: var(--ink); text-align: center;
+}
+
+/* Scadenza in dispensa: il colore dice l'urgenza senza dover leggere la data.
+   Il rosso e' per quello che e' scaduto, l'ambra per quello che scade a breve:
+   sono le due cose che richiedono una decisione, il resto e' rumore. */
+.scad-cell { white-space: nowrap; }
+.scad-testo {
+  margin-left: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em;
+}
+.scad-testo.scad-niente { color: var(--muted); font-weight: 400; }
+.scad-testo.scad-oltre { color: var(--errore-testo); }
+.scad-testo.scad-vicino { color: #d98a2b; }
+.scad-testo.scad-lontano { color: var(--muted); font-weight: 400; }
+.date-cell.scad-oltre { border-color: var(--errore-bordo); }
+.date-cell.scad-vicino { border-color: #d98a2b; }
 
 /* ---------- piano settimanale ---------- */
 .plan-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
@@ -473,6 +571,9 @@ button:focus-visible {
   margin: 0 0 10px; font-family: var(--font-display);
   font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: -.005em;
 }
+.sug-vuoto {
+  margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; max-width: 46ch;
+}
 .sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
 .sug-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
@@ -489,6 +590,12 @@ button:focus-visible {
 .sug-manca { color: var(--muted); }
 .sug-card .sug-mancano {
   font-size: 11.5px; color: var(--muted); margin-top: 5px; line-height: 1.4;
+}
+/* Le scorte in scadenza che questa ricetta consumerebbe: e' il motivo per cui
+   sta in cima, quindi si dice invece di lasciarlo intuire dall'ordine. */
+.sug-card .sug-scade {
+  font-size: 11.5px; font-weight: 600; margin-top: 5px; line-height: 1.4;
+  color: #d98a2b;
 }
 
 /* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */
@@ -598,6 +705,36 @@ tr:last-child td { border-bottom: none; }
 .modal-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+
+/* --- condividi la spesa --- */
+/* Tre modi per scegliere il periodo (oggi / un giorno / intervallo): sono
+   alternative, non filtri che si sommano, quindi si vedono come schede. */
+.share-modi {
+  display: flex; gap: 6px; margin: 4px 0 16px;
+  background: var(--paper); padding: 4px; border-radius: 10px;
+}
+.share-modi button {
+  flex: 1; border: none; background: transparent; color: var(--muted);
+  padding: 9px 6px; border-radius: 7px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.share-modi button:hover { color: var(--ink); }
+.share-modi button.active {
+  background: var(--surface); color: var(--accent-deep);
+  box-shadow: 0 1px 2px rgba(14, 42, 56, .12);
+}
+.share-campo { margin-bottom: 14px; }
+.share-campo label {
+  display: block; font-size: 10.5px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .09em; margin-bottom: 5px;
+}
+.share-campo input, .share-campo select {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--line-strong);
+  border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit;
+}
+.share-testo {
+  width: 100%; min-height: 260px; resize: vertical; font-family: ui-monospace, monospace;
+  font-size: 13px; line-height: 1.5; white-space: pre; overflow: auto;
 }
 
 /* --- preparazione di una ricetta --- */
@@ -909,6 +1046,21 @@ tr:last-child td { border-bottom: none; }
 /* testo introduttivo dei passi di onboarding */
 .lead { margin: 0 0 16px; font-size: 14px; line-height: 1.55; color: var(--muted); }
 
+/* menù di benvenuto: l'elenco di cosa sa fare l'app, subito dopo aver creato la
+   casa. Ogni voce ha la sua icona e una riga di testo, per scorrerlo in fretta */
+.welcome-list {
+  list-style: none; margin: 0 0 8px; padding: 0;
+  display: grid; gap: 10px;
+}
+.welcome-list li {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px;
+  font-size: 13.5px; line-height: 1.5; color: var(--muted);
+}
+.welcome-list strong { color: var(--ink); }
+.welcome-ico { font-size: 20px; line-height: 1.2; flex: none; }
+
 /* il selettore delle preferite sta anche nei modali stretti: la ricerca occupa
    tutta la larghezza disponibile */
 .fav-search { width: 100%; margin-bottom: 4px; }
@@ -951,39 +1103,96 @@ tr:last-child td { border-bottom: none; }
 .tab.active .card:nth-child(n+6), .tab.active .day:nth-child(n+6) { animation-delay: .15s; }
 
 /* ---------- pulizie e igiene ----------
-   Il metodo: tre blocchi per frequenza piu' il calendario annuale. La gerarchia
-   visiva segue l'ordine d'uso — prima cosa c'e' da fare adesso (grande, con il
-   tempo stimato), poi la routine, poi l'anno. Le righe sono liste, non tabelle:
-   si spuntano con un tocco e su telefono restano leggibili. */
+   Il metodo: quattro frequenze piu' il calendario annuale, divisi in schede
+   (Oggi / Routine / Calendario / Attività) perche' in un'unica colonna il
+   catalogo si ripeteva in piu' blocchi. La gerarchia visiva segue l'ordine
+   d'uso — prima cosa c'e' da fare adesso (grande, con il tempo stimato), poi
+   la routine, poi l'anno. Le righe sono liste, non tabelle: si spuntano con un
+   tocco e su telefono restano leggibili. */
+
+/* Le schede della sezione: Oggi, Routine, Calendario, Attività. La prima
+   schermata era lunga il doppio delle voci perché ogni blocco ripeteva il
+   catalogo; ora se ne vede uno per volta, e la riga delle schede dice dove si
+   e' senza occupare spazio. */
+.ch-nav {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px; margin-bottom: 20px;
+  width: fit-content; max-width: 100%;
+}
+.ch-nav-btn {
+  background: none; border: none; cursor: pointer;
+  border-radius: 999px;
+  padding: 8px 16px; font-family: inherit; font-size: 13.5px; font-weight: 500;
+  color: var(--muted);
+  transition: color .16s ease, background-color .16s ease;
+}
+.ch-nav-btn:hover { color: var(--ink); background: var(--accent-soft); }
+.ch-nav-btn.active {
+  color: var(--testo-su-accento); font-weight: 600; background: var(--accent);
+}
+
+.ch-panel { display: none; }
+.ch-panel.active { display: block; }
 
 .ch-hero {
-  display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;
+  position: relative; overflow: hidden;
+  display: flex; justify-content: space-between; align-items: center; gap: 20px;
   flex-wrap: wrap;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 62%);
+  border: 1px solid var(--line); border-radius: calc(var(--radius) + 4px);
   padding: 22px 24px; box-shadow: var(--shadow);
 }
+/* una fascia d'accento in cima: distingue il riquadro «adesso» dagli altri
+   blocchi della sezione senza colorare tutto il fondo */
+.ch-hero::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--green));
+}
+.ch-hero-fatto { background: linear-gradient(135deg, var(--green-soft) 0%, var(--surface) 62%); }
+.ch-hero-main { min-width: 0; }
 .ch-hero-day {
   font-size: 11px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
 }
-.ch-hero-num { display: flex; align-items: baseline; gap: 10px; }
+.ch-hero-num { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .ch-hero-num strong {
   font-family: var(--font-display); font-size: 40px; font-weight: 700;
   line-height: 1; letter-spacing: -.03em;
 }
 .ch-hero-num span { color: var(--muted); font-size: 14px; }
-.ch-hero-time { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.ch-hero-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .ch-hero-min {
-  font-family: var(--font-display); font-size: 22px; font-weight: 700;
+  font-family: var(--font-display); font-size: 20px; font-weight: 700;
   color: var(--accent); line-height: 1.1;
 }
 .ch-hero-min-lab { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
-.ch-hero-done { font-size: 12px; color: var(--green); margin-top: 4px; }
 .ch-pill {
-  display: inline-block; margin: 12px 0 0; padding: 4px 12px;
+  display: inline-block; padding: 4px 12px;
   background: var(--accent-soft); color: var(--accent-deep);
   border-radius: 999px; font-size: 12px; font-weight: 600;
 }
+.ch-hero-fatto .ch-pill { background: var(--green-soft); color: var(--green); }
+
+/* l'anello di avanzamento: quanto si e' fatto oggi, in un colpo d'occhio.
+   `conic-gradient` con `--pct` disegna la parte piena senza SVG. */
+.ch-ring {
+  flex: none; width: 72px; height: 72px; border-radius: 50%;
+  background:
+    conic-gradient(var(--green) calc(var(--pct, 0) * 1%), var(--line) 0);
+  display: grid; place-items: center;
+}
+.ch-ring::before {
+  content: ''; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--surface);
+  grid-area: 1 / 1;
+}
+.ch-ring-num {
+  grid-area: 1 / 1; z-index: 1;
+  font-family: var(--font-display); font-size: 19px; font-weight: 700;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.ch-ring-num small { font-size: 12px; color: var(--muted); font-weight: 600; }
 
 /* la settimana distribuita: sette caselle, una per giorno, con il tempo delle
    settimanali. Serve a far vedere che non sono tutte oggi, che e' il punto del
@@ -1006,6 +1215,13 @@ tr:last-child td { border-bottom: none; }
 .ch-sub {
   font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
   margin: 22px 0 8px; color: var(--ink);
+  display: flex; align-items: baseline; gap: 8px;
+}
+/* un trattino d'accento prima del titolo: separa i blocchi della sezione senza
+   aggiungere un bordo, che su tre blocchi di fila farebbe una griglia pesante */
+.ch-sub::before {
+  content: ''; align-self: center; width: 14px; height: 2px; border-radius: 2px;
+  background: var(--accent); flex: none;
 }
 .ch-hint { font-weight: 400; color: var(--muted); font-size: 12px; }
 .ch-count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
@@ -1038,6 +1254,12 @@ tr:last-child td { border-bottom: none; }
   border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px;
   white-space: nowrap;
 }
+/* l'ambiente prende un colore tenue: aiuta a raggruppare a colpo d'occhio le
+   voci della stessa zona (cucina, bagno...) senza aggiungere filtri */
+.ch-area[data-area="cucina"] { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent-deep); }
+.ch-area[data-area="bagno"] { background: #e6f0fb; border-color: #e6f0fb; color: #2a5b8f; }
+.ch-area[data-area="camere"] { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
+.ch-area[data-area="soggiorno"], .ch-area[data-area="ingresso"] { background: #f6efe3; border-color: #f6efe3; color: var(--sand); }
 .ch-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
 /* il giorno assegnato a una settimanale: si legge come stato, non come scadenza */
 .ch-when.ch-giorno { color: var(--accent-deep); }
@@ -1469,7 +1691,9 @@ button { transition: transform .12s ease; }
      comandi a destra — invece di cinque colonne che non stanno nello schermo */
   .ch-hero { padding: 18px 16px; }
   .ch-hero-num strong { font-size: 34px; }
-  .ch-hero-time { text-align: left; }
+  .ch-ring { width: 60px; height: 60px; }
+  .ch-ring::before { width: 46px; height: 46px; }
+  .ch-ring-num { font-size: 16px; }
   /* sette caselle non stanno nello schermo: il tempo scende sotto il giorno, e
      l'abbreviazione a tre lettere basta a riconoscere il giorno */
   .ch-week { gap: 3px; }
@@ -1777,6 +2001,13 @@ button { transition: transform .12s ease; }
 
 .tv-vuoto { color: var(--muted); font-size: 14px; padding: 10px 0; }
 .tv-aggiornato { font-size: 12px; color: var(--muted); }
+
+/* La playlist della casa si cambia da qui: un campo e un pulsante, sulla stessa
+   riga. Sul telefono vanno a capo, perche' un indirizzo incollato e' lungo e un
+   campo stretto lo nasconde a meta'. */
+.tv-playlist-riga { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.tv-playlist-riga input { flex: 1; min-width: 220px; }
+.tv-playlist-riga button { white-space: nowrap; }
 
 @media (max-width: 560px) {
   .tv-video { grid-template-columns: 1fr; }

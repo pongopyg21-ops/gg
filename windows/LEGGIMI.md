@@ -14,6 +14,8 @@ I file di questa cartella sono questi:
 | `dominio.ps1` | Usato da `dominio.bat`, non serve toccarlo |
 | `verifica-pubblico.bat` | Controlla se l'app è raggiungibile da fuori (vedi *Controllare in un colpo solo*) |
 | `verifica-pubblico.ps1` | Usato da `verifica-pubblico.bat`, non serve toccarlo |
+| `verifica-modello.bat` | Controlla se il modello di casa (Ollama) è pronto (vedi *Il modello in casa*) |
+| `modello.ps1` | Usato da `avvia.bat` e `verifica-modello.bat`, non serve toccarlo |
 | `voce.bat` | Imposta chiave e area della voce neurale Azure |
 | `ripara-voce.bat` | Corregge solo l'area della voce, senza toccare la chiave |
 
@@ -498,13 +500,21 @@ impostata per usarlo**: non c'e' niente da configurare, bastano due cose.
    Serve circa 5 GB di spazio e un computer con 16 GB di memoria. Con 8 GB di
    memoria usa `qwen2.5:3b-instruct`: e' piu' leggero e meno preciso, e allora
    va detto anche all'app (vedi come cambiare modello in fondo).
-3. Apri l'app con `avvia.bat`, vai in **Voce → «Capire i comandi»** e accendi
+3. Apri l'app con `avvia.bat`, vai in **Profilo → «Capire i comandi»** e accendi
    l'interruttore. Fatto.
 
 Il primo comando e' lento (il modello si sta caricando in memoria, anche mezzo
 minuto); dal secondo in poi risponde in pochi secondi.
 
 Dimenticato come si chiama il modello scaricato? `ollama list` lo elenca.
+
+All'avvio `avvia.bat` dice da solo a che punto sei: se Ollama risponde, se il
+modello c'e', e — quando tutto e' pronto — che resta da accendere l'interruttore
+in **Profilo → «Capire i comandi»**. Per il controllo completo apri
+`windows\verifica-modello.bat`: guarda le stesse cose e, se manca qualcosa, dice
+cosa fare. Serve proprio perche' le tre cause (Ollama spento, modello non
+scaricato, interruttore spento) danno lo stesso sintomo — «il modello non
+capisce» — e senza il controllo si confondono fra loro.
 
 ### Se vuoi cambiare modello o usare un servizio in rete
 

@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS pantry (
     ingredient_id INTEGER NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
     quantity      REAL NOT NULL DEFAULT 0,
     unit          TEXT NOT NULL DEFAULT 'pz',
+    -- La scadenza e' una data, non un istante: quello che scade si guarda al
+    -- giorno. Vuota vuol dire "non lo so", che e' diverso da "non scade": una
+    -- scadenza inventata farebbe buttare cibo buono, quindi non si indovina.
+    expires_at    TEXT,
     updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(ingredient_id, unit)
 );
@@ -83,6 +87,14 @@ CREATE TABLE IF NOT EXISTS profile (
     -- giorno fisso della settimana per le pulizie (0 = lunedi' ... 6 = domenica):
     -- la routine crea costanza, dice l'articolo, e il giorno lo sceglie l'utente
     chore_day INTEGER NOT NULL DEFAULT 5,
+    -- quanti bucati al giorno fa la casa (0-5). Non e' una preferenza estetica:
+    -- da qui si ricava ogni quanto rimettere la lavatrice in moto (vedi
+    -- `igiene.cadenza_lavatrice`), cosi' la voce non resta fissa a un giorno e
+    -- mezzo quando in casa si fanno due bucati al giorno o uno ogni tre.
+    bucati_giorno INTEGER NOT NULL DEFAULT 0,
+    -- argomenti delle notizie che interessano, separati da virgola: le sezioni
+    -- ANSA da tenere. Vuoto = tutti (vedi `tv.argomenti_scelti`).
+    news_topics TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -221,17 +233,29 @@ CREATE TABLE IF NOT EXISTS storage_photos (
 
 -- ---------------------------------------------------------------- tv
 -- Quello che la sezione TV ha scaricato: i video della playlist e le notizie
--- del giorno, in JSON, sotto una chiave ("video", "notizie").
+-- del giorno, in JSON, sotto una chiave ("video", "notizie", "gym").
 --
 -- Sta nel database della casa, non in memoria, perche' e' **la copia di
 -- sicurezza della sezione**: se la rete non risponde (o il feed cambia), la
 -- sezione si apre lo stesso con quello che c'era, invece di restare vuota. E'
 -- il motivo per cui non e' una tabella per i video e una per le notizie: sono
--- due elenchi che si leggono sempre interi e non si interrogano per campo.
+-- elenchi che si leggono sempre interi e non si interrogano per campo.
 CREATE TABLE IF NOT EXISTS tv_cache (
     chiave     TEXT PRIMARY KEY,
     dati       TEXT NOT NULL DEFAULT '[]',
     aggiornato REAL NOT NULL DEFAULT 0    -- secondi dall'epoca: e' un confronto, non una data
+);
+
+-- La playlist YouTube scelta dalla casa. Sta nella casa e non in `localStorage`
+-- ne' in una costante del modulo: e' una preferenza dell'utente, e due case sullo
+-- stesso server non devono vedersi i video l'una dell'altra. Alla variabile
+-- d'ambiente `TV_PLAYLIST` resta il ruolo di predefinita per chi non ha ancora
+-- scelto, cosi' un'installazione esistente non cambia da sola.
+--
+-- Una riga sola (id = 1), come `llm_prefs` e `profile`.
+CREATE TABLE IF NOT EXISTS tv_prefs (
+    id       INTEGER PRIMARY KEY CHECK (id = 1),
+    playlist TEXT NOT NULL DEFAULT ''
 );
 
 -- ------------------------------------------------------------ calendario

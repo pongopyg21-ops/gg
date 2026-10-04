@@ -2,7 +2,7 @@
 
 Sapone, bagnoschiuma, rasoi, mensole, quadri, batterie. Niente di tutto questo
 entra in una ricetta, quindi il magazzino non centra con la cucina: sta dentro
-Progetti, dove vivono le cose da fare e da sistemare.
+Appunti, dove vivono le cose da fare e da sistemare.
 
 Perche' e' una sezione a parte e non un secondo elenco della dispensa: la
 dispensa si confronta con le ricette (quello che c'e' in casa si scala dal

@@ -141,9 +141,10 @@ const SEZIONI = {
   // tengono la loro, che le distingue meglio di un simbolo unico.
   cucina:   { titolo: 'Cucina',   icona: '/static/icons/icona.svg', prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
-  progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
+  progetti: { titolo: '\u{1F4CB} Appunti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
   tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
+  gym:      { titolo: '\u{1F3CB}\u{FE0F} GYM', prima: 'gym' },
 };
 
 function apriSezione(nome) {
@@ -182,6 +183,12 @@ function tornaAlleSezioni() {
   $('#home').classList.remove('hidden');
   document.title = 'Il Maggiordomo';
   window.scrollTo(0, 0);
+  // il calendario in home si aggiorna tornando qui: un impegno aggiunto nei
+  // Appunti deve comparire senza ricaricare la pagina. Le notizie hanno il
+  // loro giro (una volta al giorno), quindi si ridisegnano anche loro: se sono
+  // cambiate, si vedono subito.
+  renderHomeCalendario();
+  renderHomeNotizie();
 }
 
 /* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
@@ -214,6 +221,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
   if (btn.dataset.tab === 'intrattenimento') renderTv();
+  if (btn.dataset.tab === 'gym') renderGym();
 }));
 
 /* ---------- TV ----------
@@ -248,6 +256,12 @@ function disegnaTv(d) {
   const video = d.video || [];
   const notizie = d.notizie || [];
 
+  // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
+  // guardando. Non si riscrive sopra quello che l'utente sta digitando.
+  if (d.playlist && document.activeElement !== $('#tv-playlist')) {
+    $('#tv-playlist').value = d.playlist;
+  }
+
   $('#tv-video').innerHTML = video.length ? video.map((v) => `
     <article class="tv-video-card">
       <div class="tv-embed">
@@ -279,6 +293,27 @@ function disegnaTv(d) {
   $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
 }
 
+$('#tv-playlist-salva').addEventListener('click', async () => {
+  const btn = $('#tv-playlist-salva');
+  const valore = $('#tv-playlist').value.trim();
+  if (!valore) return toast('Incolla l\'indirizzo o l\'id della playlist.');
+  btn.disabled = true;
+  btn.textContent = 'Cambio…';
+  try {
+    const d = await api('/api/tv/playlist', { method: 'PUT', body: { playlist: valore } });
+    $('#tv-playlist').value = d.playlist;
+    disegnaTv(d);
+    toast(d.video && d.video.length
+      ? `Playlist cambiata: ${d.video.length} video.`
+      : 'Playlist salvata. I video arrivano al prossimo aggiornamento.');
+  } catch (e) {
+    toast(e.message || 'Playlist non riconosciuta.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Cambia playlist';
+  }
+});
+
 $('#tv-aggiorna').addEventListener('click', async () => {
   const btn = $('#tv-aggiorna');
   btn.disabled = true;
@@ -288,6 +323,66 @@ $('#tv-aggiorna').addEventListener('click', async () => {
     disegnaTv(d);
     const nuovo = d.aggiornati && (d.aggiornati.video || d.aggiornati.notizie);
     if (!nuovo) toast('Niente di nuovo: la fonte non ha risposto.');
+  } catch (_e) {
+    toast('Aggiornamento non riuscito.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aggiorna';
+  }
+});
+
+/* ---------- GYM ----------
+   La sezione GYM: i video della playlist di esercizi, incorporati come in TV.
+   Playlist separata da quella della TV: si guarda per fare, non per passare il
+   tempo, e cambiare i video di casa non deve toccare l'allenamento.
+
+   Stessa regola della TV: il server serve quello che ha in cache e aggiorna in
+   sottofondo, quindi qui non c'e' attesa di rete da gestire. */
+async function renderGym() {
+  try {
+    let d = await api('/api/gym');
+    // come in TV: al primissimo avvio la cache puo' essere vuota mentre il
+    // server la riempie, quindi si riprova invece di mostrare «nessun video»
+    for (let tentativo = 0; tentativo < 4 && !d.video.length; tentativo++) {
+      $('#gym-video').innerHTML = '<p class="tv-vuoto">Sto caricando…</p>';
+      await new Promise((r) => setTimeout(r, 2000));
+      d = await api('/api/gym');
+    }
+    disegnaGym(d);
+  } catch (_e) {
+    $('#gym-video').innerHTML = '';
+    toast('Non riesco a caricare la sezione GYM.');
+  }
+}
+
+function disegnaGym(d) {
+  const video = d.video || [];
+  $('#gym-video').innerHTML = video.length ? video.map((v) => `
+    <article class="tv-video-card">
+      <div class="tv-embed">
+        <iframe src="${esc(v.embed)}" title="${esc(v.titolo)}" loading="lazy"
+                allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen></iframe>
+      </div>
+      <div class="tv-video-info">
+        <span class="tv-video-titolo">${esc(v.titolo)}</span>
+        <span class="tv-video-sotto">${esc(v.autore || '')}${v.data ? ` · ${esc(v.data)}` : ''}</span>
+      </div>
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessun video disponibile. Premi «Aggiorna» fra poco.</p>`;
+
+  $('#gym-aggiornato').textContent = d.aggiornato
+    ? `Aggiornato: ${d.aggiornato.replace('T', ' ')}` : '';
+}
+
+$('#gym-aggiorna').addEventListener('click', async () => {
+  const btn = $('#gym-aggiorna');
+  btn.disabled = true;
+  btn.textContent = 'Aggiorno…';
+  try {
+    const d = await api('/api/gym/aggiorna', { method: 'POST' });
+    disegnaGym(d);
+    if (!(d.aggiornati && d.aggiornati.gym)) toast('Niente di nuovo: la fonte non ha risposto.');
   } catch (_e) {
     toast('Aggiornamento non riuscito.');
   } finally {
@@ -508,8 +603,7 @@ async function showRecipeDetail(rid, contesto = {}) {
   const passi = passiDa(r.instructions);
   const tempi = tempiRicetta(r);
   const costo = costoRicetta(r);
-  const ingredienti = r.items.map((i) =>
-    `<li>${esc(i.name)} <span class="qty">${esc(i.quantity)}${esc(i.unit)}</span></li>`).join('');
+  const base = Number(r.servings) > 0 ? Number(r.servings) : 1;
 
   const foto = r.image
     ? `<figure class="detail-photo" title="${esc(r.image_credit || '')}">
@@ -523,11 +617,15 @@ async function showRecipeDetail(rid, contesto = {}) {
   showModal(r.name, `
     ${foto}
     <div class="detail-meta meta">
-      ${r.servings} porzioni${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}
+      <span id="rd-porz-wrap">Per
+        <input id="rd-porz" class="porz-input" type="number" min="1" step="1"
+               value="${base}" aria-label="Numero di porzioni"> porzioni
+      </span>
+      ${tempi ? ` · ${tempi.testo}` : ''} · ${esc(r.difficulty)}
     </div>
     ${costo ? `<div class="detail-costo">${costo}</div>` : ''}
     <h3 class="detail-sub">Ingredienti</h3>
-    <ul class="detail-ings">${ingredienti || '<li class="muted">Nessun ingrediente</li>'}</ul>
+    <ul class="detail-ings" id="rd-ings"></ul>
     <h3 class="detail-sub">Preparazione</h3>
     ${preparazione}
     ${contesto.conflicts?.length ? `<p class="detail-unsafe">⚠️ Contiene: ${contesto.conflicts.map(esc).join(', ')}</p>` : ''}
@@ -538,6 +636,19 @@ async function showRecipeDetail(rid, contesto = {}) {
     </div>
   `);
 
+  // gli ingredienti si ridisegnano al cambio porzioni: la ricetta e' scritta per
+  // `base`, e chi cucina per un numero diverso di persone non deve fare il conto
+  const disegnaIngredienti = (porzioni) => {
+    $('#rd-ings').innerHTML = r.items.map((i) =>
+      `<li>${esc(i.name)} <span class="qty">${esc(qtaScalata(i.quantity, porzioni / base))}${esc(i.unit)}</span></li>`
+    ).join('') || '<li class="muted">Nessun ingrediente</li>';
+  };
+  disegnaIngredienti(base);
+  $('#rd-porz').addEventListener('input', (e) => {
+    const n = Number(e.target.value);
+    disegnaIngredienti(n > 0 ? n : base);
+  });
+
   $('#rd-edit').addEventListener('click', () => recipeForm(r));
   if (contesto.onRemove) {
     $('#rd-remove').addEventListener('click', async () => {
@@ -545,6 +656,16 @@ async function showRecipeDetail(rid, contesto = {}) {
       await contesto.onRemove();
     });
   }
+}
+
+/** Una quantita' riscalata sulle porzioni, con al massimo due decimali.
+    Una quantita' non numerica (es. "q.b.") resta com'e': riscalarla non
+    vorrebbe dire niente. */
+function qtaScalata(quantita, fattore) {
+  const n = Number(quantita);
+  if (!Number.isFinite(n) || quantita === '' || quantita === null || quantita === undefined) return quantita;
+  if (fattore === 1) return quantita;
+  return String(Math.round(n * fattore * 100) / 100);
 }
 
 /* Foto disponibili in static/recipes/, caricate all'avvio. */
@@ -884,12 +1005,30 @@ async function renderPantry() {
   renderSuggerimenti();
 }
 
+/* Quanto manca alla scadenza, in parole e con un colore.
+   Vuoto vuol dire "non lo so", non "non scade": non si mostra niente invece di
+   inventare una data. Il rosso e' per quello che e' scaduto, l'ambra per quello
+   che scade entro pochi giorni — le due cose che richiedono una decisione. */
+function statoScadenza(expiresAt) {
+  if (!expiresAt) return { testo: '—', classe: 'scad-niente' };
+  const oggi = new Date();
+  oggi.setHours(0, 0, 0, 0);
+  const quando = new Date(expiresAt + 'T00:00:00');
+  const giorni = Math.round((quando - oggi) / 86400000);
+  if (giorni < 0) return { testo: giorni === -1 ? 'scaduto ieri' : `scaduto da ${-giorni} gg`, classe: 'scad-oltre' };
+  if (giorni === 0) return { testo: 'scade oggi', classe: 'scad-vicino' };
+  if (giorni <= 3) return { testo: `fra ${giorni} ${giorni === 1 ? 'giorno' : 'giorni'}`, classe: 'scad-vicino' };
+  return { testo: expiresAt.slice(5).split('-').reverse().join('/'), classe: 'scad-lontano' };
+}
+
 // il filtro e' locale: non deve rifare la richiesta dei suggerimenti, che non
 // dipendono da cosa si sta cercando
 function renderPantryTable() {
   const q = $('#pantry-search').value.toLowerCase();
   const list = pantryCache.filter((i) => i.name.toLowerCase().includes(q));
-  $('#pantry-table tbody').innerHTML = list.map((i) => `
+  $('#pantry-table tbody').innerHTML = list.map((i) => {
+    const scad = statoScadenza(i.expires_at);
+    return `
     <tr>
       <td data-label="Ingrediente">
         <span class="riga-alimento">
@@ -899,8 +1038,15 @@ function renderPantryTable() {
       </td>
       <td data-label="Categoria">${esc(i.category)}</td>
       <td data-label="Quantità"><input type="number" step="0.1" value="${i.quantity}" data-qty="${i.id}" class="qty-cell"> ${esc(i.unit)}</td>
+      <td data-label="Scade" class="scad-cell">
+        <input type="date" value="${esc(i.expires_at || '')}" data-scad="${i.id}"
+               class="date-cell ${scad.classe}" title="${esc(scad.testo)}"
+               aria-label="Scadenza di ${esc(i.name)}">
+        <span class="scad-testo ${scad.classe}">${esc(scad.testo)}</span>
+      </td>
       <td><button data-del="${i.id}" title="Togli dalla dispensa" aria-label="Togli ${esc(i.name)} dalla dispensa">🗑</button></td>
-    </tr>`).join('') || '<tr><td colspan="4">Dispensa vuota</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="5">Dispensa vuota</td></tr>';
 }
 
 /* Suggerimenti sotto l'elenco: cosa si puo' cucinare con quello che c'e'.
@@ -918,7 +1064,13 @@ async function renderSuggerimenti() {
     return;
   }
   if (!dati.suggerimenti.length) {
-    box.innerHTML = '';
+    // Il riquadro non c'e' e basta: sembra che la funzione non esista. Con la
+    // dispensa vuota si dice cosa fare, perche' e' li' che si parte.
+    box.innerHTML = dati.dispensa === 0
+      ? `<h3 class="sug-title">Con quello che hai in dispensa</h3>
+         <p class="sug-vuoto">Aggiungi qualche ingrediente qui sopra: i
+         suggerimenti su cosa cucinare compaiono da soli.</p>`
+      : '';
     return;
   }
   const schede = dati.suggerimenti.map((s) => {
@@ -933,10 +1085,15 @@ async function renderSuggerimenti() {
     const mancano = s.pronta ? ''
       : `<div class="sug-mancano">Senza: ${s.mancano.map(esc).join(', ')}` +
         `${altri > 0 ? ` e altri ${altri}` : ''}</div>`;
+    // chi consuma scorte in scadenza: e' il motivo per cui sta in cima
+    const scade = (s.scadono && s.scadono.length)
+      ? `<div class="sug-scade">⏳ Da consumare: ${s.scadono.map(esc).join(', ')}</div>`
+      : '';
     return `
       <div class="sug-card" data-recipe="${s.id}">
         <h4>${esc(s.name)}</h4>
         <div class="sug-meta">${stato}${s.time_minutes ? ` · ${s.time_minutes} min` : ''}</div>
+        ${scade}
         ${mancano}
       </div>`;
   }).join('');
@@ -959,6 +1116,14 @@ $('#pantry-table').addEventListener('change', async (e) => {
     toast('Aggiornato');
     // cambiando una quantita' cambia cosa risulta coperto: i suggerimenti seguono
     renderSuggerimenti();
+    return;
+  }
+  const sid = e.target.dataset.scad;
+  if (sid) {
+    // vuoto vuol dire "togli la scadenza": il campo c'e' sempre, e mandarlo
+    // vuoto la cancella invece di lasciare la data vecchia
+    await api(`/api/pantry/${sid}`, { method: 'PATCH', body: { expires_at: e.target.value } });
+    renderPantry();
   }
 });
 $('#pantry-table').addEventListener('click', async (e) => {
@@ -971,9 +1136,15 @@ $('#pantry-add').addEventListener('click', async () => {
   if (!name) return toast('Inserisci un ingrediente');
   await api('/api/pantry', {
     method: 'POST',
-    body: { name, quantity: Number($('#pantry-qty').value) || 0, unit: $('#pantry-unit').value.trim() || 'pz' },
+    body: {
+      name,
+      quantity: Number($('#pantry-qty').value) || 0,
+      unit: $('#pantry-unit').value.trim() || 'pz',
+      expires_at: $('#pantry-scade').value || null,
+    },
   });
   $('#pantry-name').value = '';
+  $('#pantry-scade').value = '';
   toast('Aggiunto alla dispensa');
   renderPantry();
   loadIngredientsDatalist();
@@ -1115,6 +1286,349 @@ $('#shop-add').addEventListener('click', async () => {
   loadIngredientsDatalist();
 });
 
+/* ---------- CONDIVISIONE DELLA SPESA ----------
+   La lista si compra al supermercato, spesso in due: qui si manda a chi va a
+   fare la spesa. Si puo' condividere **oggi**, un giorno preciso o un intervallo
+   di giorni, e in due forme: la scheda (immagine o pagina, col logo) da mandare
+   in chat, o il testo semplice da incollare.
+
+   La scheda si compone **nel client**, non sul server: il carattere e la
+   palette sono quelli dell'app, e il server resterebbe a comporre HTML per una
+   cosa che il browser sa gia' disegnare. Il server fornisce i dati
+   (`/api/shopping/condividi`), che sono le stesse voci della lista. */
+
+/* l'intervallo scelto: {modo, giorno, dal, al}. Parte da «oggi». */
+let shopShare = { modo: 'oggi', giorno: null, dal: null, al: null };
+
+async function apriCondivisione() {
+  // i giorni noti nella lista: sono le scelte piu' probabili, non tutte le date
+  const giorni = [...new Set(shopItems.flatMap((i) => (i.days || []).map((d) => d.date)))].sort();
+  showModal('Condividi la spesa', `
+    <p class="hint">Manda la lista a chi va a fare la spesa, o salvala come immagine.</p>
+    <div class="share-modi" id="share-modi" role="tablist">
+      <button data-modo="oggi" class="active">Oggi</button>
+      <button data-modo="giorno">Un giorno</button>
+      <button data-modo="intervallo">Intervallo</button>
+    </div>
+    <div id="share-giorno" class="share-campo" hidden>
+      <label for="share-giorno-sel">Giorno</label>
+      <select id="share-giorno-sel">
+        ${giorni.length ? giorni.map((g) => `<option value="${g}">${esc(dayLong(g))}</option>`).join('')
+                        : '<option value="">(nessun giorno in lista)</option>'}
+      </select>
+    </div>
+    <div id="share-intervallo" class="share-campo" hidden>
+      <label>Dal <input type="date" id="share-dal"> al <input type="date" id="share-al"></label>
+    </div>
+    <div class="share-campo">
+      <label for="share-nota">Nota (facoltativa)</label>
+      <input id="share-nota" maxlength="200" placeholder="es. prendi anche il pane se c'e'">
+    </div>
+    <div class="modal-foot">
+      <button id="share-copia">Copia testo</button>
+      <button id="share-scarica">Scarica immagine</button>
+      <button class="primary" id="share-invia">Condividi</button>
+    </div>
+  `);
+
+  const leggi = () => {
+    shopShare = {
+      modo: $('#share-modi .active').dataset.modo,
+      giorno: $('#share-giorno-sel') ? $('#share-giorno-sel').value : '',
+      dal: $('#share-dal').value,
+      al: $('#share-al').value,
+    };
+  };
+  const aggiornaCampi = () => {
+    const modo = $('#share-modi .active').dataset.modo;
+    $('#share-giorno').hidden = modo !== 'giorno';
+    $('#share-intervallo').hidden = modo !== 'intervallo';
+  };
+  aggiornaCampi();
+
+  $('#share-modi').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-modo]');
+    if (!b) return;
+    $$('#share-modi button').forEach((x) => x.classList.toggle('active', x === b));
+    aggiornaCampi();
+  });
+
+  const url = () => {
+    leggi();
+    const q = new URLSearchParams();
+    if (shopShare.modo === 'giorno' && shopShare.giorno) q.set('giorno', shopShare.giorno);
+    if (shopShare.modo === 'intervallo' && shopShare.dal) {
+      q.set('dal', shopShare.dal);
+      if (shopShare.al) q.set('al', shopShare.al);
+    }
+    const nota = $('#share-nota').value.trim();
+    if (nota) q.set('nota', nota);
+    const s = q.toString();
+    return '/api/shopping/condividi' + (s ? `?${s}` : '');
+  };
+
+  const carica = async () => {
+    try {
+      return await api(url());
+    } catch (err) {
+      toast(err.message);
+      return null;
+    }
+  };
+
+  $('#share-copia').addEventListener('click', async () => {
+    const d = await carica();
+    if (!d) return;
+    try {
+      await navigator.clipboard.writeText(d.testo);
+      toast('Lista copiata');
+    } catch {
+      // senza clipboard (o senza HTTPS) si mostra il testo: si puo' selezionare
+      showModal('Lista della spesa', `<textarea class="share-testo" readonly>${esc(d.testo)}</textarea>`);
+    }
+  });
+
+  $('#share-scarica').addEventListener('click', async () => {
+    const d = await carica();
+    if (d) await scaricaScheda(d);
+  });
+
+  $('#share-invia').addEventListener('click', async () => {
+    const d = await carica();
+    if (d) await inviaScheda(d);
+  });
+}
+
+/** La data per esteso: «martedì 6 ottobre». */
+function dayLong(iso) {
+  const [a, m, g] = iso.split('-').map(Number);
+  return new Date(a, m - 1, g).toLocaleDateString('it-IT',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** L'HTML della scheda: una pagina autonoma, col logo dell'app e la palette.
+
+    E' la stessa scheda per lo scaricamento e per la condivisione: una sola
+    costruzione, quindi non possono divergere. Il carattere e i colori sono
+    quelli dell'app (Helvetica e la palette «mare»). */
+function schedaSpesaHtml(d) {
+  const gruppi = d.gruppi.map((g) => `
+    <section class="gruppo">
+      <h3>${esc(g.categoria)}</h3>
+      <ul>${g.voci.map((v) => {
+        const q = v.quota || { quantity: v.quantity, unit: v.unit };
+        return `<li><span class="box"></span>
+          <span class="nome">${esc(v.name)}</span>
+          <span class="qta">${esc(q.quantity)} ${esc(q.unit)}</span></li>`;
+      }).join('')}</ul>
+    </section>`).join('');
+
+  const nota = d.nota ? `<p class="nota">📝 ${esc(d.nota)}</p>` : '';
+  const deperibili = d.deperibili
+    ? `<p class="avviso">🧊 ${d.deperibili} voci deperibili: comprale il giorno stesso se puoi.</p>`
+    : '';
+  return `<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(d.titolo)}</title>
+<style>
+  :root { --ink:#0e2a38; --muted:#4d6c7d; --line:#dce9ef; --accent:#0b6e8f;
+          --paper:#f2f8fa; --surface:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 40px; background:linear-gradient(180deg,#cdeafb 0%,var(--paper) 240px);
+         color:var(--ink); font:15px/1.5 'Helvetica Neue',Helvetica,Arial,'Liberation Sans',sans-serif; }
+  .scheda { max-width:560px; margin:0 auto; background:var(--surface); border:1px solid var(--line);
+            border-radius:16px; box-shadow:0 18px 40px -28px rgba(14,42,56,.4); overflow:hidden; }
+  .testata { display:flex; align-items:center; gap:12px; padding:18px 20px;
+             background:linear-gradient(135deg,var(--accent) 0%,#0b6e8f 55%,#17796b 100%); color:#fff; }
+  .testata img { width:44px; height:44px; border-radius:11px; background:#fff; padding:3px; }
+  .testata .chi { font-size:11px; letter-spacing:.16em; text-transform:uppercase; opacity:.9; }
+  .testata h1 { margin:2px 0 0; font-size:21px; line-height:1.2; }
+  .testata .sotto { margin:3px 0 0; font-size:12.5px; opacity:.92; }
+  .corpo { padding:18px 20px 6px; }
+  .nota { background:#fdf6e6; border:1px solid #f0dfb6; border-radius:10px; padding:10px 12px;
+          margin:0 0 14px; font-size:14px; }
+  .avviso { background:var(--paper); border-radius:10px; padding:9px 12px; margin:0 0 14px;
+            font-size:13px; color:var(--muted); }
+  .gruppo { margin:0 0 16px; }
+  .gruppo h3 { margin:0 0 8px; font-size:11.5px; letter-spacing:.13em; text-transform:uppercase;
+               color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:5px; }
+  .gruppo ul { list-style:none; margin:0; padding:0; }
+  .gruppo li { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-bottom:1px dashed var(--line); }
+  .gruppo li:last-child { border-bottom:none; }
+  .box { flex:0 0 auto; width:15px; height:15px; border:1.6px solid var(--accent); border-radius:4px; }
+  .nome { flex:1 1 auto; }
+  .qta { flex:0 0 auto; color:var(--muted); font-variant-numeric:tabular-nums; font-size:13.5px; }
+  .piede { padding:14px 20px 20px; border-top:1px solid var(--line); margin-top:6px;
+           display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:12px; }
+  .piede .marchio { display:flex; align-items:center; gap:7px; }
+  .piede img { width:18px; height:18px; }
+  .vuota { padding:30px 20px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+  <div class="scheda">
+    <header class="testata">
+      <img src="/static/icons/icona.svg" alt="">
+      <div>
+        <div class="chi">Il Maggiordomo</div>
+        <h1>${esc(d.titolo)}</h1>
+        <p class="sotto">${esc(d.sottotitolo)}</p>
+      </div>
+    </header>
+    <div class="corpo">
+      ${nota}
+      ${deperibili}
+      ${d.gruppi.length ? gruppi : '<p class="vuota">Niente da comprare in questo periodo.</p>'}
+    </div>
+    <footer class="piede">
+      <span class="marchio"><img src="/static/icons/icona.svg" alt="">Preparata da Il Maggiordomo</span>
+      <span>${esc(d.totale_voci)} voci</span>
+    </footer>
+  </div>
+</body>
+</html>`;
+}
+
+/** Disegna la scheda su un canvas, per poterla scaricare o condividere come
+    immagine. Si disegna a mano invece di fotografare l'HTML: un canvas si puo'
+    esportare con `toBlob`, e il risultato e' identico su tutti i browser. */
+function schedaSpesaCanvas(d) {
+  const scala = 2;                 // nitido sugli schermi dei telefoni
+  const L = 620 * scala, PAD = 34 * scala, LATO = 15 * scala;
+  const gruppi = d.gruppi;
+  const righe = gruppi.reduce((n, g) => n + g.voci.length + 1, 0);  // +1 = titolo gruppo
+  const alt = PAD * 2 + 150 * scala + righe * 34 * scala +
+              (d.nota ? 40 * scala : 0) + (d.deperibili ? 40 * scala : 0);
+
+  const cv = document.createElement('canvas');
+  cv.width = L; cv.height = alt;
+  const c = cv.getContext('2d');
+  const F = (peso, px) => `${peso} ${px * scala}px 'Helvetica Neue',Helvetica,Arial,sans-serif`;
+
+  // fondo e scheda
+  c.fillStyle = '#f2f8fa'; c.fillRect(0, 0, L, alt);
+  c.fillStyle = '#ffffff';
+  const r = 22 * scala, m = 16 * scala, w = L - m * 2, h = alt - m * 2;
+  c.beginPath();
+  c.moveTo(m + r, m); c.arcTo(m + w, m, m + w, m + h, r);
+  c.arcTo(m + w, m + h, m, m + h, r); c.arcTo(m, m + h, m, m, r);
+  c.arcTo(m, m, m + w, m, r); c.closePath(); c.fill();
+
+  // testata con l'accento
+  c.save();
+  c.beginPath();
+  c.moveTo(m + r, m); c.arcTo(m + w, m, m + w, m + h, r);
+  c.lineTo(m + w, m + 120 * scala); c.lineTo(m, m + 120 * scala);
+  c.arcTo(m, m, m + w, m, r); c.closePath(); c.clip();
+  const grad = c.createLinearGradient(m, m, m + w, m + 120 * scala);
+  grad.addColorStop(0, '#0b6e8f'); grad.addColorStop(1, '#17796b');
+  c.fillStyle = grad; c.fillRect(m, m, w, 120 * scala);
+  c.restore();
+
+  // logo: bandiera col cielo sereno, disegnata come nel file SVG
+  const lg = 46 * scala, lx = m + PAD, ly = m + 26 * scala;
+  c.fillStyle = '#fff'; c.beginPath();
+  c.roundRect ? c.roundRect(lx, ly, lg, lg, 11 * scala) : c.rect(lx, ly, lg, lg); c.fill();
+  c.fillStyle = '#4fb3e8'; c.beginPath();
+  c.roundRect ? c.roundRect(lx, ly, lg, lg, 11 * scala) : c.rect(lx, ly, lg, lg); c.fill();
+  c.fillStyle = '#fff';
+  c.fillRect(lx + 9 * scala, ly + 20 * scala, 28 * scala, 8 * scala);
+  c.fillRect(lx + 19 * scala, ly + 9 * scala, 8 * scala, 28 * scala);
+
+  // titolo e sottotitolo
+  const tx = lx + lg + 14 * scala;
+  c.fillStyle = 'rgba(255,255,255,.9)'; c.font = F('600', 11);
+  c.fillText('IL MAGGIORDOMO', tx, ly + 14 * scala);
+  c.fillStyle = '#fff'; c.font = F('bold', 21);
+  c.fillText(d.titolo, tx, ly + 38 * scala);
+  c.fillStyle = 'rgba(255,255,255,.92)'; c.font = F('400', 12.5);
+  c.fillText(d.sottotitolo, tx, ly + 57 * scala);
+
+  let y = m + 150 * scala;
+  if (d.nota) {
+    c.fillStyle = '#4d6c7d'; c.font = F('400', 13.5);
+    c.fillText('📝 ' + d.nota, m + PAD, y); y += 30 * scala;
+  }
+  if (d.deperibili) {
+    c.fillStyle = '#4d6c7d'; c.font = F('400', 12.5);
+    c.fillText(`🧊 ${d.deperibili} voci deperibili: comprale il giorno stesso.`, m + PAD, y);
+    y += 30 * scala;
+  }
+
+  for (const g of gruppi) {
+    c.fillStyle = '#0b6e8f'; c.font = F('600', 11.5);
+    c.fillText(g.categoria.toUpperCase(), m + PAD, y);
+    c.strokeStyle = '#dce9ef'; c.lineWidth = 1 * scala;
+    c.beginPath(); c.moveTo(m + PAD, y + 8 * scala); c.lineTo(m + w - PAD, y + 8 * scala); c.stroke();
+    y += 34 * scala;
+    for (const v of g.voci) {
+      const q = v.quota || { quantity: v.quantity, unit: v.unit };
+      c.strokeStyle = '#0b6e8f'; c.lineWidth = 1.6 * scala;
+      c.strokeRect(m + PAD, y - 11 * scala, LATO, LATO);
+      c.fillStyle = '#0e2a38'; c.font = F('400', 14);
+      c.fillText(v.name, m + PAD + LATO + 12 * scala, y);
+      c.fillStyle = '#4d6c7d'; c.font = F('400', 13);
+      c.textAlign = 'right';
+      c.fillText(`${q.quantity} ${q.unit}`, m + w - PAD, y);
+      c.textAlign = 'left';
+      y += 34 * scala;
+    }
+  }
+
+  c.fillStyle = '#4d6c7d'; c.font = F('400', 11.5);
+  c.fillText('Preparata da Il Maggiordomo', m + PAD, alt - m - 22 * scala);
+  c.textAlign = 'right';
+  c.fillText(`${d.totale_voci} voci`, m + w - PAD, alt - m - 22 * scala);
+  c.textAlign = 'left';
+  return cv;
+}
+
+function schedaSpesaBlob(d) {
+  return new Promise((resolve) => schedaSpesaCanvas(d).toBlob(resolve, 'image/png'));
+}
+
+/** Scarica la scheda come immagine PNG. */
+async function scaricaScheda(d) {
+  const blob = await schedaSpesaBlob(d);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'spesa-' + (d.data || 'oggi') + '.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast('Scheda salvata');
+}
+
+/** Condivide la scheda: come immagine se il sistema lo permette, altrimenti
+    apre una pagina con la scheda (da stampare o salvare come PDF). */
+async function inviaScheda(d) {
+  const testo = d.testo;
+  const blob = await schedaSpesaBlob(d);
+  const file = new File([blob], 'spesa.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: d.titolo, text: testo });
+      return;
+    } catch (err) {
+      // l'utente ha annullato: non e' un errore da segnalare
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  if (navigator.share) {
+    try { await navigator.share({ title: d.titolo, text: testo }); return; }
+    catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  // ultimo ripiego: la scheda si apre in una finestra, da stampare o salvare
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(schedaSpesaHtml(d)); w.document.close(); }
+  else toast('Scheda pronta: consentine la stampa per salvarla');
+}
+
+$('#shop-share').addEventListener('click', apriCondivisione);
+
 /* ---------- IGIENE ----------
    Il metodo e' quello del calendario mensile delle pulizie: tre blocchi per
    frequenza (ogni giorno, ogni settimana, ogni mese) piu' un calendario annuale
@@ -1127,6 +1641,9 @@ $('#shop-add').addEventListener('click', async () => {
 let chDati = null;       // { oggi, attivita, piano, attive }
 let chMeta = null;       // { frequencies, areas, days, months, chore_day }
 let chSummary = null;
+// La scheda aperta delle pulizie (Oggi / Routine / Calendario / Attività). Vive
+// solo in memoria: riaprendo l'app si torna su «Oggi», che è la cosa da fare.
+let chPanel = 'oggi';
 
 // il tempo si formatta in minuti finche' e' poco, poi in ore: "2 h 10 min" si
 // legge subito, "130 min" no
@@ -1146,9 +1663,26 @@ function quandoDetto(voce) {
   if (voce.fatto_oggi) return 'fatta oggi';
   if (voce.mai_fatta) return 'mai fatta';
   if (voce.giorni === null) return `ultima volta il ${voce.ultima}`;
-  if (voce.giorni > 0) return `rifare fra ${voce.giorni} ${voce.giorni === 1 ? 'giorno' : 'giorni'}`;
-  const r = -voce.giorni;
-  return `in ritardo di ${r} ${r === 1 ? 'giorno' : 'giorni'}`;
+  // le cadenze frazionarie (un giorno e mezzo) hanno un orario, non solo un
+  // giorno: "rifare alle 20:00" e' piu' preciso di "rifare fra 1 giorno e mezzo"
+  const ora = voce.frequency === 'frazionaria' && voce.prossima
+    ? `, alle ${oraBreve(voce.prossima)}` : '';
+  if (voce.giorni > 0) {
+    if (voce.giorni < 1) return `rifare fra ${Math.round(voce.giorni * 24)} ore`;
+    const g = Math.floor(voce.giorni);
+    const mezzo = voce.giorni - g >= 0.5;
+    return `rifare fra ${g} ${g === 1 ? 'giorno' : 'giorni'}${mezzo ? ' e mezzo' : ''}${ora}`;
+  }
+  const r = Math.abs(voce.giorni);
+  if (r < 1) return `in ritardo di ${Math.round(r * 24)} ore`;
+  return `in ritardo di ${Math.round(r)} ${Math.round(r) === 1 ? 'giorno' : 'giorni'}${ora}`;
+}
+
+// l'ora di un istante ISO, "HH:MM"
+function oraBreve(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 async function renderIgiene() {
@@ -1160,6 +1694,7 @@ async function renderIgiene() {
   renderRoutine();
   renderAnno();
   renderChoreList();
+  mostraChPanel(chPanel);
 }
 
 function riempiGiorno() {
@@ -1170,29 +1705,47 @@ function riempiGiorno() {
   sel.value = String(chMeta.chore_day);
 }
 
+/* La scheda delle pulizie: si disegna solo quella aperta, le altre restano
+   nascoste. Il pulsante attivo si riconosce dal colore, non solo dal pannello:
+   senza, cambiando scheda non si saprebbe dove si e'. */
+function mostraChPanel(nome) {
+  chPanel = nome;
+  $$('.ch-nav-btn').forEach((b) => {
+    const attivo = b.dataset.chp === nome;
+    b.classList.toggle('active', attivo);
+    b.setAttribute('aria-selected', attivo ? 'true' : 'false');
+  });
+  $$('[data-chp-panel]').forEach((p) => p.classList.toggle('active', p.dataset.chpPanel === nome));
+}
+
 /* --- cosa c'e' da fare adesso --- */
 function renderOggi() {
   const p = chDati.piano;
   const fatto = p.fatto_oggi;
   const totale = p.da_fare + fatto;
+  const pct = totale ? Math.round((fatto / totale) * 100) : 100;
+  const restano = p.da_fare === 0;
 
   const testa = `
-    <div class="ch-hero">
-      <div>
+    <div class="ch-hero${restano ? ' ch-hero-fatto' : ''}">
+      <div class="ch-hero-main">
         <div class="ch-hero-day">${esc(p.giorno)} ${esc(p.data)}</div>
         <div class="ch-hero-num">
-          ${p.da_fare === 0
+          ${restano
             ? '<strong>Fatto tutto</strong><span>per oggi non resta niente</span>'
             : `<strong>${p.da_fare}</strong><span>${p.da_fare === 1 ? 'attività da fare' : 'attività da fare'}</span>`}
         </div>
+        <div class="ch-hero-meta">
+          ${restano ? '' : `<span class="ch-hero-min">${durata(p.minuti_previsti)}</span>
+          <span class="ch-hero-min-lab">tempo stimato</span>`}
+          ${p.giorno_pulizie ? '<span class="ch-pill">Oggi è il giorno delle pulizie</span>' : ''}
+        </div>
       </div>
-      <div class="ch-hero-time">
-        ${p.da_fare === 0 ? '' : `<span class="ch-hero-min">${durata(p.minuti_previsti)}</span>
-        <span class="ch-hero-min-lab">tempo stimato</span>`}
-        ${fatto ? `<span class="ch-hero-done">${fatto}/${totale} già fatte</span>` : ''}
+      <div class="ch-ring" style="--pct:${pct}" role="img"
+        aria-label="${fatto} di ${totale} attività fatte oggi">
+        <span class="ch-ring-num">${fatto}<small>/${totale}</small></span>
       </div>
-    </div>
-    ${p.giorno_pulizie ? '<p class="ch-pill">Oggi è il giorno delle pulizie</p>' : ''}`;
+    </div>`;
 
   const blocco = (nome, elenco) => {
     if (!elenco.length) return '';
@@ -1213,6 +1766,7 @@ function renderOggi() {
 
   $('#ch-oggi').innerHTML = testa + settimana
     + blocco('Ogni giorno', p.gruppi.quotidiane)
+    + blocco('Ogni giorno e mezzo', p.gruppi.frazionarie)
     + blocco('Ogni settimana', p.gruppi.settimanali);
 
   const m = p.mese;
@@ -1237,6 +1791,10 @@ function renderOggi() {
    per le settimanali: la riga ha gia' cinque colonne fisse, quindi il giorno
    entra nella colonna dello stato invece di aggiungerne una sesta, che sul
    telefono non entrerebbe. */
+function areaChiave(area) {
+  return String(area || '').toLowerCase().replace(/[^a-z]+/g, '-');
+}
+
 function choreRiga(v, timer = true, giorno = false) {
   const quando = giorno && v.giorno_settimanale_nome
     ? (v.giorno_settimanale_oggi ? 'oggi' : `tocca ${v.giorno_settimanale_nome}`)
@@ -1247,7 +1805,7 @@ function choreRiga(v, timer = true, giorno = false) {
         ${v.fatto_oggi ? '✓' : '○'}
       </button>
       <span class="ch-name">${esc(v.name)}</span>
-      <span class="ch-area">${esc(v.area)}</span>
+      <span class="ch-area" data-area="${esc(areaChiave(v.area))}">${esc(v.area)}</span>
       <span class="ch-when${giorno ? ' ch-giorno' : ''}">${esc(quando)}</span>
       <span class="ch-min">${durata(v.minutes)}</span>
       ${timer && !v.fatto_oggi
@@ -1268,13 +1826,14 @@ function renderRoutine() {
     </div>`;
   $('#ch-routine').innerHTML =
     sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine', false) +
+    sezione('Ogni giorno e mezzo', di('frazionaria'), 'a mezza giornata, non a giorni tondi', false) +
     sezione('Ogni settimana', di('settimanale'), 'uno o due al giorno, non tutte insieme', true);
 }
 
 /* --- calendario dell'anno: un mese per riga, con il suo focus ---
-   Il mese corrente e' evidenziato ma chiuso: le sue attivita' sono gia' elencate
-   per intero nel blocco qui sopra, e ripeterle due volte nella stessa schermata
-   confonde invece di aiutare. */
+   Il mese corrente e' aperto, gli altri chiusi: le sue attivita' sono anche nel
+   blocco «Oggi», ma qui si vede il mese intero e a che punto e'. Aprire tutti e
+   dodici i mesi farebbe una pagina di quarantacinque righe, che non si scorre. */
 function renderAnno() {
   const anno = chDati.piano.data.slice(0, 4);
   const meseCorrente = Number(chDati.piano.data.slice(5, 7));
@@ -1285,7 +1844,7 @@ function renderAnno() {
     const fatte = voci.filter((v) => v.ultima && v.ultima.slice(0, 4) === anno).length;
     const cls = m.mese === meseCorrente ? ' current' : '';
     return `
-      <details class="ch-month-card${cls}">
+      <details class="ch-month-card${cls}"${m.mese === meseCorrente ? ' open' : ''}>
         <summary>
           <span class="ch-month-name">${esc(m.nome)}</span>
           <span class="ch-month-title">${esc(m.titolo)}</span>
@@ -1302,7 +1861,7 @@ function renderChoreList() {
   const label = (k) => (chMeta.frequencies.find((f) => f.key === k) || {}).label || k;
   const gruppi = {};
   chDati.attivita.forEach((v) => (gruppi[v.frequency] = gruppi[v.frequency] || []).push(v));
-  const ordine = ['giornaliera', 'settimanale', 'mensile', 'stagionale'];
+  const ordine = ['giornaliera', 'frazionaria', 'settimanale', 'mensile', 'stagionale'];
 
   $('#ch-count').textContent = `${chDati.attive} attività attive su ${chDati.attivita.length}`;
   $('#ch-list').innerHTML = ordine.filter((k) => gruppi[k]).map((k) => `
@@ -1403,6 +1962,14 @@ $('#ch-blitz').addEventListener('click', () => {
   avviaTimer(prime[0].id, prime[0].name, 15);
   switchTab('igiene');
 });
+
+/* Le schede delle pulizie: cambiando scheda si ridisegna solo quella aperta. */
+$$('.ch-nav-btn').forEach((b) => b.addEventListener('click', () => {
+  mostraChPanel(b.dataset.chp);
+  if (b.dataset.chp === 'routine') renderRoutine();
+  if (b.dataset.chp === 'anno') renderAnno();
+  if (b.dataset.chp === 'catalogo') renderChoreList();
+}));
 
 /* --- azioni sulle attività --- */
 $('#ch-oggi').addEventListener('click', choreClick);
@@ -1528,10 +2095,10 @@ async function renderProgetti() {
   if (!progetti.length) {
     $('#pr-list').innerHTML = `<div class="empty-state">
         <span class="empty-emoji">📋</span>
-        <h2>${tutti.length ? 'Nessun progetto aperto' : 'Nessun progetto'}</h2>
+        <h2>${tutti.length ? 'Nessun appunto aperto' : 'Nessun appunto'}</h2>
         <p>${tutti.length
-          ? 'Tutti i progetti sono conclusi. Spunta "Mostra conclusi" per rivederli.'
-          : 'Aggiungi il primo progetto con data di inizio, fine e priorità.'}</p>
+          ? 'Tutti gli appunti sono conclusi. Spunta "Mostra conclusi" per rivederli.'
+          : 'Aggiungi il primo appunto con data di inizio, fine e priorità.'}</p>
       </div>`;
     return;
   }
@@ -1566,20 +2133,20 @@ $('#pr-list').addEventListener('click', async (e) => {
 
   if (btn.dataset.act === 'done') {
     await api(`/api/projects/${id}`, { method: 'PUT', body: { done: !p.done } });
-    toast(p.done ? 'Progetto riaperto' : 'Progetto concluso');
+    toast(p.done ? 'Appunto riaperto' : 'Appunto concluso');
     renderProgetti();
   } else if (btn.dataset.act === 'edit') {
     apriProgettoForm(p);
   } else if (btn.dataset.act === 'del') {
     if (!confirm(`Eliminare "${p.title}"?`)) return;
     await api(`/api/projects/${id}`, { method: 'DELETE' });
-    toast('Progetto eliminato');
+    toast('Appunto eliminato');
     renderProgetti();
   }
 });
 
 function apriProgettoForm(p) {
-  showModal(p ? 'Modifica progetto' : 'Nuovo progetto', `
+  showModal(p ? 'Modifica appunto' : 'Nuovo appunto', `
     <div class="field"><label>Titolo</label>
       <input id="prf-title" value="${esc(p ? p.title : '')}" placeholder="Es. Sistemare il garage"></div>
     <div class="field"><label>Descrizione</label>
@@ -1612,7 +2179,7 @@ function apriProgettoForm(p) {
       if (p) await api(`/api/projects/${p.id}`, { method: 'PUT', body: corpo });
       else await api('/api/projects', { method: 'POST', body: corpo });
       hideModal();
-      toast(p ? 'Progetto salvato' : 'Progetto aggiunto');
+      toast(p ? 'Appunto salvato' : 'Appunto aggiunto');
       renderProgetti();
     } catch (err) { toast(err.message); }
   });
@@ -1622,7 +2189,7 @@ $('#pr-new').addEventListener('click', () => apriProgettoForm(null));
 $('#pr-show-done').addEventListener('change', renderProgetti);
 
 /* ---------- CALENDARIO ----------
-   Gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei Progetti, in una
+   Gli impegni: appuntamenti, scadenze, ricorrenze. Sta nei Appunti, in una
    scheda a parte: un progetto ha un periodo, un impegno ha un giorno preciso.
    In cima gli avvisi (promemoria scattati e cose in ritardo), sotto la griglia
    del mese e l'elenco del giorno scelto. La griglia arriva dal server: e' li'
@@ -1632,6 +2199,10 @@ let calDati = { mese: null, appointments: [], prossimi: [] };
 let calMeta = { categories: [], category_labels: {}, category_colors: {}, months: [] };
 let calGiorno = null;       // il giorno scelto nella griglia (ISO)
 let calVista = null;        // il mese mostrato (YYYY-MM)
+// La griglia in home ha vita propria: mostra il mese che si sfoglia li', senza
+// toccare `calVista` della scheda Calendario (altrimenti sfogliare in home
+// sposterebbe anche il calendario dei Appunti).
+let homeCalVista = null;
 
 async function renderCalendario() {
   if (!calMeta.categories.length) calMeta = await api('/api/calendario/meta');
@@ -1849,7 +2420,7 @@ $('#cal-new').addEventListener('click', () => apriImpegnoForm(null));
 
 /* ---------- MAGAZZINO ----------
    Quello che si tiene in casa e non si mangia: sapone, ferramenta, batterie.
-   Vive nei Progetti perche' non centra con la cucina: non entra in nessuna
+   Vive nei Appunti perche' non centra con la cucina: non entra in nessuna
    ricetta e non si scala dal fabbisogno della spesa come fa la dispensa. */
 let magazzinoDati = [];
 let magazzinoMeta = { categories: [], places: [], default_category: 'Altro', default_place: 'Ripostiglio' };
@@ -2328,6 +2899,17 @@ async function renderProfile() {
   pasti.innerHTML = [1, 2, 3, 4, 5]
     .map((n) => `<option value="${n}">${esc(etichettaPasti(n))}</option>`).join('');
   pasti.value = String(profile.meals_per_day || 2);
+  // bucati al giorno: "non dico" piu' le opzioni. La prima e' l'assenza di
+  // dichiarazione, e in quel caso la lavatrice resta a un giorno e mezzo.
+  const bucati = $('#pf-bucati');
+  const opzioniBucati = meta.bucati_opzioni || [1, 2, 3, 4, 5];
+  bucati.innerHTML = '<option value="0">Non dico</option>' + opzioniBucati
+    .map((n) => `<option value="${n}">${n}${n === 1 ? ' bucato' : ' bucati'}</option>`).join('');
+  bucati.value = String(profile.bucati_giorno || 0);
+  // argomenti delle notizie: si salvano subito, come le altre scelte del profilo
+  const scelti = new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean));
+  $('#pf-news-topics').innerHTML = (meta.news_topics || [])
+    .map((t) => `<button class="chip ${scelti.has(t.key) ? 'on' : ''}" data-news="${t.key}">${esc(t.label)}</button>`).join('');
   $('#pf-allergens').innerHTML = known.map((a) => {
     const on = declaredKeys.has(a.key.toLowerCase()) || declaredKeys.has(a.label.toLowerCase());
     return `<button class="chip ${on ? 'on' : ''}" data-allergen="${a.key}">${esc(a.label)}</button>`;
@@ -2396,6 +2978,30 @@ $('#pf-meals').addEventListener('change', async () => {
     toast(err.message);
     await renderProfile();
   }
+});
+
+// i bucati cambiano la cadenza della lavatrice: si salva subito, e la scheda
+// Pulizie legge il nuovo valore al prossimo disegno
+$('#pf-bucati').addEventListener('change', async () => {
+  const n = Number($('#pf-bucati').value);
+  try {
+    profile = await api('/api/profile', { method: 'PUT', body: { bucati_giorno: n } });
+    if (chMeta) chMeta = null;  // la prossima apertura della scheda rilegge la cadenza
+    toast(n ? `Lavatrice: ogni ${n === 1 ? 'giorno' : `${(1 / n).toFixed(1).replace('.0', '')} giorni`}`
+            : 'Lavatrice: cadenza predefinita');
+  } catch (err) { toast(err.message); await renderProfile(); }
+});
+
+// gli argomenti delle notizie: un tocco li aggiunge o li toglie, e si salvano
+// subito. Nessuno selezionato vuol dire "tutti".
+$('#pf-news-topics').addEventListener('click', async (e) => {
+  const k = e.target.dataset.news;
+  if (!k) return;
+  const cur = new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean));
+  if (cur.has(k)) cur.delete(k); else cur.add(k);
+  profile = await api('/api/profile', { method: 'PUT', body: { news_topics: [...cur] } });
+  await renderProfile();
+  toast('Argomenti delle notizie aggiornati');
 });
 
 $('#pf-custom').addEventListener('click', async (e) => {
@@ -2506,7 +3112,7 @@ async function saveFavorites(ids) {
 async function openFavoritesStep(onBack, preferite) {
   preferite = preferite || new Set(profile.favorite_ids || []);
   showModal('Quali ricette ti piacciono?', `
-    <p class="lead">${onBack ? 'Passo 3 di 3 · ' : ''}l'app parte con un
+    <p class="lead">${onBack ? 'Passo 5 di 5 · ' : ''}l'app parte con un
     <strong>ricettario italiano già pronto</strong><span id="ob-count"></span>: non devi
     inserire le ricette tu. Qui scegli quelle che ami: le ritrovi con il filtro
     <strong>Solo preferite</strong> nella scheda Ricette. Puoi cambiare la scelta quando
@@ -2560,10 +3166,11 @@ async function openFavoritesStep(onBack, preferite) {
   });
 }
 
-/* Onboarding in tre passi: prima quanti pasti al giorno, poi allergie e
-   intolleranze, infine le ricette preferite. Ogni passo salva il suo pezzo
-   appena si va avanti, quindi chi chiude a meta' ritrova quanto dichiarato
-   invece di ricominciare. */
+/* Onboarding in cinque passi: prima quanti pasti al giorno, poi allergie e
+   intolleranze, poi quanti bucati al giorno, poi gli argomenti delle notizie,
+   infine le ricette preferite. Ogni passo salva il suo pezzo appena si va
+   avanti, quindi chi chiude a meta' ritrova quanto dichiarato invece di
+   ricominciare. */
 async function openOnboarding() {
   const known = meta.allergens;
   // Bozza condivisa fra i passi. "Salta" porta al passo successivo senza salvare,
@@ -2572,6 +3179,8 @@ async function openOnboarding() {
   const bozza = {
     nome: profile.full_name || '',
     pasti: profile.meals_per_day || 2,
+    bucati: profile.bucati_giorno || 0,
+    notizie: new Set((profile.news_topics || '').split(',').map((t) => t.trim()).filter(Boolean)),
     selected: known.filter((a) => (profile.restriction_list || []).some((t) =>
       t.toLowerCase() === a.key.toLowerCase() || t.toLowerCase() === a.label.toLowerCase())).map((a) => a.key),
     custom: (profile.restriction_list || []).filter((t) => !known.some((a) =>
@@ -2583,7 +3192,7 @@ async function openOnboarding() {
   const passoPasti = () => {
     const opzioni = [1, 2, 3, 4, 5];
     showModal('Quanti pasti al giorno?', `
-      <p class="lead">Passo 1 di 3 · scegli quanti pasti vuoi pianificare ogni giorno.
+      <p class="lead">Passo 1 di 5 · scegli quanti pasti vuoi pianificare ogni giorno.
       Il piano mostra una casella per ciascuno: puoi cambiare quando vuoi dalla scheda
       <strong>Profilo</strong>.</p>
       <div id="ob-meals" class="meal-choice">
@@ -2615,7 +3224,7 @@ async function openOnboarding() {
 
   const passoAllergie = () => {
     showModal('Benvenuto su Il Maggiordomo', `
-      <p class="lead">Passo 2 di 3 · dichiara allergie e intolleranze: le ricette che le
+      <p class="lead">Passo 2 di 5 · dichiara allergie e intolleranze: le ricette che le
       contengono verranno segnalate. Puoi modificare tutto in seguito dalla scheda
       <strong>Profilo</strong>.</p>
       <div class="field"><label>Nome (facoltativo)</label><input id="ob-name" placeholder="Come ti chiami?" value="${esc(bozza.nome)}"></div>
@@ -2681,15 +3290,119 @@ async function openOnboarding() {
     $('#ob-back').addEventListener('click', passoPasti);
     $('#ob-skip').addEventListener('click', () => {
       bozza.nome = $('#ob-name').value.trim();
-      openFavoritesStep(passoAllergie, preferite);
+      passoBucati();
     });
     $('#ob-next').addEventListener('click', async () => {
       await salvaRestrizioni();
-      openFavoritesStep(passoAllergie, preferite);
+      passoBucati();
     });
   };
 
+  // Passo 3: quanti bucati al giorno. Da qui si ricava ogni quanto rimettere in
+  // moto la lavatrice: una casa che fa due bucati al giorno non deve aspettare
+  // un giorno e mezzo, e una che ne fa uno ogni tanto non deve vederla ogni sera.
+  const passoBucati = () => {
+    const opzioni = meta.bucati_opzioni || [1, 2, 3, 4, 5];
+    showModal('Quanti bucati al giorno?', `
+      <p class="lead">Passo 3 di 5 · quante lavatrici fa la casa in un giorno.
+      Da qui l'app ricava ogni quanto rimettere in moto la lavatrice nella scheda
+      <strong>Pulizie</strong>. Puoi cambiarlo quando vuoi dal <strong>Profilo</strong>.</p>
+      <div id="ob-bucati" class="meal-choice">
+        ${[0, ...opzioni].map((n) => `
+          <button class="meal-opt ${bozza.bucati === n ? 'on' : ''}" data-bucati="${n}">
+            <span class="meal-num">${n === 0 ? '—' : n}</span>
+            <span class="meal-names">${n === 0 ? 'Non dico' : (n === 1 ? 'bucato al giorno' : 'bucati al giorno')}</span>
+          </button>`).join('')}
+      </div>
+      <div class="modal-foot">
+        <button id="ob-back">Indietro</button>
+        <span class="spacer"></span>
+        <button id="ob-skip">Salta</button>
+        <button class="primary" id="ob-bucati-next">Avanti</button>
+      </div>
+    `);
+    $('#ob-bucati').addEventListener('click', (e) => {
+      const b = e.target.closest('.meal-opt');
+      if (!b) return;
+      bozza.bucati = Number(b.dataset.bucati);
+      $$('#ob-bucati .meal-opt').forEach((x) => x.classList.toggle('on', x === b));
+    });
+    $('#ob-back').addEventListener('click', passoAllergie);
+    const avanti = async () => {
+      try {
+        profile = await api('/api/profile', { method: 'PUT', body: { bucati_giorno: bozza.bucati } });
+      } catch (err) { toast(err.message); }
+      passoNotizie();
+    };
+    $('#ob-skip').addEventListener('click', passoNotizie);
+    $('#ob-bucati-next').addEventListener('click', avanti);
+  };
+
+  // Passo 4: gli argomenti delle notizie. Nessuno selezionato vuol dire "tutti":
+  // non si vuole una sezione notizie vuota per chi non ha ancora scelto.
+  const passoNotizie = () => {
+    showModal('Cosa ti interessa leggere?', `
+      <p class="lead">Passo 4 di 5 · scegli gli argomenti delle notizie. Le notizie in
+      home e nella scheda TV mostreranno solo questi. Nessuno selezionato vuol dire
+      <strong>tutti</strong>.</p>
+      <div id="ob-news" class="chips">
+        ${(meta.news_topics || []).map((t) => `
+          <button class="chip ${bozza.notizie.has(t.key) ? 'on' : ''}" data-news="${t.key}">${esc(t.label)}</button>`).join('')}
+      </div>
+      <div class="modal-foot">
+        <button id="ob-back">Indietro</button>
+        <span class="spacer"></span>
+        <button id="ob-skip">Salta</button>
+        <button class="primary" id="ob-news-next">Avanti</button>
+      </div>
+    `);
+    $('#ob-news').addEventListener('click', (e) => {
+      const k = e.target.dataset.news;
+      if (!k) return;
+      if (bozza.notizie.has(k)) bozza.notizie.delete(k); else bozza.notizie.add(k);
+      e.target.classList.toggle('on', bozza.notizie.has(k));
+    });
+    $('#ob-back').addEventListener('click', passoBucati);
+    const avanti = async () => {
+      try {
+        profile = await api('/api/profile', { method: 'PUT', body: { news_topics: [...bozza.notizie] } });
+      } catch (err) { toast(err.message); }
+      openFavoritesStep(passoNotizie, preferite);
+    };
+    $('#ob-skip').addEventListener('click', () => openFavoritesStep(passoNotizie, preferite));
+    $('#ob-news-next').addEventListener('click', avanti);
+  };
+
   passoPasti();
+}
+
+/* Il menù di benvenuto: subito dopo aver creato una casa, un riepilogo di cosa
+   sa fare l'app. E' **saltabile** — chi vuole iniziare a usarla non deve leggere
+   tutto — e si mostra una volta sola, subito dopo la creazione, quando l'utente
+   non sa ancora cosa cercare e le sezioni da sole non lo dicono. */
+function mostraBenvenuto() {
+  const punti = [
+    { ico: '🍽', titolo: 'Cucina', testo: 'Piano dei pasti, ricette già pronte e una lista della spesa che si calcola da sola.' },
+    { ico: '🧽', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
+    { ico: '📋', titolo: 'Appunti', testo: 'Lavori in corso, calendario degli impegni e magazzino di quello che si tiene in casa.' },
+    { ico: '📌', titolo: 'FAQ', testo: 'Wi-Fi, contatti, codici: le informazioni utili sempre a portata di mano.' },
+    { ico: '📺', titolo: 'TV e GYM', testo: 'Playlist video e allenamento, con le notizie filtrate sui tuoi interessi.' },
+    { ico: '🎤', titolo: 'A voce', testo: 'Parla e il maggiordomo scrive, aggiunge, cerca: senza aprire il telefono.' },
+  ];
+  showModal('Benvenuto nel tuo Maggiordomo', `
+    <p class="lead">La casa è pronta. Ecco cosa puoi fare — lo ritrovi tutto
+    dalla <strong>home</strong>.</p>
+    <ul class="welcome-list">
+      ${punti.map((p) => `<li><span class="welcome-ico" aria-hidden="true">${p.ico}</span>
+        <span><strong>${p.titolo}</strong> — ${p.testo}</span></li>`).join('')}
+    </ul>
+    <div class="modal-foot">
+      <button id="wb-skip">Salta</button>
+      <button class="primary" id="wb-inizia">Inizia a usarla</button>
+    </div>
+  `);
+  $('#wb-skip').addEventListener('click', hideModal);
+  $('#wb-inizia').addEventListener('click', hideModal);
 }
 
 /* ---------- modale ---------- */
@@ -2889,7 +3602,7 @@ function speak(text) {
       rete al momento della scelta la rende lenta proprio quando si sta decidendo. */
 
 let voceCloud = { disponibile: false, ascolto: false, voci: [], sentite: new Map(), avvisato: false,
-                  llmDisponibile: false, llmAbilitato: false };
+                  llmPronto: false, llmManca: '', llmAbilitato: false };
 
 // oltre questa memoria non si accumula: le frasi brevi sono poche e ripetute
 const CLOUD_CACHE_MAX = 40;
@@ -3033,7 +3746,8 @@ async function caricaVoceCloud() {
     voceCloud.voci = d.voci || [];
     voceCloud.predefinita = d.predefinita;
     voceCloud.maxCaratteri = d.max_caratteri || 600;
-    voceCloud.llmDisponibile = !!d.llm_disponibile;
+    voceCloud.llmPronto = !!d.llm_pronto;
+    voceCloud.llmManca = d.llm_manca || '';
     voceCloud.llmAbilitato = !!d.llm_abilitato;
     popolaLlm();
     mostraAvvisoRobotica();
@@ -3043,24 +3757,28 @@ async function caricaVoceCloud() {
   } catch (_e) { /* resta la voce del browser */ }
 }
 
-/** Mostra l'interruttore della comprensione col modello, se c'e' la chiave.
+/** Mostra l'interruttore della comprensione col modello, se il modello risponde.
 
-    Se la chiave manca, il blocco sparisce e resta un avviso con il nome esatto
-    della variabile da registrare: e' l'unica cosa che l'utente puo' fare, e
-    indovinarla e' impossibile. Un interruttore che non fa niente sarebbe peggio
-    di nessun interruttore. */
+    Ci sono due casi diversi e prima si confondevano: la **configurazione** c'e'
+    (chiave registrata, oppure l'endpoint locale predefinito, che c'e' sempre) e
+    il modello **risponde**. Il secondo caso e' quello che conta: con Ollama
+    spento l'interruttore si accendeva a vuoto e ogni comando finiva in silenzio
+    sulle regole. Se non risponde, il blocco sparisce e resta un avviso che dice
+    la causa e cosa fare (`llm_manca`), che e' l'unica cosa che serve per uscirne. */
 function popolaLlm() {
   const blocco = $('#voice-llm-block');
   const avviso = $('#voice-llm-avviso');
   if (!blocco) return;
-  blocco.hidden = !voceCloud.llmDisponibile;
-  if (avviso) avviso.hidden = voceCloud.llmDisponibile;
-  if (avviso) avviso.textContent = voceCloud.llmDisponibile ? '' :
-    'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.';
+  blocco.hidden = !voceCloud.llmPronto;
+  if (avviso) {
+    avviso.hidden = voceCloud.llmPronto;
+    avviso.textContent = voceCloud.llmPronto ? '' : (voceCloud.llmManca ||
+      'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.');
+  }
   const sel = $('#voice-llm');
   if (sel) {
     sel.checked = voceCloud.llmAbilitato;
-    sel.disabled = !voceCloud.llmDisponibile;
+    sel.disabled = !voceCloud.llmPronto;
   }
 }
 
@@ -3248,6 +3966,9 @@ let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
 // distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
 // l'utente si aspetta di trovarlo acceso.
 let appenaEntrato = false;
+// Una casa appena creata: `init()` apre il menù di benvenuto al posto delle
+// domande del profilo, che sono gia' state chieste durante la creazione.
+let casaAppenaCreata = false;
 const SVEGLIA_RIPRESA_MS = 250;   // pausa minima dopo la voce, prima di riascoltare
 // Intertempo fra un giro di ascolto e il successivo: quanto basta a lasciar
 // chiudere il microfono del giro prima, non un'attesa di comodo. Ogni
@@ -3361,7 +4082,7 @@ async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
       if (typeof nuovaRicetta === 'function') nuovaRicetta(res.name || '', res.items || []);
     } else {
       // un comando puo' toccare una scheda di un'altra area (dettare una spesa
-      // mentre si e' nei Progetti): si apre prima l'area giusta, altrimenti la
+      // mentre si e' nei Appunti): si apre prima l'area giusta, altrimenti la
       // scheda si attiverebbe sotto un'intestazione che non le appartiene
       for (const tab of res.reload || []) {
         const btn = $(`#tabs button[data-tab="${tab}"]`);
@@ -4453,7 +5174,10 @@ if (llmToggle) {
         return;
       }
       voceCloud.llmAbilitato = !!d.llm_abilitato;
+      voceCloud.llmPronto = !!d.llm_pronto;
+      voceCloud.llmManca = d.llm_manca || '';
       e.target.checked = voceCloud.llmAbilitato;
+      popolaLlm();
       toast(voceCloud.llmAbilitato
         ? 'Comandi compresi anche dal modello.'
         : 'Uso di nuovo il riconoscitore a regole.');
@@ -4591,8 +5315,15 @@ async function creaCasa(evento) {
   try {
     await api('/api/houses', {
       method: 'POST',
-      body: { nome: $('#new-nome').value, password: $('#new-password').value },
+      body: {
+        nome: $('#new-nome').value,
+        password: $('#new-password').value,
+        playlist: $('#new-playlist').value.trim(),
+      },
     });
+    // La casa e' nuova: il menù di benvenuto la accoglie. `init()` lo apre da
+    // solo (vedi il flag), perche' e' li' che la home e' pronta.
+    casaAppenaCreata = true;
     await avviaApp();
   } catch (e) {
     mostraErrore('#new-errore', e.message || 'Non è stato possibile creare la casa');
@@ -4666,8 +5397,200 @@ async function init() {
   mostraTimer();
   // La prima schermata resta la home: le domande iniziali (pasti, allergie,
   // preferite) riguardano la cucina, quindi si aprono entrando in Cucina e non
-  // addosso a chi sta andando in Igiene o Progetti.
-  mostraInvitoProfilo();
+  // addosso a chi sta andando in Igiene o Appunti.
+  if (casaAppenaCreata) {
+    // casa appena creata: invece delle domande del profilo (gia' chieste durante
+    // la creazione) si accoglie con il menù che dice cosa sa fare l'app
+    casaAppenaCreata = false;
+    mostraBenvenuto();
+  } else {
+    mostraInvitoProfilo();
+  }
+  // il riepilogo si riempie da solo: se una delle fonti non risponde, le altre
+  // si mostrano lo stesso (vedi renderHomeOggi)
+  renderHomeOggi();
+  renderHomeCalendario();
+  renderHomeNotizie();
+}
+
+/* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi, gli
+   impegni (di oggi e un suggerimento su quelli di domani) e cosa sta per
+   scadere in dispensa. Non e' una nuova sezione, e' la home che dice qualcosa
+   invece di essere solo un menu.
+
+   Le fonti si chiedono in parallelo e ognuna fallisce per conto suo: un errore
+   sul calendario non deve far sparire i pasti. Se non c'e' niente da dire il
+   riquadro resta nascosto. */
+async function renderHomeOggi() {
+  const box = $('#home-oggi');
+  if (!box) return;
+  const oggi = iso(new Date());
+  const domaniData = new Date();
+  domaniData.setDate(domaniData.getDate() + 1);
+  const domani = iso(domaniData);
+  const esiti = await Promise.all([
+    api(`/api/plan?start=${oggi}&end=${oggi}`).catch(() => []),
+    api('/api/chores').catch(() => null),
+    api(`/api/appointments?giorno=${oggi}`).catch(() => null),
+    api(`/api/appointments?giorno=${domani}`).catch(() => null),
+    api('/api/pantry').catch(() => []),
+  ]);
+  const [pasti, chores, appuntamenti, domaniAppuntamenti, dispensa] = esiti;
+
+  const pastiHtml = pasti.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
+         <span class="oggi-txt">Oggi si mangia: <strong>${
+           pasti.map((p) => `${esc(p.recipe_name)} <span class="oggi-meal">(${esc(p.meal)})</span>`).join(', ')
+         }</strong></span></div>`
+    : '';
+
+  const daFare = chores ? (chores.piano?.da_fare || 0) : 0;
+  const choresHtml = daFare
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🧽</span>
+         <span class="oggi-txt">${daFare === 1
+           ? 'C\'è <strong>1 attività di casa</strong> da fare oggi'
+           : `Ci sono <strong>${daFare} attività di casa</strong> da fare oggi`}</span></div>`
+    : '';
+
+  // Gli impegni di oggi: i promemoria scattati e le cose in ritardo. Li manda
+  // `prossimi`, che copre i promemoria fino al giorno stesso e gli arretrati.
+  // Solo questi: gli impegni di oggi senza promemoria li mostra il calendario
+  // qui sotto, con il puntino sul giorno.
+  const avvisi = appuntamenti?.prossimi || [];
+  const unaVoce = (a) =>
+    `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`;
+  const appHtml = avvisi.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">📆</span>
+         <span class="oggi-txt">${avvisi.slice(0, 3).map(unaVoce).join('<br>')}${
+           avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
+    : '';
+
+  // Quelli di domani, come suggerimento: quelli non ancora scattati non stanno
+  // in `prossimi`, ma sapere stasera che domani c'e' il dentista e' utile. Solo
+  // quelli da fare: un impegno di domani gia' chiuso non e' un impegno.
+  const domaniVoci = (domaniAppuntamenti?.appointments || []).filter((a) => !a.done);
+  const domaniHtml = domaniVoci.length
+    ? `<div class="oggi-riga oggi-domani"><span class="oggi-ico" aria-hidden="true">🔜</span>
+         <span class="oggi-txt">Domani: ${domaniVoci.slice(0, 3).map(unaVoce).join('<br>')}${
+           domaniVoci.length > 3 ? `<br>e altri ${domaniVoci.length - 3}` : ''}</span></div>`
+    : '';
+
+  // quello che scade entro pochi giorni: e' l'informazione che si perde piu'
+  // facilmente restando in dispensa
+  const inScadenza = (dispensa || []).filter((v) => {
+    const s = statoScadenza(v.expires_at);
+    return s.classe === 'scad-oltre' || s.classe === 'scad-vicino';
+  });
+  const scadHtml = inScadenza.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">⏳</span>
+         <span class="oggi-txt">In dispensa sta per scadere: <strong>${
+           inScadenza.slice(0, 4).map((v) => esc(v.name)).join(', ')
+         }</strong>${inScadenza.length > 4 ? ` e altri ${inScadenza.length - 4}` : ''}</span></div>`
+    : '';
+
+  const contenuto = pastiHtml + choresHtml + appHtml + domaniHtml + scadHtml;
+  if (!contenuto) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `<h2 class="oggi-titolo">Oggi</h2>${contenuto}`;
+  box.classList.remove('hidden');
+}
+
+/* Il calendario degli impegni in fondo alla home: la stessa griglia del mese
+   della scheda Calendario, ma in sola lettura. Il mese si sfoglia qui (vive in
+   `homeCalVista`, indipendente da `calVista`), i giorni occupati hanno il loro
+   puntino, e cliccando un giorno si apre il Calendario nei Appunti — dove si
+   aggiunge, si modifica e si segna come fatto. Se il server non risponde il
+   riquadro resta nascosto: un calendario vuoto in home e' peggio di nessuno. */
+async function renderHomeCalendario() {
+  const box = $('#home-cal');
+  if (!box) return;
+  if (!calMeta.categories.length) {
+    try { calMeta = await api('/api/calendario/meta'); } catch (e) { box.classList.add('hidden'); return; }
+  }
+  let dati;
+  try { dati = await api('/api/appointments' + (homeCalVista ? `?mese=${homeCalVista}` : '')); }
+  catch (e) { box.classList.add('hidden'); return; }
+  if (!homeCalVista) homeCalVista = `${dati.mese.anno}-${pad(dati.mese.mese)}`;
+  const m = dati.mese;
+  $('#home-cal-mese').textContent = `${calMeta.months[m.mese - 1]} ${m.anno}`;
+  const perGiorno = {};
+  (dati.appointments || []).forEach((a) => {
+    (perGiorno[a.when_date] = perGiorno[a.when_date] || []).push(a);
+  });
+  const oggi = iso(new Date());
+  const sett = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
+  $('#home-cal-grid').innerHTML = `
+    <div class="cal-sett">${sett.map((s) => `<span>${s}</span>`).join('')}</div>
+    <div class="cal-celle">${m.celle.map((c) => {
+      const voci = perGiorno[c.iso] || [];
+      const cls = [
+        'cal-cella',
+        c.nel_mese ? '' : 'fuori',
+        c.weekend ? 'weekend' : '',
+        c.iso === oggi ? 'oggi' : '',
+        voci.length ? 'occupato' : '',
+      ].filter(Boolean).join(' ');
+      return `<button class="${cls}" data-giorno="${c.iso}">
+          <span class="cal-num">${c.giorno}</span>
+          <span class="cal-punti">${voci.slice(0, 3).map((v) =>
+            `<span class="cal-dot" style="background:var(${calMeta.category_colors[v.category]})"></span>`).join('')}</span>
+        </button>`;
+    }).join('')}</div>`;
+  box.classList.remove('hidden');
+}
+
+$('#home-cal-prev').addEventListener('click', () => {
+  const [a, mm] = homeCalVista.split('-').map(Number);
+  const d = new Date(a, mm - 2, 1);
+  homeCalVista = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  renderHomeCalendario();
+});
+$('#home-cal-next').addEventListener('click', () => {
+  const [a, mm] = homeCalVista.split('-').map(Number);
+  const d = new Date(a, mm, 1);
+  homeCalVista = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  renderHomeCalendario();
+});
+$('#home-cal-grid').addEventListener('click', (e) => {
+  const cella = e.target.closest('.cal-cella');
+  if (!cella) return;
+  // il Calendario nei Appunti si apre sullo stesso mese e sullo stesso giorno
+  calVista = homeCalVista;
+  calGiorno = cella.dataset.giorno;
+  apriSezione('progetti');
+  switchTab('calendario');
+});
+$('#home-cal-apri').addEventListener('click', () => {
+  calVista = homeCalVista;
+  apriSezione('progetti');
+  switchTab('calendario');
+});
+
+$('#home-notizie-apri').addEventListener('click', () => {
+  apriSezione('tv');
+});
+
+async function renderHomeNotizie() {
+  const box = $('#home-notizie');
+  if (!box) return;
+  let dati;
+  try { dati = await api('/api/notizie'); }
+  catch (e) { box.classList.add('hidden'); return; }
+  const notizie = dati.notizie || [];
+  if (!notizie.length) { box.classList.add('hidden'); return; }
+  // solo i titoli, con fonte e data: la home rimanda alla TV per il resto
+  $('#home-notizie-elenco').innerHTML = notizie.map((n) => `
+    <article class="tv-notizia">
+      <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
+        <span class="tv-notizia-titolo">${esc(n.titolo)}</span>
+        <span class="tv-notizia-fonte">${esc(n.fonte || '')}${
+          n.data ? ` · ${esc(n.data.slice(0, 10))}` : ''} · apri la fonte ↗</span>
+      </a>
+    </article>`).join('');
+  box.classList.remove('hidden');
 }
 
 // All'avvio non si carica niente: prima si chiede al server chi e' collegato.

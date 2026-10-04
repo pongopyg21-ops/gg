@@ -6,8 +6,9 @@ Questa è la **V.8**. Il progetto è **maturo e funzionante**: non serve riscriv
 niente, serve **continuare**. Prima di tutto:
 
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
-   attivo: il container viene ricreato, è normale). Poi `./sorveglia.sh`.
-2. Test: `./avvia.sh test` → attesi **451 verdi**. Se non lo sono, fermati e dillo.
+   attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
+   quindi non serve più lanciare `./sorveglia.sh` a parte.
+2. Test: `./avvia.sh test` → attesi **629 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -25,6 +26,18 @@ sei volte. La via che regge è registrarla come segreto col nome esatto
 ogni comando e `./avvia.sh` la trova. `./avvia.sh diagnosi` deve dire
 `da: ambiente`. Su una macchina propria, invece, il file accanto al programma è
 la via normale e non sparisce.
+
+**Il segreto si esporta solo per i comandi che ne scrivono il nome.** L'iniezione
+scatta sul **nome esatto** che compare nel testo del comando: `./avvia.sh restart`
+da solo non basta, e il server riparte **senza** la chiave — l'app dice "il browser
+non riesce a raggiungere il servizio di ascolto" e sembra un firewall, mentre è
+solo un riavvio senza chiave. Per riavviare con la voce attiva:
+
+    AZURE_SPEECH_KEY="$AZURE_SPEECH_KEY" AZURE_SPEECH_REGION="$AZURE_SPEECH_REGION" ./avvia.sh restart
+
+Il segno che è andata bene: `avvia.sh` stampa `voce neurale Azure attiva`. Un
+nome generico (`AZURE_SPEECH`) **non** innesca l'iniezione: va scritto il nome
+registrato per intero.
 
 **Fili aperti**: (a) la casa `Gian` è stata rimossa dal registro su richiesta
 dell'utente; il file `case/case-gian.db` resta su disco (scelta voluta, vedi
@@ -44,9 +57,9 @@ suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`,
 impegni e promemoria in `calendario.py`.
 
 L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
-**Cucina**, **Igiene**, **Progetti**, **FAQ**, **TV**. Piano, ricette, dispensa,
+**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**. Piano, ricette, dispensa,
 spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
-**Igiene**; **Progetti** raccoglie lavori e idee da fare ed è anche la casa del
+**Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
 raccoglie l'intrattenimento, cioè i video della playlist di casa e le notizie
@@ -55,14 +68,19 @@ dal mondo (vedi `tv.py`).
 ## Comandi
 
 ```bash
-./avvia.sh                               # avvia e verifica il server
-./avvia.sh restart                       # ferma e riavvia
-./avvia.sh status                        # attivo? su quale porta?
+./avvia.sh                               # avvia server + sorveglianza
+./avvia.sh restart                       # ferma e riavvia tutto
+./avvia.sh stop                          # ferma server e sorveglianza
+./avvia.sh status                        # attivo? su quale porta? sorveglianza?
+./avvia.sh sorveglianza                  # (ri)accende solo la sorveglianza
 ./avvia.sh log                           # ultime righe del log
 ./avvia.sh test                          # test nella venv del progetto
-./sorveglia.sh                           # riavvia il server da solo se cade
+./sorveglia.sh                           # equivalgono a './avvia.sh sorveglianza'
 ./sorveglia.sh status                    # sorveglianza attiva? server su?
 ```
+
+`MAGGIORDOMO_SENZA_SORVEGLIA=1 ./avvia.sh` avvia il solo server, senza
+sorveglianza (per un debug in primo piano).
 
 **All'inizio di ogni conversazione il server non è attivo.** L'ambiente viene
 azzerato fra una sessione e l'altra: i processi in background muoiono e i
@@ -169,15 +187,26 @@ distinzione che cambia il rimedio. Se `cat /proc/uptime` mostra pochi secondi o
 caduto: è tutto l'ambiente a essere nuovo, e allora anche `sorveglia.sh` è morto
 con lui. In quel caso non serve indagare sul perché il server sia "morto" —
 non è morto, non è mai stato avviato in questo container. `./avvia.sh` rimette
-in piedi entrambi: è il primo comando da provare, sempre.
+in piedi entrambi: è il primo comando da provare, sempre. È cambiato proprio per
+questo: dopo ogni ricreazione il link restava a 502 perché la sorveglianza andava
+riaccesa a mano ed era il passo che si dimenticava. Ora `./avvia.sh` la tira su
+da solo, e `./avvia.sh stop`/`restart` la fermano prima del server (se restasse
+su, vedrebbe il server sparire e lo riavvierebbe subito, annullando lo `stop`).
 
 `sorveglia.sh` copre il caso diverso, quello in cui **solo il server** cade
 mentre l'ambiente resta vivo: controlla la pagina ogni 15 secondi e riavvia se
-non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Scrive sul
+non risponde, con `flock` per non duplicare un `avvia.sh` già in corso. Quando
+richiama `./avvia.sh`, questo non deve riaccendere a sua volta la sorveglianza:
+lo script esporta `MAGGIORDOMO_SORVEGLIA_GIRO=1`, e `avvia_sorveglianza()` lo
+vede e non fa niente. Senza quel freno si riavvierebbe all'infinito — c'è un test
+manuale da fare dopo ogni modifica a questi due script: `./avvia.sh`, poi
+`kill -KILL` del server, e verificare che torni su **con un solo sorvegliante**
+(`pgrep -fa "sorveglia.sh --giro"` deve contarne uno). Scrive sul
 log solo quando interviene, così un log non vuoto è già un'informazione.
 
 **Se l'utente dice che l'app "prova a connettersi senza riscontro", la prima cosa
-da controllare è `./sorveglia.sh status`.** È il sintomo esatto di un server morto
+da controllare è `./avvia.sh status` o `./sorveglia.sh status`.** È il sintomo
+esatto di un server morto
 a metà sessione: la pagina non carica e sembra un guasto dell'app, mentre è solo
 il processo che non c'è più. Non è l'app a essere lenta: la pagina iniziale pesa
 ~18 KB e `app.js` ~109 KB, e il server locale risponde in circa 1 ms. Qualunque
@@ -191,7 +220,8 @@ ricreazione del container porterebbe comunque via qualsiasi cosa avviata qui.
 La continuità vera (server che riparte da solo dopo un riavvio della macchina) si
 ottiene solo su una macchina propria, con un servizio di sistema o
 `docker run --restart unless-stopped`. Qui l'unica strategia sensata è:
-all'inizio della conversazione `./avvia.sh`, poi `./sorveglia.sh`.
+all'inizio della conversazione `./avvia.sh`, che rimette su server e sorveglianza
+insieme.
 
 `cucina.db` non è versionato di proposito: a ogni ambiente nuovo va ricreato con
 `seed.py` (ci pensa `avvia.sh`), e riparte l'onboarding. Non è una perdita.
@@ -319,6 +349,17 @@ cose con gli strumenti di Windows.
   niente e non tocca i segreti. Serve perche' le tre cause (tunnel, app spenta,
   proxy non dichiarato) si confondono fra loro, e il tunnel resta attivo anche
   ad app spenta.
+- `windows\verifica-modello.bat` (+ `windows\modello.ps1`) — controlla se il
+  modello di casa (Ollama) e' pronto: se risponde, se il modello che l'app si
+  aspetta e' scaricato, e — quando tutto c'e' — che resta da accendere
+  l'interruttore in **Profilo > Capire i comandi**. `avvia.bat` lo chiama a ogni
+  avvio (poche righe, senza fermare la finestra). La configurazione si **chiede
+  all'app** (`import comprensione`), non si riscrive nello script: due copie
+  della stessa regola divergono, e allora lo stato all'avvio mente — la stessa
+  scelta di `avvia.sh` per la voce Azure. Serve perche' il sintomo «il modello
+  non capisce» ha tre cause (Ollama spento, modello non scaricato, interruttore
+  spento) che danno lo stesso effetto, e l'interruttore spento — il piu'
+  frequente, perche' parte a `0` — non produce nessun avviso.
 
 Cose che sembrano dettagli e non lo sono:
 
@@ -577,8 +618,9 @@ Conseguenze pratiche per chi mette mano al codice:
   lavoro dell'utente.** `PREPARAZIONI_PRECEDENTI` è la fotografia dei testi com'era
   prima di essere riscritti, e `semina()` sostituisce `instructions` **solo se è
   ancora esattamente quella vecchia**: una preparazione riscritta a mano è un dato
-  dell'utente e non va sovrascritta. È lo stesso metodo di `MINUTI_CAMBIATI` in
-  `igiene.py`. Senza, chi usa l'app da prima vedrebbe i testi nuovi solo creando una
+  dell'utente e non va sovrascritta. È la stessa cautela dell'aggiornamento dei
+  minuti in `igiene.py`: le stime ritoccate a mano non si riallineano mai. Senza,
+  chi usa l'app da prima vedrebbe i testi nuovi solo creando una
   casa nuova, e chi ha riscritto la ricetta di famiglia se la vedrebbe cancellare.
   Aggiungendo un testo nuovo a `RECIPES`, va aggiunto il testo vecchio anche a
   `PREPARAZIONI_PRECEDENTI`, altrimenti l'aggiornamento non scatta.
@@ -666,6 +708,78 @@ Conseguenze pratiche per chi mette mano al codice:
   filtro di ricerca (`renderPantryTable`) è locale: non deve rifare la richiesta dei
   suggerimenti, che non dipendono da cosa si sta cercando. Modificare una quantità
   dalla tabella invece li aggiorna, perché cambia cosa risulta coperto.
+  Con la dispensa **vuota** il riquadro non resta muto: dice di aggiungere qualche
+  ingrediente. Prima spariva e basta, e sembrava che i suggerimenti non esistessero
+  — che è esattamente quello che si vede al primo avvio, quando la dispensa è vuota.
+- **La scheda condivisibile della spesa** (`GET /api/shopping/condividi`) è una
+  vista, non un secondo archivio: si costruisce da `_voci_spesa`, le stesse voci
+  della lista, quindi non può mostrare numeri diversi da quelli a schermo. Le
+  regole del periodo sono quelle della vista per giorno — un giorno porta la
+  **quota** di quel giorno (`quota` nella voce), un intervallo il totale — e le
+  voci già spuntate restano fuori (chi compra non ricompra il carrello), mentre
+  quelle senza giorni (aggiunte a mano) restano sempre.
+  L'endpoint restituisce **dati**, non HTML: la scheda grafica si compone nel
+  client (`schedaSpesaHtml` per la pagina, `schedaSpesaCanvas` per il PNG), che
+  conosce il tema e il carattere. Aggiungendo un campo alla scheda, si aggiorna
+  `_scheda_spesa` in un punto solo; il testo (`testo`) nasce dalle stesse voci.
+  I parametri (`giorno` oppure `dal`/`al`, più `nota`) si validano una volta sola:
+  una data storta è un 400, non una scheda vuota che sembra «niente da comprare».
+- **La scadenza in dispensa** (`pantry.expires_at`, `parse_data`). È una data
+  facoltativa: vuoto significa «non lo so», che è **diverso** da «non scade». Non
+  si indovina mai una data, perché una scadenza inventata farebbe buttare cibo
+  buono. Nel `PATCH` ogni campo si tocca solo se presente nel corpo (`quantity`,
+  `expires_at`): mandare la sola scadenza non deve azzerare la quantità, e
+  cambiare la quantità non deve cancellare la scadenza; per toglierla si manda
+  vuota. Aggiungendo scorte dello stesso ingrediente vince la scadenza **più
+  vicina** (`_scadenza_piu_vicina`): è quella che va guardata prima, e una partita
+  senza data non cancella quella che si sapeva. Nel client il colore dice
+  l'urgenza (`statoScadenza`: rosso scaduto, ambra entro pochi giorni) senza
+  dover leggere la data.
+  I suggerimenti **tengono conto delle scadenze**: a parità di copertura sale in
+  cima la ricetta che consuma una scorta in scadenza entro `GIORNI_SCADENZA` (7),
+  perché è quella da cucinare adesso. La card dice quali (`sug-scade`), invece di
+  lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
+  è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
+- **L'ordine della home**: categorie (le schede «Cucina, Igiene, …»), poi il
+  riepilogo «Oggi», il calendario, le notizie del giorno e in fondo
+  l'intestazione «Il Maggiordomo» (`home-hero-basso`). Le categorie stanno
+  subito sotto l'invito a parlare: si arriva in home per scegliere dove andare,
+  e devono vedersi senza scorrere. Tutto il resto è da leggere, non da premere,
+  quindi viene dopo. È un ordine scelto dall'utente, non un dettaglio di stile:
+  prima le schede erano in fondo, ed era sbagliato. L'intestazione era invece in
+  cima e spingeva giù le categorie: ora chiude la pagina (vedi
+  `test_l_intestazione_chiude_la_home`).
+- **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
+  calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
+  stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
+  endpoint dedicato: `/api/tv` tirerebbe giù anche i video, che in home non si
+  mostrano. Stessa regola dell'endpoint TV (risposta subito dalla cache, un
+  filo riprova dopo — `_aggiorna_notizie_in_sottofondo`) e del riepilogo «Oggi»
+  (se non c'è niente, il riquadro resta nascosto).
+- **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
+  mostra i pasti di oggi, le attività di casa da fare, gli impegni e cosa
+  sta per scadere in dispensa. Gli impegni di oggi li manda `prossimi` (i
+  promemoria scattati e le cose in ritardo); quelli di domani si chiedono a
+  parte con `?giorno=<domani>` e si suggeriscono come riga «Domani: …», solo
+  quelli non ancora chiusi — quelli che non avvisano ancora non stanno in
+  `prossimi`, e sapere stasera che domani c'è il dentista è utile. Le fonti si
+  chiedono **in parallelo** e ognuna fallisce per conto suo (`.catch`): un errore
+  sul calendario non deve far sparire i pasti. Se non c'è niente da dire il
+  riquadro resta nascosto — una home con un riquadro vuoto è peggio di una home
+  senza riquadro.
+- **Il calendario degli impegni in fondo alla home** (`renderHomeCalendario`).
+  La stessa griglia del mese della scheda Calendario, ma **in sola lettura**: qui
+  si sfoglia e si vede quali giorni sono occupati, non si compila. Cliccando un
+  giorno o «Apri →» si va al Calendario nei Progetti, dove si aggiunge e si
+  modifica. Il mese mostrato vive in `homeCalVista`, **separato** da `calVista`:
+  sfogliare in home non deve spostare il calendario dei Progetti. Se gli impegni
+  non arrivano il riquadro resta nascosto (stessa regola del riepilogo «Oggi»).
+  Si ridisegna all'avvio e al ritorno in home (`tornaAlleSezioni`), così un
+  impegno aggiunto nei Progetti compare senza ricaricare la pagina.
+- **Le porzioni si scalano nel dettaglio ricetta** (`qtaScalata`). La ricetta è
+  scritta per `servings`; cambiando il numero nel dettaglio, le quantità seguono
+  (frazione rispetto al numero base). Una quantità non numerica («q.b.») resta
+  com'è: riscalarla non vorrebbe dire niente.
 - **Tempi e costo della ricetta**: `prep_minutes` e `cook_minutes` sono due colonne
   separate perché dicono cose diverse — la cottura si può lasciare andare da sola, la
   preparazione assorbe l'attenzione — e il totale è la loro somma, calcolata nel
@@ -717,14 +831,44 @@ Conseguenze pratiche per chi mette mano al codice:
   esaurimento) è calcolato dal server e non dal client, così il confronto fra
   giacenza e scorta minima resta in un posto solo.
 - **Igiene**: il catalogo di partenza sta in `igiene.py` e viene seminato in
-  `chores`, come le ricette. La cadenza (`giornaliera`, `settimanale`, `mensile`,
-  `stagionale`) decide quando una voce rientra; le stagionali solo nel loro `month`
-  e una volta l'anno. `piano()` in `igiene.py` è il cuore del metodo: **quotidiane
-  e settimanali stanno nel piano di oggi, mensili e stagionali nel blocco del
-  mese**. Se finissero tutte nel piano di oggi la giornata diventerebbe
-  impraticabile e il piano verrebbe abbandonato: è il motivo per cui il test
-  `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti` conta solo oggi,
-  `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in entrambi i casi.
+  `chores`, come le ricette. La cadenza (`giornaliera`, `frazionaria`,
+  `settimanale`, `mensile`, `stagionale`) decide quando una voce rientra; le
+  stagionali solo nel loro `month` e una volta l'anno. `piano()` in `igiene.py` è
+  il cuore del metodo: **quotidiane, frazionarie e settimanali stanno nel piano di
+  oggi, mensili e stagionali nel blocco del mese**. Se finissero tutte nel piano di
+  oggi la giornata diventerebbe impraticabile e il piano verrebbe abbandonato: è il
+  motivo per cui il test `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti`
+  conta solo oggi, `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in
+  entrambi i casi.
+- La cadenza **frazionaria** («ogni giorno e mezzo», `FRAZIONARIE` — la lavatrice)
+  non è un blocco tondo e per questo non entra mai nel blocco mensile: `CADENZE`
+  le dà 1,5 giorni. Conta **l'ora del completamento**, non solo la data: con la
+  sola data la mezza giornata si perderebbe e alle 8 di lunedì la voce sembrerebbe
+  da rifare già martedì mattina, cioè un giorno. `chore_log.date` per questo è un
+  istante ISO (`datetime('now')`, non `date('now')`) e `scadenza()` confronta
+  istanti per questa cadenza (`giorni` può quindi essere una frazione). In `piano()`
+  rientra **solo quando è davvero da rifare** (come le settimanali), non sempre:
+  altrimenti gonfierebbe il «da fare» di oggi con una lavatrice non dovuta. Resta
+  comunque visibile in Routine e nel catalogo.
+- **La sezione Igiene è divisa in schede** (Oggi / Routine / Calendario / Attività),
+  e ognuna ha il suo pannello (`.ch-panel`, `data-chp-panel`). Prima erano un'unica
+  colonna: lo stesso catalogo compariva in più blocchi — le quotidiane tre volte,
+  le stagionali due — e la prima schermata arrivava a ~129 righe per 60 voci.
+  Le schede separano tre mestieri diversi: **cosa fare adesso**, **cosa esiste**
+  (il catalogo) e **cosa tocca nell'anno**. `mostraChPanel()` in `app.js` tiene
+  aperto un pannello solo; il pulsante attivo si riconosce dal colore, non solo dal
+  contenuto. La scheda aperta (`chPanel`) vive in memoria e non si salva: riaprendo
+  l'app si torna su «Oggi». I test `test_la_sezione_igiene_ha_le_schede_e_i_pannelli`
+  e `test_il_cambio_scheda_mostra_un_pannello_solo` lo tengono fermo.
+- La scheda **Oggi** si apre con un riquadro-guida (`.ch-hero`): un anello
+  (`.ch-ring`, disegnato con `conic-gradient` e `--pct`) che mostra quante voci
+  sono state spuntate, e i minuti che restano. Sotto, ogni voce è una riga
+  (`.ch-row`) con la fascia di colore del suo ambiente (`.ch-area[data-area=…]`,
+  da `areaChiave` in `app.js`), così le voci della stessa zona si riconoscono a
+  colpo d'occhio senza leggerle. Prima era un'unica colonna di testo uguale.
+- Nel calendario annuale **solo il mese corrente è aperto** (`<details open>`), gli
+  altri chiusi: aprirli tutti faceva una pagina di quarantacinque righe che non si
+  scorre. Le attività del mese corrente restano comunque visibili nel blocco «Oggi».
 - Le scadenze delle pulizie **non si salvano**: si ricavano dall'ultima riga di
   `chore_log`, come i giorni della spesa dal piano. Una tabella di appoggio si
   disallineerebbe appena si registra un completamento. `scadenza()` restituisce
@@ -745,13 +889,22 @@ Conseguenze pratiche per chi mette mano al codice:
   al primo uso rientrerebbero tutte insieme, che è l'ammasso che la distribuzione
   deve togliere. Una settimanale **saltata** invece rientra in ritardo, perché
   perdere il proprio giorno non deve nasconderla per una settimana.
-- `RIMOSSE` in `igiene.py` mappa una voce tolta dal catalogo alla sua sostituta, e
-  `MINUTI_CAMBIATI` mappa una voce al `(vecchio, nuovo)` dei minuti. Servono perché
-  il seme è idempotente e non tocca le righe esistenti: senza, chi usa l'app da prima
-  terrebbe per sempre la voce doppia e le stime vecchie. I completamenti della voce
-  tolta si **spostano** sulla sostituta prima del `DELETE`: il `CASCADE` li
-  porterebbe via, e sono lavoro fatto davvero. `MINUTI_CAMBIATI` aggiorna solo dal
-  valore vecchio, altrimenti cancellerebbe la stima ritoccata a mano a ogni richiesta.
+- `RIMOSSE` in `igiene.py` mappa una voce tolta dal catalogo alla sua sostituta
+  (o a `None` se va solo tolta). Serve perché il seme è idempotente e non tocca le
+  righe esistenti: senza, chi usa l'app da prima terrebbe per sempre la voce doppia.
+  I completamenti della voce tolta si **spostano** sulla sostituta prima del
+  `DELETE`: il `CASCADE` li porterebbe via, e sono lavoro fatto davvero. I minuti
+  delle voci del catalogo non si riallineano mai: sono una stima che l'utente può
+  correggere, e un `UPDATE` incondizionato cancellerebbe la correzione a ogni
+  richiesta.
+- Quanti **bucati al giorno** fa la casa (`profile.bucati_giorno`, 0 = non
+  dichiarato, da 1 a 5) decidono ogni quanto torna «Avviare la lavatrice»:
+  `igiene.cadenza_lavatrice()` traduce i bucati in giorni (`max(0.5, 1/bucati)`),
+  con 1,5 giorni come valore di partenza. La cadenza entra nello stato di
+  `scadenza()` come `cadenza_giorni`, così l'interfaccia dice ogni quanto tocca
+  davvero. Il minimo è mezza giornata: sotto la voce resterebbe sempre in cima al
+  piano. Le opzioni stanno in `BUCATI_OPZIONI` e si servono da `/api/meta` e
+  `/api/chores/meta`, così onboarding e Profilo non inventano i numeri.
 - La routine **quotidiana** sta in `QUOTIDIANE` e deve restare sotto i venticinque
   minuti in tutto: oltre smette di essere una routine. Il test
   `test_la_routine_quotidiana_resta_breve` lo tiene fermo.
@@ -980,13 +1133,18 @@ Conseguenze pratiche per chi mette mano al codice:
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione
   della cucina e resta nascosto altrove.
-- L'onboarding ha tre passi (`passoPasti` dentro `openOnboarding` e
-  `openFavoritesStep`): prima quanti pasti, poi allergie, poi preferite.
-  `fav_prompted` distingue chi non ha mai visto la scelta delle preferite, così il
-  terzo passo viene riproposto a chi si era profilato prima. Lo stato dei passi vive
-  in una `bozza` condivisa, perché "Indietro" non salva. Le domande iniziali si
-  aprono entrando in Cucina (`avviaProfiloSeServe`), non sulla pagina iniziale: chi
-  sta andando in Igiene non deve vedersi chiedere cose di cucina.
+- L'onboarding ha cinque passi (`passoPasti`, `passoBucati`, `passoNotizie` dentro
+  `openOnboarding`, più `openFavoritesStep`): quanti pasti, allergie, bucati al
+  giorno, argomenti delle notizie, preferite. Il numero nell'intestazione («Passo N
+  di 5») si conta da solo, così non può mentire. `fav_prompted` distingue chi non ha
+  mai visto la scelta delle preferite, così l'ultimo passo viene riproposto a chi si
+  era profilato prima. Lo stato dei passi vive in una `bozza` condivisa, perché
+  "Indietro" non salva. Le domande iniziali si aprono entrando in Cucina
+  (`avviaProfiloSeServe`), non sulla pagina iniziale: chi sta andando in Igiene non
+  deve vedersi chiedere cose di cucina. Al primo accesso di una casa appena creata
+  si apre anche il **menù di benvenuto** (`mostraBenvenuto`, `#wb-skip` /
+  `#wb-inizia`): un elenco di cosa sa fare l'app, saltabile, per chi non sa da dove
+  cominciare.
 
 ## Interfaccia mobile
 
@@ -1067,6 +1225,38 @@ Il sintomo, per riconoscerlo: la pagina è vecchia **solo** in un browser che l'
 già aperta, e ricaricando con forza si aggiorna. Il rimedio immediato per l'utente
 è aggiungere `?v=2` all'indirizzo, che per il browser è una pagina mai vista.
 
+**Gli asset hanno la versione nell'indirizzo.** La pagina è servita da `/` (non da
+`send_from_directory`) e inietta in `app.js` e `style.css` un `?v=<impronta>`:
+l'impronta è un hash del contenuto, calcolato una volta e tenuto in memoria finché
+mtime e dimensione non cambiano (`_versione_asset`). Così il browser può tenere
+quei file **a lungo** (`max-age=31536000, immutable`) senza mai vedere una
+versione vecchia: se il file cambia, cambia l'indirizzo. Le immagini dei dati non
+hanno la versione e continuano a scegliere da sole la loro scadenza.
+
+**Il service worker (`static/sw.js`, servito da `/sw.js`).** Salva la **scocca**
+(pagina, CSS, JS, icone) per farla aprire anche senza rete. Quattro cose da non
+rompere: (1) è servito da `/sw.js` e non da `/static/`, perché un service worker
+controlla solo il percorso da cui è servito e da `/static/` non potrebbe mostrare
+la pagina `/`; (2) `/sw.js` è in `ROTTE_PUBBLICHE`, perché deve partire prima del
+login; (3) le **API non si salvano mai**: un dato vecchio mostrato come fresco è
+peggio di un dato mancante — la dispensa di ieri non è la dispensa di oggi;
+(4) **pagine e file statici vanno entrambi prima in rete**, copia solo se la rete
+manca.
+
+Il punto (4) è stato un guasto vero, non una preferenza. La versione precedente
+serviva i file statici **prima dalla copia**, ragionando che tanto hanno la
+versione nell'indirizzo (`?v=...`). Ma `chiave()` **toglie** la query per
+riconoscere la copia salvata all'installazione: così la copia vecchia rispondeva
+anche a una richiesta con versione nuova. Effetto: `index.html` (prima la rete) si
+aggiornava, `app.js` restava quello dell'installazione, e la funzione nuova — il
+calendario in home — non veniva mai disegnata. Si è visto in home: la sezione
+c'era nell'HTML e restava vuota/invisibile. La regola che ne esce: **mentre c'è
+rete, la versione servita è sempre quella nuova**; il `?v=...` esiste per
+distinguere le versioni e va onorato, non aggirato con la cache. Il
+`serveStatico()` corrispondente ha un test che esegue davvero la funzione con un
+`fetch` finto: online vince la rete, offline regge la copia. Alzando `CACHE`
+(`...-v2`) le copie vecchie vengono sfrattate al prossimo `activate`.
+
 ## Capire i comandi con un modello (facoltativo)
 
 Il parser a regole di `voice.py` capisce le frasi previste e lascia fuori le
@@ -1105,14 +1295,40 @@ Le tre scelte che contano:
   E' una scelta dell'utente, non del dispositivo, per questo sta nella casa e non
   in `localStorage`.
 - **L'interruttore non accende una cosa che non c'e'.** `PUT /api/voce/llm` con
-  `abilitato: true` e nessun modello risponde **400** dicendo cosa manca (per un
-  servizio in rete il nome della variabile, `LLM_API_KEY`; per un modello di casa
-  l'indirizzo da controllare). L'alternativa — accettare e non fare niente — e'
-  peggio di un rifiuto: l'utente crederebbe di aver acceso qualcosa.
+  `abilitato: true` e nessun modello **raggiungibile** risponde **400** dicendo
+  cosa manca: per un servizio in rete il nome della variabile (`LLM_API_KEY`),
+  per un modello di casa la causa vera (Ollama spento / modello non scaricato).
+  L'alternativa — accettare e non fare niente — e' peggio di un rifiuto: l'utente
+  crederebbe di aver acceso qualcosa.
+- **`configurato()` non e' `raggiungibile()`.** Sono due cose diverse, e
+  confonderle faceva mentire il pannello: un endpoint locale c'e' **sempre** (e'
+  il predefinito), quindi `configurato()` era vero anche a Ollama spento.
+  `/api/voce/config` espone `llm_disponibile` (c'e' la configurazione),
+  `llm_pronto` (il modello risponde **adesso**) e `llm_manca` (la causa, se
+  manca). L'interruttore si mostra — e si accende — solo se `llm_pronto`, che e'
+  una verifica di rete breve (`raggiungibile()`, `TIMEOUT_VERIFICA` 1.5 s) contro
+  l'elenco dei modelli: `/api/tags` per Ollama (porta 11434), `/models` per un
+  servizio in rete. Un guasto di rete qui non e' un errore, e' "non pronto": si
+  resta sulle regole senza rompere niente.
 
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
-(`_leggi_file_segreto`), prima dell'avvio, come quella di Azure: non c'e' una
-rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
+(`_leggi_file`), prima dell'avvio, come quella di Azure: non c'e' una rotta che
+la salvi, perche' l'app non deve poter riscrivere il proprio segreto. Il file e'
+`segreto.txt` (o `segreto`, `segreto.sh`, `segreto.bat`), lo stesso della voce, e
+accetta le etichette `chiave`, `modello`, `base_url` oltre ai nomi veri
+(`LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`). A differenza della voce, che
+distingue una chiave da un'area, qui una riga nuda che non sia una parola
+minuscola corta vale come chiave LLM.
+
+**Verifica di Ollama, prima di credere che sia configurato.** `configurato()` e'
+vero anche a Ollama spento (l'endpoint locale e' il predefinito): la verifica
+vera e' `raggiungibile()`, che interroga `/api/tags` sulla porta 11434. Con
+Ollama acceso e il modello `qwen2.5:7b-instruct` scaricato
+(`ollama pull qwen2.5:7b-instruct`) il percorso funziona senza chiave: una
+chiamata a `comprensione.chiama("aggiungi il latte alla spesa")` restituisce
+`{"intent": "shopping_add", "name": "latte", "quantity": 1.0, "unit": "pz"}`.
+Se `raggiungibile()` e' falso, `messaggio_stato()` dice la causa (Ollama spento
+o modello non scaricato) e l'interruttore resta spento.
 **Modelli di ragionamento e modelli locali: due trappole, entrambe misurate.**
 
 - I modelli di ragionamento spendono lo stesso budget di token prima di scrivere
@@ -1132,7 +1348,10 @@ rotta che la salvi, perche' l'app non deve poter riscrivere il proprio segreto.
   `configurato()` pretendesse `LLM_API_KEY` resterebbe spenta proprio la
   configurazione predefinita. `_e_locale()` riconosce 127.0.0.1/localhost
   nell'indirizzo. Nei test, per simulare "nessun modello", va impostato un
-  `LLM_BASE_URL` in rete e tolta la chiave.
+  `LLM_BASE_URL` in rete e tolta la chiave; per un modello che **risponde**
+  (necessario ora che l'interruttore lo richiede) si sostituisce
+  `comprensione.urllib.request.urlopen` con `_ModelloFinto`, che finge sia
+  `/api/tags` sia la chat.
 
 Le variabili sono `LLM_API_KEY` (serve solo ai servizi in rete), `LLM_MODEL`
 (default `qwen2.5:7b-instruct`) e `LLM_BASE_URL` (default Ollama in locale; lo
@@ -1603,14 +1822,25 @@ Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per i
 due formati (Atom per la playlist, RSS per le notizie). Sono formati semplici, e
 una libreria in più sarebbe una cosa da aggiornare per leggere cinque campi.
 
-Le notizie sono **max dieci** e si rinnovano **una volta al giorno**; i video una
-volta al giorno anche loro. Si mostra titolo, sommario breve e rimando alla
-fonte, non l'articolo: il testo è di chi lo scrive.
+Le notizie sono **max venti**, dalle sezioni ANSA, mescolate fra loro, e si
+rinnovano **una volta al giorno**; i video una volta al giorno anche loro. Si
+mostra titolo, sommario breve e rimando alla fonte, non l'articolo: il testo è di
+chi lo scrive.
+
+Gli **argomenti** delle notizie si scelgono dal Profilo (e dall'onboarding) e
+stanno in `profile.news_topics`, come testo separato da virgole. `feed_urls(db)`
+li legge e restringe i feed alle sezioni scelte: nessun argomento vuol dire
+**tutti**, così chi non ha ancora scelto non si trova una sezione vuota.
+`argomenti_scelti()` tiene solo le chiavi note (`FEED_PER_TEMA`), perché un refuso
+non deve svuotare l'elenco. Le etichette stanno in `ARGOMENTI` e si servono da
+`/api/meta`. Cambiare argomenti **azzera la copia** delle notizie in `tv_cache`:
+la copia vecchia è di altri argomenti, e tenerla mostrerebbe la scelta precedente
+fino al giro dopo.
 
 Le scelte che contano:
 
-- **La copia sta nel database della casa** (`tv_cache`, due righe: `video` e
-  `notizie`), non in memoria: un riavvio del server non deve costringere a
+- **La copia sta nel database della casa** (`tv_cache`, tre righe: `video`,
+  `notizie` e `gym`), non in memoria: un riavvio del server non deve costringere a
   riscaricare, e soprattutto la sezione non deve restare vuota se in quel
   momento la rete non c'è. È la stessa idea delle copie automatiche.
 - **`GET /api/tv` non aspetta la rete.** Serve la cache e, se è vecchia, riprova
@@ -1644,12 +1874,100 @@ Le scelte che contano:
   e che è già costato un giro: per questo c'è un test sui campi, non solo sul
   numero di voci.
 
+- **Le notizie vengono dalle sezioni ANSA.** `FEED_PREDEFINITI` raccoglie mondo,
+  cronaca, politica ed economia: il solo «mondo» lascia fuori quello che succede
+  in Italia, che è la prima cosa che si guarda. Sono argomenti, non fonti diverse.
+  RaiNews è stato **tolto** dalle testate: era l'unica seconda testata, e il suo
+  feed generalista non si vuole più in elenco (vedi
+  `test_i_feed_predefiniti_non_includono_rainews`).
+- **Un feed generalista non occupa tutto l'elenco.** Un feed che pubblica decine
+  di voci senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le notizie
+  e le altre sezioni sparirebbero. Le fonti si mescolano, non si sostituiscono.
+- **Le testate si alternano e si tagliano per testata.** Il solo ordinamento per
+  data non basta: una testata con più sezioni (ANSA ne ha quattro) porta voci
+  recenti più numerose e occuperebbe tutto l'elenco. Due rimedi:
+  `_mescola_per_fonte` prende a turno la più recente di ogni testata, e la fetta
+  per testata è **proporzionale al numero di testate** (`MAX_NOTIZIE // n`), così
+  con una sola fonte non si taglia niente e con due si fa metà per uno. Dentro
+  ogni testata l'ordine resta per data.
+- **I quasi-doppioni si riconoscono dal titolo.** Lo stesso fatto esce in più
+  sezioni con lo stesso link (deduplica sul link) ma anche con titoli che
+  differiscono per un apostrofo o una virgola e con link diversi: `_chiave_titolo`
+  riduce il titolo a lettere minuscole e spazi, senza punteggiatura, e il
+  doppione non occupa il posto di un'altra notizia.
+- **Una sezione ferma non svuota le altre.** `notizie_dal_feed` legge ogni feed
+  per conto suo e salta quelli che non rispondono; solo se **nessuno** risponde
+  solleva `NonDisponibile`, così la cache buona non viene sovrascritta con il
+  vuoto.
+
 Il feed e la playlist si possono sostituire dall'ambiente (`TV_FEED`,
-`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. I predefiniti
-sono la playlist **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
-il feed Atom vuole il solo `list=...`) e le notizie **ANSA mondo**. I test non
-toccano la rete: sostituiscono `tv._apri` con risposte preparate e provano
-l'interpretazione e la tenuta della cache, che sono le parti che sbagliano.
+`TV_PLAYLIST`) senza toccare il modulo, come le chiavi dei servizi. `TV_FEED`
+accetta **più indirizzi** separati da virgola o a capo (con un tetto `MAX_FEED`),
+così una casa sceglie le proprie sezioni. I predefiniti sono la playlist
+**GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
+il feed Atom vuole il solo `list=...`) e le notizie dalle sezioni ANSA **mondo,
+cronaca, politica, economia**. I test non toccano la rete:
+sostituiscono `tv._apri` con risposte preparate e provano l'interpretazione e la
+tenuta della cache, che sono le parti che sbagliano.
+
+### La playlist è della casa, non del modulo
+
+La playlist è una **preferenza dell'utente**, quindi sta nel database della casa
+(`tv_prefs`, riga singola) e non in una costante né in `localStorage`: due case
+sullo stesso server non devono vedersi i video l'una dell'altra, e la scelta è
+della casa, non del dispositivo da cui la si guarda. Alla variabile d'ambiente
+`TV_PLAYLIST` resta il ruolo di **predefinita** per chi non ha ancora scelto,
+così un'installazione esistente continua a funzionare senza toccare niente.
+
+L'ordine con cui `playlist_id(db)` risolve la playlist è: scelta della casa,
+poi `TV_PLAYLIST`, poi `PLAYLIST_PREDEFINITA`. La casa viene prima dell'ambiente
+perché è la volontà dell'utente; l'ambiente è il punto di partenza.
+
+La playlist si chiede **alla creazione della casa** (campo `playlist`, facoltativo
+in `POST /api/houses`) e si può cambiare dopo con `PUT /api/tv/playlist`, dalla
+sezione TV. In entrambi i casi l'id si **valida prima di salvarlo**: si accetta
+l'indirizzo incollato dalla barra del browser (`normalizza_playlist` ne estrae
+il `list=`) o l'id nudo, e un video o un canale vengono rifiutati con un errore
+chiaro. Alla creazione la validazione viene **prima** di registrare la casa, così
+una playlist storta non lascia una casa a metà; al cambio, prima di salvare, così
+non si resta con una sezione vuota che non si capisce da dove venga.
+
+Cambiare playlist **azzera la copia dei video** (`DELETE FROM tv_cache`): i video
+di prima sono di un'altra playlist, e `aggiorna` li salterebbe perché la copia è
+ancora fresca. Poi `aggiorna_video(db, forse=False)` scarica subito, come il
+pulsante «Aggiorna»: è l'utente che l'ha chiesto.
+
+I test dell'endpoint usano `_niente_rete(monkeypatch)`, che spegne sia `tv._apri`
+sia `_aggiorna_tv_in_sottofondo`. Il filo di sottofondo di `/api/tv` sopravvive
+alla richiesta e, quando `monkeypatch` ha già rimesso a posto `_apri`, scarica
+davvero tenendo aperto il database di prova: la fixture lo cancella sotto e il
+test dopo fallisce con «disk I/O error». È un difetto del test, non dell'app.
+
+### La sezione GYM
+
+Il **GYM** è una sezione a sé (`tab-gym`, scheda in home `data-section="gym"`):
+la playlist degli esercizi, incorporata come i video della TV. Non è una scheda
+della TV perché è una cosa diversa — si guarda **per fare**, non per passare il
+tempo — e perché così cambiare i video di casa non tocca l'allenamento.
+
+Riusa la stessa lettura e la stessa cache della TV, con due soli pezzi nuovi:
+
+- **`_video_di(playlist)`** è il pezzo comune: `video_playlist` (TV) e
+  `video_gym` (GYM) sono lo stesso codice con un id diverso. Il messaggio di
+  `NonDisponibile` dice l'id, così un feed storto si riconosce dal log.
+- **Cache separata** (`tv_cache` chiave `gym`, distinta da `video`): aggiornare
+  il GYM non deve toccare la TV, né viceversa. `aggiorna`/`quando_aggiornate`
+  includono la chiave `gym`; `_aggiorna_tv_in_sottofondo` la controlla insieme
+  alle altre.
+- **La playlist GYM è indipendente** da quella della TV: `gym_playlist_id(db)`
+  risolve scelta della casa → `GYM_PLAYLIST` → `PLAYLIST_GYM_PREDEFINITA`. In
+  pratica la scelta della casa **non si applica** al GYM, perché `tv_prefs`
+  salva solo la playlist della TV: cambiare la TV non tocca l'allenamento. La
+  predefinita è **Ginniko Style**
+  (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo`).
+- **`GET /api/gym`** serve la cache e riprova in sottofondo, come `/api/tv`;
+  **`POST /api/gym/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete. Le
+  notizie non c'entrano con gli esercizi: l'aggiornamento del GYM non le tocca.
 
 
 

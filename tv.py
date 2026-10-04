@@ -12,9 +12,10 @@ leggere i due formati (Atom per la playlist, RSS per le notizie). Sono formati
 semplici, e una libreria in piu' sarebbe una cosa da aggiornare per leggere
 cinque campi.
 
-Le notizie sono **max dieci** e si rinnovano una volta al giorno: un titolo, una
-riga di sommario e un rimando alla fonte, non l'articolo. Il testo e' di chi lo
-scrive, e la casa non e' il posto per ricopiarlo.
+Le notizie sono **max venti**, da piu' testate (ANSA e RaiNews), mescolate e si
+rinnovano una volta al giorno: un titolo, una riga di sommario e un rimando alla
+fonte, non l'articolo. Il testo e' di chi lo scrive, e la casa non e' il posto
+per ricopiarlo.
 
 Il modulo non apre database per conto suo: riceve una connessione. Cosi' non
 importa `app` (che importa questo) e resta provabile da solo.
@@ -31,9 +32,13 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
-# La playlist dell'utente e il feed delle notizie. Sono due indirizzi che
+# La playlist di partenza e il feed delle notizie. Sono due indirizzi che
 # cambiano con la casa, non con il codice: si possono sostituire dall'ambiente
 # senza toccare il modulo, come le chiavi dei servizi.
+#
+# La playlist vera la sceglie la casa (tabella `tv_prefs`): all'ambiente resta
+# il ruolo di **predefinita** per le case che non l'hanno ancora scelta, cosi'
+# un'installazione esistente continua a funzionare senza toccare niente.
 #
 # La playlist e' "GIAGIA-Max":
 #   https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R
@@ -41,11 +46,48 @@ from urllib.parse import urlparse
 # solo e' opaco, quindi l'indirizzo completo resta qui accanto perche' si possa
 # risalire a quale playlist sia.
 PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
-FEED_PREDEFINITO = "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml"
 
-# Quante notizie si tengono. Dieci e' quello che si legge davvero; oltre, la
-# sezione diventa un giornale e non la si scorre piu'.
-MAX_NOTIZIE = 10
+# La playlist della sezione GYM: gli esercizi, separata dalla TV perche' e' una
+# cosa diversa — si guarda per fare, non per passare il tempo — e perche' cosi'
+# cambiare i video di casa non tocca l'allenamento. Stessa forma della TV: si
+# puo' sostituire da `GYM_PLAYLIST` senza toccare il modulo.
+PLAYLIST_GYM_PREDEFINITA = "PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo"
+# Le notizie vengono dalle sezioni ANSA: il mondo da solo lascia fuori quello
+# che succede in Italia, che e' la prima cosa che si guarda. Le sezioni sono
+# argomenti, non fonti diverse: tutte ANSA, tutte in italiano. Ognuna ha una
+# chiave stabile, cosi' la scelta dell'utente (`profile.news_topics`) non dipende
+# dall'indirizzo del feed, che cambia.
+FEED_PER_TEMA = {
+    "mondo": "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
+    "cronaca": "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
+    "politica": "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
+    "economia": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
+}
+FEED_PREDEFINITI = tuple(FEED_PER_TEMA.values())
+
+# Le etichette degli argomenti, per l'onboarding e il Profilo. La chiave e'
+# quella salvata in `news_topics`; l'etichetta e' quello che l'utente legge.
+ARGOMENTI = [
+    {"key": "mondo", "label": "Mondo"},
+    {"key": "cronaca", "label": "Cronaca e Italia"},
+    {"key": "politica", "label": "Politica"},
+    {"key": "economia", "label": "Economia"},
+]
+
+# Quante notizie si tengono. Venti: dieci riempiono la prima schermata e il
+# resto si scorre, ma il taglio non e' piu' cosi' stretto che una testata sola
+# lo occupi tutto — con piu' fonti le notizie si alternano, e alternandosi ne
+# servono di piu' perche' ognuna ne porti abbastanza.
+MAX_NOTIZIE = 20
+
+# Quante voci puo' portare un singolo feed al totale. Senza, un feed
+# generalista riempirebbe da solo le notizie e le altre sezioni sparirebbero:
+# le fonti si mescolano, non si sostituiscono.
+MAX_PER_FEED = 10
+
+# Tetto ai feed dichiarati: con `TV_FEED` se ne possono indicare altri, ma non
+# un numero che moltiplichi le richieste a un sito altrui a ogni aggiornamento.
+MAX_FEED = 12
 
 # Il sommario si accorcia: la notizia e' il titolo, il resto e' un assaggio con
 # il rimando alla fonte.
@@ -70,12 +112,133 @@ class NonDisponibile(Exception):
     """La fonte non risponde o risponde male. Chi chiama serve la copia vecchia."""
 
 
-def playlist_id() -> str:
-    return os.environ.get("TV_PLAYLIST") or PLAYLIST_PREDEFINITA
+def normalizza_playlist(valore: str) -> str:
+    """Estrae e valida l'id di una playlist da quello che l'utente ha incollato.
+
+    Nessuno incolla `PLQKkPe...`: si incolla l'indirizzo della barra del
+    browser, o un indirizzo con altri parametri dentro. L'id e' il valore di
+    `list=`, l'unica cosa che il feed Atom accetta; restituirlo sbagliato vuol
+    dire una sezione vuota senza spiegazione, quindi si accettano le forme note
+    e per il resto si prende il testo cosi' com'e' (potrebbe gia' essere un id).
+
+    Solleva `ValueError` se non si capisce.
+    """
+    valore = (valore or "").strip()
+    if not valore:
+        return ""
+    m = re.search(r"[?&]list=([A-Za-z0-9_-]+)", valore)
+    if m:
+        return m.group(1)
+    if re.match(r"^https?://", valore):
+        # un indirizzo senza `list=`: e' un video, un canale o una pagina, non
+        # una playlist — meglio dirlo che costruire un feed che non esiste
+        raise ValueError("Nell'indirizzo non c'è una playlist (manca «list=»)")
+    # gia' un id: gli id di YouTube sono alfanumerici con `-` e `_`
+    if re.fullmatch(r"[A-Za-z0-9_-]{10,60}", valore):
+        return valore
+    raise ValueError("Playlist non riconosciuta: incolla l'indirizzo o l'id")
 
 
-def feed_url() -> str:
-    return os.environ.get("TV_FEED") or FEED_PREDEFINITO
+def playlist_id(db=None) -> str:
+    """L'id della playlist della casa.
+
+    L'ordine: quello **scelto dalla casa** (`tv_prefs`), poi `TV_PLAYLIST`
+    dall'ambiente, poi la predefinita. La casa viene prima dell'ambiente perche'
+    e' una scelta dell'utente, e l'ambiente e' il valore di partenza per chi non
+    ha ancora scelto.
+    """
+    scelta = _playlist_salvata(db)
+    return scelta or os.environ.get("TV_PLAYLIST") or PLAYLIST_PREDEFINITA
+
+
+def _playlist_salvata(db) -> str:
+    if db is None:
+        return ""
+    try:
+        riga = db.execute("SELECT playlist FROM tv_prefs WHERE id = 1").fetchone()
+    except Exception:
+        # tabella assente (database non ancora migrato): si ricade sui valori
+        # di partenza invece di far cadere la richiesta
+        return ""
+    if riga is None:
+        return ""
+    valore = riga[0] if not hasattr(riga, "keys") else riga["playlist"]
+    return (valore or "").strip()
+
+
+def imposta_playlist(db, valore: str) -> str:
+    """Salva la playlist scelta dalla casa e azzera la copia dei video.
+
+    L'id si valida **prima** di salvarlo: una playlist storta salvata sarebbe
+    una sezione vuota che non si capisce da dove venga. La cache si azzera
+    perche' i video di prima sono di un'altra playlist: tenerli mostrerebbe la
+    scelta vecchia fino al prossimo giro, e `aggiorna` li salta perche' la copia
+    e' ancora fresca.
+    """
+    scelto = normalizza_playlist(valore)
+    db.execute(
+        "INSERT INTO tv_prefs (id, playlist) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET playlist = excluded.playlist", (scelto,))
+    db.execute("DELETE FROM tv_cache WHERE chiave = 'video'")
+    db.commit()
+    return scelto
+
+
+def argomenti_scelti(valore) -> list:
+    """Gli argomenti delle notizie scelti dall'utente, in chiavi valide.
+
+    Si accetta testo separato da virgole o una lista, e si tengono solo le chiavi
+    note: un argomento sconosciuto (o un refuso) non deve svuotare le notizie.
+    Una lista **vuota** e' legittima e significa "tutti gli argomenti" — e' il
+    caso di chi non ha ancora scelto, e non si vuole una sezione vuota.
+    """
+    if isinstance(valore, (list, tuple)):
+        parti = [str(p) for p in valore]
+    else:
+        parti = re.split(r"[,;\n]+", str(valore or ""))
+    visti = []
+    for parte in parti:
+        chiave = parte.strip().lower()
+        if chiave in FEED_PER_TEMA and chiave not in visti:
+            visti.append(chiave)
+    return visti
+
+
+def feed_urls(db=None) -> list:
+    """Gli indirizzi dei feed delle notizie, in ordine.
+
+    `TV_FEED` ne puo' indicare piu' d'uno separati da virgola o da a capo, cosi'
+    si sostituiscono i predefiniti senza toccare il modulo (come `TV_PLAYLIST`).
+    Senza `TV_FEED` si usano le sezioni ANSA predefinite, ristrette a quelle
+    scelte dalla casa: gli argomenti dichiarati in `profile.news_topics` (vuoto =
+    tutti), cosi' le notizie che non interessano non occupano l'elenco.
+    """
+    dichiarati = os.environ.get("TV_FEED", "").strip()
+    if dichiarati:
+        urls = [u.strip() for u in re.split(r"[,\n]", dichiarati) if u.strip()]
+        return urls[:MAX_FEED]
+    scelti = _argomenti_dal_db(db)
+    if scelti:
+        return [FEED_PER_TEMA[k] for k in scelti][:MAX_FEED]
+    return list(FEED_PREDEFINITI)[:MAX_FEED]
+
+
+def _argomenti_dal_db(db) -> list:
+    """Gli argomenti delle notizie scelti dalla casa, se c'e' un database.
+
+    Il modulo non apre database per conto suo: la lettura e' tollerante, perche'
+    `feed_urls` viene chiamata anche senza una connessione (i test, la prima
+    installazione) e un profilo assente non deve impedire di scaricare.
+    """
+    if db is None:
+        return []
+    try:
+        riga = db.execute("SELECT news_topics FROM profile WHERE id = 1").fetchone()
+    except Exception:
+        return []
+    if riga is None:
+        return []
+    return argomenti_scelti(riga[0])
 
 
 def _apri(url: str) -> bytes:
@@ -106,14 +269,26 @@ def _testo(elemento, percorso, ns=None, predefinito=""):
     return (trovato.text or "").strip() if trovato is not None and trovato.text else predefinito
 
 
-def video_playlist() -> list:
-    """I video della playlist, nell'ordine in cui sono.
+def video_playlist(db=None) -> list:
+    """I video della playlist della casa, nell'ordine in cui sono.
 
     Si legge il feed Atom che YouTube espone per ogni playlist pubblica. Non si
     interpreta la pagina: quella dipende dal consenso ai cookie e dal JavaScript,
     e cambia formato — il feed no.
+
+    L'id lo risolve `playlist_id(db)`: la playlist della casa, se c'e'.
     """
-    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist_id()}"
+    return _video_di(playlist_id(db))
+
+
+def _video_di(playlist: str) -> list:
+    """I video di una playlist, dato il suo id.
+
+    E' il pezzo comune fra TV e GYM: cambia solo quale playlist si legge. Il
+    messaggio di errore dice l'id, cosi' un feed storto si riconosce dal log
+    invece di sembrare un guasto generico.
+    """
+    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist}"
     dati = _apri(url)
     try:
         radice = ET.fromstring(dati)
@@ -137,8 +312,26 @@ def video_playlist() -> list:
     if not video:
         # Una playlist privata o cancellata risponde cosi': nessuna voce. Meglio
         # dirlo che mostrare una sezione vuota senza spiegazione.
-        raise NonDisponibile("La playlist non ha video leggibili")
+        raise NonDisponibile(f"La playlist {playlist} non ha video leggibili")
     return video
+
+
+def video_gym(db=None) -> list:
+    """I video della playlist GYM.
+
+    Stessa lettura della TV (`_video_di`), playlist diversa: gli esercizi non
+    devono seguire i cambi della TV, e viceversa.
+    """
+    return _video_di(gym_playlist_id(db))
+
+
+def gym_playlist_id(db=None) -> str:
+    """L'id della playlist GYM.
+
+    L'ordine e' quello della TV: prima la scelta della casa (`tv_prefs`), poi
+    `GYM_PLAYLIST` dall'ambiente, poi la predefinita.
+    """
+    return _playlist_salvata(db) or os.environ.get("GYM_PLAYLIST") or PLAYLIST_GYM_PREDEFINITA
 
 
 def _nome_fonte(titolo: str, url: str) -> str:
@@ -159,9 +352,13 @@ def _nome_fonte(titolo: str, url: str) -> str:
     return urlparse(url).netloc or "Notizie"
 
 
-def notizie_dal_feed() -> list:
-    """Le ultime notizie, dalla piu' recente. Al massimo `MAX_NOTIZIE`."""
-    url = feed_url()
+def _voci_del_feed(url: str) -> list:
+    """Le notizie di **un** feed, con la fonte gia' risolta.
+
+    Un feed che non risponde o non si legge solleva `NonDisponibile`: chi chiama
+    lo salta e tiene gli altri, perche' le sezioni sono indipendenti e una ferma
+    non deve svuotare le altre.
+    """
     dati = _apri(url)
     try:
         radice = ET.fromstring(dati)
@@ -190,10 +387,106 @@ def notizie_dal_feed() -> list:
             "fonte": fonte,
             "data": _data_iso(_testo(item, "pubDate")),
         })
-    # il feed e' gia' in ordine, ma non ci si appoggia: una fonte che cambia
-    # ordine mostrerebbe le notizie vecchie in cima
-    voci.sort(key=lambda v: v["data"], reverse=True)
-    return voci[:MAX_NOTIZIE]
+    return voci
+
+
+def _chiave_titolo(titolo: str) -> str:
+    """La chiave di confronto di un titolo, per i quasi-doppioni.
+
+    Lo stesso fatto esce in piu' sezioni con titoli che differiscono per un
+    dettaglio minimo: "Giuseppe Graviano: 'Mio nonno...'" e "Giuseppe Graviano,
+    'mio nonno...'". Il link cambia, il titolo no: si confronta il titolo
+    ridotto a lettere minuscole e spazi, senza punteggiatura. Non e' la stessa
+    cosa del link — quello prende i doppioni identici, questa i titoli uguali a
+    meno di virgolette e trattini.
+    """
+    return re.sub(r"[^a-z0-9 ]", "", (titolo or "").lower()).strip()
+
+
+def _ordina_per_data(voci: list) -> list:
+    """Dalla piu' recente. Una data vuota (illeggibile) finisce in fondo, non in
+    cima: senza data una notizia non e' «nuova», e' solo senza data."""
+    return sorted(voci, key=lambda v: v["data"] or "", reverse=True)
+
+
+def _mescola_per_fonte(voci: list) -> list:
+    """Alterna le testate, partendo dalla notizia piu' recente.
+
+    Un elenco ordinato solo per data puo' diventare una testata sola, quando una
+    pubblica molto piu' spesso delle altre. Qui si prende a turno la notizia piu'
+    recente di ogni testata, cosi' le fonti si alternano, e dentro ogni testata
+    l'ordine resta per data.
+    """
+    per_fonte = {}
+    for voce in _ordina_per_data(voci):
+        per_fonte.setdefault(voce["fonte"], []).append(voce)
+    gruppi = list(per_fonte.values())
+    totale = sum(len(g) for g in gruppi)
+    miste = []
+    while len(miste) < totale:
+        for gruppo in gruppi:
+            if gruppo:
+                miste.append(gruppo.pop(0))
+    return miste
+
+
+def notizie_dal_feed(db=None) -> list:
+    """Le ultime notizie, mescolate fra le testate, dalla piu' recente.
+
+    Al massimo `MAX_NOTIZIE`. Un feed fermo non ferma gli altri: si tiene quello
+    che si e' letto, e solo se **nessuno** risponde si solleva `NonDisponibile`,
+    cosi' la cache buona non viene sovrascritta con il vuoto.
+
+    Ogni feed porta al massimo `MAX_PER_FEED` voci e ogni **testata** una fetta
+    del totale: un generalista pubblica decine di notizie e senza tetto
+    occuperebbe da solo l'elenco, facendo sparire le sezioni. Cosi' invece le
+    fonti convivono e si alternano (`_mescola_per_fonte`).
+    """
+    voci = []
+    letti = 0
+    for url in feed_urls(db):
+        try:
+            voci.extend(_voci_del_feed(url)[:MAX_PER_FEED])
+            letti += 1
+        except NonDisponibile:
+            continue
+    if not letti:
+        raise NonDisponibile("Nessun feed delle notizie risponde")
+
+    # lo stesso fatto compare in piu' sezioni, con lo stesso link o con titoli
+    # che differiscono di poco: due chiavi, e tenere due volte la stessa notizia
+    # occuperebbe il posto di un'altra che si sarebbe letta
+    visti_link = set()
+    visti_titoli = set()
+    uniche = []
+    for voce in voci:
+        chiave = _chiave_titolo(voce["titolo"])
+        if voce["link"] in visti_link or (chiave and chiave in visti_titoli):
+            continue
+        visti_link.add(voce["link"])
+        if chiave:
+            visti_titoli.add(chiave)
+        uniche.append(voce)
+
+    # Si scelgono prima le piu' recenti, poi si taglia per testata: il tetto per
+    # feed non basta, perche' una testata con piu' sezioni (ANSA ne ha quattro)
+    # porta voci recenti piu' numerose delle altre e occuperebbe comunque
+    # l'elenco. La fetta per testata e' **proporzionale al numero di testate** —
+    # con una sola fonte non si taglia niente, con due si fa meta' per uno —
+    # cosi' le fonti convivono anche quando una pubblica molto piu' spesso
+    # dell'altra.
+    testate = {v["fonte"] for v in uniche}
+    tetto = max(1, MAX_NOTIZIE // len(testate)) if testate else MAX_NOTIZIE
+    per_testata = {}
+    scelte = []
+    for voce in _ordina_per_data(uniche):
+        fonte = voce["fonte"]
+        if per_testata.get(fonte, 0) >= tetto:
+            continue
+        per_testata[fonte] = per_testata.get(fonte, 0) + 1
+        scelte.append(voce)
+
+    return _mescola_per_fonte(scelte)[:MAX_NOTIZIE]
 
 
 def _data_iso(testo: str) -> str:
@@ -271,7 +564,7 @@ def _aggiorna(db, chiave, ore, scarica, forse=True):
         if forse and _fresco(quando, ore):
             return False
         try:
-            nuovi = scarica()
+            nuovi = scarica(db)
         except NonDisponibile:
             # rete assente o fonte cambiata: si tiene quello che c'e' e si riprova
             # al giro dopo. Nessuna eccezione al chiamante: la sezione si apre lo
@@ -287,18 +580,27 @@ def aggiorna_video(db, forse=True) -> bool:
     return _aggiorna(db, "video", ORE_VIDEO, video_playlist, forse=forse)
 
 
+def aggiorna_gym(db, forse=True) -> bool:
+    return _aggiorna(db, "gym", ORE_VIDEO, video_gym, forse=forse)
+
+
 def aggiorna_notizie(db, forse=True) -> bool:
     return _aggiorna(db, "notizie", ORE_NOTIZIE, notizie_dal_feed, forse=forse)
 
 
 def aggiorna(db, forse=True) -> dict:
-    """Aggiorna entrambe le cose. Non solleva mai: e' chiamata in sottofondo."""
+    """Aggiorna TV, notizie e GYM. Non solleva mai: e' chiamata in sottofondo."""
     return {"video": aggiorna_video(db, forse=forse),
-            "notizie": aggiorna_notizie(db, forse=forse)}
+            "notizie": aggiorna_notizie(db, forse=forse),
+            "gym": aggiorna_gym(db, forse=forse)}
 
 
 def video(db) -> list:
     return _leggi(db, "video")[0] or []
+
+
+def gym(db) -> list:
+    return _leggi(db, "gym")[0] or []
 
 
 def notizie(db) -> list:
@@ -312,7 +614,7 @@ def quando_aggiornate(db) -> dict:
     settimana fa quando la rete non ha risposto.
     """
     esito = {}
-    for chiave in ("video", "notizie"):
+    for chiave in ("video", "notizie", "gym"):
         _, quando = _leggi(db, chiave)
         esito[chiave] = quando or None
     return esito
