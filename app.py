@@ -318,6 +318,13 @@ def migrate(db):
     # tabella assente si comporta come cache vuota), cosi' la sezione non cade se
     # `get_db()` non e' ancora passata di li'. Il calendario invece passa sempre
     # da `get_db()`, quindi la tabella c'e' sempre.
+    #
+    # `tv_prefs` invece **esisteva gia'** prima del GYM: la colonna
+    # `gym_playlist` va aggiunta a mano alle case che l'hanno creata senza,
+    # altrimenti cambiare la playlist del GYM fallirebbe solo li'.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(tv_prefs)")}
+    if have and "gym_playlist" not in have:
+        db.execute("ALTER TABLE tv_prefs ADD COLUMN gym_playlist TEXT NOT NULL DEFAULT ''")
 
 
 def _semina_pulizie(db):
@@ -692,6 +699,36 @@ def api_gym_aggiorna():
         "aggiornati": {"gym": esito},
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
         "playlist": tv.gym_playlist_id(db),
+        "aggiornato": _iso(quando["gym"]),
+    })
+
+
+@app.route("/api/gym/playlist", methods=["PUT"])
+def api_gym_playlist():
+    """Cambia la playlist del GYM e riscarica i suoi video.
+
+    Come `/api/tv/playlist`, ma sulla playlist degli esercizi: la scelta e'
+    della **casa**, l'id si valida prima di salvarlo, e si azzera solo la copia
+    del GYM. La playlist della TV resta dov'e' — sono due cose diverse — e un
+    errore di battitura non deve svuotare l'allenamento senza spiegazione.
+
+    Il riscaricamento aspetta la rete, come il pulsante «Aggiorna»: e' l'utente
+    che l'ha chiesto e si aspetta di vedere il risultato. Se la rete non
+    risponde la playlist resta salvata e i video si riproveranno dopo.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    data = request.get_json(force=True) or {}
+    try:
+        scelto = tv.imposta_playlist_gym(db, data.get("playlist") or "")
+    except ValueError as err:
+        return bad_request(str(err))
+    tv.aggiorna_gym(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "playlist": scelto,
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
         "aggiornato": _iso(quando["gym"]),
     })
 

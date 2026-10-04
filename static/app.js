@@ -357,6 +357,13 @@ async function renderGym() {
 
 function disegnaGym(d) {
   const video = d.video || [];
+
+  // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
+  // guardando. Non si riscrive sopra quello che l'utente sta digitando.
+  if (d.playlist && document.activeElement !== $('#gym-playlist')) {
+    $('#gym-playlist').value = d.playlist;
+  }
+
   $('#gym-video').innerHTML = video.length ? video.map((v) => `
     <article class="tv-video-card">
       <div class="tv-embed">
@@ -374,6 +381,27 @@ function disegnaGym(d) {
   $('#gym-aggiornato').textContent = d.aggiornato
     ? `Aggiornato: ${d.aggiornato.replace('T', ' ')}` : '';
 }
+
+$('#gym-playlist-salva').addEventListener('click', async () => {
+  const btn = $('#gym-playlist-salva');
+  const valore = $('#gym-playlist').value.trim();
+  if (!valore) return toast('Incolla l\'indirizzo o l\'id della playlist.');
+  btn.disabled = true;
+  btn.textContent = 'Cambio…';
+  try {
+    const d = await api('/api/gym/playlist', { method: 'PUT', body: { playlist: valore } });
+    $('#gym-playlist').value = d.playlist;
+    disegnaGym(d);
+    toast(d.video && d.video.length
+      ? `Playlist cambiata: ${d.video.length} video.`
+      : 'Playlist salvata. I video arrivano al prossimo aggiornamento.');
+  } catch (e) {
+    toast(e.message || 'Playlist non riconosciuta.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Cambia playlist';
+  }
+});
 
 $('#gym-aggiorna').addEventListener('click', async () => {
   const btn = $('#gym-aggiorna');

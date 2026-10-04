@@ -329,9 +329,49 @@ def gym_playlist_id(db=None) -> str:
     """L'id della playlist GYM.
 
     L'ordine e' quello della TV: prima la scelta della casa (`tv_prefs`), poi
-    `GYM_PLAYLIST` dall'ambiente, poi la predefinita.
+    `GYM_PLAYLIST` dall'ambiente, poi la predefinita. La scelta sta in una
+    colonna **sua** (`gym_playlist`), non in quella della TV: cambiare i video
+    di casa non deve toccare l'allenamento, ne' viceversa.
     """
-    return _playlist_salvata(db) or os.environ.get("GYM_PLAYLIST") or PLAYLIST_GYM_PREDEFINITA
+    return (_playlist_gym_salvata(db) or os.environ.get("GYM_PLAYLIST")
+            or PLAYLIST_GYM_PREDEFINITA)
+
+
+def _playlist_gym_salvata(db) -> str:
+    """La playlist GYM scelta dalla casa, se c'e'.
+
+    Tollerante come `_playlist_salvata`: una colonna assente (database non
+    ancora migrato) si comporta come nessuna scelta, invece di far cadere la
+    sezione.
+    """
+    if db is None:
+        return ""
+    try:
+        riga = db.execute("SELECT gym_playlist FROM tv_prefs WHERE id = 1").fetchone()
+    except Exception:
+        return ""
+    if riga is None:
+        return ""
+    valore = riga[0] if not hasattr(riga, "keys") else riga["gym_playlist"]
+    return (valore or "").strip()
+
+
+def imposta_playlist_gym(db, valore: str) -> str:
+    """Salva la playlist GYM scelta dalla casa e azzera la copia dei suoi video.
+
+    Stessa regola di `imposta_playlist`, ma sulla colonna e sulla cache del GYM:
+    l'id si valida **prima** di salvarlo, e si azzera solo `gym`, cosi' la TV
+    non si tocca. La riga di `tv_prefs` e' una sola (id = 1): si crea se manca,
+    altrimenti si aggiorna la sola colonna del GYM.
+    """
+    scelto = normalizza_playlist(valore)
+    db.execute(
+        "INSERT INTO tv_prefs (id, gym_playlist) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET gym_playlist = excluded.gym_playlist",
+        (scelto,))
+    db.execute("DELETE FROM tv_cache WHERE chiave = 'gym'")
+    db.commit()
+    return scelto
 
 
 def _nome_fonte(titolo: str, url: str) -> str:

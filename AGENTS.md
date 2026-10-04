@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **629 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **651 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -1960,10 +1960,12 @@ Riusa la stessa lettura e la stessa cache della TV, con due soli pezzi nuovi:
   includono la chiave `gym`; `_aggiorna_tv_in_sottofondo` la controlla insieme
   alle altre.
 - **La playlist GYM è indipendente** da quella della TV: `gym_playlist_id(db)`
-  risolve scelta della casa → `GYM_PLAYLIST` → `PLAYLIST_GYM_PREDEFINITA`. In
-  pratica la scelta della casa **non si applica** al GYM, perché `tv_prefs`
-  salva solo la playlist della TV: cambiare la TV non tocca l'allenamento. La
-  predefinita è **Ginniko Style**
+  risolve scelta della casa → `GYM_PLAYLIST` → `PLAYLIST_GYM_PREDEFINITA`. La
+  scelta della casa sta in una **colonna sua** (`tv_prefs.gym_playlist`, distinta
+  da `playlist`), quindi cambiare la TV non tocca l'allenamento né viceversa. Si
+  cambia dalla sezione (`PUT /api/gym/playlist`, campo `#gym-playlist`), con la
+  stessa regola della TV: id validato prima di salvarlo, cache `gym` azzerata.
+  La predefinita è **Ginniko Style**
   (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo`).
 - **`GET /api/gym`** serve la cache e riprova in sottofondo, come `/api/tv`;
   **`POST /api/gym/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete. Le

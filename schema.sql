@@ -252,10 +252,16 @@ CREATE TABLE IF NOT EXISTS tv_cache (
 -- d'ambiente `TV_PLAYLIST` resta il ruolo di predefinita per chi non ha ancora
 -- scelto, cosi' un'installazione esistente non cambia da sola.
 --
+-- `gym_playlist` e' la scelta **separata** del GYM: le due sezioni si guardano
+-- per motivi diversi, quindi cambiare i video di casa non deve toccare
+-- l'allenamento, ne' viceversa. Vuota = si ricade su `GYM_PLAYLIST` o sulla
+-- predefinita.
+--
 -- Una riga sola (id = 1), come `llm_prefs` e `profile`.
 CREATE TABLE IF NOT EXISTS tv_prefs (
-    id       INTEGER PRIMARY KEY CHECK (id = 1),
-    playlist TEXT NOT NULL DEFAULT ''
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    playlist     TEXT NOT NULL DEFAULT '',
+    gym_playlist TEXT NOT NULL DEFAULT ''
 );
 
 -- ------------------------------------------------------------ calendario

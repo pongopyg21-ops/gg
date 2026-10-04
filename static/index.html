@@ -535,8 +535,8 @@
     <div id="tv-video" class="tv-video"></div>
 
     <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>
-    <p class="hint">Le ultime venti, da ANSA (cronaca, politica, economia, mondo)
-      e RaiNews, mescolate fra le due testate. Aggiornate una volta al giorno.</p>
+    <p class="hint">Le ultime venti, dalle sezioni ANSA (cronaca, politica,
+      economia, mondo), aggiornate una volta al giorno.</p>
     <div id="tv-notizie" class="tv-notizie"></div>
   </section>
 
@@ -554,9 +554,14 @@
          «play» e basta. `loading="lazy"` fa scaricare il player solo quando lo si
          raggiunge scorrendo. -->
     <h3 class="section-title">Playlist di allenamento</h3>
-    <p class="hint">I video della playlist di esercizi, aggiornati una volta al
-      giorno. Cambiando la playlist della TV qui non cambia niente: sono due
-      cose diverse.</p>
+    <div class="tv-playlist-riga">
+      <input id="gym-playlist" type="text"
+             placeholder="Indirizzo o id della playlist YouTube"
+             aria-label="Playlist YouTube del GYM">
+      <button id="gym-playlist-salva" type="button">Cambia playlist</button>
+    </div>
+    <p class="hint">La playlist è della casa: cambiandola qui, il GYM scarica
+      subito i video della nuova. Resta separata da quella della TV.</p>
     <div id="gym-video" class="tv-video"></div>
   </section>
 

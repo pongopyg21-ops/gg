@@ -8717,6 +8717,107 @@ def test_la_sezione_gym_e_in_home_e_ha_il_suo_tab(client):
     assert "gym:      { titolo:" in js or "gym: { titolo:" in js
 
 
+def test_la_sezione_gym_ha_il_campo_playlist(client):
+    """La playlist del GYM si cambia dalla sezione: campo, pulsante e gestore
+    presenti, come in TV."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="gym-playlist"' in html
+    assert 'id="gym-playlist-salva"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/gym/playlist" in js
+    assert "gym-playlist-salva" in js
+
+
+def test_la_playlist_del_gym_e_della_casa(client, monkeypatch):
+    """La playlist del GYM si salva nella casa, come quella della TV: e' una
+    preferenza dell'utente, e due case sullo stesso server non devono vedersi i
+    video l'una dell'altra."""
+    _niente_rete(monkeypatch)
+    scelta = "PLgymcasa1234567890abc"
+    r = client.put("/api/gym/playlist", json={"playlist": scelta})
+    assert r.status_code == 200
+    assert r.get_json()["playlist"] == scelta
+    assert tv.gym_playlist_id(app_module.get_db()) == scelta
+    assert client.get("/api/gym").get_json()["playlist"] == scelta
+
+
+def test_la_playlist_del_gym_non_tocca_quella_della_tv(client, monkeypatch):
+    """Le due scelte vivono su colonne diverse: cambiare l'allenamento non deve
+    cambiare i video di casa, ne' viceversa."""
+    _niente_rete(monkeypatch)
+    db = app_module.get_db()
+    tv.imposta_playlist(db, "PLtv1234567890abcdef")
+    tv.imposta_playlist_gym(db, "PLgym1234567890abcdef")
+    assert tv.playlist_id(db) == "PLtv1234567890abcdef"
+    assert tv.gym_playlist_id(db) == "PLgym1234567890abcdef"
+    # cambiare solo la TV non tocca il GYM
+    tv.imposta_playlist(db, "PLtvnuova9876543210zyx")
+    assert tv.gym_playlist_id(db) == "PLgym1234567890abcdef", "il GYM resta"
+    # cambiare solo il GYM non tocca la TV
+    tv.imposta_playlist_gym(db, "PLgymnuova9876543210zyx")
+    assert tv.playlist_id(db) == "PLtvnuova9876543210zyx", "la TV resta"
+
+
+def test_una_playlist_gym_non_valida_non_si_salva(client, monkeypatch):
+    """L'id si valida **prima** di salvarlo: una playlist storta sarebbe una
+    sezione vuota che non si capisce da dove venga."""
+    _niente_rete(monkeypatch)
+    prima = client.get("/api/gym").get_json()["playlist"]
+    r = client.put("/api/gym/playlist",
+                   json={"playlist": "https://www.youtube.com/watch?v=abc"})
+    assert r.status_code == 400
+    assert client.get("/api/gym").get_json()["playlist"] == prima, "la scelta buona resta"
+
+
+def test_cambiare_playlist_gym_azzera_solo_i_suoi_video(client, monkeypatch):
+    """I video del GYM di prima sono di un'altra playlist: si azzerano solo i
+    suoi, e quelli della TV restano."""
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}": FEED_PLAYLIST,
+        _url_playlist(): FEED_PLAYLIST,
+    })
+    db = app_module.get_db()
+    tv.aggiorna_gym(db, forse=False)
+    tv.aggiorna_video(db, forse=False)
+
+    # la nuova playlist del GYM risponde con un feed diverso: si deve vedere quello
+    nuovo = "PLgymnuova9876543210zyxw"
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={nuovo}":
+            FEED_PLAYLIST.replace("aaa111", "ggg777").replace("bbb222", "hhh888"),
+    })
+    r = client.put("/api/gym/playlist", json={"playlist": nuovo})
+    assert r.status_code == 200
+    assert [v["id"] for v in r.get_json()["video"]] == ["ggg777", "hhh888"]
+    # la TV non c'entra: i suoi video restano quelli di prima
+    _niente_rete(monkeypatch)  # il sottofondo non deve scaricare: la copia e' appena scritta
+    assert [v["id"] for v in client.get("/api/tv").get_json()["video"]] == ["aaa111", "bbb222"]
+
+
+def test_migrazione_aggiunge_gym_playlist_a_un_db_esistente():
+    """`tv_prefs` esisteva gia' prima del GYM: la colonna `gym_playlist` va
+    aggiunta a mano alle case che l'hanno creata senza, altrimenti cambiare la
+    playlist del GYM fallirebbe solo li'."""
+    path = os.path.join(tempfile.mkdtemp(), "vecchio-tv.db")
+    with sqlite3.connect(path) as db:
+        db.row_factory = sqlite3.Row
+        db.executescript("""
+            CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+            CREATE TABLE tv_prefs (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                playlist TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO tv_prefs (id, playlist) VALUES (1, 'PLsceltavecchia12345ab');
+        """)
+        app_module.migrate(db)
+        cols = {r[1] for r in db.execute("PRAGMA table_info(tv_prefs)")}
+        assert "gym_playlist" in cols
+        row = db.execute("SELECT playlist, gym_playlist FROM tv_prefs").fetchone()
+        # la scelta della TV resta, quella del GYM parte vuota
+        assert tuple(row) == ("PLsceltavecchia12345ab", "")
+        app_module.migrate(db)  # rieseguire non deve fallire
+
+
 def test_la_scheda_progetti_si_chiama_appunti(client):
     """La sezione si chiama «Appunti» dappertutto: scheda in home, scheda nella
     barra, titolo dell'area e testi del pannello. Un nome che resta indietro in
