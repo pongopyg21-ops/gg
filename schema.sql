@@ -232,14 +232,17 @@ CREATE TABLE IF NOT EXISTS storage_photos (
 );
 
 -- ---------------------------------------------------------------- tv
--- Quello che la sezione TV ha scaricato: i video della playlist e le notizie
--- del giorno, in JSON, sotto una chiave ("video", "notizie", "gym").
+-- Quello che le sezioni TV e Cinema hanno scaricato: i video della playlist, le
+-- notizie del giorno e la copia del Cinema, in JSON, sotto una chiave ("video",
+-- "notizie", "gym", "cinema").
 --
 -- Sta nel database della casa, non in memoria, perche' e' **la copia di
 -- sicurezza della sezione**: se la rete non risponde (o il feed cambia), la
 -- sezione si apre lo stesso con quello che c'era, invece di restare vuota. E'
 -- il motivo per cui non e' una tabella per i video e una per le notizie: sono
--- elenchi che si leggono sempre interi e non si interrogano per campo.
+-- elenchi che si leggono sempre interi e non si interrogano per campo. Il
+-- Cinema usa la stessa tabella sotto la chiave `cinema`: la forma e' identica,
+-- e la sezione cambia solo per la fonte e la scadenza.
 CREATE TABLE IF NOT EXISTS tv_cache (
     chiave     TEXT PRIMARY KEY,
     dati       TEXT NOT NULL DEFAULT '[]',

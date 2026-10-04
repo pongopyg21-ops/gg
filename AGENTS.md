@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **651 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **662 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -54,16 +54,18 @@ App Flask + SQLite + SPA in JS puro. Backend in `app.py`, case separate in
 modello in `comprensione.py`, dati iniziali in `seed.py`, pulizie
 in `igiene.py`, informazioni utili in `faq.py`, magazzino in `magazzino.py`,
 suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`,
+locandine dei film in `cinema.py`,
 impegni e promemoria in `calendario.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
-**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**. Piano, ricette, dispensa,
-spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno in
-**Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
+L'app si apre su una **pagina iniziale** che smista verso sei sezioni:
+**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**, **Cinema**. Piano, ricette,
+dispensa, spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno
+in **Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
 raccoglie l'intrattenimento, cioè i video della playlist di casa e le notizie
-dal mondo (vedi `tv.py`).
+dal mondo (vedi `tv.py`); **Cinema** mostra le locandine dei film del momento
+sulle piattaforme di streaming, una alla volta (vedi `cinema.py`).
 
 ## Comandi
 
@@ -1970,6 +1972,45 @@ Riusa la stessa lettura e la stessa cache della TV, con due soli pezzi nuovi:
 - **`GET /api/gym`** serve la cache e riprova in sottofondo, come `/api/tv`;
   **`POST /api/gym/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete. Le
   notizie non c'entrano con gli esercizi: l'aggiornamento del GYM non le tocca.
+
+### La sezione Cinema
+
+Il **Cinema** è una sezione a sé (`tab-cinema`, scheda in home
+`data-section="cinema"`): le locandine dei film del momento compresi sulle
+piattaforme di streaming, **una alla volta**, da sfogliare da destra a sinistra.
+Serve a ispirare la serata, non a elencare un catalogo: per questo il carosello
+mostra un film per schermata, con la locandina grande, e non una griglia.
+
+`cinema.py` è il modulo, e ricalca `tv.py` di proposito — stessa cache, stesso
+lucchetto, stessa regola «quello che si è scaricato resta». Le differenze:
+
+- **La fonte è TMDB** (`/discover/movie`), non un feed. I film sono ordinati per
+  popolarità fra i **più votati** (`vote_count.gte`, `vote_average.gte`) e
+  filtrati su `watch_region` + `with_watch_monetization_types=flatrate`: solo
+  ciò che è compreso in un **abbonamento**. È la richiesta — «presente sulle
+  piattaforme di streaming», non al cinema né a noleggio.
+- **Serve una chiave** (`TMDB_API_KEY`). Senza, la sezione non è un guasto: è
+  una cosa da accendere, e `messaggio_stato()` dice come. La chiave si legge
+  dall'ambiente o da un file `segreto.*` accanto all'app (stessa regola di
+  `voce_cloud` e `comprensione`, con l'etichetta `tmdb:`), **non si salva mai
+  dall'app** e non compare nella risposta.
+- **La regione** (`CINEMA_REGION`, predefinita `IT`) decide **quali** piattaforme
+  compaiono: il catalogo Netflix italiano non è quello americano.
+- **La copia vive in `tv_cache`**, chiave `cinema`, non in una tabella a parte:
+  la forma è identica (un elenco intero, letto sempre tutto) e cambia solo la
+  fonte e la scadenza (**mezza giornata**, `ORE_CINEMA`, contro l'ora della TV).
+- **`GET /api/cinema`** serve la cache e riprova in sottofondo
+  (`_aggiorna_cinema_in_sottofondo`, che non parte senza chiave);
+  **`POST /api/cinema/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete.
+  All'avvio `avvia_cinema()` riempie tutte le case, come `avvia_tv()`.
+
+Lato browser (`renderCinema`, `disegnaCinema`, `disegnaFilm`, `cinemaVai`) il
+carosello si sfoglia in **quattro modi**, perché su un telefono non c'è mouse e
+su un desktop non tutti usano le frecce: frecce, tastiera (frecce ← →), rotellina
+e dito (`touchstart`/`touchend`, col gesto orizzontale). Lo scorrimento è
+**ciclico** (dopo l'ultimo si torna al primo) e i puntini sotto saltano a un film
+preciso. Un film **senza locandina si scarta** nel modulo: è una sezione di
+immagini, e una senza immagine non ispira niente.
 
 
 

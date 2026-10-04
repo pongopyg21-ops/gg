@@ -18,6 +18,7 @@ from werkzeug.exceptions import HTTPException
 
 import allergens
 import calendario
+import cinema
 import comprensione
 import copie
 import dispensa
@@ -731,6 +732,74 @@ def api_gym_playlist():
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
         "aggiornato": _iso(quando["gym"]),
     })
+
+
+@app.route("/api/cinema")
+def api_cinema():
+    """La sezione Cinema: le locandine dei film sulle piattaforme di streaming.
+
+    Stessa regola della TV: si serve **subito** la copia in cache e si riprova
+    dopo, in un filo, cosi' un servizio lento non blocca la sezione. Se manca la
+    chiave o non c'e' rete, la risposta e' comunque 200 con un elenco vuoto e il
+    motivo in `manca`: e' una sezione da accendere o da riempire, non un guasto.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    if cinema.configurato():
+        _aggiorna_cinema_in_sottofondo(db)
+    return jsonify({
+        "film": cinema.film(db),
+        "manca": cinema.messaggio_stato(),
+        "configurato": cinema.configurato(),
+        "aggiornato": _iso(cinema.quando_aggiornato(db)),
+    })
+
+
+@app.route("/api/cinema/aggiorna", methods=["POST"])
+def api_cinema_aggiorna():
+    """Riscarica subito i film, senza aspettare il giro di mezza giornata.
+
+    Il pulsante «Aggiorna». A differenza di `/api/cinema` questo **aspetta** la
+    rete: e' l'utente che l'ha chiesto. Se non c'e' rete risponde lo stesso con
+    quello che aveva, e lo dice (`aggiornati.cinema` falso).
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    if not cinema.configurato():
+        return bad_request(cinema.messaggio_stato())
+    esito = cinema.aggiorna(db, forse=False)
+    return jsonify({
+        "aggiornati": {"cinema": esito},
+        "film": cinema.film(db),
+        "manca": cinema.messaggio_stato(),
+        "configurato": cinema.configurato(),
+        "aggiornato": _iso(cinema.quando_aggiornato(db)),
+    })
+
+
+def _aggiorna_cinema_in_sottofondo(db):
+    """Riprova a scaricare i film senza far aspettare chi ha aperto la sezione.
+
+    Come `_aggiorna_tv_in_sottofondo`: il filo apre una connessione sua, perche'
+    quella di Flask vive quanto la richiesta. Non parte se manca la chiave: non
+    c'e' niente da chiedere.
+    """
+    _, quando = tv._leggi(db, "cinema")
+    if tv._fresco(quando, cinema.ORE_CINEMA):
+        return
+    percorso = db.execute("PRAGMA database_list").fetchone()[2]
+
+    def scarica():
+        try:
+            with closing(sqlite3.connect(percorso)) as suo:
+                suo.row_factory = sqlite3.Row
+                cinema.aggiorna(suo, forse=True)
+        except Exception:
+            app.logger.debug("Aggiornamento cinema in sottofondo non riuscito")
+
+    threading.Thread(target=scarica, name="cinema-aggiornamento", daemon=True).start()
 
 
 def _aggiorna_tv_in_sottofondo(db):
@@ -3611,6 +3680,32 @@ def avvia_copie_automatiche():
     threading.Thread(target=ciclo, name="copie-automatiche", daemon=True).start()
 
 
+def _giro_su_tutte_le_case(aggiorna_una):
+    """Esegue un aggiornamento su **tutte** le case, una per una.
+
+    Si aggiornano tutte, non solo quella che si sta guardando: la sezione deve
+    essere pronta quando si entra, invece di scaricarsi davanti a chi l'ha
+    aperta. E' lo stesso motivo per cui la copia automatica non si fa quando
+    l'utente preme un pulsante.
+
+    Un guasto su una casa non ferma le altre: il ciclo isola ogni caso.
+    """
+    for casa in houses.elenco():
+        slug = casa.get("slug")
+        try:
+            percorso = houses.db_path(slug)
+            if not os.path.exists(percorso):
+                continue
+            # la tabella della cache puo' non esistere ancora, su una casa
+            # che nessuno ha mai aperto dopo l'aggiornamento
+            init_db(percorso)
+            with closing(sqlite3.connect(percorso)) as db:
+                db.row_factory = sqlite3.Row
+                aggiorna_una(db)
+        except Exception:
+            app.logger.debug("Aggiornamento non riuscito per la casa %s", slug)
+
+
 def avvia_tv():
     """Scarica video e notizie all'avvio, e poi una volta al giorno.
 
@@ -3618,36 +3713,33 @@ def avvia_tv():
     nessuna copia, ed e' proprio la prima che serve quando si apre la sezione.
     I giri successivi non scaricano a vuoto, perche' `tv.aggiorna` salta quello
     che e' gia' fresco.
-
-    Si aggiornano **tutte le case**, non solo quella che si sta guardando: la
-    sezione deve essere pronta quando si entra, invece di scaricarsi davanti a
-    chi l'ha aperta. E' lo stesso motivo per cui la copia automatica non si fa
-    quando l'utente preme un pulsante.
     """
-    def giro():
-        for casa in houses.elenco():
-            slug = casa.get("slug")
-            try:
-                percorso = houses.db_path(slug)
-                if not os.path.exists(percorso):
-                    continue
-                # la tabella della cache puo' non esistere ancora, su una casa
-                # che nessuno ha mai aperto dopo l'aggiornamento
-                init_db(percorso)
-                with closing(sqlite3.connect(percorso)) as db:
-                    db.row_factory = sqlite3.Row
-                    tv.aggiorna(db, forse=True)
-            except Exception:
-                # un guasto di rete su una casa non deve fermare le altre
-                app.logger.debug("TV non aggiornata per la casa %s", slug)
-
     def ciclo():
-        giro()
+        _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True))
         while True:
             time.sleep(3600)
-            giro()
+            _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True))
 
     threading.Thread(target=ciclo, name="tv", daemon=True).start()
+
+
+def avvia_cinema():
+    """Scarica i film all'avvio, e poi due volte al giorno.
+
+    Come `avvia_tv`, ma su mezza giornata: un catalogo di film non cambia di ora
+    in ora. Se manca la chiave non c'e' niente da chiedere: il giro non parte,
+    e la sezione lo dice con `cinema.messaggio_stato()`.
+    """
+    if not cinema.configurato():
+        return
+
+    def ciclo():
+        _giro_su_tutte_le_case(lambda db: cinema.aggiorna(db, forse=True))
+        while True:
+            time.sleep(cinema.ORE_CINEMA * 3600)
+            _giro_su_tutte_le_case(lambda db: cinema.aggiorna(db, forse=True))
+
+    threading.Thread(target=ciclo, name="cinema", daemon=True).start()
 
 
 def avvia():
@@ -3711,4 +3803,5 @@ if __name__ == "__main__":
     prepara_database_storico()
     avvia_copie_automatiche()
     avvia_tv()
+    avvia_cinema()
     avvia()

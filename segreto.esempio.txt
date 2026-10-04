@@ -23,3 +23,21 @@
 
 chiave: incolla-qui-la-chiave
 area: italynorth
+
+# ============================================================
+#  Chiave TMDB — sezione Cinema  (facoltativa)
+# ============================================================
+#
+#  Senza questa chiave la sezione Cinema resta spenta e lo dice: le altre
+#  sezioni funzionano lo stesso.
+#
+#  Dove trovarla: registrati su themoviedb.org, poi
+#  Impostazioni -> API -> "Richiedi una chiave API". La chiave e' una stringa
+#  esadecimale di 32 caratteri.
+#
+#  La regione decide **quali** piattaforme compaiono (il catalogo Netflix
+#  italiano non e' quello americano). Il predefinito e' l'Italia; si cambia con
+#  `cinema_region` se serve.
+
+tmdb: incolla-qui-la-chiave-tmdb
+# cinema_region: IT

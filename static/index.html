@@ -144,6 +144,13 @@
         seguendo i video senza uscire dall'app.</span>
       <span class="home-go">Apri →</span>
     </button>
+    <button class="home-card" data-section="cinema">
+      <span class="home-emoji">🎬</span>
+      <span class="home-name">Cinema</span>
+      <span class="home-desc">Le locandine dei film del momento sulle piattaforme
+        di streaming, una alla volta, per ispirare la serata.</span>
+      <span class="home-go">Apri →</span>
+    </button>
   </div>
   <!-- Riepilogo della giornata: cosa si mangia, cosa c'e' da fare in casa, cosa
        avvisa. Si riempie da solo all'avvio e resta nascosto finche' non c'e'
@@ -212,6 +219,7 @@
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
   <button data-tab="gym" data-section="gym">🏋️ GYM</button>
+  <button data-tab="cinema" data-section="cinema">🎬 Cinema</button>
 </nav>
 
 <main>
@@ -563,6 +571,37 @@
     <p class="hint">La playlist è della casa: cambiandola qui, il GYM scarica
       subito i video della nuova. Resta separata da quella della TV.</p>
     <div id="gym-video" class="tv-video"></div>
+  </section>
+
+  <!-- CINEMA -->
+  <section id="tab-cinema" class="tab">
+    <div class="toolbar">
+      <strong>Cinema</strong>
+      <span class="spacer"></span>
+      <span id="cinema-aggiornato" class="tv-aggiornato"></span>
+      <button id="cinema-aggiorna" type="button" title="Riscarica i film">Aggiorna</button>
+    </div>
+
+    <h3 class="section-title">Il film di stasera</h3>
+    <p class="hint">Le locandine dei film del momento compresi sulle piattaforme
+      di streaming. Una alla volta: sfoglia con le frecce o scorrendo col dito.</p>
+
+    <!-- Una locandina alla volta: il carosello mostra un film per schermata, e
+         si sfoglia da destra a sinistra (frecce, rotellina o dito). Il film
+         successivo e' gia' pronto dietro le quinte, cosi' il passaggio e'
+         immediato. -->
+    <div id="cinema-avviso" class="cinema-avviso hidden"></div>
+    <div id="cinema-carosello" class="cinema-carosello" tabindex="0"
+         role="region" aria-roledescription="carosello" aria-label="Locandine dei film">
+      <button id="cinema-prima" class="cinema-freccia cinema-freccia-sx" type="button"
+              aria-label="Film precedente">‹</button>
+      <div id="cinema-locandina" class="cinema-locandina">
+        <p class="tv-vuoto">Sto caricando…</p>
+      </div>
+      <button id="cinema-dopo" class="cinema-freccia cinema-freccia-dx" type="button"
+              aria-label="Film successivo">›</button>
+    </div>
+    <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
   </section>
 
 </main>

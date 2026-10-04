@@ -23,6 +23,7 @@ os.environ["CUCINA_DB"] = DB
 import app as app_module  # noqa: E402
 import allergens  # noqa: E402
 import calendario  # noqa: E402
+import cinema  # noqa: E402
 import comprensione  # noqa: E402
 import copie  # noqa: E402
 import dispensa  # noqa: E402
@@ -8816,6 +8817,185 @@ def test_migrazione_aggiunge_gym_playlist_a_un_db_esistente():
         # la scelta della TV resta, quella del GYM parte vuota
         assert tuple(row) == ("PLsceltavecchia12345ab", "")
         app_module.migrate(db)  # rieseguire non deve fallire
+
+
+def test_la_sezione_cinema_e_in_home_e_ha_il_suo_tab(client):
+    """Il Cinema e' una sezione a se': scheda in home, scheda nella barra, il
+    carosello e i suoi comandi. La scheda in home e' cio' che la rende
+    raggiungibile."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'data-section="cinema"' in html
+    assert 'id="tab-cinema"' in html
+    assert 'id="cinema-carosello"' in html
+    assert 'id="cinema-prima"' in html and 'id="cinema-dopo"' in html
+    assert 'id="cinema-punti"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function renderCinema" in js
+    assert "/api/cinema" in js
+    assert "cinema:   { titolo:" in js or "cinema: { titolo:" in js
+
+
+def test_il_cinema_si_sfoglia_da_destra_a_sinistra(client):
+    """Sfogliare e' la richiesta: frecce, tastiera, rotellina e dito. Se una
+    delle quattro sparisce, su un telefono o senza mouse il carosello si blocca."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function cinemaVai" in js
+    assert "cinemaIndice" in js
+    # il dito: `touchstart` + `touchend`, col gesto orizzontale
+    assert "'touchstart'" in js and "'touchend'" in js
+    # la rotellina e la tastiera
+    assert "'wheel'" in js and "ArrowRight" in js and "ArrowLeft" in js
+    # lo scorrimento e' ciclico: si torna al primo dopo l'ultimo
+    assert "% cinemaFilm.length" in js
+
+
+def test_senza_chiave_il_cinema_non_e_un_guasto(client, monkeypatch):
+    """Senza `TMDB_API_KEY` la sezione e' spenta, non rotta: 200 con un elenco
+    vuoto e la spiegazione di cosa manca."""
+    monkeypatch.delenv("TMDB_API_KEY", raising=False)
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})  # non rileggere i file
+    d = client.get("/api/cinema").get_json()
+    assert d["film"] == []
+    assert d["configurato"] is False
+    assert "TMDB_API_KEY" in d["manca"]
+    # anche il pulsante lo dice, e non tenta la rete
+    r = client.post("/api/cinema/aggiorna")
+    assert r.status_code == 400
+    assert "TMDB_API_KEY" in r.get_json()["error"]
+
+
+def test_la_chiave_tmdb_si_legge_dall_ambiente(monkeypatch):
+    """La chiave viene dall'ambiente, e la sezione risulta configurata."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    assert cinema.configurato() is True
+    assert cinema.messaggio_stato() == ""
+    assert cinema.chiave() == "0123456789abcdef0123456789abcdef"
+
+
+def test_la_regione_del_cinema_e_l_italia_per_predefinito(monkeypatch):
+    """La regione decide quali piattaforme compaiono: il predefinito e' l'Italia,
+    e si puo' cambiare."""
+    monkeypatch.delenv("CINEMA_REGION", raising=False)
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    assert cinema.regione() == "IT"
+    monkeypatch.setenv("CINEMA_REGION", "us")
+    assert cinema.regione() == "US"
+
+
+def test_i_film_si_leggono_e_si_schedano(monkeypatch):
+    """Una risposta di TMDB diventa schede con solo i campi che si mostrano, e
+    un film senza locandina si scarta: e' una sezione di immagini."""
+    risposta = {
+        "results": [
+            {"id": 1, "title": "Film Bello", "release_date": "2024-05-01",
+             "vote_average": 8.234, "vote_count": 1200, "overview": "Una trama.",
+             "poster_path": "/abc.jpg",
+             "watch/providers": {"results": {"IT": {"flatrate": [
+                 {"provider_name": "Netflix"}, {"provider_name": "Prime Video"}]}}}},
+            {"id": 2, "title": "Senza locandina", "poster_path": "",
+             "vote_average": 7.0},
+        ]
+    }
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    film = cinema._scarica(None)
+    assert len(film) == 1
+    scheda = film[0]
+    assert scheda["titolo"] == "Film Bello"
+    assert scheda["anno"] == "2024"
+    assert scheda["voto"] == 8.2
+    assert scheda["locandina"].endswith("/abc.jpg")
+    assert scheda["piattaforme"] == ["Netflix", "Prime Video"]
+
+
+def test_i_film_si_mettono_in_cache_e_si_rileggono(client, monkeypatch):
+    """La copia vive in `tv_cache` (chiave `cinema`): la sezione si apre con quello che c'e',
+    anche senza rete, e `aggiorna` non riscarica se la copia e' fresca."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    risposta = {"results": [
+        {"id": 7, "title": "Rimasto", "release_date": "2023-01-01",
+         "vote_average": 7.5, "poster_path": "/x.jpg", "overview": ""},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    db = app_module.get_db()
+    assert cinema.aggiorna(db, forse=False) is True
+    assert [f["titolo"] for f in cinema.film(db)] == ["Rimasto"]
+    # copia fresca: `forse=True` non riscarica (e `_apri` nemmeno verrebbe chiamato)
+    assert cinema.aggiorna(db, forse=True) is False
+
+
+def test_l_endpoint_cinema_serve_la_copia_e_gli_incorpora(client, monkeypatch):
+    """`/api/cinema` serve la copia senza aspettare la rete, e ogni film porta
+    locandina e piattaforme."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    risposta = {"results": [
+        {"id": 9, "title": "In Cache", "release_date": "2022-09-09",
+         "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama.",
+         "watch/providers": {"results": {"IT": {"flatrate": [{"provider_name": "Disney+"}]}}}},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    cinema.aggiorna(app_module.get_db(), forse=False)
+    d = client.get("/api/cinema").get_json()
+    assert d["configurato"] is True and d["manca"] == ""
+    assert len(d["film"]) == 1
+    assert d["film"][0]["locandina"].endswith("/y.jpg")
+    assert d["film"][0]["piattaforme"] == ["Disney+"]
+    assert d["aggiornato"]
+
+
+def test_senza_rete_il_cinema_resta_con_la_copia_vecchia(client, monkeypatch):
+    """Un guasto di rete non deve svuotare la sezione: si tiene l'ultima copia."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    risposta = {"results": [
+        {"id": 3, "title": "Gia' scaricato", "release_date": "2021-01-01",
+         "vote_average": 7.0, "poster_path": "/z.jpg", "overview": ""},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    db = app_module.get_db()
+    cinema.aggiorna(db, forse=False)
+    # ora la rete e' giu': l'aggiornamento non porta niente, ma la copia resta
+    monkeypatch.setattr(cinema, "_apri",
+                        lambda url: (_ for _ in ()).throw(cinema.NonDisponibile("giu")))
+    assert cinema.aggiorna(db, forse=False) is False
+    assert [f["titolo"] for f in cinema.film(db)] == ["Gia' scaricato"]
+
+
+def test_la_chiave_tmdb_non_compare_nella_risposta(client, monkeypatch):
+    """La chiave resta del server: non si espone nella risposta, in nessuna forma."""
+    segreta = "deadbeefdeadbeefdeadbeefdeadbeef"
+    monkeypatch.setenv("TMDB_API_KEY", segreta)
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    testo = client.get("/api/cinema").get_data(as_text=True)
+    assert segreta not in testo
+    assert "api_key" not in testo
+
+
+def test_l_aggiornamento_in_sottofondo_del_cinema_non_esplode(client, monkeypatch):
+    """Il filo di sottofondo e' un percorso che l'utente non vede: se solleva,
+    la sezione risponde 500 invece di aprirsi. Qui si controlla che parta e
+    finisca, con la copia vecchia (nessuna rete)."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    chiamate = []
+    monkeypatch.setattr(cinema, "aggiorna", lambda db, forse=True: chiamate.append(forse))
+    db = app_module.get_db()
+    app_module._aggiorna_cinema_in_sottofondo(db)  # copia assente: parte il filo
+    for _ in range(50):
+        if chiamate:
+            break
+        time.sleep(0.05)
+    assert chiamate == [True]
+    # e l'endpoint, senza stub, non risponde 500 con la chiave finta
+    monkeypatch.setattr(cinema, "_apri",
+                        lambda url: (_ for _ in ()).throw(cinema.NonDisponibile("finta")))
+    assert client.get("/api/cinema").status_code == 200
 
 
 def test_la_scheda_progetti_si_chiama_appunti(client):

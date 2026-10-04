@@ -145,6 +145,7 @@ const SEZIONI = {
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
   tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
   gym:      { titolo: '\u{1F3CB}\u{FE0F} GYM', prima: 'gym' },
+  cinema:   { titolo: '\u{1F3AC} Cinema',   prima: 'cinema' },
 };
 
 function apriSezione(nome) {
@@ -222,6 +223,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'faq') renderFaq();
   if (btn.dataset.tab === 'intrattenimento') renderTv();
   if (btn.dataset.tab === 'gym') renderGym();
+  if (btn.dataset.tab === 'cinema') renderCinema();
 }));
 
 /* ---------- TV ----------
@@ -413,6 +415,163 @@ $('#gym-aggiorna').addEventListener('click', async () => {
     if (!(d.aggiornati && d.aggiornati.gym)) toast('Niente di nuovo: la fonte non ha risposto.');
   } catch (_e) {
     toast('Aggiornamento non riuscito.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aggiorna';
+  }
+});
+
+/* ---------- CINEMA ----------
+   La sezione Cinema: le locandine dei film del momento, una alla volta. Si
+   sfoglia da destra a sinistra con le frecce, la rotellina o il dito.
+
+   Il server serve la copia in cache e aggiorna in sottofondo, quindi qui non
+   c'e' attesa di rete: si disegna quello che arriva. Se manca la chiave TMDB il
+   server lo dice (`manca`), e la sezione lo spiega invece di restare vuota. */
+let cinemaFilm = [];
+let cinemaIndice = 0;
+
+async function renderCinema() {
+  try {
+    let d = await api('/api/cinema');
+    // come in TV: al primissimo avvio la copia puo' essere vuota mentre il
+    // server la riempie, quindi si riprova invece di mostrare «nessun film»
+    for (let tentativo = 0; tentativo < 3 && d.configurato && !d.film.length; tentativo++) {
+      $('#cinema-locandina').innerHTML = '<p class="tv-vuoto">Sto caricando…</p>';
+      await new Promise((r) => setTimeout(r, 2000));
+      d = await api('/api/cinema');
+    }
+    disegnaCinema(d);
+  } catch (_e) {
+    $('#cinema-locandina').innerHTML = '';
+    toast('Non riesco a caricare la sezione Cinema.');
+  }
+}
+
+function disegnaCinema(d) {
+  cinemaFilm = d.film || [];
+  const avviso = $('#cinema-avviso');
+
+  // La chiave manca **e** non c'e' niente da mostrare: e' una sezione da
+  // accendere, e si dice come. Se invece una copia c'e' ancora (la chiave e'
+  // stata tolta dopo), si mostra quella: vale la stessa regola della TV —
+  // quello che si e' gia' scaricato resta.
+  if (d.manca && !cinemaFilm.length) {
+    avviso.classList.remove('hidden');
+    avviso.innerHTML = `<strong>Cinema non ancora acceso.</strong> ${esc(d.manca)}`;
+    $('#cinema-carosello').classList.add('hidden');
+    $('#cinema-punti').innerHTML = '';
+    $('#cinema-aggiornato').textContent = '';
+    return;
+  }
+  avviso.classList.add('hidden');
+  $('#cinema-carosello').classList.remove('hidden');
+
+  if (!cinemaFilm.length) {
+    $('#cinema-locandina').innerHTML =
+      '<p class="tv-vuoto">Nessun film disponibile. Premi «Aggiorna» fra poco.</p>';
+    $('#cinema-punti').innerHTML = '';
+  } else {
+    // se la copia e' cambiata, l'indice puo' essere fuori scala: si riporta dentro
+    if (cinemaIndice >= cinemaFilm.length) cinemaIndice = 0;
+    disegnaFilm();
+  }
+
+  $('#cinema-aggiornato').textContent = d.aggiornato
+    ? `Aggiornato: ${d.aggiornato.replace('T', ' ')}` : '';
+}
+
+function disegnaFilm() {
+  const f = cinemaFilm[cinemaIndice];
+  if (!f) return;
+  const piattaforme = (f.piattaforme || []).map((p) => `<span class="cinema-piattaforma">${esc(p)}</span>`).join('');
+  const voto = f.voto ? `<span class="cinema-voto" title="${f.voti} voti">★ ${f.voto}</span>` : '';
+  const anno = f.anno ? `<span class="cinema-anno">${esc(f.anno)}</span>` : '';
+  $('#cinema-locandina').innerHTML = `
+    <figure class="cinema-scheda">
+      <img class="cinema-poster" src="${esc(f.locandina)}" alt="Locandina di ${esc(f.titolo)}"
+           loading="lazy" draggable="false">
+      <figcaption class="cinema-info">
+        <h4 class="cinema-titolo">${esc(f.titolo)}</h4>
+        <p class="cinema-meta">${anno}${voto}</p>
+        ${piattaforme ? `<p class="cinema-piattaforme">${piattaforme}</p>` : ''}
+        ${f.trama ? `<p class="cinema-trama">${esc(f.trama)}</p>` : ''}
+      </figcaption>
+    </figure>`;
+
+  // i puntini: uno per film, quello corrente acceso. Sono anche il modo per
+  // saltare a un film preciso senza sfogliare tutto.
+  $('#cinema-punti').innerHTML = cinemaFilm.map((_, i) =>
+    `<button type="button" class="cinema-punto${i === cinemaIndice ? ' attivo' : ''}"
+             role="tab" aria-label="Film ${i + 1} di ${cinemaFilm.length}"
+             aria-selected="${i === cinemaIndice}" data-i="${i}"></button>`).join('');
+}
+
+// Lo scorrimento e' ciclico: dopo l'ultimo si torna al primo, cosi' non c'e'
+// mai un fondo oltre il quale non si puo' andare.
+function cinemaVai(delta) {
+  if (cinemaFilm.length < 2) return;
+  cinemaIndice = (cinemaIndice + delta + cinemaFilm.length) % cinemaFilm.length;
+  disegnaFilm();
+}
+
+$('#cinema-dopo').addEventListener('click', () => cinemaVai(1));
+$('#cinema-prima').addEventListener('click', () => cinemaVai(-1));
+$('#cinema-punti').addEventListener('click', (e) => {
+  const punto = e.target.closest('.cinema-punto');
+  if (!punto) return;
+  cinemaIndice = Number(punto.dataset.i) || 0;
+  disegnaFilm();
+});
+
+// Tastiera: le frecce sfogliano, come i pulsanti. Il carosello ha `tabindex`,
+// quindi si raggiunge col tasto Tab e si sfoglia senza mouse.
+$('#cinema-carosello').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { cinemaVai(1); e.preventDefault(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { cinemaVai(-1); e.preventDefault(); }
+});
+
+// Rotellina orizzontale (trackpad) o verticale sopra il carosello: si sfoglia.
+// Si usa una piccola soglia per non saltare due film con un tocco solo.
+let cinemaRotella = 0;
+$('#cinema-carosello').addEventListener('wheel', (e) => {
+  const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  cinemaRotella += delta;
+  if (Math.abs(cinemaRotella) < 40) return;
+  cinemaVai(cinemaRotella > 0 ? 1 : -1);
+  cinemaRotella = 0;
+  e.preventDefault();
+}, { passive: false });
+
+// Il dito: si trascina da destra a sinistra per andare avanti, al contrario per
+// tornare indietro. `touchstart`/`touchend` bastano per un carosello a schermata
+// intera, e non rubano lo scorrimento verticale della pagina.
+let cinemaTocco = null;
+$('#cinema-carosello').addEventListener('touchstart', (e) => {
+  cinemaTocco = e.touches[0] ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+$('#cinema-carosello').addEventListener('touchend', (e) => {
+  if (!cinemaTocco) return;
+  const t = e.changedTouches[0];
+  if (!t) return;
+  const dx = t.clientX - cinemaTocco.x;
+  const dy = t.clientY - cinemaTocco.y;
+  // solo se il gesto e' piu' orizzontale che verticale: cosi' non si sfoglia
+  // mentre si scorre la pagina
+  if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) cinemaVai(dx < 0 ? 1 : -1);
+  cinemaTocco = null;
+}, { passive: true });
+
+$('#cinema-aggiorna').addEventListener('click', async () => {
+  const btn = $('#cinema-aggiorna');
+  btn.disabled = true;
+  btn.textContent = 'Aggiorno…';
+  try {
+    const d = await api('/api/cinema/aggiorna', { method: 'POST' });
+    disegnaCinema(d);
+    if (!(d.aggiornati && d.aggiornati.cinema)) toast('Niente di nuovo: la fonte non ha risposto.');
+  } catch (e) {
+    toast(e.message || 'Aggiornamento non riuscito.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Aggiorna';
