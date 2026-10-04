@@ -962,6 +962,214 @@ def test_generazione_ripetuta_non_amplifica_le_quote(client):
     assert sum(d["quantity"] for d in voce["days"]) == pytest.approx(50)
 
 
+# ----------------------------------------------- condividi / esporta la spesa
+# La lista si compra al supermercato, spesso in due: qui si verifica il dato
+# della scheda condivisibile (oggi, un giorno, un intervallo), che deve
+# rispecchiare la lista. La scheda grafica si compone nel client: il server
+# fornisce i numeri, il testo e le voci raggruppate.
+def _spesa_su_giorni(client, *giorni):
+    """Mette in piano un ingrediente diverso per giorno, poi rigenera la lista."""
+    for i, g in enumerate(giorni):
+        nome = f"Alimento{i}"
+        rid = ricetta(client, nome, 2, [{"name": nome, "quantity": 100, "unit": "g"}])
+        client.post("/api/plan", json={"date": g, "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate",
+                json={"start": min(giorni), "end": max(giorni)})
+
+
+def test_condivisione_di_oggi_mostra_le_voci_di_oggi(client):
+    """Senza parametri la scheda e' la spesa di oggi: le stesse voci della lista."""
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-18")
+    d = client.get("/api/shopping/condividi?date=2026-09-14").get_json()
+    assert "2026" not in d["titolo"] or "settembre" in d["titolo"]  # data leggibile
+    assert "luned" in d["titolo"].lower()
+    nomi = [v["name"] for g in d["gruppi"] for v in g["voci"]]
+    assert nomi == ["Alimento0"]           # solo quello di oggi, non l'altro giorno
+
+
+def test_condivisione_di_un_giorno_prende_la_quota_di_quel_giorno(client):
+    """Condividendo un giorno, la quantita' e' quella quota, non il totale."""
+    a = ricetta(client, "A", 2, [{"name": "Pomodori", "quantity": 200, "unit": "g"}])
+    b = ricetta(client, "B", 2, [{"name": "Pomodori", "quantity": 300, "unit": "g"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "pranzo", "recipe_id": a, "servings": 2})
+    client.post("/api/plan", json={"date": "2026-09-18", "meal": "cena", "recipe_id": b, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-18"})
+
+    d = client.get("/api/shopping/condividi?giorno=2026-09-14").get_json()
+    [voce] = [v for g in d["gruppi"] for v in g["voci"]]
+    assert voce["name"] == "Pomodori"
+    assert voce["quota"]["quantity"] == pytest.approx(200)
+    assert "200" in d["testo"]
+
+
+def test_condivisione_di_un_intervallo_somma_i_giorni(client):
+    """Un intervallo prende tutte le voci che servono in quei giorni, col totale."""
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-16", "2026-09-20")
+    d = client.get("/api/shopping/condividi?dal=2026-09-14&al=2026-09-16").get_json()
+    nomi = sorted(v["name"] for g in d["gruppi"] for v in g["voci"])
+    assert nomi == ["Alimento0", "Alimento1"]     # il 20 resta fuori
+    assert d["totale_voci"] == 2
+    assert "dal" in d["titolo"]
+
+
+def test_condivisione_esclude_le_voci_gia_spuntate(client):
+    """Chi compra non deve ricomprare quello che e' gia' nel carrello."""
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-16")
+    [da_spuntare] = [v for v in client.get("/api/shopping").get_json()
+                     if v["name"] == "Alimento0"]
+    client.patch(f"/api/shopping/{da_spuntare['id']}", json={"checked": True})
+
+    d = client.get("/api/shopping/condividi?dal=2026-09-14&al=2026-09-16").get_json()
+    nomi = [v["name"] for g in d["gruppi"] for v in g["voci"]]
+    assert nomi == ["Alimento1"]
+
+
+def test_condivisione_tiene_le_voci_aggiunte_a_mano(client):
+    """Le voci senza giorni non si possono escludere: restano sempre in scheda."""
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-16")
+    client.post("/api/shopping", json={"name": "Carta da cucina", "quantity": 1, "unit": "pz"})
+    d = client.get("/api/shopping/condividi?dal=2026-09-14&al=2026-09-16").get_json()
+    nomi = [v["name"] for g in d["gruppi"] for v in g["voci"]]
+    assert "Carta da cucina" in nomi
+
+
+def test_condivisione_raggruppa_per_categoria(client):
+    _spesa_su_giorni(client, "2026-09-14")
+    d = client.get("/api/shopping/condividi?giorno=2026-09-14").get_json()
+    assert all("categoria" in g and g["voci"] for g in d["gruppi"])
+    assert d["gruppi"][0]["categoria"] == "Altro"   # la categoria di default
+
+
+def test_condivisione_testo_contiene_intestazione_e_voci(client):
+    _spesa_su_giorni(client, "2026-09-14")
+    d = client.get("/api/shopping/condividi?giorno=2026-09-14").get_json()
+    assert "Alimento0" in d["testo"]
+    assert "[ ]" in d["testo"]                     # caselle da spuntare
+    assert "Il Maggiordomo" in d["testo"]          # il marchio c'e'
+    assert d["titolo"] in d["testo"]
+
+
+def test_condivisione_nota_facoltativa(client):
+    _spesa_su_giorni(client, "2026-09-14")
+    d = client.get("/api/shopping/condividi?giorno=2026-09-14&nota=prendi%20il%20pane").get_json()
+    assert d["nota"] == "prendi il pane"
+    assert "prendi il pane" in d["testo"]
+    senza = client.get("/api/shopping/condividi?giorno=2026-09-14").get_json()
+    assert senza["nota"] == ""
+
+
+def test_condivisione_conta_i_deperibili(client):
+    rid = ricetta(client, "A", 2, [{"name": "Spinaci", "quantity": 200, "unit": "g",
+                                    "category": "Frutta e Verdura"}])
+    client.post("/api/plan", json={"date": "2026-09-14", "meal": "cena", "recipe_id": rid, "servings": 2})
+    client.post("/api/shopping/generate", json={"start": "2026-09-14", "end": "2026-09-14"})
+    d = client.get("/api/shopping/condividi?giorno=2026-09-14").get_json()
+    assert d["deperibili"] == 1
+
+
+def test_condivisione_data_storta_e_un_errore(client):
+    """Una data storta non deve diventare una scheda vuota che sembra «niente»."""
+    r = client.get("/api/shopping/condividi?giorno=14-09-2026")
+    assert r.status_code == 400
+    assert "Data non valida" in r.get_json()["error"]
+
+
+def test_condivisione_intervallo_rovesciato_e_un_errore(client):
+    r = client.get("/api/shopping/condividi?dal=2026-09-18&al=2026-09-14")
+    assert r.status_code == 400
+    assert "precedere" in r.get_json()["error"]
+
+
+def test_condivisione_solo_al_vale_come_un_giorno(client):
+    """`al` da solo non si ignora in silenzio: vale come un giorno solo."""
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-18")
+    d = client.get("/api/shopping/condividi?al=2026-09-14").get_json()
+    nomi = [v["name"] for g in d["gruppi"] for v in g["voci"]]
+    assert nomi == ["Alimento0"]
+
+
+def test_condivisione_richiede_l_accesso(anon):
+    """La lista e' un dato della casa: la scheda non si serve senza sessione."""
+    r = anon.get("/api/shopping/condividi")
+    assert r.status_code == 401
+
+
+def test_condivisione_stesse_voci_della_lista(client):
+    """La scheda non e' una seconda verita': le voci sono quelle della lista.
+
+    Se divergessero, si manderebbe a chi compra una lista diversa da quella a
+    schermo, ed e' il difetto che questo endpoint deve rendere impossibile.
+    """
+    _spesa_su_giorni(client, "2026-09-14", "2026-09-18")
+    lista = {v["name"] for v in client.get("/api/shopping").get_json() if not v["checked"]}
+    d = client.get("/api/shopping/condividi?dal=2026-09-14&al=2026-09-18").get_json()
+    scheda = {v["name"] for g in d["gruppi"] for v in g["voci"]}
+    assert scheda == lista
+
+
+def test_la_scheda_ha_il_pulsante_e_il_logo(client):
+    """Il pulsante «Condividi» esiste, e la scheda porta il logo dell'app.
+
+    Si esegue `schedaSpesaHtml` vera con node: la scheda deve contenere il
+    marchio e l'icona, non solo dei numeri.
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "shop-share" in client.get("/static/index.html").get_data(as_text=True)
+    codice = _estrai_funzione_js(js, "schedaSpesaHtml")
+    preludio = "function esc(s) { return String(s ?? ''); }\n"
+    dati = json.dumps({
+        "titolo": "Spesa di lunedi 14 settembre",
+        "sottotitolo": "tutto quello che serve lunedi 14 settembre",
+        "nota": "prendi il pane", "totale_voci": 1, "deperibili": 0,
+        "gruppi": [{"categoria": "Altro", "voci": [
+            {"name": "Latte", "quantity": 1, "unit": "l", "quota": None}]}],
+    })
+    coda = f"console.log(JSON.stringify(schedaSpesaHtml({dati})));"
+    html = _esegui_node(preludio + codice + coda)
+    assert "Il Maggiordomo" in html
+    assert "/static/icons/icona.svg" in html     # il logo
+    assert "Latte" in html and "prendi il pane" in html
+
+
+def test_il_canvas_della_scheda_si_disegna(client):
+    """`schedaSpesaCanvas` disegna davvero: si esegue con node e un canvas finto.
+
+    Un test sulle stringhe non si accorgerebbe se la funzione non disegnasse
+    nulla. Qui si conta che le chiamate di disegno avvengano e che il logo ci
+    sia (i due rettangoli della croce).
+    """
+    js = client.get("/static/app.js").get_data(as_text=True)
+    codice = _estrai_funzione_js(js, "schedaSpesaCanvas")
+    preludio = """
+let chiamate = 0, fillRect = 0, fillText = 0, testi = [];
+function ctx() {
+  const c = { fillStyle:'', strokeStyle:'', font:'', textAlign:'', lineWidth:1 };
+  for (const m of ['fillRect','strokeRect','beginPath','moveTo','lineTo','arcTo','closePath',
+                   'fill','stroke','save','restore','clip','createLinearGradient','rect','roundRect']) {
+    c[m] = (...a) => { chiamate++; if (m === 'fillRect') fillRect++; };
+  }
+  c.createLinearGradient = () => ({ addColorStop() {} });
+  c.fillText = (t) => { fillText++; testi.push(String(t)); };
+  c.measureText = () => ({ width: 10 });
+  return c;
+}
+const document = { createElement: () => ({ width:0, height:0, getContext: ctx }) };
+"""
+    dati = json.dumps({
+        "titolo": "Spesa di oggi", "sottotitolo": "quello che serve",
+        "nota": "", "totale_voci": 2, "deperibili": 0,
+        "gruppi": [
+            {"categoria": "Altro", "voci": [{"name": "Latte", "quantity": 1, "unit": "l"}]},
+            {"categoria": "Dispensa", "voci": [{"name": "Pasta", "quantity": 500, "unit": "g"}]},
+        ],
+    })
+    coda = f"const cv = schedaSpesaCanvas({dati}); console.log(JSON.stringify({{chiamate, fillRect, fillText, testi}}));"
+    d = _esegui_node(preludio + codice + coda)
+    assert d["chiamate"] > 20
+    assert d["fillText"] >= 5
+    assert any("Latte" in t for t in d["testi"])
+    assert any("IL MAGGIORDOMO" in t for t in d["testi"])
+
 
 # ------------------------------------------------------------ foto ricette
 def crea_ricetta(client, **extra):
@@ -8203,7 +8411,7 @@ def _nomi_chiamati_senza_definizione(js):
               'void', 'yield', 'await', 'super', 'this', 'async'}
     # nomi forniti dal browser, non definiti nel file
     browser = set("""Array ArrayBuffer Audio Blob Boolean DataView Date Error
-FileReader Float32Array Image JSON Map Math Number Object Promise RegExp Set
+File FileReader Float32Array Image JSON Map Math Number Object Promise RegExp Set
 String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN
 encodeURIComponent decodeURIComponent fetch setTimeout clearTimeout setInterval
 clearInterval confirm alert console requestAnimationFrame cancelAnimationFrame

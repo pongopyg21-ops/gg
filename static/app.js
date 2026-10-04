@@ -1286,6 +1286,349 @@ $('#shop-add').addEventListener('click', async () => {
   loadIngredientsDatalist();
 });
 
+/* ---------- CONDIVISIONE DELLA SPESA ----------
+   La lista si compra al supermercato, spesso in due: qui si manda a chi va a
+   fare la spesa. Si puo' condividere **oggi**, un giorno preciso o un intervallo
+   di giorni, e in due forme: la scheda (immagine o pagina, col logo) da mandare
+   in chat, o il testo semplice da incollare.
+
+   La scheda si compone **nel client**, non sul server: il carattere e la
+   palette sono quelli dell'app, e il server resterebbe a comporre HTML per una
+   cosa che il browser sa gia' disegnare. Il server fornisce i dati
+   (`/api/shopping/condividi`), che sono le stesse voci della lista. */
+
+/* l'intervallo scelto: {modo, giorno, dal, al}. Parte da «oggi». */
+let shopShare = { modo: 'oggi', giorno: null, dal: null, al: null };
+
+async function apriCondivisione() {
+  // i giorni noti nella lista: sono le scelte piu' probabili, non tutte le date
+  const giorni = [...new Set(shopItems.flatMap((i) => (i.days || []).map((d) => d.date)))].sort();
+  showModal('Condividi la spesa', `
+    <p class="hint">Manda la lista a chi va a fare la spesa, o salvala come immagine.</p>
+    <div class="share-modi" id="share-modi" role="tablist">
+      <button data-modo="oggi" class="active">Oggi</button>
+      <button data-modo="giorno">Un giorno</button>
+      <button data-modo="intervallo">Intervallo</button>
+    </div>
+    <div id="share-giorno" class="share-campo" hidden>
+      <label for="share-giorno-sel">Giorno</label>
+      <select id="share-giorno-sel">
+        ${giorni.length ? giorni.map((g) => `<option value="${g}">${esc(dayLong(g))}</option>`).join('')
+                        : '<option value="">(nessun giorno in lista)</option>'}
+      </select>
+    </div>
+    <div id="share-intervallo" class="share-campo" hidden>
+      <label>Dal <input type="date" id="share-dal"> al <input type="date" id="share-al"></label>
+    </div>
+    <div class="share-campo">
+      <label for="share-nota">Nota (facoltativa)</label>
+      <input id="share-nota" maxlength="200" placeholder="es. prendi anche il pane se c'e'">
+    </div>
+    <div class="modal-foot">
+      <button id="share-copia">Copia testo</button>
+      <button id="share-scarica">Scarica immagine</button>
+      <button class="primary" id="share-invia">Condividi</button>
+    </div>
+  `);
+
+  const leggi = () => {
+    shopShare = {
+      modo: $('#share-modi .active').dataset.modo,
+      giorno: $('#share-giorno-sel') ? $('#share-giorno-sel').value : '',
+      dal: $('#share-dal').value,
+      al: $('#share-al').value,
+    };
+  };
+  const aggiornaCampi = () => {
+    const modo = $('#share-modi .active').dataset.modo;
+    $('#share-giorno').hidden = modo !== 'giorno';
+    $('#share-intervallo').hidden = modo !== 'intervallo';
+  };
+  aggiornaCampi();
+
+  $('#share-modi').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-modo]');
+    if (!b) return;
+    $$('#share-modi button').forEach((x) => x.classList.toggle('active', x === b));
+    aggiornaCampi();
+  });
+
+  const url = () => {
+    leggi();
+    const q = new URLSearchParams();
+    if (shopShare.modo === 'giorno' && shopShare.giorno) q.set('giorno', shopShare.giorno);
+    if (shopShare.modo === 'intervallo' && shopShare.dal) {
+      q.set('dal', shopShare.dal);
+      if (shopShare.al) q.set('al', shopShare.al);
+    }
+    const nota = $('#share-nota').value.trim();
+    if (nota) q.set('nota', nota);
+    const s = q.toString();
+    return '/api/shopping/condividi' + (s ? `?${s}` : '');
+  };
+
+  const carica = async () => {
+    try {
+      return await api(url());
+    } catch (err) {
+      toast(err.message);
+      return null;
+    }
+  };
+
+  $('#share-copia').addEventListener('click', async () => {
+    const d = await carica();
+    if (!d) return;
+    try {
+      await navigator.clipboard.writeText(d.testo);
+      toast('Lista copiata');
+    } catch {
+      // senza clipboard (o senza HTTPS) si mostra il testo: si puo' selezionare
+      showModal('Lista della spesa', `<textarea class="share-testo" readonly>${esc(d.testo)}</textarea>`);
+    }
+  });
+
+  $('#share-scarica').addEventListener('click', async () => {
+    const d = await carica();
+    if (d) await scaricaScheda(d);
+  });
+
+  $('#share-invia').addEventListener('click', async () => {
+    const d = await carica();
+    if (d) await inviaScheda(d);
+  });
+}
+
+/** La data per esteso: «martedì 6 ottobre». */
+function dayLong(iso) {
+  const [a, m, g] = iso.split('-').map(Number);
+  return new Date(a, m - 1, g).toLocaleDateString('it-IT',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** L'HTML della scheda: una pagina autonoma, col logo dell'app e la palette.
+
+    E' la stessa scheda per lo scaricamento e per la condivisione: una sola
+    costruzione, quindi non possono divergere. Il carattere e i colori sono
+    quelli dell'app (Helvetica e la palette «mare»). */
+function schedaSpesaHtml(d) {
+  const gruppi = d.gruppi.map((g) => `
+    <section class="gruppo">
+      <h3>${esc(g.categoria)}</h3>
+      <ul>${g.voci.map((v) => {
+        const q = v.quota || { quantity: v.quantity, unit: v.unit };
+        return `<li><span class="box"></span>
+          <span class="nome">${esc(v.name)}</span>
+          <span class="qta">${esc(q.quantity)} ${esc(q.unit)}</span></li>`;
+      }).join('')}</ul>
+    </section>`).join('');
+
+  const nota = d.nota ? `<p class="nota">📝 ${esc(d.nota)}</p>` : '';
+  const deperibili = d.deperibili
+    ? `<p class="avviso">🧊 ${d.deperibili} voci deperibili: comprale il giorno stesso se puoi.</p>`
+    : '';
+  return `<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(d.titolo)}</title>
+<style>
+  :root { --ink:#0e2a38; --muted:#4d6c7d; --line:#dce9ef; --accent:#0b6e8f;
+          --paper:#f2f8fa; --surface:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 40px; background:linear-gradient(180deg,#cdeafb 0%,var(--paper) 240px);
+         color:var(--ink); font:15px/1.5 'Helvetica Neue',Helvetica,Arial,'Liberation Sans',sans-serif; }
+  .scheda { max-width:560px; margin:0 auto; background:var(--surface); border:1px solid var(--line);
+            border-radius:16px; box-shadow:0 18px 40px -28px rgba(14,42,56,.4); overflow:hidden; }
+  .testata { display:flex; align-items:center; gap:12px; padding:18px 20px;
+             background:linear-gradient(135deg,var(--accent) 0%,#0b6e8f 55%,#17796b 100%); color:#fff; }
+  .testata img { width:44px; height:44px; border-radius:11px; background:#fff; padding:3px; }
+  .testata .chi { font-size:11px; letter-spacing:.16em; text-transform:uppercase; opacity:.9; }
+  .testata h1 { margin:2px 0 0; font-size:21px; line-height:1.2; }
+  .testata .sotto { margin:3px 0 0; font-size:12.5px; opacity:.92; }
+  .corpo { padding:18px 20px 6px; }
+  .nota { background:#fdf6e6; border:1px solid #f0dfb6; border-radius:10px; padding:10px 12px;
+          margin:0 0 14px; font-size:14px; }
+  .avviso { background:var(--paper); border-radius:10px; padding:9px 12px; margin:0 0 14px;
+            font-size:13px; color:var(--muted); }
+  .gruppo { margin:0 0 16px; }
+  .gruppo h3 { margin:0 0 8px; font-size:11.5px; letter-spacing:.13em; text-transform:uppercase;
+               color:var(--accent); border-bottom:1px solid var(--line); padding-bottom:5px; }
+  .gruppo ul { list-style:none; margin:0; padding:0; }
+  .gruppo li { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-bottom:1px dashed var(--line); }
+  .gruppo li:last-child { border-bottom:none; }
+  .box { flex:0 0 auto; width:15px; height:15px; border:1.6px solid var(--accent); border-radius:4px; }
+  .nome { flex:1 1 auto; }
+  .qta { flex:0 0 auto; color:var(--muted); font-variant-numeric:tabular-nums; font-size:13.5px; }
+  .piede { padding:14px 20px 20px; border-top:1px solid var(--line); margin-top:6px;
+           display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:12px; }
+  .piede .marchio { display:flex; align-items:center; gap:7px; }
+  .piede img { width:18px; height:18px; }
+  .vuota { padding:30px 20px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+  <div class="scheda">
+    <header class="testata">
+      <img src="/static/icons/icona.svg" alt="">
+      <div>
+        <div class="chi">Il Maggiordomo</div>
+        <h1>${esc(d.titolo)}</h1>
+        <p class="sotto">${esc(d.sottotitolo)}</p>
+      </div>
+    </header>
+    <div class="corpo">
+      ${nota}
+      ${deperibili}
+      ${d.gruppi.length ? gruppi : '<p class="vuota">Niente da comprare in questo periodo.</p>'}
+    </div>
+    <footer class="piede">
+      <span class="marchio"><img src="/static/icons/icona.svg" alt="">Preparata da Il Maggiordomo</span>
+      <span>${esc(d.totale_voci)} voci</span>
+    </footer>
+  </div>
+</body>
+</html>`;
+}
+
+/** Disegna la scheda su un canvas, per poterla scaricare o condividere come
+    immagine. Si disegna a mano invece di fotografare l'HTML: un canvas si puo'
+    esportare con `toBlob`, e il risultato e' identico su tutti i browser. */
+function schedaSpesaCanvas(d) {
+  const scala = 2;                 // nitido sugli schermi dei telefoni
+  const L = 620 * scala, PAD = 34 * scala, LATO = 15 * scala;
+  const gruppi = d.gruppi;
+  const righe = gruppi.reduce((n, g) => n + g.voci.length + 1, 0);  // +1 = titolo gruppo
+  const alt = PAD * 2 + 150 * scala + righe * 34 * scala +
+              (d.nota ? 40 * scala : 0) + (d.deperibili ? 40 * scala : 0);
+
+  const cv = document.createElement('canvas');
+  cv.width = L; cv.height = alt;
+  const c = cv.getContext('2d');
+  const F = (peso, px) => `${peso} ${px * scala}px 'Helvetica Neue',Helvetica,Arial,sans-serif`;
+
+  // fondo e scheda
+  c.fillStyle = '#f2f8fa'; c.fillRect(0, 0, L, alt);
+  c.fillStyle = '#ffffff';
+  const r = 22 * scala, m = 16 * scala, w = L - m * 2, h = alt - m * 2;
+  c.beginPath();
+  c.moveTo(m + r, m); c.arcTo(m + w, m, m + w, m + h, r);
+  c.arcTo(m + w, m + h, m, m + h, r); c.arcTo(m, m + h, m, m, r);
+  c.arcTo(m, m, m + w, m, r); c.closePath(); c.fill();
+
+  // testata con l'accento
+  c.save();
+  c.beginPath();
+  c.moveTo(m + r, m); c.arcTo(m + w, m, m + w, m + h, r);
+  c.lineTo(m + w, m + 120 * scala); c.lineTo(m, m + 120 * scala);
+  c.arcTo(m, m, m + w, m, r); c.closePath(); c.clip();
+  const grad = c.createLinearGradient(m, m, m + w, m + 120 * scala);
+  grad.addColorStop(0, '#0b6e8f'); grad.addColorStop(1, '#17796b');
+  c.fillStyle = grad; c.fillRect(m, m, w, 120 * scala);
+  c.restore();
+
+  // logo: bandiera col cielo sereno, disegnata come nel file SVG
+  const lg = 46 * scala, lx = m + PAD, ly = m + 26 * scala;
+  c.fillStyle = '#fff'; c.beginPath();
+  c.roundRect ? c.roundRect(lx, ly, lg, lg, 11 * scala) : c.rect(lx, ly, lg, lg); c.fill();
+  c.fillStyle = '#4fb3e8'; c.beginPath();
+  c.roundRect ? c.roundRect(lx, ly, lg, lg, 11 * scala) : c.rect(lx, ly, lg, lg); c.fill();
+  c.fillStyle = '#fff';
+  c.fillRect(lx + 9 * scala, ly + 20 * scala, 28 * scala, 8 * scala);
+  c.fillRect(lx + 19 * scala, ly + 9 * scala, 8 * scala, 28 * scala);
+
+  // titolo e sottotitolo
+  const tx = lx + lg + 14 * scala;
+  c.fillStyle = 'rgba(255,255,255,.9)'; c.font = F('600', 11);
+  c.fillText('IL MAGGIORDOMO', tx, ly + 14 * scala);
+  c.fillStyle = '#fff'; c.font = F('bold', 21);
+  c.fillText(d.titolo, tx, ly + 38 * scala);
+  c.fillStyle = 'rgba(255,255,255,.92)'; c.font = F('400', 12.5);
+  c.fillText(d.sottotitolo, tx, ly + 57 * scala);
+
+  let y = m + 150 * scala;
+  if (d.nota) {
+    c.fillStyle = '#4d6c7d'; c.font = F('400', 13.5);
+    c.fillText('📝 ' + d.nota, m + PAD, y); y += 30 * scala;
+  }
+  if (d.deperibili) {
+    c.fillStyle = '#4d6c7d'; c.font = F('400', 12.5);
+    c.fillText(`🧊 ${d.deperibili} voci deperibili: comprale il giorno stesso.`, m + PAD, y);
+    y += 30 * scala;
+  }
+
+  for (const g of gruppi) {
+    c.fillStyle = '#0b6e8f'; c.font = F('600', 11.5);
+    c.fillText(g.categoria.toUpperCase(), m + PAD, y);
+    c.strokeStyle = '#dce9ef'; c.lineWidth = 1 * scala;
+    c.beginPath(); c.moveTo(m + PAD, y + 8 * scala); c.lineTo(m + w - PAD, y + 8 * scala); c.stroke();
+    y += 34 * scala;
+    for (const v of g.voci) {
+      const q = v.quota || { quantity: v.quantity, unit: v.unit };
+      c.strokeStyle = '#0b6e8f'; c.lineWidth = 1.6 * scala;
+      c.strokeRect(m + PAD, y - 11 * scala, LATO, LATO);
+      c.fillStyle = '#0e2a38'; c.font = F('400', 14);
+      c.fillText(v.name, m + PAD + LATO + 12 * scala, y);
+      c.fillStyle = '#4d6c7d'; c.font = F('400', 13);
+      c.textAlign = 'right';
+      c.fillText(`${q.quantity} ${q.unit}`, m + w - PAD, y);
+      c.textAlign = 'left';
+      y += 34 * scala;
+    }
+  }
+
+  c.fillStyle = '#4d6c7d'; c.font = F('400', 11.5);
+  c.fillText('Preparata da Il Maggiordomo', m + PAD, alt - m - 22 * scala);
+  c.textAlign = 'right';
+  c.fillText(`${d.totale_voci} voci`, m + w - PAD, alt - m - 22 * scala);
+  c.textAlign = 'left';
+  return cv;
+}
+
+function schedaSpesaBlob(d) {
+  return new Promise((resolve) => schedaSpesaCanvas(d).toBlob(resolve, 'image/png'));
+}
+
+/** Scarica la scheda come immagine PNG. */
+async function scaricaScheda(d) {
+  const blob = await schedaSpesaBlob(d);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'spesa-' + (d.data || 'oggi') + '.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast('Scheda salvata');
+}
+
+/** Condivide la scheda: come immagine se il sistema lo permette, altrimenti
+    apre una pagina con la scheda (da stampare o salvare come PDF). */
+async function inviaScheda(d) {
+  const testo = d.testo;
+  const blob = await schedaSpesaBlob(d);
+  const file = new File([blob], 'spesa.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: d.titolo, text: testo });
+      return;
+    } catch (err) {
+      // l'utente ha annullato: non e' un errore da segnalare
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  if (navigator.share) {
+    try { await navigator.share({ title: d.titolo, text: testo }); return; }
+    catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  // ultimo ripiego: la scheda si apre in una finestra, da stampare o salvare
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(schedaSpesaHtml(d)); w.document.close(); }
+  else toast('Scheda pronta: consentine la stampa per salvarla');
+}
+
+$('#shop-share').addEventListener('click', apriCondivisione);
+
 /* ---------- IGIENE ----------
    Il metodo e' quello del calendario mensile delle pulizie: tre blocchi per
    frequenza (ogni giorno, ogni settimana, ogni mese) piu' un calendario annuale

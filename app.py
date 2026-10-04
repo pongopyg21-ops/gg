@@ -1553,6 +1553,16 @@ def shopping():
         db.commit()
         return jsonify({"ok": True}), 201
 
+    return jsonify(_voci_spesa(db))
+
+
+def _voci_spesa(db):
+    """Le voci della lista, con giacenza in dispensa, giorni e deperibilita'.
+
+    Sta in un posto solo perche' la usano la lista normale e la condivisione: se
+    la scheda da mandare a chi compra mostrasse numeri diversi da quelli a
+    schermo, la condivisione sarebbe una seconda verita' invece di una copia.
+    """
     items = rows(db.execute("SELECT * FROM shopping_items ORDER BY checked, category, name"))
 
     # giacenze di tutti gli ingredienti in lista, in una sola query
@@ -1571,7 +1581,7 @@ def shopping():
         item["pantry"] = pantry_available(stock.get(item["ingredient_id"], []), item["unit"])
         item["days"] = _day_breakdown(db, item)
         item["perishable"] = item["category"] in PERISHABLE_CATEGORIES
-    return jsonify(items)
+    return items
 
 
 # categorie che deperiscono: comprarle in anticipo le fa scadere o perdere qualità
@@ -1806,6 +1816,170 @@ def shopping_generate():
     added, marcate = rebuild_shopping(db)
     db.commit()
     return jsonify({"added": added, "already_listed": marcate})
+
+
+# ------------------------------------------------- condivisione della spesa
+# La lista si compra al supermercato, spesso in due o piu': la scheda serve a
+# mandarla a chi va a fare la spesa. E' una **vista**, non un secondo archivio:
+# si costruisce dalle stesse voci della lista (`_voci_spesa`), quindi non puo'
+# mostrare numeri diversi da quelli a schermo.
+NOMI_MESI = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+             "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"]
+GIORNI_BREVI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+MESI_BREVI = ["gen", "feb", "mar", "apr", "mag", "giu",
+              "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+def _giorno_leggibile(iso):
+    """'2026-10-06' -> 'martedì 6 ottobre' (vuoto se la data non e' valida)."""
+    try:
+        d = datetime.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    return f"{igiene.GIORNI_SETTIMANA[d.weekday()]} {d.day} {NOMI_MESI[d.month]}"
+
+
+def _giorno_breve(iso):
+    """'2026-10-06' -> 'mar 6 ott', per le date in una riga sola."""
+    try:
+        d = datetime.date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    return f"{GIORNI_BREVI[d.weekday()]} {d.day} {MESI_BREVI[d.month - 1]}"
+
+
+def _periodo(giorno, dal, al):
+    """Come si chiama l'intervallo della scheda: un giorno solo o piu' giorni.
+
+    Restituisce (titolo, sottotitolo): il titolo e' quello che si legge grande,
+    il sottotitolo dice il perche' («per il pranzo di martedi'»).
+    """
+    if giorno:
+        testo = _giorno_leggibile(giorno)
+        return f"Spesa di {testo}", f"tutto quello che serve {testo}"
+    if dal and al and dal != al:
+        return (f"Spesa dal {_giorno_breve(dal)} al {_giorno_breve(al)}",
+                f"i giorni dal {_giorno_leggibile(dal)} al {_giorno_leggibile(al)}")
+    if dal:
+        testo = _giorno_leggibile(dal)
+        return f"Spesa di {testo}", f"tutto quello che serve {testo}"
+    return "Lista della spesa", "quello che c'e' da comprare adesso"
+
+
+def _voci_per_intervallo(db, giorno, dal, al):
+    """Le voci visibili nell'intervallo, con la quota del giorno se e' uno solo.
+
+    Stessa regola della lista a schermo: una voce entra se serve in uno dei
+    giorni richiesti, o se e' stata aggiunta a mano (non ha giorni, e quindi non
+    si puo' escludere). Le voci spuntate restano fuori: chi compra non deve
+    ricomprare quello che c'e' gia' nel carrello.
+    """
+    inizio = giorno or dal
+    fine = giorno or al or inizio
+    voci = []
+    for i in _voci_spesa(db):
+        if i["checked"]:
+            continue
+        giorni = [d for d in i["days"] if inizio <= d["date"] <= fine]
+        if i["days"] and not giorni:
+            continue
+        voce = {**i, "quota": None}
+        if giorno:
+            quota = next((d for d in i["days"] if d["date"] == giorno), None)
+            if quota:
+                voce["quota"] = quota
+        voci.append(voce)
+    return voci
+
+
+def _raggruppa_per_categoria(voci):
+    """Le voci in gruppi per categoria, nell'ordine in cui compaiono in lista."""
+    gruppi = {}
+    for v in voci:
+        gruppi.setdefault(v["category"], []).append(v)
+    return [{"categoria": c, "voci": l} for c, l in gruppi.items()]
+
+
+def _testo_condivisione(titolo, voci, nota):
+    """La lista in testo semplice, per WhatsApp, SMS o il copia-incolla."""
+    righe = [titolo, ""]
+    for g in _raggruppa_per_categoria(voci):
+        righe.append(g["categoria"].upper())
+        for v in g["voci"]:
+            q = v["quota"] or {"quantity": v["quantity"], "unit": v["unit"]}
+            righe.append(f"  [ ] {v['name']} - {units.format_quantity(q['quantity'])} {q['unit']}")
+        righe.append("")
+    if nota:
+        righe += [nota, ""]
+    righe.append("Preparata da Il Maggiordomo")
+    return "\n".join(righe)
+
+
+def _scheda_spesa(db, giorno, dal, al, nota):
+    """I dati della scheda condivisibile: periodo, voci raggruppate, totali.
+
+    Sta in un modulo suo e non dentro la rotta: cosi' la stessa scheda puo'
+    servire sia la pagina HTML sia il testo, senza due costruzioni che possono
+    divergere.
+    """
+    voci = _voci_per_intervallo(db, giorno, dal, al)
+    titolo, sottotitolo = _periodo(giorno, dal, al)
+    return {
+        "titolo": titolo,
+        "sottotitolo": sottotitolo,
+        "nota": (nota or "").strip(),
+        "gruppi": _raggruppa_per_categoria(voci),
+        "totale_voci": len(voci),
+        "deperibili": sum(1 for v in voci if v["perishable"]),
+        "data": datetime.date.today().isoformat(),
+        "testo": _testo_condivisione(titolo, voci, (nota or "").strip()),
+    }
+
+
+def _periodo_da_richiesta(db):
+    """Legge giorno/intervallo dalla query string. Restituisce (giorno, dal, al).
+
+    `giorno` esclude `dal`/`al`: sono due modi di chiedere la stessa cosa, e
+    mescolarli darebbe una scheda che non si sa da dove viene. Le date si
+    validano qui una volta sola, e un formato storto diventa 400 invece di una
+    scheda vuota che sembra "non c'e' niente da comprare".
+    """
+    giorno = (request.args.get("giorno") or "").strip()
+    dal = (request.args.get("dal") or "").strip()
+    al = (request.args.get("al") or "").strip()
+    for etichetta, valore in (("giorno", giorno), ("dal", dal), ("al", al)):
+        if not valore:
+            continue
+        try:
+            datetime.date.fromisoformat(valore)
+        except ValueError:
+            raise ValueError(f"Data non valida in «{etichetta}»: usa aaaa-mm-gg")
+    if dal and al and al < dal:
+        raise ValueError("La data di fine non puo' precedere quella di inizio")
+    if not giorno and not dal and not al:
+        oggi = _oggi(db)
+        return oggi, None, None
+    if not giorno:
+        # `al` da solo vale come un giorno solo, non si ignora in silenzio
+        return None, (dal or al), (al or dal)
+    return giorno, None, None
+
+
+@app.route("/api/shopping/condividi", methods=["GET"])
+def shopping_condividi():
+    """La spesa di oggi, di un giorno o di un intervallo, pronta da condividere.
+
+    Restituisce un **dato**, non un file: la scheda HTML si compone nel client,
+    che conosce il tema e il carattere. Il testo (`testo`) e' la stessa lista in
+    forma semplice, per copiarla o mandarla dove non arriva un'immagine.
+    """
+    db = get_db()
+    try:
+        giorno, dal, al = _periodo_da_richiesta(db)
+    except ValueError as err:
+        return bad_request(str(err))
+    nota = (request.args.get("nota") or "").strip()[:200]
+    return jsonify(_scheda_spesa(db, giorno, dal, al, nota))
 
 
 # ---------------------------------------------------------------- progetti

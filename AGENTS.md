@@ -711,6 +711,19 @@ Conseguenze pratiche per chi mette mano al codice:
   Con la dispensa **vuota** il riquadro non resta muto: dice di aggiungere qualche
   ingrediente. Prima spariva e basta, e sembrava che i suggerimenti non esistessero
   — che è esattamente quello che si vede al primo avvio, quando la dispensa è vuota.
+- **La scheda condivisibile della spesa** (`GET /api/shopping/condividi`) è una
+  vista, non un secondo archivio: si costruisce da `_voci_spesa`, le stesse voci
+  della lista, quindi non può mostrare numeri diversi da quelli a schermo. Le
+  regole del periodo sono quelle della vista per giorno — un giorno porta la
+  **quota** di quel giorno (`quota` nella voce), un intervallo il totale — e le
+  voci già spuntate restano fuori (chi compra non ricompra il carrello), mentre
+  quelle senza giorni (aggiunte a mano) restano sempre.
+  L'endpoint restituisce **dati**, non HTML: la scheda grafica si compone nel
+  client (`schedaSpesaHtml` per la pagina, `schedaSpesaCanvas` per il PNG), che
+  conosce il tema e il carattere. Aggiungendo un campo alla scheda, si aggiorna
+  `_scheda_spesa` in un punto solo; il testo (`testo`) nasce dalle stesse voci.
+  I parametri (`giorno` oppure `dal`/`al`, più `nota`) si validano una volta sola:
+  una data storta è un 400, non una scheda vuota che sembra «niente da comprare».
 - **La scadenza in dispensa** (`pantry.expires_at`, `parse_data`). È una data
   facoltativa: vuoto significa «non lo so», che è **diverso** da «non scade». Non
   si indovina mai una data, perché una scadenza inventata farebbe buttare cibo
