@@ -52,7 +52,7 @@ PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
 # cambiare i video di casa non tocca l'allenamento. Stessa forma della TV: si
 # puo' sostituire da `GYM_PLAYLIST` senza toccare il modulo.
 PLAYLIST_GYM_PREDEFINITA = "PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo"
-# Le notizie vengono da piu' sezioni ANSA: il mondo da solo lascia fuori quello
+# Le notizie vengono dalle sezioni ANSA: il mondo da solo lascia fuori quello
 # che succede in Italia, che e' la prima cosa che si guarda. Le sezioni sono
 # argomenti, non fonti diverse: tutte ANSA, tutte in italiano.
 FEED_PREDEFINITI = (
@@ -60,11 +60,6 @@ FEED_PREDEFINITI = (
     "https://www.ansa.it/sito/notizie/cronaca/cronaca_rss.xml",
     "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
     "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
-    # Una seconda testata, non una seconda sezione: le quattro ANSA sono la
-    # stessa linea editoriale, e un fatto raccontato da un'altra redazione si
-    # legge in modo diverso. RaiNews e' il servizio pubblico, un feed solo e
-    # generalista.
-    "https://www.rainews.it/rss/tutti",
 )
 
 # Quante notizie si tengono. Venti: dieci riempiono la prima schermata e il
@@ -74,8 +69,8 @@ FEED_PREDEFINITI = (
 MAX_NOTIZIE = 20
 
 # Quante voci puo' portare un singolo feed al totale. Senza, un feed
-# generalista (RaiNews ne pubblica decine) riempirebbe da solo le notizie e le
-# sezioni ANSA sparirebbero: le fonti si mescolano, non si sostituiscono.
+# generalista riempirebbe da solo le notizie e le altre sezioni sparirebbero:
+# le fonti si mescolano, non si sostituiscono.
 MAX_PER_FEED = 10
 
 # Tetto ai feed dichiarati: con `TV_FEED` se ne possono indicare altri, ma non
@@ -363,11 +358,10 @@ def _ordina_per_data(voci: list) -> list:
 def _mescola_per_fonte(voci: list) -> list:
     """Alterna le testate, partendo dalla notizia piu' recente.
 
-    Un elenco ordinato solo per data diventa una testata sola: ANSA pubblica
-    molto piu' spesso di RaiNews, quindi le sue voci occupano tutto il tetto e
-    RaiNews non si vede mai — e' il difetto che c'e' stato davvero. Qui si
-    prende a turno la notizia piu' recente di ogni testata, cosi' le fonti si
-    alternano, e dentro ogni testata l'ordine resta per data.
+    Un elenco ordinato solo per data puo' diventare una testata sola, quando una
+    pubblica molto piu' spesso delle altre. Qui si prende a turno la notizia piu'
+    recente di ogni testata, cosi' le fonti si alternano, e dentro ogni testata
+    l'ordine resta per data.
     """
     per_fonte = {}
     for voce in _ordina_per_data(voci):
@@ -421,11 +415,12 @@ def notizie_dal_feed(db=None) -> list:
         uniche.append(voce)
 
     # Si scelgono prima le piu' recenti, poi si taglia per testata: il tetto per
-    # feed non basta, perche' ANSA ha quattro sezioni e le sue voci recenti
-    # (piu' numerose) terrebbero comunque fuori RaiNews. La fetta per testata e'
-    # **proporzionale al numero di testate** — con una sola fonte non si taglia
-    # niente, con due si fa meta' per uno — cosi' la promessa «ANSA e RaiNews»
-    # regge anche quando una pubblica molto piu' spesso dell'altra.
+    # feed non basta, perche' una testata con piu' sezioni (ANSA ne ha quattro)
+    # porta voci recenti piu' numerose delle altre e occuperebbe comunque
+    # l'elenco. La fetta per testata e' **proporzionale al numero di testate** —
+    # con una sola fonte non si taglia niente, con due si fa meta' per uno —
+    # cosi' le fonti convivono anche quando una pubblica molto piu' spesso
+    # dell'altra.
     testate = {v["fonte"] for v in uniche}
     tetto = max(1, MAX_NOTIZIE // len(testate)) if testate else MAX_NOTIZIE
     per_testata = {}

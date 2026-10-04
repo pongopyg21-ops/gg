@@ -1940,8 +1940,23 @@ def test_catalogo_pulizie_senza_duplicati():
 def test_catalogo_copre_tutte_le_frequenze():
     """Ogni frequenza deve avere voce: senza, un blocco della pagina resta vuoto."""
     voci = igiene.catalogo()
-    for chiave in ("giornaliera", "settimanale", "mensile", "stagionale"):
+    for chiave in ("giornaliera", "frazionaria", "settimanale", "mensile", "stagionale"):
         assert any(v["frequency"] == chiave for v in voci), chiave
+
+
+def test_il_catalogo_ha_la_lavatrice_a_giorno_e_mezzo():
+    """«Avviare la lavatrice» e' una voce del catalogo, a cadenza frazionaria.
+
+    Un giorno e mezzo non e' un blocco tondo: la voce sta nel proprio gruppo e
+    il conto usa l'ora (vedi `test_scadenza_frazionaria_conta_la_mezza_giornata`).
+    """
+    voci = igiene.catalogo()
+    lavatrice = next((v for v in voci if v["name"] == "Avviare la lavatrice"), None)
+    assert lavatrice is not None
+    assert lavatrice["frequency"] == "frazionaria"
+    assert igiene.CADENZE["frazionaria"] == 1.5
+    # e la frequenza e' dichiarata fra le scelte dell'interfaccia
+    assert any(f["key"] == "frazionaria" for f in igiene.FREQUENZE)
 
 
 def test_la_sezione_igiene_ha_le_schede_e_i_pannelli(client):
@@ -2034,6 +2049,33 @@ def test_scadenza_settimanale_in_ritardo():
     stato = igiene.scadenza("settimanale", "2026-09-01", date(2026, 9, 18))
     assert stato["in_scadenza"] is True
     assert stato["giorni"] < 0
+
+
+def test_scadenza_frazionaria_conta_la_mezza_giornata():
+    """Una cadenza di un giorno e mezzo non e' ne' un giorno ne' due.
+
+    Con la sola data la mezza andrebbe persa: fatta lunedi' alle 8, la voce
+    risulterebbe da rifare gia' martedi' mattina. L'ora del completamento e'
+    quella che distingue "un giorno e mezzo" da "un giorno".
+    """
+    # lunedi' 8:00 -> la prossima e' martedi' alle 20:00, cioe' 1,5 giorni
+    stato = igiene.scadenza("frazionaria", "2026-09-14T08:00:00",
+                            "2026-09-15T08:00:00")
+    assert stato["prossima"] == "2026-09-15T20:00:00"
+    assert stato["in_scadenza"] is False
+    assert stato["giorni"] == 0.5, "meta' giornata ancora da aspettare"
+    # martedi' sera alle 20:00 e' il momento: rientra
+    scaduta = igiene.scadenza("frazionaria", "2026-09-14T08:00:00",
+                              "2026-09-15T20:00:00")
+    assert scaduta["in_scadenza"] is True
+    assert scaduta["giorni"] == 0
+
+
+def test_scadenza_frazionaria_senza_ora_e_tollerante():
+    """Un valore con la sola data non deve far esplodere il calcolo."""
+    stato = igiene.scadenza("frazionaria", "2026-09-14", "2026-09-15T20:00:00")
+    assert "in_scadenza" in stato
+    assert stato["prossima"] == "2026-09-15T12:00:00", "mezzanotte + 1,5 giorni"
 
 
 def test_scadenza_mensile_e_annuale():
@@ -2206,7 +2248,7 @@ def test_api_pulizie_meta(client):
     m = client.get("/api/chores/meta").get_json()
     assert len(m["months"]) == 12
     assert len(m["days"]) == 7
-    assert len(m["frequencies"]) == 4
+    assert len(m["frequencies"]) == 5
     assert m["areas"]
     assert 0 <= m["chore_day"] <= 6
 
@@ -2216,7 +2258,7 @@ def test_api_pulizie_seminata_al_primo_avvio(client):
     r = client.get("/api/chores").get_json()
     assert r["attivita"], "il catalogo non e' vuoto"
     assert r["attive"] == len([v for v in r["attivita"] if v["active"]])
-    assert set(r["piano"]["gruppi"]) == {"quotidiane", "settimanali"}
+    assert set(r["piano"]["gruppi"]) == {"quotidiane", "frazionarie", "settimanali"}
     assert set(r["piano"]["mese"]) >= {"mensili", "stagionali"}
 
 
@@ -2345,7 +2387,7 @@ def test_api_pulizie_il_mese_non_invade_il_piano_di_oggi(client):
     """Mensili e stagionali non gonfiano la giornata: e' il punto del metodo."""
     r = client.get("/api/chores").get_json()
     oggi = r["piano"]["gruppi"]["quotidiane"] + r["piano"]["gruppi"]["settimanali"]
-    assert all(v["frequency"] in ("giornaliera", "settimanale") for v in oggi)
+    assert all(v["frequency"] in ("giornaliera", "frazionaria", "settimanale") for v in oggi)
     mensili = r["piano"]["mese"]["mensili"] + r["piano"]["mese"]["stagionali"]
     assert all(v["frequency"] in ("mensile", "stagionale") for v in mensili)
     # e il tempo stimato di oggi non deve includere quello del mese
@@ -7266,6 +7308,20 @@ def test_le_notizie_in_home_stanno_sotto_il_calendario(client):
     assert "$('#home-notizie-apri')" in js and "apriSezione('tv')" in js
 
 
+def test_l_intestazione_chiude_la_home(client):
+    """L'intestazione «Il Maggiordomo» sta in fondo alla home.
+
+    In alto era la prima cosa che si incontrava e spingeva giu' le categorie,
+    che sono il motivo per cui si arriva in home. Ora chiude la pagina, dopo
+    «Oggi», il calendario e le notizie."""
+    html = client.get("/").get_data(as_text=True)
+    inizio = html.index('id="home"')
+    home = html[inizio:html.index('<div id="app"', inizio)]
+    assert "home-hero-basso" in home
+    assert home.index('class="home-cards"') < home.index("home-hero-basso")
+    assert home.index('id="home-notizie"') < home.index("home-hero-basso")
+
+
 def test_l_endpoint_notizie_serve_solo_le_notizie_dalla_cache(client, monkeypatch):
     """`/api/notizie` alimenta il riquadro in home: deve portare le notizie e
     quando sono state prese, senza tirare dietro i video della TV (in home non
@@ -8293,8 +8349,8 @@ def test_la_sezione_gym_e_in_home_e_ha_il_suo_tab(client):
 
 def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, monkeypatch):
     """Il tetto e' venti e le fonti si **alternano**, non si ordinano solo per
-    data: un elenco per sola data diventa una testata sola, perche' ANSA pubblica
-    molto piu' spesso di RaiNews — ed e' il difetto che c'e' stato davvero.
+    data: un elenco per sola data puo' diventare una testata sola, quando una
+    pubblica molto piu' spesso delle altre.
 
     Servono piu' feed: un singolo feed e' limitato a `MAX_PER_FEED` (vedi
     `test_un_feed_generalista_non_occupa_tutto_l_elenco`)."""
@@ -8321,9 +8377,8 @@ def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, mon
 
 
 def test_due_testate_si_alternano_e_riempiono_le_venti(client, monkeypatch):
-    """Il difetto vero: ANSA ha quattro sezioni e pubblica piu' spesso, quindi
-    ordinando solo per data le sue voci recenti occupano tutto l'elenco e RaiNews
-    non si vede mai. Il taglio per testata tiene la promessa: dieci e dieci."""
+    """Due testate si alternano e riempiono l'elenco: la fetta per testata tiene
+    la promessa, dieci e dieci, anche quando una pubblica piu' spesso."""
     u1, u2 = "https://esempio.invalid/ansa", "https://esempio.invalid/rai"
     monkeypatch.setattr(tv, "feed_urls", lambda: [u1, u2])
     ansa = [_voce(f"ansa-{i}", f"Thu, 02 Apr 2026 09:{i:02d}:00 +0200") for i in range(15)]
@@ -8359,9 +8414,9 @@ def test_i_titoli_quasi_uguali_non_si_ripetono(client, monkeypatch):
 
 
 def test_un_feed_generalista_non_occupa_tutto_l_elenco(client, monkeypatch):
-    """Un feed generalista (RaiNews pubblica decine di voci) senza tetto
-    riempirebbe da solo le dieci notizie, facendo sparire le sezioni ANSA: ogni
-    feed contribuisce al massimo `MAX_PER_FEED`."""
+    """Un feed generalista senza tetto riempirebbe da solo le dieci notizie,
+    facendo sparire le sezioni: ogni feed contribuisce al massimo
+    `MAX_PER_FEED`."""
     urls = [f"https://esempio.invalid/f{i}" for i in range(4)]
     monkeypatch.setattr(tv, "feed_urls", lambda: urls)
     risposte = {}
@@ -8675,6 +8730,16 @@ def test_i_feed_predefiniti_includono_l_italia(client):
     # niente doppioni e tutti feed veri
     assert len(urls) == len(set(urls))
     assert all(u.startswith("https://") for u in urls)
+
+
+def test_i_feed_predefiniti_non_includono_rainews(client):
+    """RaiNews e' stato tolto dalle testate: le notizie sono solo ANSA.
+
+    La scelta e' deliberata: il feed generalista di RaiNews pubblicava decine di
+    voci e non si voleva piu' in elenco."""
+    urls = tv.feed_urls()
+    assert all("rainews" not in u.lower() for u in urls)
+    assert all("ansa.it" in u for u in urls)
 
 
 def test_tv_feed_dall_ambiente_ne_accetta_piu_d_uno(client, monkeypatch):

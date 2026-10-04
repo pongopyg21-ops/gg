@@ -1320,9 +1320,26 @@ function quandoDetto(voce) {
   if (voce.fatto_oggi) return 'fatta oggi';
   if (voce.mai_fatta) return 'mai fatta';
   if (voce.giorni === null) return `ultima volta il ${voce.ultima}`;
-  if (voce.giorni > 0) return `rifare fra ${voce.giorni} ${voce.giorni === 1 ? 'giorno' : 'giorni'}`;
-  const r = -voce.giorni;
-  return `in ritardo di ${r} ${r === 1 ? 'giorno' : 'giorni'}`;
+  // le cadenze frazionarie (un giorno e mezzo) hanno un orario, non solo un
+  // giorno: "rifare alle 20:00" e' piu' preciso di "rifare fra 1 giorno e mezzo"
+  const ora = voce.frequency === 'frazionaria' && voce.prossima
+    ? `, alle ${oraBreve(voce.prossima)}` : '';
+  if (voce.giorni > 0) {
+    if (voce.giorni < 1) return `rifare fra ${Math.round(voce.giorni * 24)} ore`;
+    const g = Math.floor(voce.giorni);
+    const mezzo = voce.giorni - g >= 0.5;
+    return `rifare fra ${g} ${g === 1 ? 'giorno' : 'giorni'}${mezzo ? ' e mezzo' : ''}${ora}`;
+  }
+  const r = Math.abs(voce.giorni);
+  if (r < 1) return `in ritardo di ${Math.round(r * 24)} ore`;
+  return `in ritardo di ${Math.round(r)} ${Math.round(r) === 1 ? 'giorno' : 'giorni'}${ora}`;
+}
+
+// l'ora di un istante ISO, "HH:MM"
+function oraBreve(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 async function renderIgiene() {
@@ -1401,6 +1418,7 @@ function renderOggi() {
 
   $('#ch-oggi').innerHTML = testa + settimana
     + blocco('Ogni giorno', p.gruppi.quotidiane)
+    + blocco('Ogni giorno e mezzo', p.gruppi.frazionarie)
     + blocco('Ogni settimana', p.gruppi.settimanali);
 
   const m = p.mese;
@@ -1456,6 +1474,7 @@ function renderRoutine() {
     </div>`;
   $('#ch-routine').innerHTML =
     sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine', false) +
+    sezione('Ogni giorno e mezzo', di('frazionaria'), 'a mezza giornata, non a giorni tondi', false) +
     sezione('Ogni settimana', di('settimanale'), 'uno o due al giorno, non tutte insieme', true);
 }
 
@@ -1490,7 +1509,7 @@ function renderChoreList() {
   const label = (k) => (chMeta.frequencies.find((f) => f.key === k) || {}).label || k;
   const gruppi = {};
   chDati.attivita.forEach((v) => (gruppi[v.frequency] = gruppi[v.frequency] || []).push(v));
-  const ordine = ['giornaliera', 'settimanale', 'mensile', 'stagionale'];
+  const ordine = ['giornaliera', 'frazionaria', 'settimanale', 'mensile', 'stagionale'];
 
   $('#ch-count').textContent = `${chDati.attive} attività attive su ${chDati.attivita.length}`;
   $('#ch-list').innerHTML = ordine.filter((k) => gruppi[k]).map((k) => `

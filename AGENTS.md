@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **601 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **606 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -727,11 +727,14 @@ Conseguenze pratiche per chi mette mano al codice:
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
 - **L'ordine della home**: categorie (le schede «Cucina, Igiene, …»), poi il
-  riepilogo «Oggi», il calendario, infine le notizie del giorno. Le categorie
-  stanno subito sotto l'invito a parlare: si arriva in home per scegliere dove
-  andare, e devono vedersi senza scorrere. Tutto il resto è da leggere, non da
-  premere, quindi viene dopo. È un ordine scelto dall'utente, non un dettaglio di
-  stile: prima le schede erano in fondo, ed era sbagliato.
+  riepilogo «Oggi», il calendario, le notizie del giorno e in fondo
+  l'intestazione «Il Maggiordomo» (`home-hero-basso`). Le categorie stanno
+  subito sotto l'invito a parlare: si arriva in home per scegliere dove andare,
+  e devono vedersi senza scorrere. Tutto il resto è da leggere, non da premere,
+  quindi viene dopo. È un ordine scelto dall'utente, non un dettaglio di stile:
+  prima le schede erano in fondo, ed era sbagliato. L'intestazione era invece in
+  cima e spingeva giù le categorie: ora chiude la pagina (vedi
+  `test_l_intestazione_chiude_la_home`).
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
@@ -814,14 +817,25 @@ Conseguenze pratiche per chi mette mano al codice:
   esaurimento) è calcolato dal server e non dal client, così il confronto fra
   giacenza e scorta minima resta in un posto solo.
 - **Igiene**: il catalogo di partenza sta in `igiene.py` e viene seminato in
-  `chores`, come le ricette. La cadenza (`giornaliera`, `settimanale`, `mensile`,
-  `stagionale`) decide quando una voce rientra; le stagionali solo nel loro `month`
-  e una volta l'anno. `piano()` in `igiene.py` è il cuore del metodo: **quotidiane
-  e settimanali stanno nel piano di oggi, mensili e stagionali nel blocco del
-  mese**. Se finissero tutte nel piano di oggi la giornata diventerebbe
-  impraticabile e il piano verrebbe abbandonato: è il motivo per cui il test
-  `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti` conta solo oggi,
-  `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in entrambi i casi.
+  `chores`, come le ricette. La cadenza (`giornaliera`, `frazionaria`,
+  `settimanale`, `mensile`, `stagionale`) decide quando una voce rientra; le
+  stagionali solo nel loro `month` e una volta l'anno. `piano()` in `igiene.py` è
+  il cuore del metodo: **quotidiane, frazionarie e settimanali stanno nel piano di
+  oggi, mensili e stagionali nel blocco del mese**. Se finissero tutte nel piano di
+  oggi la giornata diventerebbe impraticabile e il piano verrebbe abbandonato: è il
+  motivo per cui il test `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti`
+  conta solo oggi, `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in
+  entrambi i casi.
+- La cadenza **frazionaria** («ogni giorno e mezzo», `FRAZIONARIE` — la lavatrice)
+  non è un blocco tondo e per questo non entra mai nel blocco mensile: `CADENZE`
+  le dà 1,5 giorni. Conta **l'ora del completamento**, non solo la data: con la
+  sola data la mezza giornata si perderebbe e alle 8 di lunedì la voce sembrerebbe
+  da rifare già martedì mattina, cioè un giorno. `chore_log.date` per questo è un
+  istante ISO (`datetime('now')`, non `date('now')`) e `scadenza()` confronta
+  istanti per questa cadenza (`giorni` può quindi essere una frazione). In `piano()`
+  rientra **solo quando è davvero da rifare** (come le settimanali), non sempre:
+  altrimenti gonfierebbe il «da fare» di oggi con una lavatrice non dovuta. Resta
+  comunque visibile in Routine e nel catalogo.
 - **La sezione Igiene è divisa in schede** (Oggi / Routine / Calendario / Attività),
   e ognuna ha il suo pannello (`.ch-panel`, `data-chp-panel`). Prima erano un'unica
   colonna: lo stesso catalogo compariva in più blocchi — le quotidiane tre volte,
@@ -1759,10 +1773,10 @@ Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per i
 due formati (Atom per la playlist, RSS per le notizie). Sono formati semplici, e
 una libreria in più sarebbe una cosa da aggiornare per leggere cinque campi.
 
-Le notizie sono **max venti**, da più testate (ANSA e RaiNews), mescolate fra
-loro, e si rinnovano **una volta al giorno**; i video una volta al giorno anche
-loro. Si mostra titolo, sommario breve e rimando alla fonte, non l'articolo: il
-testo è di chi lo scrive.
+Le notizie sono **max venti**, dalle sezioni ANSA, mescolate fra loro, e si
+rinnovano **una volta al giorno**; i video una volta al giorno anche loro. Si
+mostra titolo, sommario breve e rimando alla fonte, non l'articolo: il testo è di
+chi lo scrive.
 
 Le scelte che contano:
 
@@ -1801,18 +1815,18 @@ Le scelte che contano:
   e che è già costato un giro: per questo c'è un test sui campi, non solo sul
   numero di voci.
 
-- **Le notizie vengono da più sezioni e da più testate.** `FEED_PREDEFINITI`
-  raccoglie mondo, cronaca, politica ed economia di ANSA, più il feed
-  generalista di **RaiNews**: il solo «mondo» lascia fuori quello che succede in
-  Italia, che è la prima cosa che si guarda, e quattro sezioni ANSA sono la stessa
-  linea editoriale — una seconda testata racconta gli stessi fatti in modo diverso.
-- **Un feed generalista non occupa tutto l'elenco.** RaiNews pubblica decine di
-  voci: senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le notizie e
-  le sezioni ANSA sparirebbero. Le fonti si mescolano, non si sostituiscono.
+- **Le notizie vengono dalle sezioni ANSA.** `FEED_PREDEFINITI` raccoglie mondo,
+  cronaca, politica ed economia: il solo «mondo» lascia fuori quello che succede
+  in Italia, che è la prima cosa che si guarda. Sono argomenti, non fonti diverse.
+  RaiNews è stato **tolto** dalle testate: era l'unica seconda testata, e il suo
+  feed generalista non si vuole più in elenco (vedi
+  `test_i_feed_predefiniti_non_includono_rainews`).
+- **Un feed generalista non occupa tutto l'elenco.** Un feed che pubblica decine
+  di voci senza un tetto per feed (`MAX_PER_FEED`) riempirebbe da solo le notizie
+  e le altre sezioni sparirebbero. Le fonti si mescolano, non si sostituiscono.
 - **Le testate si alternano e si tagliano per testata.** Il solo ordinamento per
-  data non basta: ANSA ha quattro sezioni e pubblica molto più spesso di RaiNews,
-  quindi le sue voci recenti occupano tutto l'elenco e RaiNews non si vede mai —
-  è il difetto che c'è stato davvero, con venti notizie tutte ANSA. Due rimedi:
+  data non basta: una testata con più sezioni (ANSA ne ha quattro) porta voci
+  recenti più numerose e occuperebbe tutto l'elenco. Due rimedi:
   `_mescola_per_fonte` prende a turno la più recente di ogni testata, e la fetta
   per testata è **proporzionale al numero di testate** (`MAX_NOTIZIE // n`), così
   con una sola fonte non si taglia niente e con due si fa metà per uno. Dentro
@@ -1833,7 +1847,7 @@ accetta **più indirizzi** separati da virgola o a capo (con un tetto `MAX_FEED`
 così una casa sceglie le proprie sezioni. I predefiniti sono la playlist
 **GIAGIA-Max** (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R`,
 il feed Atom vuole il solo `list=...`) e le notizie dalle sezioni ANSA **mondo,
-cronaca, politica, economia** più **RaiNews**. I test non toccano la rete:
+cronaca, politica, economia**. I test non toccano la rete:
 sostituiscono `tv._apri` con risposte preparate e provano l'interpretazione e la
 tenuta della cache, che sono le parti che sbagliano.
 

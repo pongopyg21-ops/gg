@@ -23,16 +23,24 @@ Due scelte deliberate, perche' l'elenco e' la cosa che l'utente legge davvero:
   nel focus del mese, che li raccoglie.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 # ------------------------------------------------------------------ costanti
 
 # La cadenza in giorni di ogni blocco. "stagionale" non ha una cadenza vera:
 # si fa una volta l'anno, nel mese indicato, e il conto lo fa `scadenza`.
-CADENZE = {"giornaliera": 1, "settimanale": 7, "mensile": 30}
+# "frazionaria" e' l'unica che ammette mezze giornate (vedi `FRAZIONARIA`).
+CADENZE = {"giornaliera": 1, "frazionaria": 1.5, "settimanale": 7, "mensile": 30}
+
+# La cadenza di "ogni giorno e mezzo". Mezza giornata conta: con 1 o 2 giorni
+# tondi non sarebbe ne' "ogni giorno" ne' "ogni giorno e mezzo". Il conto usa
+# l'ora del completamento, non solo la data, altrimenti la mezza giornata si
+# perde e la cadenza diventa giornaliera (vedi `scadenza`).
+FRAZIONARIA = 1.5
 
 FREQUENZE = [
     {"key": "giornaliera", "label": "Ogni giorno", "giorni": 1},
+    {"key": "frazionaria", "label": "Ogni giorno e mezzo", "giorni": FRAZIONARIA},
     {"key": "settimanale", "label": "Ogni settimana", "giorni": 7},
     {"key": "mensile", "label": "Ogni mese", "giorni": 30},
     {"key": "stagionale", "label": "Una volta l'anno", "giorni": None},
@@ -59,6 +67,13 @@ QUOTIDIANE = [
     ("Piatti e superfici della cucina", "Cucina", 10),
     ("Bagno fresco: lavandino e specchio", "Bagno", 5),
     ("Arieggiare le stanze", "Tutta la casa", 2),
+]
+
+# Cadenza "ogni giorno e mezzo": non ha un blocco tondo come le altre, ma una
+# voce sola. L'ora del completamento conta (vedi `FRAZIONARIA`), quindi una
+# lavatrice messa alle 8 di lunedi' chiede di rifarla verso le 20 di martedi'.
+FRAZIONARIE = [
+    ("Avviare la lavatrice", "Bagno", 5),
 ]
 
 # L'ordine conta: le settimanali si distribuiscono dal giorno scelto
@@ -204,6 +219,9 @@ def catalogo():
     for nome, area, minuti in QUOTIDIANE:
         voci.append({"name": nome, "area": area, "frequency": "giornaliera",
                      "minutes": minuti, "month": None})
+    for nome, area, minuti in FRAZIONARIE:
+        voci.append({"name": nome, "area": area, "frequency": "frazionaria",
+                     "minutes": minuti, "month": None})
     for nome, area, minuti in SETTIMANALI:
         voci.append({"name": nome, "area": area, "frequency": "settimanale",
                      "minutes": minuti, "month": None})
@@ -236,12 +254,30 @@ def _data(valore):
         return None
 
 
+def _momento(valore):
+    """Data e ora di un valore ISO, o None se assente/illeggibile.
+
+    Serve alle cadenze frazionarie, dove mezza giornata conta: `chore_log.date`
+    e' un istante ISO (`datetime('now')`), quindi porta l'ora. Un valore con la
+    sola data resta leggibile, a mezzanotte.
+    """
+    if not valore:
+        return None
+    try:
+        return datetime.fromisoformat(str(valore)[:19])
+    except ValueError:
+        giorno = _data(valore)
+        return datetime.combine(giorno, time()) if giorno else None
+
+
 def scadenza(frequency, ultima, oggi, month=None):
     """Quando rifare un'attivita'.
 
-    `ultima` e `oggi` sono date (o stringhe ISO). `giorni` e' quanti giorni
+    `ultima` e `oggi` sono date (o istanti ISO). `giorni` e' quanti giorni
     mancano alla prossima volta: negativo se si e' in ritardo, None se non c'e'
-    una data (mai fatta, oppure attivita' stagionale).
+    una data (mai fatta, oppure attivita' stagionale). Per le cadenze
+    frazionarie `giorni` puo' essere una frazione: la mezza giornata si conta in
+    ore, altrimenti andrebbe persa (vedi `FRAZIONARIA`).
     """
     ultima_d = _data(ultima)
     oggi_d = _data(oggi) or date.today()
@@ -260,6 +296,28 @@ def scadenza(frequency, ultima, oggi, month=None):
         return stato
 
     cadenza = CADENZE.get(frequency, 7)
+
+    # Una cadenza frazionaria (un giorno e mezzo) non cade sulla mezzanotte: il
+    # giorno in piu' non basta a dire "e mezzo". Si usa l'ora del completamento e
+    # si conta in ore, altrimenti alle 8 di lunedi' la voce risulterebbe da
+    # rifare gia' martedi' mattina — una cadenza di un giorno, non di uno e mezzo.
+    if frequency == "frazionaria":
+        ultima_t = _momento(ultima)
+        if ultima_t is not None:
+            # Il confronto e' fra istanti: se il chiamante ha dato un istante
+            # esplicito si usa quello (serve ai test per non dipendere dall'ora
+            # vera), altrimenti l'ora corrente. Con la sola data il confronto
+            # cadrebbe a mezzanotte e la mezza giornata si perderebbe di nuovo.
+            testo_oggi = str(oggi)
+            oggi_t = _momento(testo_oggi) if len(testo_oggi) > 10 else None
+            if oggi_t is None:
+                oggi_t = datetime.now() if not isinstance(oggi, datetime) else oggi
+            prossima = ultima_t + timedelta(days=cadenza)
+            stato["prossima"] = prossima.isoformat()
+            stato["giorni"] = (prossima - oggi_t).total_seconds() / 86400
+            stato["in_scadenza"] = oggi_t >= prossima
+            return stato
+
     prossima = ultima_d + timedelta(days=cadenza)
     stato["prossima"] = prossima.isoformat()
     stato["giorni"] = (prossima - oggi_d).days
@@ -298,16 +356,18 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None):
     di minuti e il piano verrebbe abbandonato — e' il motivo per cui l'articolo
     dice di non pianificare compiti impossibili. Quindi:
 
-    - `oggi`: le quotidiane (sempre, sono la routine) e le settimanali che tocca
-      oggi, piu' quelle scadute (in ritardo nonostante la distribuzione). La
-      distribuzione sui giorni e' in `giorni_settimanali`: senza, le settimanali
-      si ammassavano tutte nel giorno fisso.
+    - `oggi`: le quotidiane (sempre, sono la routine), le frazionarie (sempre,
+      ma con lo stato che dice se tocca) e le settimanali che tocca oggi, piu'
+      quelle scadute (in ritardo nonostante la distribuzione). La distribuzione
+      sui giorni e' in `giorni_settimanali`: senza, le settimanali si
+      ammassavano tutte nel giorno fisso.
     - `mese`: mensili e stagionali in scadenza, con il focus del mese corrente.
     """
     oggi_d = _data(oggi) or date.today()
-    oggi_gruppi = {"quotidiane": [], "settimanali": []}
+    oggi_gruppi = {"quotidiane": [], "frazionarie": [], "settimanali": []}
     mese_gruppi = {"mensili": [], "stagionali": []}
-    chiave = {"giornaliera": "quotidiane", "settimanale": "settimanali",
+    chiave = {"giornaliera": "quotidiane", "frazionaria": "frazionarie",
+              "settimanale": "settimanali",
               "mensile": "mensili", "stagionale": "stagionali"}
     if giorni is None:
         giorni = giorni_settimanali(attivita, giorno_pulizie)
@@ -328,12 +388,19 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None):
             # e' esattamente l'ammasso che la distribuzione deve togliere.
             dentro = (giorni.get(voce["id"]) == oggi_d.weekday()
                       or (not stato["mai_fatta"] and stato["in_scadenza"]))
+        elif freq == "frazionaria":
+            # Come le settimanali, ma senza un giorno fisso: in elenco quando e'
+            # davvero da rifare (o mai fatta). Fuori quando non tocca ancora, per
+            # non gonfiare il "da fare" di oggi con una lavatrice non dovuta; nel
+            # frattempo resta visibile in Routine e nel catalogo.
+            dentro = stato["in_scadenza"]
         elif freq in ("mensile", "stagionale"):
             dentro = stato["in_scadenza"]
         if not dentro:
             continue
-        fatto_oggi = stato["ultima"] == oggi_d.isoformat()
-        # una voce gia' fatta oggi resta visibile ma non conta piu' nel tempo
+        # una voce fatta oggi resta visibile ma non conta piu' nel tempo. Si
+        # confronta la **data**: per le frazionarie `ultima` porta anche l'ora.
+        fatto_oggi = bool(stato["ultima"]) and stato["ultima"][:10] == oggi_d.isoformat()
         voce_stato = {**voce, **stato, "fatto_oggi": fatto_oggi}
         if freq == "settimanale":
             # il giorno assegnato serve all'interfaccia per dire "tocca giovedi'"
@@ -343,7 +410,7 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None):
             voce_stato["giorno_settimanale_nome"] = (
                 GIORNI_SETTIMANA[assegnato] if assegnato is not None else None)
             voce_stato["giorno_settimanale_oggi"] = assegnato == oggi_d.weekday()
-        if freq in ("giornaliera", "settimanale"):
+        if freq in ("giornaliera", "frazionaria", "settimanale"):
             oggi_gruppi[gruppo].append(voce_stato)
         else:
             mese_gruppi[gruppo].append(voce_stato)

@@ -3112,8 +3112,14 @@ def chores_done(cid):
     except ValueError:
         return bad_request("Data non valida")
 
+    # Si salva anche l'ora: le cadenze frazionarie (un giorno e mezzo) contano
+    # mezza giornata, e con la sola data la mezza si perderebbe (vedi
+    # `igiene.scadenza`). Se il chiamante manda un istante, si conserva quello;
+    # altrimenti l'ora corrente.
+    istante = str(data.get("date") or "").strip()
+    quando = istante if len(istante) > 10 else datetime.datetime.now().isoformat(timespec="seconds")
     db.execute("INSERT INTO chore_log (chore_id, date, minutes) VALUES (?, ?, ?)",
-               (cid, giorno, minuti))
+               (cid, quando, minuti))
     db.commit()
     return jsonify({"ok": True, "date": giorno, "minutes": minuti})
 

@@ -142,6 +142,9 @@ body {
   min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
 }
 .home-hero { margin-bottom: 34px; }
+/* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non
+   aggiunge spazio sotto l'ultimo riquadro. */
+.home-hero-basso { margin: 34px 0 0; }
 .home-kicker {
   margin: 0 0 10px; font-size: 12px; font-weight: 600;
   letter-spacing: .14em; text-transform: uppercase; color: var(--accent);

@@ -91,14 +91,6 @@
      funzioni di ciascuno vivono dentro la propria sezione: qui non c'e' nessuna
      scheda, solo la scelta. -->
 <section id="home" class="home hidden">
-  <header class="home-hero">
-    <p class="home-kicker">Benvenuto</p>
-    <h1 class="con-icona"><img class="icona-app" src="/static/icons/icona.svg" alt="" aria-hidden="true">Il Maggiordomo</h1>
-    <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
-    <p class="home-lead home-mission">Progetti, informazioni e diritti, ma soprattutto
-      doveri dello stare a casa.</p>
-    <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
-  </header>
   <div class="home-voice">
     <button id="home-mic" class="home-mic" type="button" title="Parla al maggiordomo" aria-label="Parla al maggiordomo">
       <span class="mic-icon">🎙</span>
@@ -185,6 +177,18 @@
     </div>
     <div id="home-notizie-elenco" class="tv-notizie"></div>
   </section>
+  <!-- L'intestazione chiude la home: prima si sceglie, si legge cos'e' oggi e
+       cosa c'e' in calendario, poi il nome dell'app. In alto era la prima cosa
+       che si incontrava e spingeva giu' le categorie, che sono il motivo per cui
+       si arriva in home. -->
+  <header class="home-hero home-hero-basso">
+    <p class="home-kicker">Benvenuto</p>
+    <h1 class="con-icona"><img class="icona-app" src="/static/icons/icona.svg" alt="" aria-hidden="true">Il Maggiordomo</h1>
+    <p class="home-lead">La mente del maggiordomo, le tue braccia ed il tuo gusto.</p>
+    <p class="home-lead home-mission">Progetti, informazioni e diritti, ma soprattutto
+      doveri dello stare a casa.</p>
+    <p class="home-warning">⚠️ Tenere lontano dalla portata dei Punkabbestia.</p>
+  </header>
 </section>
 
 <!-- L'app vera e propria: testata e schede restano nascoste finche' non si
