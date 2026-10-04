@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **594 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **601 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -1766,8 +1766,8 @@ testo è di chi lo scrive.
 
 Le scelte che contano:
 
-- **La copia sta nel database della casa** (`tv_cache`, due righe: `video` e
-  `notizie`), non in memoria: un riavvio del server non deve costringere a
+- **La copia sta nel database della casa** (`tv_cache`, tre righe: `video`,
+  `notizie` e `gym`), non in memoria: un riavvio del server non deve costringere a
   riscaricare, e soprattutto la sezione non deve restare vuota se in quel
   momento la rete non c'è. È la stessa idea delle copie automatiche.
 - **`GET /api/tv` non aspetta la rete.** Serve la cache e, se è vecchia, riprova
@@ -1869,6 +1869,32 @@ sia `_aggiorna_tv_in_sottofondo`. Il filo di sottofondo di `/api/tv` sopravvive
 alla richiesta e, quando `monkeypatch` ha già rimesso a posto `_apri`, scarica
 davvero tenendo aperto il database di prova: la fixture lo cancella sotto e il
 test dopo fallisce con «disk I/O error». È un difetto del test, non dell'app.
+
+### La sezione GYM
+
+Il **GYM** è una sezione a sé (`tab-gym`, scheda in home `data-section="gym"`):
+la playlist degli esercizi, incorporata come i video della TV. Non è una scheda
+della TV perché è una cosa diversa — si guarda **per fare**, non per passare il
+tempo — e perché così cambiare i video di casa non tocca l'allenamento.
+
+Riusa la stessa lettura e la stessa cache della TV, con due soli pezzi nuovi:
+
+- **`_video_di(playlist)`** è il pezzo comune: `video_playlist` (TV) e
+  `video_gym` (GYM) sono lo stesso codice con un id diverso. Il messaggio di
+  `NonDisponibile` dice l'id, così un feed storto si riconosce dal log.
+- **Cache separata** (`tv_cache` chiave `gym`, distinta da `video`): aggiornare
+  il GYM non deve toccare la TV, né viceversa. `aggiorna`/`quando_aggiornate`
+  includono la chiave `gym`; `_aggiorna_tv_in_sottofondo` la controlla insieme
+  alle altre.
+- **La playlist GYM è indipendente** da quella della TV: `gym_playlist_id(db)`
+  risolve scelta della casa → `GYM_PLAYLIST` → `PLAYLIST_GYM_PREDEFINITA`. In
+  pratica la scelta della casa **non si applica** al GYM, perché `tv_prefs`
+  salva solo la playlist della TV: cambiare la TV non tocca l'allenamento. La
+  predefinita è **Ginniko Style**
+  (`https://www.youtube.com/playlist?list=PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo`).
+- **`GET /api/gym`** serve la cache e riprova in sottofondo, come `/api/tv`;
+  **`POST /api/gym/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete. Le
+  notizie non c'entrano con gli esercizi: l'aggiornamento del GYM non le tocca.
 
 
 

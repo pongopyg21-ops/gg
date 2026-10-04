@@ -46,6 +46,12 @@ from urllib.parse import urlparse
 # solo e' opaco, quindi l'indirizzo completo resta qui accanto perche' si possa
 # risalire a quale playlist sia.
 PLAYLIST_PREDEFINITA = "PLQKkPe_OTLJygIqIViE5cqnWjxM1Cou0R"
+
+# La playlist della sezione GYM: gli esercizi, separata dalla TV perche' e' una
+# cosa diversa — si guarda per fare, non per passare il tempo — e perche' cosi'
+# cambiare i video di casa non tocca l'allenamento. Stessa forma della TV: si
+# puo' sostituire da `GYM_PLAYLIST` senza toccare il modulo.
+PLAYLIST_GYM_PREDEFINITA = "PLQKkPe_OTLJzyy8sW19hxUvVgnk1GuYFo"
 # Le notizie vengono da piu' sezioni ANSA: il mondo da solo lascia fuori quello
 # che succede in Italia, che e' la prima cosa che si guarda. Le sezioni sono
 # argomenti, non fonti diverse: tutte ANSA, tutte in italiano.
@@ -215,7 +221,7 @@ def _testo(elemento, percorso, ns=None, predefinito=""):
 
 
 def video_playlist(db=None) -> list:
-    """I video della playlist, nell'ordine in cui sono.
+    """I video della playlist della casa, nell'ordine in cui sono.
 
     Si legge il feed Atom che YouTube espone per ogni playlist pubblica. Non si
     interpreta la pagina: quella dipende dal consenso ai cookie e dal JavaScript,
@@ -223,7 +229,17 @@ def video_playlist(db=None) -> list:
 
     L'id lo risolve `playlist_id(db)`: la playlist della casa, se c'e'.
     """
-    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist_id(db)}"
+    return _video_di(playlist_id(db))
+
+
+def _video_di(playlist: str) -> list:
+    """I video di una playlist, dato il suo id.
+
+    E' il pezzo comune fra TV e GYM: cambia solo quale playlist si legge. Il
+    messaggio di errore dice l'id, cosi' un feed storto si riconosce dal log
+    invece di sembrare un guasto generico.
+    """
+    url = f"https://www.youtube.com/feeds/videos.xml?playlist_id={playlist}"
     dati = _apri(url)
     try:
         radice = ET.fromstring(dati)
@@ -247,8 +263,26 @@ def video_playlist(db=None) -> list:
     if not video:
         # Una playlist privata o cancellata risponde cosi': nessuna voce. Meglio
         # dirlo che mostrare una sezione vuota senza spiegazione.
-        raise NonDisponibile("La playlist non ha video leggibili")
+        raise NonDisponibile(f"La playlist {playlist} non ha video leggibili")
     return video
+
+
+def video_gym(db=None) -> list:
+    """I video della playlist GYM.
+
+    Stessa lettura della TV (`_video_di`), playlist diversa: gli esercizi non
+    devono seguire i cambi della TV, e viceversa.
+    """
+    return _video_di(gym_playlist_id(db))
+
+
+def gym_playlist_id(db=None) -> str:
+    """L'id della playlist GYM.
+
+    L'ordine e' quello della TV: prima la scelta della casa (`tv_prefs`), poi
+    `GYM_PLAYLIST` dall'ambiente, poi la predefinita.
+    """
+    return _playlist_salvata(db) or os.environ.get("GYM_PLAYLIST") or PLAYLIST_GYM_PREDEFINITA
 
 
 def _nome_fonte(titolo: str, url: str) -> str:
@@ -497,18 +531,27 @@ def aggiorna_video(db, forse=True) -> bool:
     return _aggiorna(db, "video", ORE_VIDEO, video_playlist, forse=forse)
 
 
+def aggiorna_gym(db, forse=True) -> bool:
+    return _aggiorna(db, "gym", ORE_VIDEO, video_gym, forse=forse)
+
+
 def aggiorna_notizie(db, forse=True) -> bool:
     return _aggiorna(db, "notizie", ORE_NOTIZIE, notizie_dal_feed, forse=forse)
 
 
 def aggiorna(db, forse=True) -> dict:
-    """Aggiorna entrambe le cose. Non solleva mai: e' chiamata in sottofondo."""
+    """Aggiorna TV, notizie e GYM. Non solleva mai: e' chiamata in sottofondo."""
     return {"video": aggiorna_video(db, forse=forse),
-            "notizie": aggiorna_notizie(db, forse=forse)}
+            "notizie": aggiorna_notizie(db, forse=forse),
+            "gym": aggiorna_gym(db, forse=forse)}
 
 
 def video(db) -> list:
     return _leggi(db, "video")[0] or []
+
+
+def gym(db) -> list:
+    return _leggi(db, "gym")[0] or []
 
 
 def notizie(db) -> list:
@@ -522,7 +565,7 @@ def quando_aggiornate(db) -> dict:
     settimana fa quando la rete non ha risposto.
     """
     esito = {}
-    for chiave in ("video", "notizie"):
+    for chiave in ("video", "notizie", "gym"):
         _, quando = _leggi(db, chiave)
         esito[chiave] = quando or None
     return esito

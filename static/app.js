@@ -144,6 +144,7 @@ const SEZIONI = {
   progetti: { titolo: '\u{1F4CB} Progetti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
   tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
+  gym:      { titolo: '\u{1F3CB}\u{FE0F} GYM', prima: 'gym' },
 };
 
 function apriSezione(nome) {
@@ -220,6 +221,7 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
   if (btn.dataset.tab === 'intrattenimento') renderTv();
+  if (btn.dataset.tab === 'gym') renderGym();
 }));
 
 /* ---------- TV ----------
@@ -321,6 +323,66 @@ $('#tv-aggiorna').addEventListener('click', async () => {
     disegnaTv(d);
     const nuovo = d.aggiornati && (d.aggiornati.video || d.aggiornati.notizie);
     if (!nuovo) toast('Niente di nuovo: la fonte non ha risposto.');
+  } catch (_e) {
+    toast('Aggiornamento non riuscito.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aggiorna';
+  }
+});
+
+/* ---------- GYM ----------
+   La sezione GYM: i video della playlist di esercizi, incorporati come in TV.
+   Playlist separata da quella della TV: si guarda per fare, non per passare il
+   tempo, e cambiare i video di casa non deve toccare l'allenamento.
+
+   Stessa regola della TV: il server serve quello che ha in cache e aggiorna in
+   sottofondo, quindi qui non c'e' attesa di rete da gestire. */
+async function renderGym() {
+  try {
+    let d = await api('/api/gym');
+    // come in TV: al primissimo avvio la cache puo' essere vuota mentre il
+    // server la riempie, quindi si riprova invece di mostrare «nessun video»
+    for (let tentativo = 0; tentativo < 4 && !d.video.length; tentativo++) {
+      $('#gym-video').innerHTML = '<p class="tv-vuoto">Sto caricando…</p>';
+      await new Promise((r) => setTimeout(r, 2000));
+      d = await api('/api/gym');
+    }
+    disegnaGym(d);
+  } catch (_e) {
+    $('#gym-video').innerHTML = '';
+    toast('Non riesco a caricare la sezione GYM.');
+  }
+}
+
+function disegnaGym(d) {
+  const video = d.video || [];
+  $('#gym-video').innerHTML = video.length ? video.map((v) => `
+    <article class="tv-video-card">
+      <div class="tv-embed">
+        <iframe src="${esc(v.embed)}" title="${esc(v.titolo)}" loading="lazy"
+                allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen></iframe>
+      </div>
+      <div class="tv-video-info">
+        <span class="tv-video-titolo">${esc(v.titolo)}</span>
+        <span class="tv-video-sotto">${esc(v.autore || '')}${v.data ? ` · ${esc(v.data)}` : ''}</span>
+      </div>
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessun video disponibile. Premi «Aggiorna» fra poco.</p>`;
+
+  $('#gym-aggiornato').textContent = d.aggiornato
+    ? `Aggiornato: ${d.aggiornato.replace('T', ' ')}` : '';
+}
+
+$('#gym-aggiorna').addEventListener('click', async () => {
+  const btn = $('#gym-aggiorna');
+  btn.disabled = true;
+  btn.textContent = 'Aggiorno…';
+  try {
+    const d = await api('/api/gym/aggiorna', { method: 'POST' });
+    disegnaGym(d);
+    if (!(d.aggiornati && d.aggiornati.gym)) toast('Niente di nuovo: la fonte non ha risposto.');
   } catch (_e) {
     toast('Aggiornamento non riuscito.');
   } finally {

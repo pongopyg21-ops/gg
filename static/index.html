@@ -145,6 +145,13 @@
         dall'Italia e dal mondo, aggiornate ogni giorno.</span>
       <span class="home-go">Apri →</span>
     </button>
+    <button class="home-card" data-section="gym">
+      <span class="home-emoji">🏋️</span>
+      <span class="home-name">GYM</span>
+      <span class="home-desc">La playlist degli esercizi, per allenarsi in casa
+        seguendo i video senza uscire dall'app.</span>
+      <span class="home-go">Apri →</span>
+    </button>
   </div>
   <!-- Riepilogo della giornata: cosa si mangia, cosa c'e' da fare in casa, cosa
        avvisa. Si riempie da solo all'avvio e resta nascosto finche' non c'e'
@@ -200,6 +207,7 @@
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
+  <button data-tab="gym" data-section="gym">🏋️ GYM</button>
 </nav>
 
 <main>
@@ -513,6 +521,26 @@
     <p class="hint">Le ultime venti, da ANSA (cronaca, politica, economia, mondo)
       e RaiNews, mescolate fra le due testate. Aggiornate una volta al giorno.</p>
     <div id="tv-notizie" class="tv-notizie"></div>
+  </section>
+
+  <!-- GYM -->
+  <section id="tab-gym" class="tab">
+    <div class="toolbar">
+      <strong>GYM</strong>
+      <span class="spacer"></span>
+      <span id="gym-aggiornato" class="tv-aggiornato"></span>
+      <button id="gym-aggiorna" type="button" title="Riscarica i video">Aggiorna</button>
+    </div>
+
+    <!-- Gli esercizi si guardano dentro l'app, come i video della TV: e' quello
+         che rende la sezione utile mentre ci si allena, dove si vuole schiacciare
+         «play» e basta. `loading="lazy"` fa scaricare il player solo quando lo si
+         raggiunge scorrendo. -->
+    <h3 class="section-title">Playlist di allenamento</h3>
+    <p class="hint">I video della playlist di esercizi, aggiornati una volta al
+      giorno. Cambiando la playlist della TV qui non cambia niente: sono due
+      cose diverse.</p>
+    <div id="gym-video" class="tv-video"></div>
   </section>
 
 </main>

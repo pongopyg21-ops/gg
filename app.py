@@ -590,6 +590,27 @@ def api_notizie():
     return jsonify({"notizie": tv.notizie(db), "aggiornato": _iso(quando)})
 
 
+@app.route("/api/gym")
+def api_gym():
+    """La sezione GYM: i video della playlist di esercizi.
+
+    Stessa regola della TV: si serve **subito** la copia in cache e si riprova
+    dopo, in un filo, cosi' un feed lento non blocca la sezione. Se la copia e'
+    vuota e non c'e' rete, la risposta e' comunque 200 con un elenco vuoto: e'
+    una sezione da riempire, non un guasto da mostrare.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    _aggiorna_tv_in_sottofondo(db)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
+        "playlist": tv.gym_playlist_id(db),
+        "aggiornato": _iso(quando["gym"]),
+    })
+
+
 @app.route("/api/tv/playlist", methods=["PUT"])
 def api_tv_playlist():
     """Cambia la playlist della casa e riscarica i video.
@@ -653,6 +674,28 @@ def _iso(quando):
     return datetime.datetime.fromtimestamp(quando).isoformat(timespec="minutes")
 
 
+@app.route("/api/gym/aggiorna", methods=["POST"])
+def api_gym_aggiorna():
+    """Riscarica subito i video del GYM, senza aspettare il giro quotidiano.
+
+    Come `/api/tv/aggiorna`: **aspetta** la rete, perche' e' l'utente a
+    chiederlo. Se non c'e' rete risponde lo stesso con quello che aveva, e lo
+    dice (`aggiornati.gym` falso), cosi' un aggiornamento a vuoto non sembra
+    riuscito.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    esito = tv.aggiorna_gym(db, forse=False)
+    quando = tv.quando_aggiornate(db)
+    return jsonify({
+        "aggiornati": {"gym": esito},
+        "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.gym(db)],
+        "playlist": tv.gym_playlist_id(db),
+        "aggiornato": _iso(quando["gym"]),
+    })
+
+
 def _aggiorna_tv_in_sottofondo(db):
     """Riprova a scaricare senza far aspettare chi ha aperto la sezione.
 
@@ -664,7 +707,9 @@ def _aggiorna_tv_in_sottofondo(db):
     """
     _, quando = tv._leggi(db, "notizie")
     _, video_quando = tv._leggi(db, "video")
-    if tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO):
+    _, gym_quando = tv._leggi(db, "gym")
+    if (tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO)
+            and tv._fresco(gym_quando, tv.ORE_VIDEO)):
         return
     percorso = db.execute("PRAGMA database_list").fetchone()[2]
 

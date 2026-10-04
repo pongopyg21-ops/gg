@@ -22,3 +22,6 @@ segreto.sh
 # il file di testo semplice, in tutte le sue forme
 segreto.txt
 segreto
+
+# Copie dei dati delle case: contengono i dati veri, non vanno nel version control
+backup-dati/

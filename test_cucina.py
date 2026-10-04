@@ -8190,6 +8190,107 @@ def test_una_playlist_senza_video_e_un_guasto_non_una_sezione_vuota(client, monk
         tv.video_playlist()
 
 
+def test_il_gym_legge_la_sua_playlist_non_quella_della_tv(client, monkeypatch):
+    """La sezione GYM ha la sua playlist, separata da quella della TV: si guarda
+    per fare, non per passare il tempo, e cambiare i video di casa non deve
+    toccare l'allenamento. Le due letture sono la stessa funzione (`_video_di`),
+    cambia solo l'id: qui si verifica che sia davvero quello giusto."""
+    urls = {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}":
+            FEED_PLAYLIST,
+        _url_playlist(): "<feed xmlns='http://www.w3.org/2005/Atom'></feed>",
+    }
+    finta_tv(monkeypatch, urls)
+    video = tv.video_gym()
+    assert [v["id"] for v in video] == ["aaa111", "bbb222"]
+    assert tv.gym_playlist_id() == tv.PLAYLIST_GYM_PREDEFINITA
+
+
+def test_gym_e_tv_si_aggiornano_e_si_leggono_separatamente(client, monkeypatch):
+    """I due elenchi vivono in cache separate (`gym` e `video`): aggiornare il
+    GYM non deve toccare la TV, ne' viceversa. Se condividessero la chiave, un
+    giro del GYM sovrascriverebbe i video della TV."""
+    gym_feed = FEED_PLAYLIST.replace("aaa111", "gym111").replace("bbb222", "gym222")
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}": gym_feed,
+        _url_playlist(): FEED_PLAYLIST,
+    })
+    db = app_module.get_db()
+    assert tv.aggiorna_gym(db, forse=False) is True
+    assert tv.aggiorna_video(db, forse=False) is True
+    assert [v["id"] for v in tv.gym(db)] == ["gym111", "gym222"]
+    assert [v["id"] for v in tv.video(db)] == ["aaa111", "bbb222"]
+
+
+def test_l_endpoint_gym_serve_la_cache_e_gli_incorpora(client, monkeypatch):
+    """L'endpoint GYM serve la copia in cache senza aspettare la rete, e ogni
+    video porta l'indirizzo del player (`youtube-nocookie`)."""
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}": FEED_PLAYLIST,
+    })
+    tv.aggiorna_gym(app_module.get_db(), forse=False)
+    _niente_rete(monkeypatch)  # il sottofondo non deve partire: la copia e' fresca
+    d = client.get("/api/gym").get_json()
+    assert len(d["video"]) == 2
+    assert d["video"][0]["embed"] == "https://www.youtube-nocookie.com/embed/aaa111"
+    assert d["playlist"] == tv.PLAYLIST_GYM_PREDEFINITA
+    assert d["aggiornato"]
+
+
+def test_l_endpoint_gym_non_cade_se_non_c_e_niente(client, monkeypatch):
+    """Cache vuota e rete assente: 200 con un elenco vuoto. E' una sezione da
+    riempire, non un guasto da mostrare."""
+    monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    r = client.get("/api/gym")
+    assert r.status_code == 200
+    assert r.get_json()["video"] == []
+
+
+def test_il_pulsante_gym_riscarica_solo_il_gym(client, monkeypatch):
+    """`/api/gym/aggiorna` aspetta la rete (e' l'utente a chiederlo) e riscarica
+    **solo** il GYM: le notizie non c'entrano con gli esercizi."""
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}": FEED_PLAYLIST,
+    })
+    r = client.post("/api/gym/aggiorna")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["aggiornati"]["gym"] is True
+    assert len(d["video"]) == 2
+    # la TV non c'entra: il suo elenco resta quello di prima (vuoto), e le
+    # notizie non vengono toccate da un aggiornamento del GYM
+    _niente_rete(monkeypatch)  # il sottofondo di /api/tv non deve partire
+    assert client.get("/api/tv").get_json()["video"] == []
+
+
+def test_il_gym_non_cambia_col_cambio_playlist_della_tv(client, monkeypatch):
+    """Cambiare la playlist della TV azzera i video della TV, non quelli del GYM:
+    la scelta della TV non deve toccare l'allenamento."""
+    finta_tv(monkeypatch, {
+        f"https://www.youtube.com/feeds/videos.xml?playlist_id={tv.PLAYLIST_GYM_PREDEFINITA}": FEED_PLAYLIST,
+    })
+    db = app_module.get_db()
+    tv.aggiorna_gym(db, forse=False)
+    # la TV cambia playlist: `imposta_playlist` azzera solo la cache 'video'
+    nuovo = "PLnuovatv9876543210zyxwv"
+    tv.imposta_playlist(db, nuovo)
+    assert [v["id"] for v in tv.gym(db)] == ["aaa111", "bbb222"], "il GYM resta"
+    assert tv.video(db) == [], "la TV si azzera"
+
+
+def test_la_sezione_gym_e_in_home_e_ha_il_suo_tab(client):
+    """Il GYM e' una sezione a se': scheda in home, scheda nella barra, e il
+    contenitore dei video. La scheda in home e' cio' che la rende raggiungibile."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'data-section="gym"' in html
+    assert 'id="tab-gym"' in html
+    assert 'id="gym-video"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function renderGym" in js
+    assert "/api/gym" in js
+    assert "gym:      { titolo:" in js or "gym: { titolo:" in js
+
+
 def test_le_notizie_sono_al_massimo_venti_e_mescolate_fra_le_testate(client, monkeypatch):
     """Il tetto e' venti e le fonti si **alternano**, non si ordinano solo per
     data: un elenco per sola data diventa una testata sola, perche' ANSA pubblica
@@ -8593,7 +8694,7 @@ def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkey
     che non ha portato niente di nuovo non deve sembrare riuscito."""
     monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
     d = client.post("/api/tv/aggiorna").get_json()
-    assert d["aggiornati"] == {"video": False, "notizie": False}
+    assert d["aggiornati"] == {"video": False, "notizie": False, "gym": False}
 
 
 def test_il_database_vecchio_riceve_la_tabella_della_cache(client):
