@@ -2012,6 +2012,26 @@ e dito (`touchstart`/`touchend`, col gesto orizzontale). Lo scorrimento è
 preciso. Un film **senza locandina si scarta** nel modulo: è una sezione di
 immagini, e una senza immagine non ispira niente.
 
+Tre scelte recenti, tutte deliberate:
+
+- **Azione e Marvel restano fuori** (`GENERI_ESCLUSI`, `CASE_ESCLUSE`): sono i
+  film più popolari, e da soli riempirebbero il carosello coprendo tutto il
+  resto. Si escludono per **genere** (28 = Azione) e per **casa** (420 = Marvel
+  Studios, 7505 = Marvel Entertainment), non per titolo: così un film nuovo non
+  va aggiunto a mano. `without_genres` da solo non basta: un cinecomic è anche
+  Avventura/SF, e non tutti i film Marvel sono marcati Azione.
+- **I film notevoli** (`_notabili`) sono una seconda scoperta: usciti da oltre
+  `MESI_NOTEVOLI` ma con voto alto e tanti voti, ordinati per voto. Si accodano
+  ai film del momento, senza doppioni, e non rubano il posto ai film nuovi. Se
+  la chiamata non riesce, non è un guasto: la sezione ha già i film del momento.
+- **I preferiti sono una sezione a sé** (`cinema_preferiti`): la stella salva la
+  **scheda intera** (JSON), non solo l'id, perché il preferito deve restare
+  anche quando il film esce dal giro dei film del momento. Senza la scheda
+  salvata si vedrebbe una locandina vuota. Lato frontend due viste («Del
+  momento» / «★ Preferiti») con `cinemaCambiaVista`; `POST
+  /api/cinema/preferiti` segna o toglie (rifiuta un film non mostrato, che
+  sarebbe un preferito senza scheda).
+
 
 
 ## Il Calendario: gli impegni con un promemoria
