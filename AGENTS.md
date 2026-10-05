@@ -2162,6 +2162,71 @@ Tre scelte recenti, tutte deliberate:
   `test_il_cinema_vive_dentro_la_sezione_tv` e `test_la_vista_preferiti_ha_id_distinti`
   pretendono che gli id di `index.html` siano **unici**. È la lezione generale:
   un id duplicato non dà errore, dà un elemento che non si vede.
+- **Solo film che hanno una versione italiana.** La sezione serve una serata in
+  casa, quindi un film che non è mai arrivato qui non serve. Il segnale è la
+  presenza di una **traduzione `it`** in `movie/{id}/translations` (titolo e
+  trama localizzati), non la lingua originale: `with_original_language=it`
+  toglierebbe anche i film stranieri doppiati — che sono la maggioranza di quelli
+  che si guardano (Match Point, Il padrino, i film francesi di Dupieux) — e
+  `region=IT` colpisce i film *usciti* in Italia, non quelli che hanno una
+  versione italiana. Non è il doppiaggio in senso stretto (TMDB non espone le
+  tracce audio), ma è la cosa più vicina: senza traduzione il film non è
+  distribuito qui in nessuna forma. Verificato con la chiave vera: i due film
+  che il filtro ha tolto (Strung, un romance russo) **non** hanno la traduzione
+  `it`; i film di repertorio che restano (Amarcord, Fargo, L'angelo
+  sterminatore) ce l'hanno tutti. Il taglio avviene **prima** di riempire i
+  posti, così restano i film previsti e non un elenco bucato. Il test
+  `test_i_film_senza_versione_italiana_si_scartano` lo fissa.
+  **Traduzioni e piattaforme in una chiamata sola** (`_dettagli`, con
+  `append_to_response=translations,watch/providers`): i film sono qualche
+  decina, e chiederli a parte raddoppiava la rete. Se il dettaglio non risponde
+  il film si **tiene** (`italiano` vero): scartare un film buono per un dubbio è
+  peggio che mostrarne uno in più. Era `_fornitori`; il test che lo verifica si
+  chiama ora `test_un_film_resta_anche_se_i_dettagli_non_rispondono`.
+- **I film "sulla scia"** (`_scia`) sono una terza coda, dalle
+  **raccomandazioni** di TMDB (`/movie/{id}/recommendations`) dei capisaldi in
+  `SCIA` (id di TMDB, non titoli: un titolo cambia, un id no). Sono i film che
+  piacciono alla casa — Il divo, Match Point, Dio esiste e vive a Bruxelles,
+  Ferie d'agosto, Yannick — e da lì TMDB propone i titoli affini. Si scartano
+  azione, bambini, **documentari e musicali** (`GENERI_SCIA_VIETATI`), e si
+  tiene la stessa finestra sui voti dei film del momento, così la scia non
+  riporta dentro i blockbuster. Si ordina per voto (qui conta la qualità
+  riconosciuta). Un film nuovo che assomiglia ai capisaldi entra da solo: non
+  c'è una lista di titoli da aggiornare. Il test
+  `test_i_film_sulla_scia_dei_capisaldi_si_accodano` lo verifica.
+  **Perché non le "simili" o le keyword.** Le `/similar` sono quasi identiche
+  alle raccomandazioni ma meno curate; le keyword darebbero film che condividono
+  un tema ma non il tono. Le raccomandazioni sono il segnale costruito sul
+  comportamento di chi guarda, ed è quello che serve per "sulla scia de".
+  **Ogni sorgente ha i suoi posti, e gli avanzi si riprendono.** Le tre code
+  (momento, nicchia, scia) si accodano con una quota (`QUANTI`, `QUANTI_NICCHIA`,
+  `QUANTI_SCIA`) e non in un unico concatenamento. Difetto vero, misurato con la
+  chiave: i film del momento (20) più la nicchia (fino a 20) riempivano da soli
+  il tetto, e la scia — ultima in coda — non entrava **mai**; la coda sembrava
+  tutta nicchia e nessun film "sulla scia" si vedeva, pur essendo la funzione
+  appena scritta. Le quote sono la correzione; l'avanzo (una sorgente con pochi
+  film, o film tolti dal filtro italiano) si riprende in coda dalle altre, così
+  l'elenco non resta bucato. Il test `test_la_nicchia_non_soffoca_la_scia` fissa
+  il caso che in produzione falliva (nicchia piena + scia piena), e
+  `test_la_scia_riempie_i_posti_lasciati_liberi` il riempimento. È la lezione
+  generale: **un accodamento senza quote è un tetto dato alla prima sorgente**,
+  e la sorgente che si accoda per ultima sparisce senza un errore.
+- **I film eliminati** (`cinema_nascosti`): l'utente può togliere un titolo che
+  non gradisce. Non si cancella dalla copia (`tv_cache`) — quella è la fotografia
+  di TMDB, cancellarla la lascerebbe sbagliata — e non si salva la scheda intera
+  come per i preferiti: basta l'id. L'eliminazione è **reversibile**: `film()` la
+  applica a ogni lettura, quindi eliminare un titolo lo fa sparire all'istante e
+  ripristinarlo lo fa tornare, senza riscaricare. `POST /api/cinema/nascondi`
+  (rifiuta un film non mostrato) e `POST /api/cinema/ripristina` (un id o tutti,
+  col corpo vuoto). Lato client il pulsante **Elimina** sta accanto alla stella,
+  e la riga `#cinema-nascosti` dice che l'eliminazione non è definitiva e offre
+  il ripristino — senza, nessuno oserebbe toccare niente. `cinema_nascosti` è una
+  tabella nuova, quindi la crea lo schema che `get_db()` applica a **ogni** casa;
+  `_nascosti` legge in modo tollerante (una tabella assente si comporta come
+  «nessuno escluso»), così `_scarica` funziona anche su una connessione nuda.
+  I test `test_i_film_eliminati_spariscono_e_si_ripristinano` e
+  `test_la_tabella_dei_film_eliminati_arriva_anche_a_un_db_vecchio` lo tengono
+  fermo.
 
 
 

@@ -765,6 +765,7 @@ def _cinema_risposta(db) -> dict:
         "film": film,
         "preferiti": preferiti,
         "preferiti_ids": sorted(i for i in ids if i is not None),
+        "nascosti": cinema.nascosti(db),
         "manca": cinema.messaggio_stato(),
         "configurato": cinema.configurato(),
         "aggiornato": _iso(cinema.quando_aggiornato(db)),
@@ -794,6 +795,47 @@ def api_cinema_preferito():
         cinema.segna(db, movie_id, scheda)
     else:
         cinema.togli(db, movie_id)
+    return jsonify(_cinema_risposta(db))
+
+
+@app.route("/api/cinema/nascondi", methods=["POST"])
+def api_cinema_nascondi():
+    """Elimina un film dalla sezione: e' il titolo che la casa non gradisce.
+
+    Non si cancella dalla copia di TMDB: si annota l'id e `cinema.film` lo
+    salta. L'eliminazione e' reversibile (`/api/cinema/ripristina`): un titolo
+    eliminato per sbaglio si rimette, e non serve riscaricare niente.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    dati = request.get_json(silent=True) or {}
+    try:
+        movie_id = int(dati.get("id"))
+    except (TypeError, ValueError):
+        return bad_request("Serve l'identificativo del film.")
+    if cinema.trova(db, movie_id) is None:
+        return bad_request("Film non trovato fra quelli mostrati.")
+    cinema.nascondi(db, movie_id)
+    return jsonify(_cinema_risposta(db))
+
+
+@app.route("/api/cinema/ripristina", methods=["POST"])
+def api_cinema_ripristina():
+    """Rimette in sezione i film eliminati: uno solo (col campo `id`) o tutti."""
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    dati = request.get_json(silent=True) or {}
+    grezzo = dati.get("id")
+    if grezzo is None:
+        cinema.ripristina(db)
+    else:
+        try:
+            movie_id = int(grezzo)
+        except (TypeError, ValueError):
+            return bad_request("Identificativo del film non valido.")
+        cinema.ripristina(db, movie_id)
     return jsonify(_cinema_risposta(db))
 
 
@@ -3638,7 +3680,7 @@ def _database_ha_dati(percorso):
     """
     tabelle = ("recipes", "pantry", "shopping_items", "faq", "storage",
                "projects", "meal_plan", "favorites", "chore_log", "ingredients",
-               "profile", "cinema_preferiti")
+               "profile", "cinema_preferiti", "cinema_nascosti")
     try:
         with closing(sqlite3.connect(f"file:{percorso}?mode=ro", uri=True)) as db:
             for tabella in tabelle:

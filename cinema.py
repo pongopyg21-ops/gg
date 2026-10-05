@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import urllib.parse
 import urllib.request
 
@@ -80,6 +81,20 @@ VOTI_MIN = 50
 VOTI_MAX = 3000
 VOTO_MIN = 6.5
 
+# --- Solo film in italiano ---
+# La sezione serve una serata in casa, quindi un film che non ha una versione
+# italiana (doppiata o sottotitolata) non serve: chi guarda non deve trovarsi
+# davanti a un film che non puo' capire. Non si usa `with_original_language=it`
+# — toglierebbe anche i film stranieri doppiati, che sono la maggioranza di
+# quelli che si guardano (Match Point, Il padrino, i film francesi di Dupieux) —
+# e nemmeno `region=IT`, che colpisce i film *usciti* in Italia, non quelli che
+# hanno una versione italiana. Il segnale giusto e' la presenza di una
+# **traduzione italiana** in `movie/{id}/translations`, che c'e' quando il film
+# e' stato localizzato (titolo e trama in italiano). Non e' il doppiaggio in
+# senso stretto — TMDB non espone le tracce audio — ma e' la cosa piu' vicina:
+# un film senza traduzione italiana non e' distribuito qui in nessuna forma.
+LINGUA = "it"
+
 # --- Film di nicchia ---
 # Cinema d'autore, cult, fuori dal coro. Si cercano per **tag** (le keyword di
 # TMDB) e non per titolo: un film nuovo che porta quel tag entra da solo, come
@@ -101,6 +116,30 @@ PAROLE_NICCHIA = (
 VOTI_NICCHIA_MIN = 300
 VOTI_NICCHIA_MAX = 10000
 VOTO_NICCHIA_MIN = 6.8
+
+# --- Sulla scia ---
+# I film che piacciono alla casa: da questi si prendono le **raccomandazioni**
+# di TMDB, cioe' i titoli che chi li ha guardati ha poi guardato. E' il modo di
+# allargare la scelta restando sul genere giusto — commedia italiana d'autore,
+# dramma, thriller "da conversazione" — senza una lista di titoli da aggiornare
+# a mano: un film nuovo che assomiglia a questi entra da solo.
+#
+# Sono id di TMDB, non titoli: un titolo cambia, un id no. Cambiare la scia e'
+# cambiare questa tupla. Non e' la lista dei film mostrati (quelli li sceglie
+# TMDB): e' il **seme** da cui parte la ricerca.
+SCIA = (
+    8832,     # Il divo (2008)
+    116,      # Match Point (2005)
+    39764,    # Dio esiste e vive a Bruxelles (2015)
+    56399,    # Ferie d'agosto (1996)
+    1110358,  # Yannick - La rivincita dello spettatore (2023)
+)
+QUANTI_SCIA = 8
+# I generi che non entrano nella scia: azione e film per bambini li toglie gia'
+# `_escludi`, ma le raccomandazioni portano anche documentari (99) e film
+# musicali (10402), che qui non si cercano. Sono gli stessi gusti dei film del
+# momento, applicati a mano perche' le raccomandazioni non passano da `_escludi`.
+GENERI_SCIA_VIETATI = {28, 16, 10751, 99, 10402}
 
 # La chiave: l'ambiente, o uno di questi file accanto all'app. Stessi nomi di
 # `voce_cloud` e `comprensione`.
@@ -258,18 +297,31 @@ def _piattaforme(dati: dict) -> list:
             if isinstance(p, dict) and p.get("provider_name")]
 
 
-def _fornitori(id_film) -> list:
-    """I servizi di un film, chiesti a parte.
+def _dettagli(id_film) -> dict:
+    """Traduzioni e piattaforme di un film, in **una** chiamata.
 
-    `discover` **non** allega `watch/providers`: l'`append_to_response` vale solo
-    sugli endpoint di dettaglio, e su `discover` viene ignorato in silenzio. I
-    fornitori vanno quindi chiesti film per film. Sono un di piu': se la chiamata
-    non riesce, il film resta, solo senza le piattaforme.
+    `discover` non allega ne' l'una ne' le altre: l'`append_to_response` vale
+    solo sugli endpoint di dettaglio, e su `discover` viene ignorato in silenzio.
+    Chiedere i due pezzi con una chiamata sola dimezza la rete (i film sono
+    qualche decina) e li tiene coerenti.
+
+    Le piattaforme sono un di piu': se la chiamata non riesce il film resta,
+    senza le piattaforme. Ma qui c'e' di piu' in gioco: la stessa chiamata dice
+    se il film ha una **versione italiana** (vedi `LINGUA`). Se la rete non
+    risponde non si puo' sapere, e allora il film si **tiene** (`italiano` vero):
+    scartare un film buono per un dubbio e' peggio che mostrarne uno in piu'.
     """
     try:
-        return _piattaforme(_chiama(f"/movie/{id_film}/watch/providers", {}))
+        det = _chiama(f"/movie/{id_film}",
+                      {"append_to_response": "translations,watch/providers"})
     except NonDisponibile:
-        return []
+        return {"italiano": True, "piattaforme": []}
+    traduzioni = (det.get("translations") or {}).get("translations") or []
+    return {
+        "italiano": any(isinstance(t, dict) and t.get("iso_639_1") == LINGUA
+                        for t in traduzioni),
+        "piattaforme": _piattaforme(det.get("watch/providers") or {}),
+    }
 
 
 def _scheda(voce: dict) -> dict:
@@ -277,7 +329,7 @@ def _scheda(voce: dict) -> dict:
 
     Si tengono solo i campi che si mostrano, e si scarta un film senza locandina:
     e' una sezione di immagini, e una senza immagine non ispira niente. Le
-    piattaforme non sono qui: si aggiungono dopo, con `_fornitori`.
+    piattaforme non sono qui: si aggiungono dopo, con `_dettagli`.
     """
     locandina = voce.get("poster_path") or ""
     titolo = (voce.get("title") or voce.get("original_title") or "").strip()
@@ -339,13 +391,52 @@ def _nicchia() -> list:
     return _schede_di(risposta)
 
 
-def _scarica(_db) -> list:
-    """I film del momento (non commerciali), piu' qualche film di nicchia.
+def _scia() -> list:
+    """Film "sulla scia" dei capisaldi: le raccomandazioni di TMDB.
+
+    Da ogni film di `SCIA` si prendono i titoli che chi l'ha guardato ha poi
+    guardato. E' il modo di allargare la scelta restando sul genere giusto senza
+    una lista da aggiornare a mano. Si scartano azione, film per bambini,
+    documentari e musicali (vedi `GENERI_SCIA_VIETATI`), e si tiene la stessa
+    finestra sui voti dei film del momento: cosi' la scia non riporta dentro i
+    blockbuster che `VOTI_MAX` tiene fuori. Si ordina per voto: qui conta la
+    qualita' riconosciuta. Se una raccomandazione non risponde, si salta e
+    basta: la scia non e' un guasto.
+    """
+    candidati = {}
+    for seme in SCIA:
+        try:
+            risposta = _chiama(f"/movie/{seme}/recommendations", {"page": 1})
+        except NonDisponibile:
+            continue
+        for voce in risposta.get("results", []):
+            if set(voce.get("genre_ids") or []) & GENERI_SCIA_VIETATI:
+                continue
+            voti = voce.get("vote_count") or 0
+            if not (VOTI_MIN <= voti <= VOTI_MAX):
+                continue
+            if (voce.get("vote_average") or 0) < VOTO_MIN:
+                continue
+            candidati.setdefault(voce.get("id"), voce)
+    ordinati = sorted(candidati.values(),
+                      key=lambda v: v.get("vote_average") or 0, reverse=True)
+    return _schede_di({"results": ordinati})
+
+
+def _scarica(db) -> list:
+    """I film del momento, piu' nicchia e "sulla scia", **solo in italiano**.
 
     Azione, film per bambini/ragazzi e film Marvel restano fuori (vedi
     `_escludi`). Il tetto ai voti (`VOTI_MAX`) tiene fuori i blockbuster che
-    restano popolari per anni: sono i titoli che "l'ha visto tutti". La nicchia
-    si accoda e si tolgono i doppioni: un film non compare due volte.
+    restano popolari per anni: sono i titoli che "l'ha visto tutti". Si accodano
+    la nicchia (per tag) e la scia (le raccomandazioni dei capisaldi), togliendo
+    i doppioni: un film non compare due volte.
+
+    Poi, per ogni candidato, si chiede una volta `_dettagli`: dice se il film ha
+    una **versione italiana** e quali piattaforme lo hanno. I film non doppiati
+    si scartano — la sezione serve una serata che si possa guardare — e i film
+    che la casa ha eliminato pure. Il taglio viene **prima** di riempire i
+    posti, cosi' restano i film previsti e non un elenco bucato.
     """
     dati = _chiama("/discover/movie", _escludi({
         "sort_by": "popularity.desc",
@@ -355,17 +446,46 @@ def _scarica(_db) -> list:
         "include_adult": "false",
         "page": 1,
     }))
-    schede = _schede_di(dati)[:QUANTI]
-    visti = {s["id"] for s in schede}
-    for scheda in _nicchia():
-        if len(schede) >= QUANTI + QUANTI_NICCHIA:
-            break
-        if scheda["id"] not in visti:
+    # Ogni sorgente ha i suoi posti: i film del momento aprono, poi la nicchia
+    # e infine la scia. Senza quote la nicchia, che ne porta fino a venti,
+    # riempirebbe da sola il tetto e la scia non comparirebbe **mai**: e' il
+    # difetto per cui i film "sulla scia" non si vedevano. Gli avanzi si
+    # riprendono in coda, cosi' se il filtro italiano toglie qualcuno i posti
+    # liberi si riempiono invece di lasciare l'elenco bucato.
+    candidate = []
+    visti = set()
+
+    def aggiungi(gruppo, quanti=None):
+        presi = 0
+        for scheda in gruppo:
+            if quanti is not None and presi >= quanti:
+                break
+            if scheda["id"] in visti:
+                continue
             visti.add(scheda["id"])
-            schede.append(scheda)
-    for scheda in schede:
-        scheda["piattaforme"] = _fornitori(scheda["id"])
-    return schede
+            candidate.append(scheda)
+            presi += 1
+
+    principale, nicchia, scia = _schede_di(dati), _nicchia(), _scia()
+    aggiungi(principale, QUANTI)
+    aggiungi(nicchia, QUANTI_NICCHIA)
+    aggiungi(scia, QUANTI_SCIA)
+    aggiungi(principale)
+    aggiungi(nicchia)
+    aggiungi(scia)
+    scelti = _nascosti(db)
+    fuori = []
+    for scheda in candidate:
+        if len(fuori) >= QUANTI + QUANTI_NICCHIA + QUANTI_SCIA:
+            break
+        if scheda["id"] in scelti:
+            continue
+        dettagli = _dettagli(scheda["id"])
+        if not dettagli["italiano"]:
+            continue
+        scheda["piattaforme"] = dettagli["piattaforme"]
+        fuori.append(scheda)
+    return fuori
 
 
 def aggiorna(db, forse=True) -> bool:
@@ -374,7 +494,63 @@ def aggiorna(db, forse=True) -> bool:
 
 
 def film(db) -> list:
-    return tv._leggi(db, "cinema")[0] or []
+    """I film mostrati: la copia meno quelli che la casa ha eliminato.
+
+    Il taglio e' qui e non solo in `_scarica` perche' `nascondi` deve avere
+    effetto **subito**, senza aspettare il prossimo scaricamento (la copia vale
+    mezza giornata): eliminando un titolo sparisce all'istante, e ripristinarlo
+    lo fa tornare.
+    """
+    copia = tv._leggi(db, "cinema")[0] or []
+    scelti = _nascosti(db)
+    if not scelti:
+        return copia
+    return [f for f in copia if f.get("id") not in scelti]
+
+
+def nascosti(db) -> list:
+    """Gli id dei film che la casa ha eliminato, dal piu' recente."""
+    return [r["movie_id"] for r in db.execute(
+        "SELECT movie_id FROM cinema_nascosti ORDER BY created_at DESC, movie_id DESC"
+    ).fetchall()]
+
+
+def nascondi(db, movie_id) -> None:
+    """Elimina un film dalla sezione. E' reversibile: vedi `ripristina`."""
+    db.execute(
+        "INSERT OR REPLACE INTO cinema_nascosti (movie_id, created_at) "
+        "VALUES (?, datetime('now'))",
+        (movie_id,),
+    )
+    db.commit()
+
+
+def ripristina(db, movie_id=None) -> None:
+    """Rimette in sezione un film eliminato; senza id, li rimette tutti."""
+    if movie_id is None:
+        db.execute("DELETE FROM cinema_nascosti")
+    else:
+        db.execute("DELETE FROM cinema_nascosti WHERE movie_id = ?", (movie_id,))
+    db.commit()
+
+
+def _nascosti(db) -> set:
+    """Gli id eliminati, in un insieme. Vuoto anche se la tabella non c'e' ancora.
+
+    `migrate()` crea la tabella a ogni richiesta, quindi in una rotta c'e'
+    sempre. La guardia serve ai percorsi che chiamano `_scarica` su una
+    connessione nuda — uno script, un test, un comando — dove la migrazione non
+    e' passata: senza, un `OperationalError` fermerebbe lo scaricamento invece
+    di lasciarlo procedere (e senza esclusioni, che e' il comportamento giusto
+    quando non si sa ancora niente).
+    """
+    if db is None:
+        return set()
+    try:
+        return {r["movie_id"] for r in
+                db.execute("SELECT movie_id FROM cinema_nascosti").fetchall()}
+    except sqlite3.Error:
+        return set()
 
 
 def preferiti(db) -> list:

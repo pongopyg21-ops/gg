@@ -2109,13 +2109,36 @@ button { transition: transform .12s ease; }
 }
 .cinema-vista-btn.attivo { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-.cinema-azioni { display: flex; justify-content: center; margin-bottom: 22px; }
+.cinema-azioni { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
 .cinema-preferito {
   padding: 9px 18px; border: 1px solid var(--line); border-radius: 999px;
   background: transparent; color: inherit; cursor: pointer; font-size: 15px;
 }
 .cinema-preferito.on { background: #ffd479; color: #2a2417; border-color: #ffd479; }
 .cinema-preferito:disabled { opacity: .5; cursor: default; }
+/* Elimina e' un'azione distruttiva (anche se reversibile): il bordo rosso la
+   distingue dalla stella, che invece e' una scelta "positiva". Il rosso e' la
+   coppia `--errore-*` gia' nel tema, cosi' in tema scuro si schiarisce da sola
+   (un `#...` fisso resterebbe illeggibile sul fondo scuro). */
+.cinema-elimina {
+  padding: 9px 18px; border: 1px solid var(--errore-bordo); border-radius: 999px;
+  background: transparent; color: var(--errore-testo); cursor: pointer; font-size: 15px;
+}
+.cinema-elimina:hover { background: var(--errore-testo); color: var(--paper); }
+.cinema-elimina:disabled { opacity: .5; cursor: default; }
+
+/* La riga dei film eliminati: discreta, sotto le azioni. Dice che
+   l'eliminazione non e' definitiva e offre il ripristino. */
+.cinema-nascosti {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  justify-content: center; margin-bottom: 22px;
+  font-size: 13px; color: var(--muted);
+}
+.cinema-nascosti-ripristina {
+  padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: transparent; color: inherit; cursor: pointer; font-size: 13px;
+}
+.cinema-nascosti-ripristina:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .cinema-griglia {
   display: grid; gap: 14px; margin-bottom: 22px;

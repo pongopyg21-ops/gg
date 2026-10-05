@@ -435,6 +435,7 @@ $('#gym-aggiorna').addEventListener('click', async () => {
 let cinemaFilm = [];
 let cinemaIndice = 0;
 let cinemaPreferiti = [];
+let cinemaNascosti = [];
 let cinemaVista = 'ora';
 
 async function renderCinema() {
@@ -457,7 +458,9 @@ async function renderCinema() {
 function disegnaCinema(d) {
   cinemaFilm = d.film || [];
   cinemaPreferiti = d.preferiti || [];
+  cinemaNascosti = d.nascosti || [];
   disegnaPreferiti();
+  disegnaNascosti();
   const avviso = $('#cinema-avviso');
 
   // La chiave manca **e** non c'e' niente da mostrare: e' una sezione da
@@ -526,15 +529,37 @@ function disegnaFilm() {
   aggiornaStella();
 }
 
-/* La stella del film corrente: piena se e' fra i preferiti. */
+/* La stella del film corrente: piena se e' fra i preferiti. Aggiorna anche
+   il pulsante «Elimina», che senza un film da mostrare non ha senso. */
 function aggiornaStella() {
   const f = cinemaFilm[cinemaIndice];
   const btn = $('#cinema-preferito');
-  if (!btn) return;
-  const dentro = !!(f && f.preferito);
-  btn.textContent = dentro ? '★ Preferito' : '☆ Preferito';
-  btn.classList.toggle('on', dentro);
-  btn.disabled = !f;
+  if (btn) {
+    const dentro = !!(f && f.preferito);
+    btn.textContent = dentro ? '★ Preferito' : '☆ Preferito';
+    btn.classList.toggle('on', dentro);
+    btn.disabled = !f;
+  }
+  const elimina = $('#cinema-elimina');
+  if (elimina) elimina.disabled = !f;
+}
+
+/* La riga dei film eliminati: dice quanti sono e offre di rimetterli. Senza,
+   un'eliminazione sembrerebbe definitiva. Si nasconde quando non ce n'e'
+   nessuno, cosi' non occupa spazio per niente. */
+function disegnaNascosti() {
+  const box = $('#cinema-nascosti');
+  if (!box) return;
+  if (!cinemaNascosti.length) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  const n = cinemaNascosti.length;
+  box.innerHTML = `<span>${n} ${n === 1 ? 'film eliminato' : 'film eliminati'}</span>
+    <button type="button" class="cinema-nascosti-ripristina" id="cinema-ripristina">
+      Ripristina${n === 1 ? '' : ' tutti'}</button>`;
+  box.classList.remove('hidden');
 }
 
 /* La griglia dei preferiti: una locandina per film, col titolo. La sezione e'
@@ -592,6 +617,38 @@ async function cinemaCambiaPreferito() {
     toast(e.message || 'Non riesco a salvare il preferito.');
   } finally {
     btn.disabled = false;
+  }
+}
+
+/* Elimina il film corrente dalla sezione. Non lo cancella davvero: lo annota,
+   e `film()` lo salta. Reversibile col ripristino. */
+async function cinemaElimina() {
+  const f = cinemaFilm[cinemaIndice];
+  if (!f) return;
+  const btn = $('#cinema-elimina');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/cinema/nascondi', { method: 'POST', body: { id: f.id } });
+    disegnaCinema(d);
+    toast(`«${f.titolo}» eliminato`);
+  } catch (e) {
+    toast(e.message || 'Non riesco a eliminare il film.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* Rimette in sezione i film eliminati: tutti, o uno solo se si passa un id. */
+async function cinemaRipristina(id) {
+  try {
+    const d = await api('/api/cinema/ripristina', {
+      method: 'POST',
+      body: id == null ? {} : { id },
+    });
+    disegnaCinema(d);
+    toast(id == null ? 'Film ripristinati' : 'Film ripristinato');
+  } catch (e) {
+    toast(e.message || 'Non riesco a ripristinare i film.');
   }
 }
 
@@ -653,6 +710,10 @@ $('#cinema-carosello').addEventListener('touchend', (e) => {
 // La stella del film corrente e il cambio di vista. La griglia dei preferiti
 // e' un contenitore che si ridisegna: il click sul «Togli» si delega.
 $('#cinema-preferito').addEventListener('click', cinemaCambiaPreferito);
+$('#cinema-elimina').addEventListener('click', cinemaElimina);
+$('#cinema-nascosti').addEventListener('click', (e) => {
+  if (e.target.closest('#cinema-ripristina')) cinemaRipristina();
+});
 $('#cinema-vista-ora').addEventListener('click', () => cinemaCambiaVista('ora'));
 $('#cinema-vista-preferiti').addEventListener('click', () => cinemaCambiaVista('preferiti'));
 $('#cinema-griglia').addEventListener('click', async (e) => {

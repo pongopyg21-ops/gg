@@ -3774,10 +3774,14 @@ def esiste_tabella(percorso, nome):
 def test_senza_accesso_le_api_rispondono_401(anon):
     """Nessuna casa collegata: i dati non si toccano e non si leggono."""
     for percorso in ["/api/recipes", "/api/pantry", "/api/shopping", "/api/profile",
-                     "/api/meta", "/api/storage", "/api/projects", "/api/faq"]:
+                     "/api/meta", "/api/storage", "/api/projects", "/api/faq",
+                     "/api/cinema"]:
         r = anon.get(percorso)
         assert r.status_code == 401, f"{percorso} accessibile senza accesso"
         assert r.get_json().get("auth") is False
+    # e le scritture del Cinema non si possono fare da fuori
+    assert anon.post("/api/cinema/nascondi", json={"id": 1}).status_code == 401
+    assert anon.post("/api/cinema/ripristina", json={}).status_code == 401
 
 
 def test_la_pagina_e_i_file_statici_restano_pubblici(anon):
@@ -9080,6 +9084,34 @@ def test_la_vista_preferiti_ha_id_distinti(client):
     assert "$('#cinema-pannello-preferiti').classList.toggle('hidden', ora)" in js
 
 
+def test_il_cinema_ha_il_pulsante_elimina_e_il_ripristino(client):
+    """Eliminare un titolo che non piace: il pulsante sta accanto alla stella, e
+    la riga dei film eliminati dice che l'eliminazione non e' definitiva e
+    offre di rimetterli. Senza, nessuno oserebbe toccare niente."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="cinema-elimina"' in html
+    assert 'id="cinema-nascosti"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "function cinemaElimina" in js
+    assert "function cinemaRipristina" in js
+    assert "'/api/cinema/nascondi'" in js
+    assert "'/api/cinema/ripristina'" in js
+    assert "function disegnaNascosti" in js
+
+
+
+def test_il_pulsante_elimina_usa_la_palette_del_tema(client):
+    """Il rosso di «Elimina» e' la coppia `--errore-*` del tema, non un
+    esadecimale fisso: un `#...` scelto a occhio resterebbe illeggibile in tema
+    scuro. E' la regola dell'app — ogni colore passa da una variabile — che qui
+    vale anche per il rosso di un'azione distruttiva."""
+    css = client.get("/static/style.css").get_data(as_text=True)
+    blocco = css[css.index(".cinema-elimina {"):css.index(".cinema-elimina:disabled")]
+    assert "var(--errore-testo)" in blocco
+    assert "var(--errore-bordo)" in blocco
+    assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
+
+
 def test_il_cinema_si_sfoglia_da_destra_a_sinistra(client):
     """Sfogliare e' la richiesta: frecce, tastiera, rotellina e dito. Se una
     delle quattro sparisce, su un telefono o senza mouse il carosello si blocca."""
@@ -9128,11 +9160,43 @@ def test_la_regione_del_cinema_e_l_italia_per_predefinito(monkeypatch):
     assert cinema.regione() == "US"
 
 
+def _apri_tmdb(principale=None, nicchia=None, scia=None, senza_it=(),
+               piattaforme=None):
+    """Un `_apri` finto che risponde come TMDB, su tutti i percorsi usati.
+
+    Sono quattro risposte distinte: la scoperta principale, la nicchia (per
+    tag), le raccomandazioni (la scia) e il **dettaglio** — che ora porta
+    traduzioni e piattaforme insieme, in una chiamata sola. Il dettaglio e'
+    quello che dice se un film ha una versione italiana: senza, `_dettagli`
+    scarterebbe tutto. Gli id in `senza_it` rispondono senza traduzione `it`,
+    cosi' si prova il filtro.
+    """
+    principale = principale if principale is not None else {"results": []}
+    nicchia = nicchia if nicchia is not None else {"results": []}
+    scia = scia if scia is not None else {"results": []}
+
+    def apri(url):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        if "/recommendations" in url:
+            return json.dumps(scia).encode()
+        if "/discover/movie" in url:
+            return json.dumps(nicchia if "with_keywords" in q else principale).encode()
+        m = re.search(r"/movie/(\d+)(?:\?|$)", url)
+        if m:
+            trad = [] if int(m.group(1)) in senza_it else [{"iso_639_1": "it"}]
+            return json.dumps({"translations": {"translations": trad},
+                               "watch/providers": piattaforme or {}}).encode()
+        return json.dumps({"results": []}).encode()
+
+    return apri
+
+
 def test_i_film_si_leggono_e_si_schedano(monkeypatch):
     """Una risposta di TMDB diventa schede con solo i campi che si mostrano, e
     un film senza locandina si scarta: e' una sezione di immagini.
 
-    I fornitori si chiedono a parte, film per film: `discover` non li allega.
+    I fornitori e le traduzioni si chiedono insieme, film per film, sul
+    dettaglio: `discover` non allega ne' gli uni ne' le altre.
     """
     scoperta = {
         "results": [
@@ -9146,12 +9210,10 @@ def test_i_film_si_leggono_e_si_schedano(monkeypatch):
     fornitori = {"results": {"IT": {"flatrate": [
         {"provider_name": "Netflix"}, {"provider_name": "Prime Video"}]}}}
 
-    def finta(url):
-        return json.dumps(fornitori if "/watch/providers" in url else scoperta).encode()
-
     monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(cinema, "_letto", {"fatto": True})
-    monkeypatch.setattr(cinema, "_apri", finta)
+    monkeypatch.setattr(cinema, "_apri",
+                        _apri_tmdb(principale=scoperta, piattaforme=fornitori))
     film = cinema._scarica(None)
     assert len(film) == 1
     scheda = film[0]
@@ -9162,18 +9224,19 @@ def test_i_film_si_leggono_e_si_schedano(monkeypatch):
     assert scheda["piattaforme"] == ["Netflix", "Prime Video"]
 
 
-def test_un_film_resta_anche_se_i_fornitori_non_rispondono(monkeypatch):
-    """Le piattaforme sono un di piu': se la loro chiamata fallisce il film
-    resta, senza le piattaforme. Non si perde la sezione per un dettaglio."""
+def test_un_film_resta_anche_se_i_dettagli_non_rispondono(monkeypatch):
+    """Le piattaforme sono un di piu': se il dettaglio fallisce il film resta,
+    senza le piattaforme. E anche il dubbio sulla lingua non lo scarta: un film
+    buono non si perde perche' la rete non ha risposto (vedi `_dettagli`)."""
     scoperta = {"results": [
         {"id": 1, "title": "Film Bello", "release_date": "2024-05-01",
          "vote_average": 8.0, "poster_path": "/abc.jpg"},
     ]}
 
     def finta(url):
-        if "/watch/providers" in url:
-            raise cinema.NonDisponibile("fornitori giu'")
-        return json.dumps(scoperta).encode()
+        if "/discover/movie" in url:
+            return json.dumps(scoperta).encode()
+        raise cinema.NonDisponibile("dettaglio giu'")
 
     monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(cinema, "_letto", {"fatto": True})
@@ -9260,13 +9323,11 @@ def test_i_film_di_nicchia_si_cercano_per_tag_e_si_accodano(monkeypatch):
          "vote_average": 8.0, "poster_path": "/b.jpg"},
     ]}
     visti = []
+    base = _apri_tmdb(principale=principale, nicchia=nicchia)
 
     def finta(url):
         visti.append(url)
-        if "/watch/providers" in url:
-            return json.dumps({}).encode()
-        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        return json.dumps(nicchia if "with_keywords" in q else principale).encode()
+        return base(url)
 
     monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(cinema, "_letto", {"fatto": True})
@@ -9295,7 +9356,7 @@ def test_i_preferiti_si_segnano_e_si_tolgono(client, monkeypatch):
         {"id": 9, "title": "Da Preferire", "release_date": "2022-09-09",
          "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama."},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=risposta))
     cinema.aggiorna(app_module.get_db(), forse=False)
 
     d = client.get("/api/cinema").get_json()
@@ -9320,7 +9381,7 @@ def test_un_preferito_resta_anche_se_esce_dal_giro(client, monkeypatch):
         {"id": 42, "title": "Sparirà", "release_date": "2020-01-01",
          "vote_average": 7.9, "poster_path": "/s.jpg", "overview": "Trama."},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(prima).encode())
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=prima))
     with app_module.app.app_context():
         cinema.aggiorna(app_module.get_db(), forse=False)
     client.post("/api/cinema/preferiti", json={"id": 42, "preferito": True})
@@ -9330,7 +9391,7 @@ def test_un_preferito_resta_anche_se_esce_dal_giro(client, monkeypatch):
         {"id": 7, "title": "Nuovo", "release_date": "2026-01-01",
          "vote_average": 7.0, "poster_path": "/n.jpg", "overview": ""},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(dopo).encode())
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=dopo))
     with app_module.app.app_context():
         cinema.aggiorna(app_module.get_db(), forse=False)
     d = client.get("/api/cinema").get_json()
@@ -9359,7 +9420,7 @@ def test_i_film_si_mettono_in_cache_e_si_rileggono(client, monkeypatch):
         {"id": 7, "title": "Rimasto", "release_date": "2023-01-01",
          "vote_average": 7.5, "poster_path": "/x.jpg", "overview": ""},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=risposta))
     db = app_module.get_db()
     assert cinema.aggiorna(db, forse=False) is True
     assert [f["titolo"] for f in cinema.film(db)] == ["Rimasto"]
@@ -9379,10 +9440,8 @@ def test_l_endpoint_cinema_serve_la_copia_e_gli_incorpora(client, monkeypatch):
     ]}
     fornitori = {"results": {"IT": {"flatrate": [{"provider_name": "Disney+"}]}}}
 
-    def finta(url):
-        return json.dumps(fornitori if "/watch/providers" in url else risposta).encode()
-
-    monkeypatch.setattr(cinema, "_apri", finta)
+    monkeypatch.setattr(cinema, "_apri",
+                        _apri_tmdb(principale=risposta, piattaforme=fornitori))
     cinema.aggiorna(app_module.get_db(), forse=False)
     d = client.get("/api/cinema").get_json()
     assert d["configurato"] is True and d["manca"] == ""
@@ -9400,7 +9459,7 @@ def test_senza_rete_il_cinema_resta_con_la_copia_vecchia(client, monkeypatch):
         {"id": 3, "title": "Gia' scaricato", "release_date": "2021-01-01",
          "vote_average": 7.0, "poster_path": "/z.jpg", "overview": ""},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=risposta))
     db = app_module.get_db()
     cinema.aggiorna(db, forse=False)
     # ora la rete e' giu': l'aggiornamento non porta niente, ma la copia resta
@@ -9440,6 +9499,211 @@ def test_l_aggiornamento_in_sottofondo_del_cinema_non_esplode(client, monkeypatc
     monkeypatch.setattr(cinema, "_apri",
                         lambda url: (_ for _ in ()).throw(cinema.NonDisponibile("finta")))
     assert client.get("/api/cinema").status_code == 200
+
+
+
+def test_i_film_senza_versione_italiana_si_scartano(monkeypatch):
+    """Un film che non ha una **traduzione italiana** non entra in sezione: la
+    serata in casa deve poter essere guardata. E' il segnale `translations` di
+    TMDB, non la lingua originale: i film stranieri doppiati (Match Point) hanno
+    la traduzione `it` e restano, un film che non e' mai arrivato qui no."""
+    principale = {"results": [
+        {"id": 1, "title": "Doppiato", "release_date": "2024-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+        {"id": 2, "title": "Mai Arrivato", "release_date": "2024-01-01",
+         "vote_average": 7.6, "poster_path": "/b.jpg"},
+    ]}
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri",
+                        _apri_tmdb(principale=principale, senza_it=(2,)))
+    film = cinema._scarica(None)
+    assert [f["titolo"] for f in film] == ["Doppiato"]
+
+
+def test_i_film_sulla_scia_dei_capisaldi_si_accodano(monkeypatch):
+    """I film "sulla scia" vengono dalle **raccomandazioni** dei capisaldi
+    (`cinema.SCIA`), non da una lista scritta a mano: si accodano ai film del
+    momento senza doppioni. I generi che la scia non vuole (azione, bambini,
+    documentari, musicali) restano fuori."""
+    principale = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+    ]}
+    scia = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg", "genre_ids": [18]},
+        {"id": 2, "title": "Sulla Scia", "release_date": "2005-01-01",
+         "vote_average": 8.0, "poster_path": "/b.jpg", "genre_ids": [18, 53]},
+        {"id": 3, "title": "Documentario", "release_date": "2005-01-01",
+         "vote_average": 8.5, "poster_path": "/c.jpg", "genre_ids": [99]},
+        {"id": 4, "title": "Azione", "release_date": "2005-01-01",
+         "vote_average": 8.0, "poster_path": "/d.jpg", "genre_ids": [28]},
+        {"id": 5, "title": "Troppo Poco Visto", "release_date": "2005-01-01",
+         "vote_average": 9.0, "vote_count": 5, "poster_path": "/e.jpg",
+         "genre_ids": [18]},
+    ]}
+    # le raccomandazioni portano `vote_count`: il minimo tiene fuori il film 5
+    scia["results"][1]["vote_count"] = 3000
+    scia["results"][2]["vote_count"] = 3000
+    scia["results"][3]["vote_count"] = 3000
+    scia["results"][4]["vote_count"] = 5
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=principale, scia=scia))
+    film = cinema._scarica(None)
+    assert [f["titolo"] for f in film] == ["Del Momento", "Sulla Scia"]
+    # i capisaldi sono id di TMDB, non titoli: un titolo cambia, un id no
+    assert all(isinstance(i, int) for i in cinema.SCIA)
+
+
+
+def test_la_nicchia_non_soffoca_la_scia(monkeypatch):
+    """La scia deve avere i suoi posti anche quando la nicchia ne porta molti.
+
+    Difetto vero: i film del momento (20) piu' la nicchia (fino a 20) riempivano
+    da soli il tetto (`QUANTI + QUANTI_NICCHIA + QUANTI_SCIA`), quindi la scia —
+    che si accoda per ultima — non entrava **mai**. In produzione la coda era
+    tutta nicchia e nessun film "sulla scia" si vedeva. Qui la nicchia porta
+    venti film e la scia otto: i film sulla scia devono comparire lo stesso."""
+    principale = {"results": [
+        {"id": i, "title": f"Momento {i}", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": f"/m{i}.jpg"}
+        for i in range(1, 21)
+    ]}
+    nicchia = {"results": [
+        {"id": 100 + i, "title": f"Nicchia {i}", "release_date": "2004-01-01",
+         "vote_average": 8.0, "poster_path": f"/n{i}.jpg"}
+        for i in range(20)
+    ]}
+    scia = {"results": [
+        {"id": 200 + i, "title": f"Scia {i}", "release_date": "2005-01-01",
+         "vote_average": 8.2, "vote_count": 3000, "poster_path": f"/s{i}.jpg",
+         "genre_ids": [18]}
+        for i in range(cinema.QUANTI_SCIA)
+    ]}
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri",
+                        _apri_tmdb(principale=principale, nicchia=nicchia, scia=scia))
+    film = cinema._scarica(None)
+    titoli = [f["titolo"] for f in film]
+    assert len(film) == cinema.QUANTI + cinema.QUANTI_NICCHIA + cinema.QUANTI_SCIA
+    assert sum(t.startswith("Scia ") for t in titoli) == cinema.QUANTI_SCIA
+    # e i film del momento restano tutti, non solo quelli che avanzano
+    assert sum(t.startswith("Momento ") for t in titoli) == cinema.QUANTI
+
+
+def test_la_scia_riempie_i_posti_lasciati_liberi(monkeypatch):
+    """Se una sorgente non ha abbastanza film, i posti liberi si riprendono
+    dalle altre: l'elenco non resta bucato."""
+    principale = {"results": [
+        {"id": i, "title": f"Momento {i}", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": f"/m{i}.jpg"}
+        for i in range(1, cinema.QUANTI + 1)
+    ]}
+    nicchia = {"results": []}  # nessun film di nicchia
+    # la scia ne ha piu' del suo posto, quindi puo' riempire quelli della nicchia
+    scia = {"results": [
+        {"id": 200 + i, "title": f"Scia {i}", "release_date": "2005-01-01",
+         "vote_average": 8.2, "vote_count": 3000, "poster_path": f"/s{i}.jpg",
+         "genre_ids": [18]}
+        for i in range(cinema.QUANTI_SCIA + cinema.QUANTI_NICCHIA + 4)
+    ]}
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri",
+                        _apri_tmdb(principale=principale, nicchia=nicchia, scia=scia))
+    film = cinema._scarica(None)
+    # i posti della nicchia (vuota) se li prende la scia, che ne ha abbastanza
+    assert [f["titolo"] for f in film[:cinema.QUANTI]] == [
+        f"Momento {i}" for i in range(1, cinema.QUANTI + 1)]
+    assert sum(f["titolo"].startswith("Scia ") for f in film) == \
+        cinema.QUANTI_SCIA + cinema.QUANTI_NICCHIA
+
+
+def test_i_film_eliminati_spariscono_e_si_ripristinano(client, monkeypatch):
+    """L'utente puo' togliere un titolo che non gradisce. L'eliminazione e'
+    reversibile e non tocca la copia di TMDB: si annota l'id, e `film()` lo
+    salta; ripristinare lo rimette senza riscaricare."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    risposta = {"results": [
+        {"id": 9, "title": "Da Togliere", "release_date": "2022-09-09",
+         "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama."},
+        {"id": 10, "title": "Da Tenere", "release_date": "2021-01-01",
+         "vote_average": 7.1, "poster_path": "/z.jpg", "overview": ""},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=risposta))
+    cinema.aggiorna(app_module.get_db(), forse=False)
+
+    d = client.post("/api/cinema/nascondi", json={"id": 9}).get_json()
+    assert [f["titolo"] for f in d["film"]] == ["Da Tenere"]
+    assert d["nascosti"] == [9]
+    # la copia di TMDB non e' stata toccata
+    assert [f["titolo"] for f in cinema.film(app_module.get_db())] == ["Da Tenere"]
+
+    d = client.post("/api/cinema/ripristina", json={"id": 9}).get_json()
+    assert [f["titolo"] for f in d["film"]] == ["Da Togliere", "Da Tenere"]
+    assert d["nascosti"] == []
+
+
+def test_il_ripristino_senza_id_rimette_tutti(client, monkeypatch):
+    """`/api/cinema/ripristina` senza `id` rimette in sezione tutti i film
+    eliminati: e' il pulsante «Ripristina tutti» della riga dei nascosti."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    risposta = {"results": [
+        {"id": 9, "title": "Uno", "release_date": "2022-01-01",
+         "vote_average": 6.8, "poster_path": "/a.jpg"},
+        {"id": 10, "title": "Due", "release_date": "2021-01-01",
+         "vote_average": 7.1, "poster_path": "/b.jpg"},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb(principale=risposta))
+    cinema.aggiorna(app_module.get_db(), forse=False)
+    client.post("/api/cinema/nascondi", json={"id": 9})
+    d = client.post("/api/cinema/nascondi", json={"id": 10}).get_json()
+    assert d["film"] == [] and d["nascosti"] == [10, 9]
+
+    d = client.post("/api/cinema/ripristina", json={}).get_json()
+    assert sorted(f["id"] for f in d["film"]) == [9, 10]
+    assert d["nascosti"] == []
+
+
+def test_non_si_elimina_un_film_non_mostrato(client, monkeypatch):
+    """Non si elimina un film che non e' fra quelli mostrati: sarebbe una riga
+    di nascosti per un id che non si e' mai visto, e il pulsante non deve
+    poterlo fare."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    r = client.post("/api/cinema/nascondi", json={"id": 999999})
+    assert r.status_code == 400
+    assert client.get("/api/cinema").get_json()["nascosti"] == []
+    # e senza id e' un errore, non un'eliminazione a caso
+    assert client.post("/api/cinema/nascondi", json={}).status_code == 400
+
+
+def test_la_tabella_dei_film_eliminati_arriva_anche_a_un_db_vecchio(monkeypatch):
+    """`cinema_nascosti` e' una tabella nuova: la crea lo schema, che `get_db()`
+    applica a **ogni** casa. Su un database che non l'aveva deve comparire,
+    altrimenti l'eliminazione fallirebbe solo li' (proprio chi ha piu' dati)."""
+    path = os.path.join(tempfile.mkdtemp(), "vecchio-cinema.db")
+    with sqlite3.connect(path) as db:
+        db.executescript("""
+            CREATE TABLE recipes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+            CREATE TABLE cinema_preferiti (
+                movie_id INTEGER PRIMARY KEY, dati TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        """)
+    app_module.init_db(path)  # quello che fa `get_db()` su ogni casa
+    with sqlite3.connect(path) as db:
+        nomi = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "cinema_nascosti" in nomi
+    app_module.init_db(path)  # rieseguire non deve fallire
 
 
 def test_la_scheda_progetti_si_chiama_appunti(client):
@@ -9689,6 +9953,10 @@ def _niente_rete(monkeypatch):
                         lambda url: (_ for _ in ()).throw(tv.NonDisponibile("test")))
     monkeypatch.setattr(app_module, "_aggiorna_tv_in_sottofondo", lambda db: None)
     monkeypatch.setattr(app_module, "_aggiorna_notizie_in_sottofondo", lambda db: None)
+    # il Cinema vive nella sezione TV e ha lo stesso filo: si spegne anche lui,
+    # altrimenti un test che apre la sezione lascia un filo che tocca il db di
+    # prova mentre la fixture lo cancella
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
 
 
 def test_l_indirizzo_della_playlist_diventa_il_suo_id():

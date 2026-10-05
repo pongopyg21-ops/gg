@@ -577,7 +577,15 @@
       <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
       <div class="cinema-azioni">
         <button id="cinema-preferito" class="cinema-preferito" type="button">☆ Preferito</button>
+        <button id="cinema-elimina" class="cinema-elimina" type="button"
+                title="Togli questo film dalla sezione">🗑 Elimina</button>
       </div>
+
+      <!-- I film eliminati restano qui, in una riga discreta: non si
+           cancellano davvero, quindi si possono rimettere. Senza questa riga
+           un'eliminazione sembrerebbe definitiva e non si oserebbe toccare
+           niente. -->
+      <div id="cinema-nascosti" class="cinema-nascosti hidden"></div>
     </div>
 
     <div id="cinema-pannello-preferiti" class="hidden">

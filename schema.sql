@@ -309,3 +309,14 @@ CREATE TABLE IF NOT EXISTS cinema_preferiti (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- I film che la casa ha **eliminato** dalla sezione: i titoli che non gradisce.
+-- Non si cancellano dalla copia (`tv_cache`) — quella e' la fotografia di
+-- TMDB, e cancellarli la lascerebbe sbagliata — e non si salva la scheda
+-- intera come per i preferiti: qui basta l'id, perche' un film eliminato non si
+-- mostra. L'eliminazione e' **reversibile**: `ripristina` toglie la riga e il
+-- film torna al prossimo disegno.
+CREATE TABLE IF NOT EXISTS cinema_nascosti (
+    movie_id   INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
