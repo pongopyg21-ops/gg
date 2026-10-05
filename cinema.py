@@ -22,7 +22,6 @@ import os
 import re
 import urllib.parse
 import urllib.request
-from datetime import date, timedelta
 
 import tv  # riusa la cache e i lucchetti: la forma e' la stessa della TV
 
@@ -41,6 +40,8 @@ MAX_BYTE = 2_000_000
 
 # Quanti film tenere. Uno alla volta se ne guarda uno; il resto e' per sfogliare.
 QUANTI = 20
+# Quanti film di nicchia in coda ai film del momento.
+QUANTI_NICCHIA = 8
 # La copia vale mezza giornata: un catalogo non cambia di ora in ora.
 ORE_CINEMA = 12
 
@@ -67,14 +68,39 @@ GENERI_ESCLUSI = "28"
 GENERI_BAMBINI = "16,10751"
 CASE_ESCLUSE = "420|7505"
 
-# I film usciti da un po' ma di cui si parla ancora: voto alto e tanti voti sono
-# l'indizio di critica e spettatori d'accordo. Si prendono fuori dalla finestra
-# dei film del momento (usciti da oltre N mesi) e si aggiungono in coda, cosi'
-# non rubano il posto ai film nuovi. Se non ce ne sono, pazienza: sono un di piu'.
-QUANTI_NOTEVOLI = 5
-MESI_NOTEVOLI = 18
-VOTI_NOTEVOLI = 2000
-VOTO_NOTEVOLI = 7.5
+# --- Non commerciale ---
+# Il segno che un film "l'ha visto tutti" non e' il voto (che i film di
+# cassetta hanno alto) ma **quanti** voti ha: i blockbuster viaggiano a decine
+# di migliaia (Interstellar 41k, Blade Runner 2049 16k), un film che si scopre
+# no. Si mette quindi un **tetto** ai voti, non solo un minimo: cosi' i titoli
+# da grande distribuzione che restano popolari per anni escono dal giro, e
+# restano i film nuovi o meno battuti. Il minimo tiene fuori i film senza
+# pubblico, che non e' la stessa cosa di un film di nicchia.
+VOTI_MIN = 50
+VOTI_MAX = 3000
+VOTO_MIN = 6.5
+
+# --- Film di nicchia ---
+# Cinema d'autore, cult, fuori dal coro. Si cercano per **tag** (le keyword di
+# TMDB) e non per titolo: un film nuovo che porta quel tag entra da solo, come
+# per generi e case. Sono i tag che TMDB assegna alle opere fuori dal
+# mainstream: cinema indipendente, d'autore, cult, commedia nera, surrealismo,
+# stop motion, realismo magico. Non e' una lista di film, e' un indizio di
+# "fuori dal coro", quindi non va ampliata a caso.
+PAROLE_NICCHIA = (
+    "281237",   # independent film
+    "318182",   # arthouse
+    "374649",   # cult film
+    "9887",     # surrealism
+    "10123",    # dark comedy
+    "10121",    # stop motion
+    "293336",   # experimental film
+    "382621",   # black comedy
+    "156597",   # magic realism
+)
+VOTI_NICCHIA_MIN = 300
+VOTI_NICCHIA_MAX = 10000
+VOTO_NICCHIA_MIN = 6.8
 
 # La chiave: l'ambiente, o uno di questi file accanto all'app. Stessi nomi di
 # `voce_cloud` e `comprensione`.
@@ -289,25 +315,22 @@ def _schede_di(risposta: dict) -> list:
     return [s for s in (_scheda(v) for v in risposta.get("results", [])) if s]
 
 
-def _notabili() -> list:
-    """Film usciti da un po' ma ancora di cui si parla.
+def _nicchia() -> list:
+    """Film di nicchia: cinema d'autore, cult, fuori dal coro.
 
-    Stessa base dei film del momento (presenti in abbonamento, voto alto), ma
-    con la finestra spostata indietro: usciti da oltre `MESI_NOTEVOLI`, e con
-    abbastanza voti da dire che l'attenzione c'e' stata davvero. Si ordina per
-    voto, non per popolarita': qui conta la qualita' riconosciuta, non il
-    momento. Se la chiamata non riesce, non e' un guasto: la sezione ha gia' i
-    film del momento.
+    Si cercano per tag (`PAROLE_NICCHIA`), con lo stesso tetto ai voti dei film
+    del momento: un film che l'ha visto tutti porta spesso un tag "cult" senza
+    essere quello che si cerca. Si ordina per voto, non per popolarita': qui
+    conta la qualita' riconosciuta, non il momento. Se la chiamata non riesce,
+    non e' un guasto: la sezione ha gia' i film del momento.
     """
-    fino = (date.today() - timedelta(days=MESI_NOTEVOLI * 30)).isoformat()
     try:
         risposta = _chiama("/discover/movie", _escludi({
             "sort_by": "vote_average.desc",
-            "watch_region": regione(),
-            "with_watch_monetization_types": "flatrate",
-            "vote_count.gte": VOTI_NOTEVOLI,
-            "vote_average.gte": VOTO_NOTEVOLI,
-            "primary_release_date.lte": fino,
+            "with_keywords": "|".join(PAROLE_NICCHIA),
+            "vote_count.gte": VOTI_NICCHIA_MIN,
+            "vote_count.lte": VOTI_NICCHIA_MAX,
+            "vote_average.gte": VOTO_NICCHIA_MIN,
             "include_adult": "false",
             "page": 1,
         }))
@@ -317,25 +340,25 @@ def _notabili() -> list:
 
 
 def _scarica(_db) -> list:
-    """I film del momento, piu' qualche film notevole uscito da un po'.
+    """I film del momento (non commerciali), piu' qualche film di nicchia.
 
     Azione, film per bambini/ragazzi e film Marvel restano fuori (vedi
-    `_escludi`). I notevoli si accodano e si tolgono i doppioni: un film non
-    compare due volte.
+    `_escludi`). Il tetto ai voti (`VOTI_MAX`) tiene fuori i blockbuster che
+    restano popolari per anni: sono i titoli che "l'ha visto tutti". La nicchia
+    si accoda e si tolgono i doppioni: un film non compare due volte.
     """
     dati = _chiama("/discover/movie", _escludi({
         "sort_by": "popularity.desc",
-        "watch_region": regione(),
-        "with_watch_monetization_types": "flatrate",
-        "vote_count.gte": 50,
-        "vote_average.gte": 6.0,
+        "vote_count.gte": VOTI_MIN,
+        "vote_count.lte": VOTI_MAX,
+        "vote_average.gte": VOTO_MIN,
         "include_adult": "false",
         "page": 1,
     }))
     schede = _schede_di(dati)[:QUANTI]
     visti = {s["id"] for s in schede}
-    for scheda in _notabili():
-        if len(schede) >= QUANTI + QUANTI_NOTEVOLI:
+    for scheda in _nicchia():
+        if len(schede) >= QUANTI + QUANTI_NICCHIA:
             break
         if scheda["id"] not in visti:
             visti.add(scheda["id"])

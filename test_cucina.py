@@ -9130,38 +9130,75 @@ def test_la_scoperta_esclude_azione_e_marvel(monkeypatch):
         assert "420" in cinema.CASE_ESCLUSE
 
 
-def test_i_film_notevoli_si_accodano_senza_doppioni(monkeypatch):
-    """I film notevoli usciti da un po' si aggiungono in coda, e un film non
-    compare due volte anche se sta in entrambe le scoperte."""
-    scoperta = {"results": [
-        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
-         "vote_average": 7.5, "poster_path": "/a.jpg"},
-    ]}
-    notevoli = {"results": [
-        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
-         "vote_average": 7.5, "poster_path": "/a.jpg"},
-        {"id": 2, "title": "Vecchio Ma Bello", "release_date": "2005-01-01",
-         "vote_average": 8.4, "poster_path": "/b.jpg"},
-    ]}
-    date_viste = []
+def test_la_scoperta_mette_un_tetto_ai_voti(monkeypatch):
+    """I blockbuster escono dal giro: il segno che un film "l'ha visto tutti"
+    non e' il voto ma **quanti** voti ha. Senza tetto, Interstellar (41k voti) e
+    Blade Runner 2049 (16k) restano fra i piu' popolari per anni e occupano il
+    carosello. La finestra sui voti e' quello che li toglie, senza una lista di
+    titoli da aggiornare a mano."""
+    visti = []
 
     def finta(url):
+        visti.append(url)
+        if "/watch/providers" in url:
+            return json.dumps({}).encode()
+        return json.dumps({"results": []}).encode()
+
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", finta)
+    cinema._scarica(None)
+    principali = [u for u in visti
+                  if "/discover/movie" in u and "with_keywords" not in u]
+    assert principali
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(principali[0]).query)
+    assert q.get("vote_count.gte") == [str(cinema.VOTI_MIN)]
+    assert q.get("vote_count.lte") == [str(cinema.VOTI_MAX)]
+    assert q.get("vote_average.gte") == [str(cinema.VOTO_MIN)]
+    # il tetto e' l'ordine di grandezza di un film "visto da tutti", non un
+    # numero che taglierebbe anche i film normali
+    assert cinema.VOTI_MAX <= 10000
+
+
+def test_i_film_di_nicchia_si_cercano_per_tag_e_si_accodano(monkeypatch):
+    """La nicchia si cerca per **tag** (cinema indipendente, d'autore, cult,
+    commedia nera, surrealismo): un film nuovo che porta quel tag entra da solo,
+    come per generi e case. Si accoda ai film del momento, con lo stesso tetto
+    ai voti, e un film non compare due volte."""
+    principale = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+    ]}
+    nicchia = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+        {"id": 2, "title": "Fuori Dal Coro", "release_date": "2004-01-01",
+         "vote_average": 8.0, "poster_path": "/b.jpg"},
+    ]}
+    visti = []
+
+    def finta(url):
+        visti.append(url)
         if "/watch/providers" in url:
             return json.dumps({}).encode()
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        if "primary_release_date.lte" in q:
-            date_viste.append(q["primary_release_date.lte"][0])
-            return json.dumps(notevoli).encode()
-        return json.dumps(scoperta).encode()
+        return json.dumps(nicchia if "with_keywords" in q else principale).encode()
 
     monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(cinema, "_letto", {"fatto": True})
     monkeypatch.setattr(cinema, "_apri", finta)
     film = cinema._scarica(None)
-    assert [f["titolo"] for f in film] == ["Del Momento", "Vecchio Ma Bello"]
-    assert date_viste  # la finestra dei notevoli e' stata usata
-    anno, mese, giorno = (int(x) for x in date_viste[0].split("-"))
-    assert anno < date.today().year or (anno == date.today().year and mese < date.today().month)
+    assert [f["titolo"] for f in film] == ["Del Momento", "Fuori Dal Coro"]
+
+    nicchia_url = next(u for u in visti
+                       if "/discover/movie" in u and "with_keywords" in u)
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(nicchia_url).query)
+    assert q.get("with_keywords") == ["|".join(cinema.PAROLE_NICCHIA)]
+    assert q.get("vote_count.lte") == [str(cinema.VOTI_NICCHIA_MAX)]
+    assert q.get("vote_count.gte") == [str(cinema.VOTI_NICCHIA_MIN)]
+    assert q.get("sort_by") == ["vote_average.desc"]
+    # i tag sono id numerici di TMDB, non nomi: un nome verrebbe ignorato
+    assert all(k.isdigit() for k in cinema.PAROLE_NICCHIA)
 
 
 def test_i_preferiti_si_segnano_e_si_tolgono(client, monkeypatch):

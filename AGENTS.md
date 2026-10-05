@@ -2086,10 +2086,41 @@ Tre scelte recenti, tutte deliberate:
   Harry Potter, marcato Avventura/Fantasia e non Famiglia, **resta**: è il limite
   di una regola che non sbaglia per eccesso. Il test
   `test_la_scoperta_esclude_azione_e_marvel` verifica i generi richiesti.
-- **I film notevoli** (`_notabili`) sono una seconda scoperta: usciti da oltre
-  `MESI_NOTEVOLI` ma con voto alto e tanti voti, ordinati per voto. Si accodano
-  ai film del momento, senza doppioni, e non rubano il posto ai film nuovi. Se
-  la chiamata non riesce, non è un guasto: la sezione ha già i film del momento.
+- **Non commerciale: un tetto ai voti, non una lista di titoli.** Il segno che
+  un film «l'ha visto tutti» non è il voto — i film di cassetta hanno voto alto —
+  ma **quanti** voti ha: i blockbuster viaggiano a decine di migliaia
+  (Interstellar 41k, Blade Runner 2049 16k, Il padrino 24k, Pulp Fiction 31k),
+  un film che si scopre no. La scoperta principale ha quindi una **finestra sui
+  voti** (`VOTI_MIN` 50, `VOTI_MAX` 3000, `VOTO_MIN` 6.5): il minimo toglie i
+  film senza pubblico (che non è la stessa cosa di un film di nicchia), il
+  **tetto** toglie i titoli da grande distribuzione che restano popolari per
+  anni. È una regola sui numeri, non sui titoli: un film nuovo che sfonda esce
+  da solo, e non c'è niente da aggiornare a mano. Verificato con la chiave vera:
+  prima il carosello apriva con Interstellar, Blade Runner, Il padrino, Dune,
+  Pulp Fiction, Fight Club, Harry Potter; dopo, con le novità e i film fuori dal
+  giro. Un limite onesto: con un tetto stretto passa anche il film «normale»
+  poco votato (una commedia recente con 200 voti), che non è di nicchia ma non è
+  nemmeno commerciale. Il test `test_la_scoperta_mette_un_tetto_ai_voti` lo
+  fissa.
+- **I film di nicchia** (`_nicchia`) sono una seconda scoperta, per **tag**
+  (`PAROLE_NICCHIA`, le keyword di TMDB): cinema indipendente, d'autore, cult,
+  commedia nera, surrealismo, stop motion, realismo magico. Si cercano per tag e
+  non per titolo, così un film nuovo che porta quel tag entra da solo, come per
+  generi e case. Hanno lo **stesso tetto ai voti** dei film del momento: un
+  «cult» visto da tutti non è quello che si cerca. Si ordinano per voto (non per
+  popolarità), si accodano ai film del momento senza doppioni, e non rubano il
+  posto ai film nuovi. Se la chiamata non riesce, non è un guasto: la sezione ha
+  già i film del momento. Con la chiave vera la coda porta cinema d'autore vero
+  (Nuovo Cinema Paradiso, Apocalypse Now, Va' e vedi, Il dottor Stranamore, Lo
+  specchio). Il test `test_i_film_di_nicchia_si_cercano_per_tag_e_si_accodano`
+  verifica tag, ordine, tetto e deduplica.
+  **Perché i tag e non le case di produzione.** Provata anche la via «solo case
+  indipendenti» (A24, Film4, Arte France Cinéma…): funziona ma è fragile, perché
+  gli id delle case cambiano e vanno verificati a mano, e taglia fuori il cinema
+  italiano e molto altro. I tag sono assegnati per opera e coprono anche il
+  cinema europeo e di repertorio, che è quello che si cerca. Un tag inventato
+  viene ignorato in silenzio da TMDB: gli id vanno verificati con
+  `/search/keyword`, non indovinati.
 - **I preferiti sono un elenco a sé** (`cinema_preferiti`): la stella salva la
   **scheda intera** (JSON), non solo l'id, perché il preferito deve restare
   anche quando il film esce dal giro dei film del momento. Senza la scheda
