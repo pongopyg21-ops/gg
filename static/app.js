@@ -145,7 +145,6 @@ const SEZIONI = {
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
   tv:       { titolo: '\u{1F4FA} TV',       prima: 'intrattenimento' },
   gym:      { titolo: '\u{1F3CB}\u{FE0F} GYM', prima: 'gym' },
-  cinema:   { titolo: '\u{1F3AC} Cinema',   prima: 'cinema' },
 };
 
 function apriSezione(nome) {
@@ -221,9 +220,11 @@ $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
   if (btn.dataset.tab === 'calendario') renderCalendario();
   if (btn.dataset.tab === 'magazzino') renderMagazzino();
   if (btn.dataset.tab === 'faq') renderFaq();
-  if (btn.dataset.tab === 'intrattenimento') renderTv();
+  // Il Cinema vive dentro la sezione TV: aprendola si disegnano entrambi, con
+  // due richieste separate perche' le fonti sono diverse (playlist/notizie e
+  // TMDB) e un guasto di una non deve fermare l'altra.
+  if (btn.dataset.tab === 'intrattenimento') { renderTv(); renderCinema(); }
   if (btn.dataset.tab === 'gym') renderGym();
-  if (btn.dataset.tab === 'cinema') renderCinema();
 }));
 
 /* ---------- TV ----------
@@ -422,8 +423,10 @@ $('#gym-aggiorna').addEventListener('click', async () => {
 });
 
 /* ---------- CINEMA ----------
-   La sezione Cinema: le locandine dei film del momento, una alla volta. Si
-   sfoglia da destra a sinistra con le frecce, la rotellina o il dito.
+   Il Cinema, dentro la sezione TV: le locandine dei film del momento, una
+   alla volta. Si sfoglia da destra a sinistra con le frecce, la rotellina o il
+   dito. E' intrattenimento come i video e le notizie, quindi non ha piu' una
+   sezione a parte; `renderCinema` parte aprendo la scheda TV.
 
    Il server serve la copia in cache e aggiorna in sottofondo, quindi qui non
    c'e' attesa di rete: si disegna quello che arriva. Se manca la chiave TMDB il
@@ -556,7 +559,7 @@ function cinemaCambiaVista(vista) {
   cinemaVista = vista === 'preferiti' ? 'preferiti' : 'ora';
   const ora = cinemaVista === 'ora';
   $('#cinema-vista-del-momento').classList.toggle('hidden', !ora);
-  $('#cinema-vista-preferiti').classList.toggle('hidden', ora);
+  $('#cinema-pannello-preferiti').classList.toggle('hidden', ora);
   const btnOra = $('#cinema-vista-ora');
   const btnPre = $('#cinema-vista-preferiti');
   if (btnOra) { btnOra.classList.toggle('attivo', ora); btnOra.setAttribute('aria-selected', String(ora)); }
@@ -3668,7 +3671,7 @@ async function openOnboarding() {
 function mostraBenvenuto() {
   const punti = [
     { ico: '🍽', titolo: 'Cucina', testo: 'Piano dei pasti, ricette già pronte e una lista della spesa che si calcola da sola.' },
-    { ico: '🧽', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
+    { ico: '🧹', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
     { ico: '📋', titolo: 'Appunti', testo: 'Lavori in corso, calendario degli impegni e magazzino di quello che si tiene in casa.' },
     { ico: '📌', titolo: 'FAQ', testo: 'Wi-Fi, contatti, codici: le informazioni utili sempre a portata di mano.' },
     { ico: '📺', titolo: 'TV e GYM', testo: 'Playlist video e allenamento, con le notizie filtrate sui tuoi interessi.' },
@@ -5731,7 +5734,7 @@ async function renderHomeOggi() {
 
   const daFare = chores ? (chores.piano?.da_fare || 0) : 0;
   const choresHtml = daFare
-    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🧽</span>
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🧹</span>
          <span class="oggi-txt">${daFare === 1
            ? 'C\'è <strong>1 attività di casa</strong> da fare oggi'
            : `Ci sono <strong>${daFare} attività di casa</strong> da fare oggi`}</span></div>`

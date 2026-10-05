@@ -2065,6 +2065,12 @@ button { transition: transform .12s ease; }
 .cinema-freccia:hover { background: rgba(255, 255, 255, .26); }
 .cinema-freccia:disabled { opacity: .35; cursor: default; }
 
+/* La riga del Cinema dentro la sezione TV: il titolo fa da intestazione come
+   gli altri blocchi, e il margine superiore del `.section-title` va tolto perche'
+   la riga e' gia' distanziata dal blocco precedente. */
+.toolbar-cinema { margin-bottom: 12px; }
+.toolbar-cinema .section-title { margin: 0; }
+
 /* Le due viste (del momento / preferiti) e la stella. */
 .cinema-viste { display: flex; gap: 8px; margin: 4px 0 16px; }
 .cinema-vista-btn {

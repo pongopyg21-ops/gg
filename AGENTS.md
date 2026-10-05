@@ -57,15 +57,18 @@ suggerimenti dalla dispensa in `dispensa.py`, video e notizie in `tv.py`,
 locandine dei film in `cinema.py`,
 impegni e promemoria in `calendario.py`.
 
-L'app si apre su una **pagina iniziale** che smista verso sei sezioni:
-**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**, **Cinema**. Piano, ricette,
+L'app si apre su una **pagina iniziale** che smista verso cinque sezioni:
+**Cucina**, **Igiene**, **Appunti**, **FAQ**, **TV**. Piano, ricette,
 dispensa, spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stanno
 in **Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
-raccoglie l'intrattenimento, cioè i video della playlist di casa e le notizie
-dal mondo (vedi `tv.py`); **Cinema** mostra le locandine dei film del momento
-sulle piattaforme di streaming, una alla volta (vedi `cinema.py`).
+raccoglie l'intrattenimento: i video della playlist di casa, le notizie dal mondo
+(vedi `tv.py`) e le locandine dei film del momento sulle piattaforme di streaming,
+una alla volta (vedi `cinema.py`). Il **Cinema** non ha più una sezione sua:
+è intrattenimento come i video e le notizie, e sta dentro la TV. Il **GYM**
+resta invece una sezione a sé, perché è una cosa diversa — si guarda *per fare*,
+non per passare il tempo.
 
 ## Comandi
 
@@ -1973,13 +1976,23 @@ Riusa la stessa lettura e la stessa cache della TV, con due soli pezzi nuovi:
   **`POST /api/gym/aggiorna`** è il pulsante «Aggiorna» e aspetta la rete. Le
   notizie non c'entrano con gli esercizi: l'aggiornamento del GYM non le tocca.
 
-### La sezione Cinema
+### Il Cinema, dentro la sezione TV
 
-Il **Cinema** è una sezione a sé (`tab-cinema`, scheda in home
-`data-section="cinema"`): le locandine dei film del momento compresi sulle
-piattaforme di streaming, **una alla volta**, da sfogliare da destra a sinistra.
-Serve a ispirare la serata, non a elencare un catalogo: per questo il carosello
-mostra un film per schermata, con la locandina grande, e non una griglia.
+Il **Cinema** non è più una sezione a sé: è **dentro la TV** (`tab-intrattenimento`),
+perché è intrattenimento come i video e le notizie. Aprendo la scheda TV
+`renderTv()` e `renderCinema()` partono insieme, con due richieste separate:
+le fonti sono diverse (playlist/notizie e TMDB) e un guasto di una non deve
+fermare l'altra. Restano la riga di stato e il pulsante «Aggiorna» del Cinema,
+perché la fonte si aggiorna a parte. Non c'è più la scheda in home
+`data-section="cinema"`, né il tab, né la voce in `SEZIONI`: una scheda in più
+per la stessa cosa era un doppione. Il **GYM** invece resta una sezione a sé
+(`tab-gym`), perché è una cosa diversa — si guarda *per fare*, non per passare
+il tempo.
+
+Le locandine sono i film del momento compresi sulle piattaforme di streaming,
+**una alla volta**, da sfogliare da destra a sinistra. Serve a ispirare la
+serata, non a elencare un catalogo: per questo il carosello mostra un film per
+schermata, con la locandina grande, e non una griglia.
 
 `cinema.py` è il modulo, e ricalca `tv.py` di proposito — stessa cache, stesso
 lucchetto, stessa regola «quello che si è scaricato resta». Le differenze:
@@ -2038,13 +2051,24 @@ Tre scelte recenti, tutte deliberate:
   `MESI_NOTEVOLI` ma con voto alto e tanti voti, ordinati per voto. Si accodano
   ai film del momento, senza doppioni, e non rubano il posto ai film nuovi. Se
   la chiamata non riesce, non è un guasto: la sezione ha già i film del momento.
-- **I preferiti sono una sezione a sé** (`cinema_preferiti`): la stella salva la
+- **I preferiti sono un elenco a sé** (`cinema_preferiti`): la stella salva la
   **scheda intera** (JSON), non solo l'id, perché il preferito deve restare
   anche quando il film esce dal giro dei film del momento. Senza la scheda
   salvata si vedrebbe una locandina vuota. Lato frontend due viste («Del
   momento» / «★ Preferiti») con `cinemaCambiaVista`; `POST
   /api/cinema/preferiti` segna o toglie (rifiuta un film non mostrato, che
   sarebbe un preferito senza scheda).
+- **La vista Preferiti era invisibile per un id duplicato.** Il pulsante e il
+  contenitore della vista avevano lo stesso `id="cinema-vista-preferiti"`:
+  `$()` prende il primo (il pulsante), quindi
+  `classList.toggle('hidden', ora)` finiva sul pulsante e il contenitore restava
+  `hidden`. La griglia si costruiva (i `<figure>` c'erano) ma misurava 0x0, e il
+  pulsante «Togli» non era cliccabile: sembrava che i preferiti «non
+  funzionassero», mentre il difetto era di layout. Il contenitore ha ora un id
+  suo (`cinema-pannello-preferiti`), e due test lo tengono fermo:
+  `test_il_cinema_vive_dentro_la_sezione_tv` e `test_la_vista_preferiti_ha_id_distinti`
+  pretendono che gli id di `index.html` siano **unici**. È la lezione generale:
+  un id duplicato non dà errore, dà un elemento che non si vede.
 
 
 

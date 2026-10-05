@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import time
@@ -8820,20 +8821,69 @@ def test_migrazione_aggiunge_gym_playlist_a_un_db_esistente():
         app_module.migrate(db)  # rieseguire non deve fallire
 
 
-def test_la_sezione_cinema_e_in_home_e_ha_il_suo_tab(client):
-    """Il Cinema e' una sezione a se': scheda in home, scheda nella barra, il
-    carosello e i suoi comandi. La scheda in home e' cio' che la rende
-    raggiungibile."""
+def test_l_icona_dell_igiene_e_la_scopa(client):
+    """La sezione Igiene si riconosce dalla scopa, non piu' dalla spugna: la
+    spugna era un oggetto della cucina e non diceva «pulizie di casa»."""
     html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'data-section="cinema"' in html
-    assert 'id="tab-cinema"' in html
+    # nella scheda in home e nella scheda della barra
+    assert '<span class="home-emoji">🧹</span>' in html
+    assert 'data-section="igiene">🧹 Pulizie</button>' in html
+    assert '<span class="home-emoji">🧽</span>' not in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    # la scopa anche nel menu di benvenuto e nel riepilogo «Oggi»
+    assert "{ ico: '🧹', titolo: 'Pulizie'" in js
+    assert 'oggi-ico" aria-hidden="true">🧹' in js
+    # l'icona della spugna resta dov'e' giusto: e' un ingrediente della dispensa
+    assert "['spugna', '🧽']" in js
+
+
+def test_il_cinema_vive_dentro_la_sezione_tv(client):
+    """Il Cinema non e' piu' una sezione a se': e' intrattenimento come i video
+    e le notizie, quindi sta **dentro** la sezione TV. Niente scheda in home,
+    niente scheda nella barra: una scheda in piu' per la stessa cosa era un
+    doppione. Il carosello e i suoi comandi restano, e `renderCinema` parte
+    aprendo la scheda TV."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    # dentro la sezione TV, non in una sua
+    assert 'id="tab-intrattenimento"' in html
+    assert html.index('id="tab-intrattenimento"') < html.index('id="cinema-carosello"')
+    assert html.index('id="cinema-carosello"') < html.index('id="tab-gym"')
+    # il carosello e i suoi comandi
     assert 'id="cinema-carosello"' in html
     assert 'id="cinema-prima"' in html and 'id="cinema-dopo"' in html
     assert 'id="cinema-punti"' in html
+    assert 'id="cinema-vista-preferiti"' in html
+    assert 'id="cinema-griglia"' in html
+    # niente piu' sezione/tab/scheda dedicata
+    assert 'id="tab-cinema"' not in html
+    assert 'data-tab="cinema"' not in html
+    assert 'data-section="cinema"' not in html
+    # nessun id duplicato: era proprio il doppione a rompere la vista Preferiti
+    ids = re.findall(r'id="([^"]+)"', html)
+    assert len(ids) == len(set(ids)), "id duplicati in index.html"
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "function renderCinema" in js
     assert "/api/cinema" in js
-    assert "cinema:   { titolo:" in js or "cinema: { titolo:" in js
+    # renderCinema si chiama aprendo la scheda TV, insieme a renderTv
+    assert "renderTv(); renderCinema();" in js
+    assert "cinema:   { titolo:" not in js and "cinema: { titolo:" not in js
+
+
+def test_la_vista_preferiti_ha_id_distinti(client):
+    """La vista «Preferiti» era invisibile: il contenitore aveva lo stesso id del
+    pulsante `#cinema-vista-preferiti`, e `$()` prende il primo (il pulsante).
+    `classList.toggle('hidden', false)` finiva sul pulsante, non sul contenitore,
+    che restava `hidden` e misurava 0x0 — la griglia c'era ma non si vedeva.
+
+    La regressione si tiene in modo strutturale: gli id sono unici, e il
+    contenitore della vista ha un id suo."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    ids = re.findall(r'id="([^"]+)"', html)
+    assert len(ids) == len(set(ids)), "id duplicati in index.html"
+    assert html.count('id="cinema-vista-preferiti"') == 1
+    assert 'id="cinema-pannello-preferiti"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "$('#cinema-pannello-preferiti').classList.toggle('hidden', ora)" in js
 
 
 def test_il_cinema_si_sfoglia_da_destra_a_sinistra(client):
