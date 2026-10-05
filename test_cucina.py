@@ -9374,7 +9374,10 @@ def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
 def test_l_endpoint_tv_non_cade_se_non_c_e_niente(client, monkeypatch):
     """Cache vuota e rete assente: 200 con due elenchi vuoti. E' una sezione da
     riempire, non un guasto da mostrare a chi apre l'app."""
-    monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
+    # `_niente_rete` spegne anche il filo di sottofondo: senza, sopravvive al
+    # test e tiene aperto il database di prova, che la fixture cancella sotto
+    # il test successivo («disk I/O error» a intermittenza).
+    _niente_rete(monkeypatch)
     r = client.get("/api/tv")
     assert r.status_code == 200
     d = r.get_json()
