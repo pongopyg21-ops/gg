@@ -7485,8 +7485,6 @@ const risposte = {
   '/api/chores': { piano: { da_fare: 2 } },
   '/api/appointments?giorno=2026-10-02':
     { prossimi: [{ title: 'Dentista', quando_detto: 'oggi' }] },
-  '/api/appointments?giorno=2026-10-03':
-    { appointments: [{ title: 'Riunione', done: false }] },
   '/api/pantry': [{ name: 'Latte', expires_at: '2026-10-03' }],
 };
 async function api(url) { return risposte[url]; }
@@ -7497,8 +7495,9 @@ async function api(url) { return risposte[url]; }
     assert "Pasta" in d["html"] and "cena" in d["html"]
     assert "2 attività di casa" in d["html"]
     assert "Dentista" in d["html"]
-    assert "Domani" in d["html"] and "Riunione" in d["html"]
     assert "Latte" in d["html"]
+    # domani ha il suo riquadro, piu' sotto: qui non deve comparire
+    assert "Domani" not in d["html"]
 
 
 def test_il_riepilogo_di_oggi_tace_se_non_c_e_niente(client):
@@ -7554,19 +7553,20 @@ async function api(url) {
     assert "Pasta" in d["html"]
 
 
-def test_il_riepilogo_suggerisce_gli_impegni_di_domani(client):
-    """Gli impegni di domani si suggeriscono in «Oggi»: quelli che non sono
-    ancora scattati non stanno in `prossimi`, ma sapere stasera che domani c'e'
-    il dentista e' utile. Solo quelli da fare: un impegno gia' chiuso non e' un
+def test_il_riquadro_domani_mette_impegni_e_pasti(client):
+    """Domani ha un riquadro suo, dopo le notizie: gli impegni non ancora chiusi
+    e i pasti gia' scelti. Solo quelli da fare: un impegno gia' fatto non e' un
     impegno, e mostrarlo farebbe credere che domani ci sia qualcosa."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "renderHomeOggi")
+    blocco = _estrai_funzione_js(js, "renderHomeDomani")
     preludio = """
 const stato = { html: '', nascosto: true };
 function $(sel) {
-  if (sel === '#home-oggi') return {
-    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+  if (sel === '#home-domani') return {
     classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  if (sel === '#home-domani-corpo') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
   };
   return { innerHTML: '', classList: { add() {}, remove() {} } };
 }
@@ -7580,22 +7580,49 @@ class DataFinta extends VERO_DATE {
 globalThis.Date = DataFinta;
 function pad(n) { return String(n).padStart(2, '0'); }
 function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function statoScadenza() { return { testo: '—', classe: 'scad-niente' }; }
 const risposte = {
-  '/api/plan?start=2026-10-02&end=2026-10-02': [],
-  '/api/chores': { piano: { da_fare: 0 } },
-  '/api/appointments?giorno=2026-10-02': { prossimi: [] },
   '/api/appointments?giorno=2026-10-03':
     { appointments: [{ title: 'Dentista', done: false }, { title: 'Vecchio', done: true }] },
-  '/api/pantry': [],
+  '/api/plan?start=2026-10-03&end=2026-10-03':
+    [{ recipe_name: 'Lasagne', meal: 'pranzo' }],
 };
 async function api(url) { return risposte[url]; }
 """
-    coda = "\nrenderHomeOggi().then(() => console.log(JSON.stringify(stato)));"
+    coda = "\nrenderHomeDomani().then(() => console.log(JSON.stringify(stato)));"
     d = _esegui_node(preludio + blocco + coda)
-    assert d["nascosto"] is False, "solo gli impegni di domani bastano a mostrare il riquadro"
-    assert "Domani" in d["html"] and "Dentista" in d["html"]
+    assert d["nascosto"] is False, "con qualcosa in programma il riquadro si vede"
+    assert "Dentista" in d["html"]
     assert "Vecchio" not in d["html"], "un impegno gia' fatto non si suggerisce"
+    assert "Lasagne" in d["html"] and "pranzo" in d["html"]
+
+
+def test_il_riquadro_domani_tace_se_non_c_e_niente(client):
+    """Senza impegni ne' pasti di domani il riquadro resta nascosto: una home con
+    un riquadro vuoto e' peggio di una home senza riquadro."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeDomani")
+    preludio = """
+const stato = { html: 'vecchio', nascosto: false };
+function $(sel) {
+  if (sel === '#home-domani') return {
+    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
+  };
+  if (sel === '#home-domani-corpo') return {
+    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
+  };
+  return { innerHTML: '', classList: { add() {}, remove() {} } };
+}
+function esc(s) { return String(s); }
+function iso() { return '2026-10-03'; }
+async function api(url) {
+  if (url.startsWith('/api/appointments')) return { appointments: [] };
+  return [];
+}
+"""
+    coda = "\nrenderHomeDomani().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is True
+    assert d["html"] == ""
 
 def test_il_calendario_in_home_mostra_il_mese_col_puntino(client):
     """La home ripropone il calendario dei Progetti in fondo, in sola lettura. Si
@@ -7684,31 +7711,88 @@ def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
 
 
 def test_le_notizie_in_home_stanno_sotto_il_calendario(client):
-    """La home finisce con le notizie del giorno: prima le categorie, poi il
-    riepilogo «Oggi», il calendario e infine le notizie. Sono da leggere e da
-    dove si e', quindi in fondo; l'elenco completo resta nella sezione TV."""
+    """La home finisce con le notizie del giorno e poi «Domani»: prima le
+    categorie, poi il riepilogo «Oggi», il calendario, le notizie e infine cosa
+    c'e' in programma domani. Le notizie sono da leggere, e domani e' la cosa da
+    preparare, quindi in fondo; l'elenco completo resta nella sezione TV."""
     html = client.get("/").get_data(as_text=True)
     assert 'id="home-notizie"' in html
     assert html.index('id="home-cal"') < html.index('id="home-notizie"')
+    # domani viene dopo le notizie del giorno
+    assert html.index('id="home-notizie"') < html.index('id="home-domani"')
     # il riquadro rimanda alla TV, non duplica l'elenco con i sommari
-    sezione = html[html.index('id="home-notizie"'):html.index('<div id="app"')]
+    sezione = html[html.index('id="home-notizie"'):html.index('id="home-domani"')]
     assert "home-notizie-apri" in sezione
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "$('#home-notizie-apri')" in js and "apriSezione('tv')" in js
 
 
+def test_la_home_mostra_dieci_notizie_non_tutte(client):
+    """In home le notizie sono al massimo dieci: e' un assaggio. La sezione TV
+    resta con tutte quelle della cache (`MAX_NOTIZIE`, 20), quindi il taglio e'
+    della home e non del feed. Si esegue `renderHomeNotizie` vera con node."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "renderHomeNotizie")
+    notizie = [{"titolo": f"Notizia {i}", "link": f"/n/{i}", "fonte": "ANSA"}
+               for i in range(20)]
+    preludio = """
+const stato = { html: '', nascosto: true };
+function $(sel) {
+  if (sel === '#home-notizie') return { classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } } };
+  if (sel === '#home-notizie-elenco') return { set innerHTML(v) { stato.html = v; } };
+  return { innerHTML: '' };
+}
+function esc(s) { return String(s ?? ''); }
+const NOTIZIE = %s;
+async function api() { return { notizie: NOTIZIE }; }
+""" % json.dumps(notizie)
+    coda = "\nrenderHomeNotizie().then(() => console.log(JSON.stringify(stato)));"
+    d = _esegui_node(preludio + blocco + coda)
+    assert d["nascosto"] is False
+    assert "Notizia 9" in d["html"]
+    assert "Notizia 10" not in d["html"], "in home non si mostrano tutte e venti"
+    assert "Notizia 19" not in d["html"]
+
+
 def test_l_intestazione_chiude_la_home(client):
-    """L'intestazione «Il Maggiordomo» sta in fondo alla home.
+    """L'intestazione «Il Maggiordomo» sta in fondo alla home, dopo «Oggi», il
+    calendario, le notizie e «Domani».
 
     In alto era la prima cosa che si incontrava e spingeva giu' le categorie,
-    che sono il motivo per cui si arriva in home. Ora chiude la pagina, dopo
-    «Oggi», il calendario e le notizie."""
+    che sono il motivo per cui si arriva in home. Ora chiude la pagina."""
     html = client.get("/").get_data(as_text=True)
     inizio = html.index('id="home"')
     home = html[inizio:html.index('<div id="app"', inizio)]
     assert "home-hero-basso" in home
     assert home.index('class="home-cards"') < home.index("home-hero-basso")
     assert home.index('id="home-notizie"') < home.index("home-hero-basso")
+    assert home.index('id="home-domani"') < home.index("home-hero-basso")
+
+
+def test_l_intestazione_della_home_e_centrata(client):
+    """Il testo «Il Maggiordomo» in home e' centrato: l'intestazione chiude la
+    pagina e deve stare al centro, non ancorata a sinistra. La regola e' nel
+    CSS, sulla classe `home-hero-basso`."""
+    css = client.get("/static/style.css").get_data(as_text=True)
+    inizio = css.index(".home-hero-basso")
+    blocco = css[inizio:inizio + 400]
+    assert "text-align: center" in blocco
+
+
+def test_la_cucina_ha_la_sua_icona(client):
+    """La scheda Cucina ha un'icona sua (il cappello da chef), non il logo
+    dell'app: prima erano lo stesso disegno, quindi la scheda non si
+    distingueva. L'icona e' un file vero, e la sezione la usa."""
+    import os
+    radice = os.path.dirname(os.path.abspath(app_module.__file__))
+    percorso = os.path.join(radice, "static", "icons", "cucina.svg")
+    assert os.path.isfile(percorso), "l'icona della Cucina deve esistere su disco"
+    html = client.get("/").get_data(as_text=True)
+    card = html[html.index('data-section="cucina"'):html.index('data-section="igiene"')]
+    assert "/static/icons/cucina.svg" in card
+    assert "icona.svg" not in card, "la Cucina non usa piu' il logo dell'app"
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "icona: '/static/icons/cucina.svg'" in js
 
 
 def test_l_endpoint_notizie_serve_solo_le_notizie_dalla_cache(client, monkeypatch):

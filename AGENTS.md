@@ -763,8 +763,10 @@ Conseguenze pratiche per chi mette mano al codice:
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
 - **L'ordine della home**: categorie (le schede), poi il riepilogo «Oggi», il
-  calendario, le notizie del giorno e in fondo l'intestazione «Il Maggiordomo»
-  (`home-hero-basso`). Le categorie stanno subito sotto l'invito a parlare: si
+  calendario, le notizie del giorno, il riquadro «Domani» e in fondo
+  l'intestazione «Il Maggiordomo» (`home-hero-basso`, **centrata**:
+  `text-align: center` sul blocco, con `.con-icona` a `justify-content: center`).
+  Le categorie stanno subito sotto l'invito a parlare: si
   arriva in home per scegliere dove andare, e devono vedersi senza scorrere.
   Tutto il resto è da leggere, non da premere, quindi viene dopo. È un ordine
   scelto dall'utente, non un dettaglio di stile: prima le schede erano in fondo,
@@ -773,20 +775,30 @@ Conseguenze pratiche per chi mette mano al codice:
   **L'ordine delle schede è: Cucina, Appunti, FAQ, TV, GYM, Igiene**
   (`test_l_ordine_delle_categorie_in_home` lo fissa). L'Igiene è in fondo perché
   è la cosa che si guarda meno spesso; l'ordine è dell'utente, non alfabetico.
+  La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, un cappello
+  da chef sul cielo dell'app): prima usava il logo dell'app, quindi non si
+  distingueva. Le altre schede tengono la loro emoji (`test_la_cucina_ha_la_sua_icona`).
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
   endpoint dedicato: `/api/tv` tirerebbe giù anche i video, che in home non si
   mostrano. Stessa regola dell'endpoint TV (risposta subito dalla cache, un
   filo riprova dopo — `_aggiorna_notizie_in_sottofondo`) e del riepilogo «Oggi»
-  (se non c'è niente, il riquadro resta nascosto).
+  (se non c'è niente, il riquadro resta nascosto). **In home se ne mostrano al
+  massimo dieci** (`slice(0, 10)`): è un assaggio, e il taglio è della home, non
+  del feed — la sezione TV resta con tutte quelle della cache (`MAX_NOTIZIE`, 20,
+  `test_la_home_mostra_dieci_notizie_non_tutte`).
+- **Il riquadro «Domani» in home** (`renderHomeDomani`). Dopo le notizie: gli
+  impegni di domani non ancora chiusi e i pasti già scelti. È una sezione a sé
+  (non una riga dentro «Oggi»), perché un impegno di domani non è ancora scattato
+  e i pasti di domani non sono ancora cucinati. Le fonti si chiedono **in
+  parallelo** con `.catch` e, se non c'è niente, il riquadro resta nascosto —
+  stessa regola di «Oggi». Si ridisegna all'avvio e al ritorno in home
+  (`tornaAlleSezioni`).
 - **Il riepilogo «Oggi» in home** (`renderHomeOggi`). La home non è solo un menu:
-  mostra i pasti di oggi, le attività di casa da fare, gli impegni e cosa
-  sta per scadere in dispensa. Gli impegni di oggi li manda `prossimi` (i
-  promemoria scattati e le cose in ritardo); quelli di domani si chiedono a
-  parte con `?giorno=<domani>` e si suggeriscono come riga «Domani: …», solo
-  quelli non ancora chiusi — quelli che non avvisano ancora non stanno in
-  `prossimi`, e sapere stasera che domani c'è il dentista è utile. Le fonti si
+  mostra i pasti di oggi, le attività di casa da fare, gli impegni che avvisano
+  adesso e cosa sta per scadere in dispensa. Gli impegni di oggi li manda
+  `prossimi` (i promemoria scattati e le cose in ritardo). Le fonti si
   chiedono **in parallelo** e ognuna fallisce per conto suo (`.catch`): un errore
   sul calendario non deve far sparire i pasti. Se non c'è niente da dire il
   riquadro resta nascosto — una home con un riquadro vuoto è peggio di una home
@@ -2063,6 +2075,17 @@ e dito (`touchstart`/`touchend`, col gesto orizzontale). Lo scorrimento è
 **ciclico** (dopo l'ultimo si torna al primo) e i puntini sotto saltano a un film
 preciso. Un film **senza locandina si scarta** nel modulo: è una sezione di
 immagini, e una senza immagine non ispira niente.
+
+**La scheda del film è affiancata, non in colonna.** Locandina a sinistra e testo
+a destra (`.cinema-scheda` è una grid a due colonne, max 720px): così la locandina
+resta grande e titolo, trama e piattaforme si leggono senza scorrere, mentre in
+colonna il testo finiva sotto la piega. Sotto i 560px torna in colonna
+(`grid-template-columns: 1fr`) con la locandina più piccola (180px). Il **voto è
+un timbro sulla locandina** (`.cinema-voto`, pillola ambra in alto a destra), non
+una riga di testo: si legge guardando l'immagine. Sta **dentro** il bordo perché
+il carosello ha `overflow: hidden` e un timbro sporgente verrebbe tagliato. La
+trama lunga è limitata in altezza (`max-height`, `overflow: hidden`) per non
+spingere giù le frecce.
 
 Tre scelte recenti, tutte deliberate:
 

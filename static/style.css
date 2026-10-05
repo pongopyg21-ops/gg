@@ -144,7 +144,12 @@ body {
 .home-hero { margin-bottom: 34px; }
 /* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non
    aggiunge spazio sotto l'ultimo riquadro. */
-.home-hero-basso { margin: 34px 0 0; }
+.home-hero-basso { margin: 34px 0 0; text-align: center; }
+/* L'intestazione e' centrata, quindi anche la riga col nome e l'icona, e i
+   paragrafi (che hanno una larghezza massima) si centrano invece di restare
+   ancorati a sinistra. */
+.home-hero-basso .con-icona { justify-content: center; }
+.home-hero-basso .home-lead { margin-left: auto; margin-right: auto; }
 .home-kicker {
   margin: 0 0 10px; font-size: 12px; font-weight: 600;
   letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
@@ -263,9 +268,6 @@ body {
 .oggi-ico { font-size: 16px; line-height: 1.3; flex: none; }
 .oggi-txt { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
 .oggi-meal { color: var(--muted); font-weight: 400; }
-/* la riga di domani e' un suggerimento, non un impegno di oggi: un filo piu'
-   tenue, cosi' non si confonde con gli avvisi che scattano adesso */
-.oggi-domani .oggi-txt { color: var(--muted); }
 
 /* Il calendario degli impegni in fondo alla home. Stessa veste del riquadro
    «Oggi», ma con dentro la griglia del mese (le classi .cal-* sono quelle della
@@ -310,6 +312,20 @@ body {
 /* l'ultima voce non porta la riga di separazione: dentro un riquadro chiuso
    sembrerebbe una riga di troppo */
 .home-notizie .tv-notizia:last-child a { border-bottom-color: transparent; }
+
+/* Domani, sotto le notizie: cosa c'e' in programma e cosa si mangia. Stessa
+   veste degli altri riquadri della home, con le righe del riepilogo «Oggi». */
+.home-domani {
+  margin: 0 0 24px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.domani-titolo {
+  margin: 0 0 10px; font-family: var(--font-display);
+  font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--accent-deep);
+}
 
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
@@ -2035,24 +2051,38 @@ button { transition: transform .12s ease; }
 .cinema-locandina { flex: 1; min-width: 0; display: flex; justify-content: center; }
 
 .cinema-scheda {
-  margin: 0; display: flex; flex-direction: column; align-items: center;
-  gap: 14px; max-width: 340px; width: 100%;
+  margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 22px; max-width: 720px; width: 100%;
 }
+.cinema-poster-box { position: relative; }
 .cinema-poster {
-  width: 100%; max-width: 300px; aspect-ratio: 2 / 3; object-fit: cover;
-  border-radius: 8px; box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .8);
+  width: 210px; aspect-ratio: 2 / 3; object-fit: cover; display: block;
+  border-radius: 10px; box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .85);
   background: #0d2029;
 }
-.cinema-info { color: #eaf4f8; text-align: center; padding: 0 8px; }
-.cinema-titolo { margin: 0 0 4px; font-size: 18px; line-height: 1.3; }
-.cinema-meta { margin: 0 0 8px; font-size: 13px; color: #a9c6d2; display: flex; gap: 10px; justify-content: center; }
-.cinema-voto { color: #ffd479; }
-.cinema-piattaforme { margin: 0 0 8px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.cinema-info { color: #eaf4f8; text-align: left; padding: 0; }
+.cinema-titolo { margin: 0 0 6px; font-size: 22px; line-height: 1.2; }
+.cinema-meta { margin: 0 0 10px; font-size: 13px; color: #a9c6d2; display: flex; gap: 10px; }
+/* Il voto e' un timbro sulla locandina: si legge guardando l'immagine, senza
+   scendere nel testo. Sta dentro il bordo, cosi' non viene tagliato dal
+   carosello (`overflow: hidden`). */
+.cinema-voto {
+  position: absolute; top: 10px; right: 10px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 9px; border-radius: 999px;
+  background: #ffd479; color: #2a2417; font-weight: 700; font-size: 13px;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .75);
+}
+.cinema-voto-num { font-variant-numeric: tabular-nums; }
+.cinema-piattaforme { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .cinema-piattaforma {
   font-size: 11.5px; padding: 2px 9px; border-radius: 999px;
   background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .22);
 }
-.cinema-trama { margin: 0; font-size: 13px; line-height: 1.5; color: #cfe2ea; }
+.cinema-trama {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: #cfe2ea;
+  max-height: 7.8em; overflow: hidden;   /* la trama lunga non spinge giu' le frecce */
+}
 
 /* Le frecce stanno sopra il carosello, ai lati, e sono grandi abbastanza da
    essere toccate: sono il modo principale per sfogliare. */
@@ -2116,6 +2146,11 @@ button { transition: transform .12s ease; }
 @media (max-width: 560px) {
   .cinema-freccia { width: 40px; height: 40px; font-size: 22px; }
   .cinema-carosello { gap: 4px; padding: 14px 0; }
-  .cinema-poster { max-width: 220px; }
+  /* su schermo stretto la scheda torna in colonna: affiancate, locandina e
+     testo si schiaccerebbero a vicenda */
+  .cinema-scheda { grid-template-columns: 1fr; justify-items: center; gap: 16px; }
+  .cinema-info { text-align: center; }
+  .cinema-poster { width: 180px; }
+  .cinema-piattaforme { justify-content: center; }
 }
 

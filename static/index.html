@@ -103,7 +103,7 @@
        devono stare subito sotto l'invito a parlare, non in fondo. -->
   <div class="home-cards">
     <button class="home-card" data-section="cucina">
-      <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/icona.svg" alt=""></span>
+      <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/cucina.svg" alt=""></span>
       <span class="home-name">Cucina</span>
       <span class="home-desc">Piano pasti, ricette, dispensa e lista della spesa,
         con i comandi vocali per quando hai le mani occupate.</span>
@@ -176,6 +176,14 @@
       <button id="home-notizie-apri" class="ghost">Apri →</button>
     </div>
     <div id="home-notizie-elenco" class="tv-notizie"></div>
+  </section>
+  <!-- Domani: cosa c'e' in programma e cosa si mangia. Sta dopo le notizie
+       perche' e' la cosa da preparare, non da leggere adesso. Solo gli impegni
+       non ancora chiusi e i pasti gia' scelti; se non c'e' niente il riquadro
+       resta nascosto, come «Oggi». -->
+  <section id="home-domani" class="home-domani hidden" aria-label="Domani">
+    <h2 class="domani-titolo">🔜 Domani</h2>
+    <div id="home-domani-corpo"></div>
   </section>
   <!-- L'intestazione chiude la home: prima si sceglie, si legge cos'e' oggi e
        cosa c'e' in calendario, poi il nome dell'app. In alto era la prima cosa

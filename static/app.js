@@ -136,10 +136,10 @@ async function applicaPasti(n) {
    a un'area (`data-section`): aprendo un'area si mostrano solo le sue, così
    le aree restano separate invece di mischiarsi in un'unica barra piena di voci. */
 const SEZIONI = {
-  // La Cucina porta l'icona dell'app (la bandiera col cielo sereno) invece di
-  // un'emoji: e' l'area principale e la si riconosce a colpo d'occhio. Le altre
-  // tengono la loro, che le distingue meglio di un simbolo unico.
-  cucina:   { titolo: 'Cucina',   icona: '/static/icons/icona.svg', prima: 'plan' },
+  // La Cucina ha un cappello da chef sul cielo sereno dell'app: e' l'area
+  // principale e la si riconosce a colpo d'occhio. Le altre tengono la loro
+  // emoji, che le distingue meglio di un simbolo unico.
+  cucina:   { titolo: 'Cucina',   icona: '/static/icons/cucina.svg', prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Appunti', prima: 'progetti' },
   faq:      { titolo: '\u{1F4CC} FAQ',      prima: 'faq' },
@@ -189,6 +189,7 @@ function tornaAlleSezioni() {
   // cambiate, si vedono subito.
   renderHomeCalendario();
   renderHomeNotizie();
+  renderHomeDomani();
 }
 
 /* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
@@ -494,15 +495,22 @@ function disegnaFilm() {
   const f = cinemaFilm[cinemaIndice];
   if (!f) return;
   const piattaforme = (f.piattaforme || []).map((p) => `<span class="cinema-piattaforma">${esc(p)}</span>`).join('');
-  const voto = f.voto ? `<span class="cinema-voto" title="${f.voti} voti">★ ${f.voto}</span>` : '';
+  // il voto e' un timbro sulla locandina: si legge a colpo d'occhio anche solo
+  // guardando l'immagine, senza scendere nel testo
+  const voto = f.voto
+    ? `<span class="cinema-voto" title="${f.voti} voti"><span class="cinema-voto-num">${esc(f.voto)}</span>★</span>`
+    : '';
   const anno = f.anno ? `<span class="cinema-anno">${esc(f.anno)}</span>` : '';
   $('#cinema-locandina').innerHTML = `
     <figure class="cinema-scheda">
-      <img class="cinema-poster" src="${esc(f.locandina)}" alt="Locandina di ${esc(f.titolo)}"
-           loading="lazy" draggable="false">
+      <div class="cinema-poster-box">
+        <img class="cinema-poster" src="${esc(f.locandina)}" alt="Locandina di ${esc(f.titolo)}"
+             loading="lazy" draggable="false">
+        ${voto}
+      </div>
       <figcaption class="cinema-info">
         <h4 class="cinema-titolo">${esc(f.titolo)}</h4>
-        <p class="cinema-meta">${anno}${voto}</p>
+        <p class="cinema-meta">${anno}</p>
         ${piattaforme ? `<p class="cinema-piattaforme">${piattaforme}</p>` : ''}
         ${f.trama ? `<p class="cinema-trama">${esc(f.trama)}</p>` : ''}
       </figcaption>
@@ -5689,12 +5697,13 @@ async function init() {
   renderHomeOggi();
   renderHomeCalendario();
   renderHomeNotizie();
+  renderHomeDomani();
 }
 
 /* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi, gli
-   impegni (di oggi e un suggerimento su quelli di domani) e cosa sta per
-   scadere in dispensa. Non e' una nuova sezione, e' la home che dice qualcosa
-   invece di essere solo un menu.
+   impegni che avvisano adesso e cosa sta per scadere in dispensa. Non e' una
+   nuova sezione, e' la home che dice qualcosa invece di essere solo un menu.
+   Domani ha un riquadro suo, piu' sotto (vedi `renderHomeDomani`).
 
    Le fonti si chiedono in parallelo e ognuna fallisce per conto suo: un errore
    sul calendario non deve far sparire i pasti. Se non c'e' niente da dire il
@@ -5703,17 +5712,13 @@ async function renderHomeOggi() {
   const box = $('#home-oggi');
   if (!box) return;
   const oggi = iso(new Date());
-  const domaniData = new Date();
-  domaniData.setDate(domaniData.getDate() + 1);
-  const domani = iso(domaniData);
   const esiti = await Promise.all([
     api(`/api/plan?start=${oggi}&end=${oggi}`).catch(() => []),
     api('/api/chores').catch(() => null),
     api(`/api/appointments?giorno=${oggi}`).catch(() => null),
-    api(`/api/appointments?giorno=${domani}`).catch(() => null),
     api('/api/pantry').catch(() => []),
   ]);
-  const [pasti, chores, appuntamenti, domaniAppuntamenti, dispensa] = esiti;
+  const [pasti, chores, appuntamenti, dispensa] = esiti;
 
   const pastiHtml = pasti.length
     ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
@@ -5743,16 +5748,6 @@ async function renderHomeOggi() {
            avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
     : '';
 
-  // Quelli di domani, come suggerimento: quelli non ancora scattati non stanno
-  // in `prossimi`, ma sapere stasera che domani c'e' il dentista e' utile. Solo
-  // quelli da fare: un impegno di domani gia' chiuso non e' un impegno.
-  const domaniVoci = (domaniAppuntamenti?.appointments || []).filter((a) => !a.done);
-  const domaniHtml = domaniVoci.length
-    ? `<div class="oggi-riga oggi-domani"><span class="oggi-ico" aria-hidden="true">🔜</span>
-         <span class="oggi-txt">Domani: ${domaniVoci.slice(0, 3).map(unaVoce).join('<br>')}${
-           domaniVoci.length > 3 ? `<br>e altri ${domaniVoci.length - 3}` : ''}</span></div>`
-    : '';
-
   // quello che scade entro pochi giorni: e' l'informazione che si perde piu'
   // facilmente restando in dispensa
   const inScadenza = (dispensa || []).filter((v) => {
@@ -5766,7 +5761,7 @@ async function renderHomeOggi() {
          }</strong>${inScadenza.length > 4 ? ` e altri ${inScadenza.length - 4}` : ''}</span></div>`
     : '';
 
-  const contenuto = pastiHtml + choresHtml + appHtml + domaniHtml + scadHtml;
+  const contenuto = pastiHtml + choresHtml + appHtml + scadHtml;
   if (!contenuto) {
     box.classList.add('hidden');
     box.innerHTML = '';
@@ -5859,8 +5854,12 @@ async function renderHomeNotizie() {
   catch (e) { box.classList.add('hidden'); return; }
   const notizie = dati.notizie || [];
   if (!notizie.length) { box.classList.add('hidden'); return; }
+  // In home se ne mostrano al massimo dieci: e' un assaggio, non l'elenco
+  // completo. La sezione TV resta con tutte quelle della cache (`MAX_NOTIZIE`,
+  // 20): il taglio e' della home, non del feed.
+  const inHome = notizie.slice(0, 10);
   // solo i titoli, con fonte e data: la home rimanda alla TV per il resto
-  $('#home-notizie-elenco').innerHTML = notizie.map((n) => `
+  $('#home-notizie-elenco').innerHTML = inHome.map((n) => `
     <article class="tv-notizia">
       <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
         <span class="tv-notizia-titolo">${esc(n.titolo)}</span>
@@ -5868,6 +5867,45 @@ async function renderHomeNotizie() {
           n.data ? ` · ${esc(n.data.slice(0, 10))}` : ''} · apri la fonte ↗</span>
       </a>
     </article>`).join('');
+  box.classList.remove('hidden');
+}
+
+/* Domani, dopo le notizie: cosa c'e' in programma e cosa si mangia. Sono due
+   cose diverse da «Oggi» — un impegno di domani non e' ancora scattato, e i
+   pasti di domani non sono ancora cucinati — quindi hanno un riquadro loro.
+   Solo gli impegni non chiusi (uno gia' fatto non e' un impegno) e i pasti gia'
+   scelti; se non c'e' niente il riquadro resta nascosto, come «Oggi». */
+async function renderHomeDomani() {
+  const box = $('#home-domani');
+  if (!box) return;
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const domani = iso(d);
+  const esiti = await Promise.all([
+    api(`/api/appointments?giorno=${domani}`).catch(() => null),
+    api(`/api/plan?start=${domani}&end=${domani}`).catch(() => []),
+  ]);
+  const [appuntamenti, pasti] = esiti;
+  const impegni = (appuntamenti?.appointments || []).filter((a) => !a.done);
+  const righe = [];
+  if (impegni.length) {
+    righe.push(`<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">📆</span>
+      <span class="oggi-txt">${impegni.slice(0, 4).map((a) =>
+        `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`
+      ).join('<br>')}${impegni.length > 4 ? `<br>e altri ${impegni.length - 4}` : ''}</span></div>`);
+  }
+  if (pasti.length) {
+    righe.push(`<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
+      <span class="oggi-txt">Si mangia: <strong>${pasti.map((p) =>
+        `${esc(p.recipe_name)} <span class="oggi-meal">(${esc(p.meal)})</span>`
+      ).join(', ')}</strong></span></div>`);
+  }
+  if (!righe.length) {
+    box.classList.add('hidden');
+    $('#home-domani-corpo').innerHTML = '';
+    return;
+  }
+  $('#home-domani-corpo').innerHTML = righe.join('');
   box.classList.remove('hidden');
 }
 
