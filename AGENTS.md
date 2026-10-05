@@ -654,6 +654,23 @@ Conseguenze pratiche per chi mette mano al codice:
   deve stare in mezzo a quelle pronte. La tendina del piano pasti **non** segue
   questo ordine: lì resta l'ordine dell'API, perché scegliere un pasto è un'altra
   cosa dal guardare il ricettario.
+- **Dal ricettario si aggiunge al piano senza cambiare scheda.** Ogni scheda ha
+  un pulsante `+ Piano` (`data-plan`) e il dettaglio della ricetta ha «Aggiungi
+  al piano»: entrambi aprono `openPlanPicker(ricetta)`, che chiede **giorno,
+  pasto e porzioni** con la ricetta **già scelta**. È il verso opposto di
+  `openMealPicker(date, meal)`, che per un pasto vuoto del Piano fa scegliere la
+  ricetta da una tendina. Il motivo è la richiesta: nel Piano si sceglie una
+  ricetta **senza vederne la foto**, e per una cosa che si mangia l'immagine è
+  metà della scelta. Così si guarda il ricettario e si decide lì.
+  Due dettagli non ovvi: (1) le porzioni proposte sono quelle della ricetta
+  (`r.servings`), non un 2 fisso, perché è il numero per cui la ricetta è
+  scritta; (2) alla conferma si ridisegna il Piano **solo se è la scheda
+  aperta** (`#tab-plan.active`), perché `openPlanPicker` si può chiamare anche
+  da dentro il dettaglio aperto dal Piano (dove serve il ridisegno) e dal
+  ricettario (dove una richiesta a vuoto non serve). Dal dettaglio il pulsante
+  «Aggiungi al piano» c'è **solo** quando non c'è già «Rimuovi dal piano»: le
+  due azioni si escludono. `pastiDelGiorno()` è l'unica definizione dei pasti
+  per il selettore, con la stessa riserva del Piano se `MEALS` non è arrivato.
 - **Togliere una ricetta dal ricettario richiede due passaggi, non uno.** Va
   messa in `seed.REMOVED` **e** tolta da `RECIPES` (con `PHOTOS`,
   `PREPARAZIONI_PRECEDENTI` e il file in `static/recipes/`). Solo `REMOVED` non

@@ -5283,6 +5283,70 @@ console.log(esiti.join('\\n'));
     assert "NO " not in esito.stdout, esito.stdout
 
 
+def test_ogni_scheda_ricetta_ha_il_pulsante_piano(client):
+    """Dal ricettario si aggiunge al piano con un pulsante, senza tornare nella
+    scheda Piano: la ricetta si sceglie per quello che si vede (foto compresa).
+    Il pulsante sta sulla scheda e apre `openPlanPicker`, non il selettore dei
+    pasti vuoti (`openMealPicker`), che e' il verso opposto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert 'data-plan="${r.id}"' in js
+    # il click sul pulsante porta al selettore con la ricetta gia' scelta
+    assert 'openPlanPicker(Number(planId))' in js
+    # e il dettaglio della ricetta offre lo stesso, quando non e' gia' nel piano
+    assert 'id="rd-plan"' in js
+    assert "openPlanPicker(r, { conflicts: contesto.conflicts })" in js
+
+
+def test_il_pulsante_piano_precompila_giorno_pasto_e_porzioni(client):
+    """`openPlanPicker` costruisce il modulo con la ricetta gia' scelta: giorno
+    (oggi preselezionato), pasto e porzioni della ricetta. Si esegue la funzione
+    vera con node: un test sulle stringhe non vedrebbe un selettore vuoto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    inizio = js.index("function pastiDelGiorno")
+    blocco = js[inizio:js.index("$('#week-prev')", inizio)]
+    prova = """
+const finte = [];
+const valori = { '#pp-day': '2026-10-05', '#pp-meal': 'Cena', '#pp-serv': '4' };
+global.showModal = (t, c) => { global._titolo = t; global._corpo = c; };
+global.hideModal = () => { global._chiuso = true; };
+global.$ = (sel) => ({ value: valori[sel] || '',
+  addEventListener: (ev, fn) => finte.push([sel, fn]),
+  classList: { contains: () => false } });
+global.esc = (s) => String(s ?? '');
+global.toast = () => {};
+global.addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+global.iso = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+global.fmtDay = (d) => `giorno${d.getDate()}`;
+global.weekStart = new Date(2026, 9, 5);
+global.MEALS = ['Colazione', 'Pranzo', 'Cena'];
+global.recipesCache = [{ id: 7, name: 'Carbonara', servings: 4, conflicts: [] }];
+global.api = async (url, opts) => { global._chiamata = [url, opts]; return {}; };
+""" + blocco + """
+(async () => {
+  await openPlanPicker(7);
+  const esiti = [];
+  esiti.push((global._titolo.includes('Carbonara') ? 'ok' : 'NO') + ' titolo con la ricetta');
+  esiti.push((global._corpo.includes('id="pp-day"') && global._corpo.includes('Oggi')
+    ? 'ok' : 'NO') + ' giorno con oggi preselezionato');
+  esiti.push((global._corpo.includes('id="pp-meal"') && global._corpo.includes('>Cena<')
+    ? 'ok' : 'NO') + ' pasti nel selettore');
+  esiti.push((global._corpo.includes('id="pp-serv"') && global._corpo.includes('value="4"')
+    ? 'ok' : 'NO') + ' porzioni della ricetta');
+  finte.find(([sel]) => sel === '#pp-ok')[1]();
+  await new Promise((r) => setTimeout(r, 0));
+  const [, opts] = global._chiamata;
+  esiti.push((opts.body.recipe_id === 7 && opts.body.meal === 'Cena'
+    && opts.body.servings === 4 && opts.body.date === '2026-10-05'
+    ? 'ok' : 'NO') + ' invio al piano con ricetta, pasto e porzioni');
+  console.log(esiti.join('\\n'));
+})();
+"""
+    import subprocess
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    assert "NO " not in esito.stdout, esito.stdout
+
+
 def test_una_sessione_di_una_casa_eliminata_non_da_errore(anon):
     anon.post("/api/houses", json={"nome": "Casa A", "password": "aaaa"})
     houses.elimina("casa-a")

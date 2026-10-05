@@ -757,6 +757,59 @@ async function openMealPicker(date, meal) {
   });
 }
 
+/* I pasti validi per il giorno: quelli scelti dall'utente, con la stessa
+   definizione di riserva del Piano se `MEALS` non e' ancora arrivato. */
+function pastiDelGiorno() {
+  return MEALS.length ? MEALS : ['Colazione', 'Pranzo', 'Cena'];
+}
+
+/* Mette una ricetta nel piano senza tornare nella scheda Piano: si sceglie il
+   giorno e il pasto, la ricetta e' gia' quella che si stava guardando (foto
+   compresa). E' il verso opposto di `openMealPicker`, che sceglie la ricetta
+   per un pasto vuoto. Accetta l'id o la scheda gia' in memoria. */
+async function openPlanPicker(ricetta, contesto = {}) {
+  const r = typeof ricetta === 'object' ? ricetta
+    : recipesCache.find((x) => x.id === Number(ricetta));
+  if (!r) return toast('Ricetta non trovata');
+  const giorni = [...Array(7)].map((_, i) => addDays(weekStart, i));
+  const oggi = iso(new Date());
+  const opzioniGiorno = giorni.map((d) => {
+    const k = iso(d);
+    const etichetta = `${k === oggi ? 'Oggi · ' : ''}${fmtDay(d)}`;
+    return `<option value="${k}" ${k === oggi ? 'selected' : ''}>${esc(etichetta)}</option>`;
+  }).join('');
+  const opzioniPasto = pastiDelGiorno().map((m, i) =>
+    `<option value="${esc(m)}" ${i === 0 ? 'selected' : ''}>${esc(m)}</option>`).join('');
+  const conflitti = contesto.conflicts || r.conflicts || [];
+  showModal(`Aggiungi «${r.name}» al piano`, `
+    <div class="field"><label>Giorno</label><select id="pp-day">${opzioniGiorno}</select></div>
+    <div class="field"><label>Pasto</label><select id="pp-meal">${opzioniPasto}</select></div>
+    <div class="field"><label>Porzioni</label>
+      <input id="pp-serv" type="number" min="1" value="${Number(r.servings) || 2}"></div>
+    ${conflitti.length
+      ? `<div class="banner"><strong>⚠️ Contiene: ${conflitti.map(esc).join(', ')}</strong>
+           <p>Hai dichiarato queste restrizioni nel profilo. Puoi comunque aggiungerla.</p></div>`
+      : ''}
+    <div class="modal-foot">
+      <button id="pp-cancel">Annulla</button>
+      <button class="primary" id="pp-ok">Aggiungi al piano</button>
+    </div>
+  `);
+  $('#pp-cancel').addEventListener('click', hideModal);
+  $('#pp-ok').addEventListener('click', async () => {
+    await api('/api/plan', {
+      method: 'POST',
+      body: { date: $('#pp-day').value, meal: $('#pp-meal').value,
+              recipe_id: r.id, servings: Number($('#pp-serv').value) },
+    });
+    hideModal();
+    toast('Aggiunto al piano');
+    // il Piano puo' essere aperto dietro (dettaglio dal piano): si ridisegna.
+    // Dal ricettario no, e allora una richiesta a vuoto non serve.
+    if ($('#tab-plan').classList.contains('active')) renderPlan();
+  });
+}
+
 $('#week-prev').addEventListener('click', () => { weekStart = addDays(weekStart, -7); renderPlan(); });
 $('#week-next').addEventListener('click', () => { weekStart = addDays(weekStart, 7); renderPlan(); });
 $('#week-today').addEventListener('click', () => { weekStart = startOfWeek(new Date()); renderPlan(); });
@@ -831,6 +884,7 @@ async function renderRecipes() {
       ${allerg}${warn}
       <div class="actions">
         <button class="fav-toggle ${r.favorite ? 'on' : ''}" data-fav="${r.id}" title="${r.favorite ? 'Togli dalle preferite' : 'Segna come preferita'}">${r.favorite ? '★ Preferita' : '☆ Preferita'}</button>
+        <button data-plan="${r.id}" title="Aggiungi questa ricetta al piano">+ Piano</button>
         <button data-open="${r.id}">Preparazione</button>
         <button data-edit="${r.id}">Modifica</button>
         <button data-del="${r.id}">Elimina</button>
@@ -849,6 +903,7 @@ $('#recipe-list').addEventListener('click', async (e) => {
   const editId = e.target.dataset.edit;
   const delId = e.target.dataset.del;
   const favId = e.target.dataset.fav;
+  const planId = e.target.dataset.plan;
   const openId = e.target.closest('.card')?.dataset.recipe;
   if (favId) {
     // la stella agisce sulla scheda: non deve aprire la preparazione
@@ -858,6 +913,10 @@ $('#recipe-list').addEventListener('click', async (e) => {
     await saveFavorites(next);
     toast(r && r.favorite ? 'Tolta dalle preferite' : 'Aggiunta alle preferite');
     renderRecipes();
+  } else if (planId) {
+    // dal ricettario si mette in tavola senza tornare nel Piano: la ricetta e'
+    // sotto gli occhi (foto compresa), e la si sceglie per quello che si vede
+    openPlanPicker(Number(planId));
   } else if (editId) recipeForm(recipesCache.find((r) => r.id === Number(editId)));
   else if (delId) {
     if (!confirm('Eliminare la ricetta?')) return;
@@ -920,6 +979,7 @@ async function showRecipeDetail(rid, contesto = {}) {
     ${r.source ? `<p class="detail-source muted">Fonte: ${esc(r.source)}</p>` : ''}
     <div class="modal-foot">
       ${contesto.onRemove ? '<button id="rd-remove">Rimuovi dal piano</button>' : ''}
+      ${contesto.onRemove ? '' : '<button id="rd-plan">Aggiungi al piano</button>'}
       <button class="primary" id="rd-edit">Modifica</button>
     </div>
   `);
@@ -938,6 +998,9 @@ async function showRecipeDetail(rid, contesto = {}) {
   });
 
   $('#rd-edit').addEventListener('click', () => recipeForm(r));
+  if ($('#rd-plan')) {
+    $('#rd-plan').addEventListener('click', () => openPlanPicker(r, { conflicts: contesto.conflicts }));
+  }
   if (contesto.onRemove) {
     $('#rd-remove').addEventListener('click', async () => {
       hideModal();
