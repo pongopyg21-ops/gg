@@ -745,15 +745,17 @@ Conseguenze pratiche per chi mette mano al codice:
   perché è quella da cucinare adesso. La card dice quali (`sug-scade`), invece di
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   è anche l'unico posto in cui il modulo guarda la data vera — i test lo passano.
-- **L'ordine della home**: categorie (le schede «Cucina, Igiene, …»), poi il
-  riepilogo «Oggi», il calendario, le notizie del giorno e in fondo
-  l'intestazione «Il Maggiordomo» (`home-hero-basso`). Le categorie stanno
-  subito sotto l'invito a parlare: si arriva in home per scegliere dove andare,
-  e devono vedersi senza scorrere. Tutto il resto è da leggere, non da premere,
-  quindi viene dopo. È un ordine scelto dall'utente, non un dettaglio di stile:
-  prima le schede erano in fondo, ed era sbagliato. L'intestazione era invece in
-  cima e spingeva giù le categorie: ora chiude la pagina (vedi
-  `test_l_intestazione_chiude_la_home`).
+- **L'ordine della home**: categorie (le schede), poi il riepilogo «Oggi», il
+  calendario, le notizie del giorno e in fondo l'intestazione «Il Maggiordomo»
+  (`home-hero-basso`). Le categorie stanno subito sotto l'invito a parlare: si
+  arriva in home per scegliere dove andare, e devono vedersi senza scorrere.
+  Tutto il resto è da leggere, non da premere, quindi viene dopo. È un ordine
+  scelto dall'utente, non un dettaglio di stile: prima le schede erano in fondo,
+  ed era sbagliato. L'intestazione era invece in cima e spingeva giù le
+  categorie: ora chiude la pagina (vedi `test_l_intestazione_chiude_la_home`).
+  **L'ordine delle schede è: Cucina, Appunti, FAQ, TV, GYM, Igiene**
+  (`test_l_ordine_delle_categorie_in_home` lo fissa). L'Igiene è in fondo perché
+  è la cosa che si guarda meno spesso; l'ordine è dell'utente, non alfabetico.
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
@@ -1013,8 +1015,9 @@ Conseguenze pratiche per chi mette mano al codice:
 - **La scheda «Voce» delle FAQ e' stata rimossa**: timbro, voce di sistema, voce
   neurale e suono non hanno piu' un pannello. Le preferenze restano in
   `localStorage` col loro comportamento predefinito, e il codice che le legge e'
-  null-safe o centralizzato (`confermaVoce()`). L'interruttore della comprensione
-  col modello si e' spostato in **Profilo**, perche' serve davvero. La voce
+  null-safe o centralizzato (`confermaVoce()`). Anche l'interruttore della
+  comprensione col modello non c'e' piu': e' stato tolto dal Profilo (vedi
+  «Capire i comandi»). La voce
   naturale Azure resta attiva quando il server ha la chiave (`cloudAttivo()` =
   `voceCloud.disponibile`): si spegne togliendo la chiave, non da una casella.
   **Attenzione alle chiamate che restano.** Togliendo la scheda era stata rimossa
@@ -1138,6 +1141,15 @@ Conseguenze pratiche per chi mette mano al codice:
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione
   della cucina e resta nascosto altrove.
+- **Il Profilo si raggiunge anche dalle FAQ.** La scheda «⚠️ Profilo» ha
+  `data-section="faq"` **e** una gemella con `data-section="cucina"`: è la stessa
+  scheda in due aree, perché `data-section` filtra la barra e `data-tab` sceglie
+  il pannello. Nessun codice nuovo: `#tabs button[data-tab="profile"]` chiama
+  `renderProfile()` come prima. Sta anche nelle FAQ perché lì vive la stessa
+  specie di cose — password della casa, tema — cioè impostazioni di servizio che
+  si cambiano, non voci da consultare. Il pannello `#tab-profile` resta **uno
+  solo** (un id duplicato, come per i preferiti del Cinema, darebbe un elemento
+  che non si vede).
 - L'onboarding ha cinque passi (`passoPasti`, `passoBucati`, `passoNotizie` dentro
   `openOnboarding`, più `openFavoritesStep`): quanti pasti, allergie, bucati al
   giorno, argomenti delle notizie, preferite. Il numero nell'intestazione («Passo N
@@ -1263,6 +1275,16 @@ distinguere le versioni e va onorato, non aggirato con la cache. Il
 (`...-v2`) le copie vecchie vengono sfrattate al prossimo `activate`.
 
 ## Capire i comandi con un modello (facoltativo)
+
+> **Stato attuale: la funzione esiste sul server, ma non ha piu' un pannello.**
+> L'interruttore «Capire i comandi» e' stato tolto dal Profilo su richiesta
+> dell'utente: `#voice-llm`, `#voice-llm-block`, `#voice-llm-avviso`,
+> `popolaLlm()` e il suo ascoltatore non esistono piu'. La rotta
+> `PUT /api/voce/llm` e `comprensione.py` restano, quindi riaccendere la
+> funzione e' una scelta di prodotto (un interruttore nuovo) e non un lavoro da
+> rifare: il codice della comprensione e' intatto. Con `llm_prefs.abilitato` a
+> `0` l'app usa il parser a regole, come sempre. Il capitolo resta perche' spiega
+> come funziona la parte server.
 
 Il parser a regole di `voice.py` capisce le frasi previste e lascia fuori le
 altre: «dammi la lista della spesa», «fammi vedere la dispensa», «metti via il

@@ -109,13 +109,6 @@
         con i comandi vocali per quando hai le mani occupate.</span>
       <span class="home-go">Apri →</span>
     </button>
-    <button class="home-card" data-section="igiene">
-      <span class="home-emoji">🧹</span>
-      <span class="home-name">Igiene</span>
-      <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
-        da ricordare.</span>
-      <span class="home-go">Apri →</span>
-    </button>
     <button class="home-card" data-section="progetti">
       <span class="home-emoji">📋</span>
       <span class="home-name">Appunti</span>
@@ -142,6 +135,13 @@
       <span class="home-name">GYM</span>
       <span class="home-desc">La playlist degli esercizi, per allenarsi in casa
         seguendo i video senza uscire dall'app.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+    <button class="home-card" data-section="igiene">
+      <span class="home-emoji">🧹</span>
+      <span class="home-name">Igiene</span>
+      <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
+        da ricordare.</span>
       <span class="home-go">Apri →</span>
     </button>
   </div>
@@ -210,6 +210,7 @@
   <button data-tab="calendario" data-section="progetti">📆 Calendario</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
+  <button data-tab="profile" data-section="faq">⚠️ Profilo</button>
   <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
   <button data-tab="gym" data-section="gym">🏋️ GYM</button>
 </nav>
@@ -329,20 +330,6 @@
       </div>
       <div id="pf-favorites"></div>
     </div>
-    <h3 class="section-title">Capire i comandi</h3>
-    <div class="panel">
-      <p class="hint">Il microfono trascrive, ma è la comprensione a decidere cosa
-      fare. Con un modello l'app capisce anche le frasi che il riconoscitore a
-      regole non prevede («dammi la lista della spesa», «metti via
-      il vino in cantina»). Senza un modello configurato si continua a usare
-      il riconoscitore a regole, e l'app funziona come prima.</p>
-      <div id="voice-llm-block" hidden>
-        <label class="toggle"><input type="checkbox" id="voice-llm"> Comprendi i comandi col modello</label>
-      </div>
-      <p id="voice-llm-avviso" class="voice-avviso" hidden></p>
-    </div>
-    <h3 class="section-title">Riepilogo ingredienti</h3>
-    <div id="pf-report"></div>
     <div class="panel">
       <div class="field">
         <label>I tuoi dati</label>

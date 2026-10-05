@@ -3213,25 +3213,7 @@ async function renderProfile() {
   if (!recipesCache.length) recipesCache = await api('/api/recipes?full=1');
   favoritesPicker(favBox, recipesCache, profile.favorite_ids || [], (ids) => saveFavorites(ids));
 
-  await renderReport(declared);
   await mostraCopie();
-}
-
-// riepilogo: quali ingredienti in uso contengono un allergene riconosciuto
-async function renderReport(declared) {
-  const map = await api('/api/profile/allergens');
-  const rows = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0], 'it'));
-  $('#pf-report').innerHTML = rows.map(([name, tags]) => {
-    const hit = tags.length && declared.some((t) => {
-      const key = meta.allergens.find((a) =>
-        a.key.toLowerCase() === t.toLowerCase() || a.label.toLowerCase() === t.toLowerCase());
-      return key ? tags.includes(key.key) : false;
-    });
-    const labels = tags.map((t) => labelOf(t)).join(', ');
-    return `<div class="report-row ${hit ? 'unsafe' : ''}">
-      <span class="ing">${hit ? '⚠️ ' : ''}${esc(name)}</span>
-      <span class="tags">${labels ? esc(labels) : '—'}</span></div>`;
-  }).join('') || '<p>Nessun ingrediente in uso.</p>';
 }
 
 $('#pf-allergens').addEventListener('click', async (e) => {
@@ -4037,37 +4019,11 @@ async function caricaVoceCloud() {
     voceCloud.llmPronto = !!d.llm_pronto;
     voceCloud.llmManca = d.llm_manca || '';
     voceCloud.llmAbilitato = !!d.llm_abilitato;
-    popolaLlm();
     mostraAvvisoRobotica();
     // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
     // significa non farle aspettare dopo, quando servono davvero
     preriscaldaFrasiFisse();
   } catch (_e) { /* resta la voce del browser */ }
-}
-
-/** Mostra l'interruttore della comprensione col modello, se il modello risponde.
-
-    Ci sono due casi diversi e prima si confondevano: la **configurazione** c'e'
-    (chiave registrata, oppure l'endpoint locale predefinito, che c'e' sempre) e
-    il modello **risponde**. Il secondo caso e' quello che conta: con Ollama
-    spento l'interruttore si accendeva a vuoto e ogni comando finiva in silenzio
-    sulle regole. Se non risponde, il blocco sparisce e resta un avviso che dice
-    la causa e cosa fare (`llm_manca`), che e' l'unica cosa che serve per uscirne. */
-function popolaLlm() {
-  const blocco = $('#voice-llm-block');
-  const avviso = $('#voice-llm-avviso');
-  if (!blocco) return;
-  blocco.hidden = !voceCloud.llmPronto;
-  if (avviso) {
-    avviso.hidden = voceCloud.llmPronto;
-    avviso.textContent = voceCloud.llmPronto ? '' : (voceCloud.llmManca ||
-      'Per capire i comandi con un modello serve la chiave, registrata come segreto LLM_API_KEY prima di avviare l\'app.');
-  }
-  const sel = $('#voice-llm');
-  if (sel) {
-    sel.checked = voceCloud.llmAbilitato;
-    sel.disabled = !voceCloud.llmPronto;
-  }
 }
 
 /** Il suono è attivo salvo esplicita disattivazione: la preferenza si ricorda. */
@@ -5442,39 +5398,10 @@ $('#voice-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') inv
 // legge ancora, ma non c'è più un pannello che le cambi. La voce di sistema e
 // quella neurale continuano a funzionare con i valori predefiniti.
 
-// comprensione col modello: si salva sul server, per casa. Il salvataggio e' un
-// `fetch`, quindi il cambio si conferma **dopo** la risposta: se il server la
-// rifiuta (chiave tolta), la casella torna com'era invece di mentire.
-const llmToggle = $('#voice-llm');
-if (llmToggle) {
-  llmToggle.addEventListener('change', async (e) => {
-    const voluto = e.target.checked;
-    try {
-      const r = await fetch('/api/voce/llm', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ abilitato: voluto }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        e.target.checked = !voluto;
-        toast(d.error || 'Non riesco a salvare la scelta.');
-        return;
-      }
-      voceCloud.llmAbilitato = !!d.llm_abilitato;
-      voceCloud.llmPronto = !!d.llm_pronto;
-      voceCloud.llmManca = d.llm_manca || '';
-      e.target.checked = voceCloud.llmAbilitato;
-      popolaLlm();
-      toast(voceCloud.llmAbilitato
-        ? 'Comandi compresi anche dal modello.'
-        : 'Uso di nuovo il riconoscitore a regole.');
-    } catch (_e) {
-      e.target.checked = !voluto;
-      toast('Non riesco a parlare con il server.');
-    }
-  });
-}
+// L'interruttore «Capire i comandi» e' stato rimosso dal Profilo: la comprensione
+// col modello resta una capacita' del server (rotta `/api/voce/llm`), ma non ha
+// piu' un pannello che la accenda. `comprensione.chiama` continua a usare il
+// parser a regole come rete di sicurezza, quindi l'app funziona come prima.
 
 /* ---------- datalist ---------- */
 async function loadIngredientsDatalist() {

@@ -5572,8 +5572,7 @@ def test_errore_di_ascolto_401_non_riporta_la_risposta(monkeypatch):
 
 def test_la_scheda_voce_e_stata_rimossa(client):
     """Le impostazioni della voce (timbro, voce neurale) non hanno piu' una scheda
-    nelle FAQ: il pannello del microfono resta ai comandi soltanto. L'interruttore
-    della comprensione col modello si e' spostato in Profilo, perche' serve."""
+    nelle FAQ: il pannello del microfono resta ai comandi soltanto."""
     html = client.get("/static/index.html").get_data(as_text=True)
     assert 'id="tab-voce"' not in html
     for pezzo in ('id="voice-pick"', 'id="voice-all"', 'id="voice-cloud"',
@@ -5584,10 +5583,57 @@ def test_la_scheda_voce_e_stata_rimossa(client):
     pannello = html[inizio:]
     for pezzo in ('id="voice-text"', 'id="voice-retry"', 'id="voice-heard"'):
         assert pezzo in pannello, pezzo
-    # e la comprensione col modello sta nel Profilo
-    profilo = html.index('id="tab-profile"')
-    faq = html.index('id="tab-faq"')
-    assert profilo < html.index('id="voice-llm"') < faq
+
+
+def test_il_profilo_non_ha_piu_il_riepilogo_ne_capire_i_comandi(client):
+    """Dal Profilo sono spariti due blocchi: il «Riepilogo ingredienti» e
+    «Capire i comandi» (l'interruttore del modello). Restano i dati del profilo,
+    le preferite e il salvataggio dei dati."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="pf-report"' not in html
+    assert 'Riepilogo ingredienti' not in html
+    assert 'id="voice-llm"' not in html
+    assert 'id="voice-llm-block"' not in html
+    assert 'id="voice-llm-avviso"' not in html
+    assert 'Capire i comandi' not in html
+    # quello che resta
+    assert 'id="pf-name"' in html
+    assert 'id="pf-favorites"' in html
+    assert 'id="pf-backup"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    # niente funzioni orfane: rimosso il blocco, si toglie anche il codice
+    assert 'function renderReport' not in js
+    assert 'function popolaLlm' not in js
+    assert 'pf-report' not in js
+    assert '#voice-llm' not in js
+
+
+def test_il_profilo_si_raggiunge_anche_dalle_faq(client):
+    """Il Profilo si raggiunge **anche** dalle FAQ, dove sta la stessa specie di
+    cose — impostazioni di servizio che si cambiano, non voci da consultare. La
+    scheda della Cucina resta: `data-section` filtra la barra, quindi la stessa
+    scheda compare in due aree. Il pannello resta `tab-profile`."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    # la scheda Profilo e' nell'area FAQ...
+    assert 'data-tab="profile" data-section="faq"' in html
+    # ...e resta anche in quella della Cucina
+    assert 'data-tab="profile" data-section="cucina"' in html
+    # il pannello del profilo c'e' ancora, uno solo
+    assert html.count('id="tab-profile"') == 1
+    # nell'area FAQ vengono FAQ e Profilo, FAQ per prima
+    assert 'data-tab="faq" data-section="faq"' in html
+    assert html.index('data-tab="faq" data-section="faq"') < html.index('data-tab="profile" data-section="faq"')
+
+
+def test_l_ordine_delle_categorie_in_home(client):
+    """L'ordine delle schede in home e' scelto: Cucina, Appunti, FAQ, TV, GYM,
+    Igiene. Si verifica sull'ordine nel documento, non sul testo."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    inizio = html.index('class="home-cards"')
+    fine = html.index('id="home-oggi"')
+    schede = html[inizio:fine]
+    ordine = [m for m in re.findall(r'data-section="([^"]+)"', schede)]
+    assert ordine == ['cucina', 'progetti', 'faq', 'tv', 'gym', 'igiene'], ordine
 
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):
