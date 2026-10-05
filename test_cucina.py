@@ -8885,21 +8885,28 @@ def test_la_regione_del_cinema_e_l_italia_per_predefinito(monkeypatch):
 
 def test_i_film_si_leggono_e_si_schedano(monkeypatch):
     """Una risposta di TMDB diventa schede con solo i campi che si mostrano, e
-    un film senza locandina si scarta: e' una sezione di immagini."""
-    risposta = {
+    un film senza locandina si scarta: e' una sezione di immagini.
+
+    I fornitori si chiedono a parte, film per film: `discover` non li allega.
+    """
+    scoperta = {
         "results": [
             {"id": 1, "title": "Film Bello", "release_date": "2024-05-01",
              "vote_average": 8.234, "vote_count": 1200, "overview": "Una trama.",
-             "poster_path": "/abc.jpg",
-             "watch/providers": {"results": {"IT": {"flatrate": [
-                 {"provider_name": "Netflix"}, {"provider_name": "Prime Video"}]}}}},
+             "poster_path": "/abc.jpg"},
             {"id": 2, "title": "Senza locandina", "poster_path": "",
              "vote_average": 7.0},
         ]
     }
+    fornitori = {"results": {"IT": {"flatrate": [
+        {"provider_name": "Netflix"}, {"provider_name": "Prime Video"}]}}}
+
+    def finta(url):
+        return json.dumps(fornitori if "/watch/providers" in url else scoperta).encode()
+
     monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
     monkeypatch.setattr(cinema, "_letto", {"fatto": True})
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    monkeypatch.setattr(cinema, "_apri", finta)
     film = cinema._scarica(None)
     assert len(film) == 1
     scheda = film[0]
@@ -8908,6 +8915,27 @@ def test_i_film_si_leggono_e_si_schedano(monkeypatch):
     assert scheda["voto"] == 8.2
     assert scheda["locandina"].endswith("/abc.jpg")
     assert scheda["piattaforme"] == ["Netflix", "Prime Video"]
+
+
+def test_un_film_resta_anche_se_i_fornitori_non_rispondono(monkeypatch):
+    """Le piattaforme sono un di piu': se la loro chiamata fallisce il film
+    resta, senza le piattaforme. Non si perde la sezione per un dettaglio."""
+    scoperta = {"results": [
+        {"id": 1, "title": "Film Bello", "release_date": "2024-05-01",
+         "vote_average": 8.0, "poster_path": "/abc.jpg"},
+    ]}
+
+    def finta(url):
+        if "/watch/providers" in url:
+            raise cinema.NonDisponibile("fornitori giu'")
+        return json.dumps(scoperta).encode()
+
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", finta)
+    film = cinema._scarica(None)
+    assert [f["titolo"] for f in film] == ["Film Bello"]
+    assert film[0]["piattaforme"] == []
 
 
 def test_i_film_si_mettono_in_cache_e_si_rileggono(client, monkeypatch):
@@ -8935,10 +8963,14 @@ def test_l_endpoint_cinema_serve_la_copia_e_gli_incorpora(client, monkeypatch):
     monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
     risposta = {"results": [
         {"id": 9, "title": "In Cache", "release_date": "2022-09-09",
-         "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama.",
-         "watch/providers": {"results": {"IT": {"flatrate": [{"provider_name": "Disney+"}]}}}},
+         "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama."},
     ]}
-    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    fornitori = {"results": {"IT": {"flatrate": [{"provider_name": "Disney+"}]}}}
+
+    def finta(url):
+        return json.dumps(fornitori if "/watch/providers" in url else risposta).encode()
+
+    monkeypatch.setattr(cinema, "_apri", finta)
     cinema.aggiorna(app_module.get_db(), forse=False)
     d = client.get("/api/cinema").get_json()
     assert d["configurato"] is True and d["manca"] == ""

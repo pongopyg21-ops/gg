@@ -180,25 +180,47 @@ def _chiama(percorso: str, parametri: dict) -> dict:
         raise NonDisponibile(f"Risposta illeggibile da {url}") from errore
 
 
-def _piattaforme(voce: dict) -> list:
-    """I servizi di streaming su cui il film e' compreso, in abbonamento.
+def _piattaforme(dati: dict) -> list:
+    """I servizi di streaming in abbonamento nella regione della casa.
 
-    Si legge da `watch/providers`, che TMDB allega alla richiesta. Si tengono
-    solo i servizi in abbonamento (`flatrate`): a noleggio o acquisto non e'
-    quello che si cerca — non e' "presente su una piattaforma" nel senso in cui
-    lo si intende quando si cerca cosa guardare stasera.
+    Si legge dalla risposta di `movie/{id}/watch/providers`. Si tengono solo i
+    servizi in abbonamento (`flatrate`): a noleggio o acquisto non e' quello che
+    si cerca — non e' "presente su una piattaforma" nel senso in cui lo si
+    intende quando si cerca cosa guardare stasera.
     """
-    fornitori = (voce.get("watch/providers") or {}).get("results") or {}
+    fornitori = (dati or {}).get("results") or {}
+    if not isinstance(fornitori, dict):
+        return []
     nella_regione = fornitori.get(regione()) or {}
+    if not isinstance(nella_regione, dict):
+        return []
     elenco = nella_regione.get("flatrate") or []
-    return [p.get("provider_name") for p in elenco if p.get("provider_name")]
+    if not isinstance(elenco, list):
+        return []
+    return [p.get("provider_name") for p in elenco
+            if isinstance(p, dict) and p.get("provider_name")]
+
+
+def _fornitori(id_film) -> list:
+    """I servizi di un film, chiesti a parte.
+
+    `discover` **non** allega `watch/providers`: l'`append_to_response` vale solo
+    sugli endpoint di dettaglio, e su `discover` viene ignorato in silenzio. I
+    fornitori vanno quindi chiesti film per film. Sono un di piu': se la chiamata
+    non riesce, il film resta, solo senza le piattaforme.
+    """
+    try:
+        return _piattaforme(_chiama(f"/movie/{id_film}/watch/providers", {}))
+    except NonDisponibile:
+        return []
 
 
 def _scheda(voce: dict) -> dict:
     """Da una voce di TMDB alla scheda che serve alla sezione.
 
     Si tengono solo i campi che si mostrano, e si scarta un film senza locandina:
-    e' una sezione di immagini, e una senza immagine non ispira niente.
+    e' una sezione di immagini, e una senza immagine non ispira niente. Le
+    piattaforme non sono qui: si aggiungono dopo, con `_fornitori`.
     """
     locandina = voce.get("poster_path") or ""
     titolo = (voce.get("title") or voce.get("original_title") or "").strip()
@@ -215,7 +237,6 @@ def _scheda(voce: dict) -> dict:
         "voti": int(voce.get("vote_count") or 0),
         "trama": (voce.get("overview") or "").strip(),
         "locandina": IMMAGINE_BASE + locandina,
-        "piattaforme": _piattaforme(voce),
     }
 
 
@@ -229,10 +250,11 @@ def _scarica(_db) -> list:
         "vote_average.gte": 6.0,
         "include_adult": "false",
         "page": 1,
-        "append_to_response": "watch/providers",
     })
-    schede = [_scheda(v) for v in dati.get("results", [])]
-    return [s for s in schede if s][:QUANTI]
+    schede = [s for s in (_scheda(v) for v in dati.get("results", [])) if s][:QUANTI]
+    for scheda in schede:
+        scheda["piattaforme"] = _fornitori(scheda["id"])
+    return schede
 
 
 def aggiorna(db, forse=True) -> bool:
