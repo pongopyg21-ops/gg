@@ -296,3 +296,16 @@ CREATE TABLE IF NOT EXISTS appointments (
 CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(when_date);
 CREATE INDEX IF NOT EXISTS idx_appointments_done ON appointments(done, when_date);
 
+-- ---------------------------------------------------------------- cinema
+-- I film che la casa ha segnato come preferiti, in una sezione a se'.
+--
+-- Si tiene la **scheda intera** (JSON), non solo l'id: i preferiti restano
+-- anche quando il film esce dal giro dei "film del momento", e senza la scheda
+-- salvata si vedrebbe una locandina vuota. La scheda e' la stessa forma che
+-- `cinema._scheda` produce, cosi' il frontend la disegna allo stesso modo.
+CREATE TABLE IF NOT EXISTS cinema_preferiti (
+    movie_id   INTEGER PRIMARY KEY,
+    dati       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+

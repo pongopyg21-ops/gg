@@ -748,12 +748,53 @@ def api_cinema():
         return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
     if cinema.configurato():
         _aggiorna_cinema_in_sottofondo(db)
-    return jsonify({
-        "film": cinema.film(db),
+    return jsonify(_cinema_risposta(db))
+
+
+def _cinema_risposta(db) -> dict:
+    """La sezione Cinema: i film del momento, i preferiti e lo stato.
+
+    I preferiti escono sia come elenco a parte (la sezione a se', che resta
+    anche quando il film non e' piu' fra i film del momento) sia come flag su
+    ogni film, cosi' la stella si accende senza confronti nel frontend.
+    """
+    preferiti = cinema.preferiti(db)
+    ids = {f.get("id") for f in preferiti}
+    film = [{**f, "preferito": f.get("id") in ids} for f in cinema.film(db)]
+    return {
+        "film": film,
+        "preferiti": preferiti,
+        "preferiti_ids": sorted(i for i in ids if i is not None),
         "manca": cinema.messaggio_stato(),
         "configurato": cinema.configurato(),
         "aggiornato": _iso(cinema.quando_aggiornato(db)),
-    })
+    }
+
+
+@app.route("/api/cinema/preferiti", methods=["POST"])
+def api_cinema_preferito():
+    """Segna o toglie un film dai preferiti.
+
+    Il corpo porta `id` e `preferito` (vero = segna, falso = toglie). Segnando
+    si salva la **scheda intera**: cosi' il preferito resta visibile anche
+    quando il film esce dal giro dei film del momento.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    dati = request.get_json(silent=True) or {}
+    try:
+        movie_id = int(dati.get("id"))
+    except (TypeError, ValueError):
+        return bad_request("Serve l'identificativo del film.")
+    if dati.get("preferito"):
+        scheda = cinema.trova(db, movie_id)
+        if scheda is None:
+            return bad_request("Film non trovato fra quelli mostrati.")
+        cinema.segna(db, movie_id, scheda)
+    else:
+        cinema.togli(db, movie_id)
+    return jsonify(_cinema_risposta(db))
 
 
 @app.route("/api/cinema/aggiorna", methods=["POST"])
@@ -770,13 +811,7 @@ def api_cinema_aggiorna():
     if not cinema.configurato():
         return bad_request(cinema.messaggio_stato())
     esito = cinema.aggiorna(db, forse=False)
-    return jsonify({
-        "aggiornati": {"cinema": esito},
-        "film": cinema.film(db),
-        "manca": cinema.messaggio_stato(),
-        "configurato": cinema.configurato(),
-        "aggiornato": _iso(cinema.quando_aggiornato(db)),
-    })
+    return jsonify({"aggiornati": {"cinema": esito}, **_cinema_risposta(db)})
 
 
 def _aggiorna_cinema_in_sottofondo(db):
@@ -3602,7 +3637,8 @@ def _database_ha_dati(percorso):
     file creato dal nulla.
     """
     tabelle = ("recipes", "pantry", "shopping_items", "faq", "storage",
-               "projects", "meal_plan", "favorites", "chore_log", "ingredients", "profile")
+               "projects", "meal_plan", "favorites", "chore_log", "ingredients",
+               "profile", "cinema_preferiti")
     try:
         with closing(sqlite3.connect(f"file:{percorso}?mode=ro", uri=True)) as db:
             for tabella in tabelle:

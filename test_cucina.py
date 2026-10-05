@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import time
+import urllib.parse
 from contextlib import closing
 from datetime import date, timedelta
 
@@ -8936,6 +8937,130 @@ def test_un_film_resta_anche_se_i_fornitori_non_rispondono(monkeypatch):
     film = cinema._scarica(None)
     assert [f["titolo"] for f in film] == ["Film Bello"]
     assert film[0]["piattaforme"] == []
+
+
+def test_la_scoperta_esclude_azione_e_marvel(monkeypatch):
+    """Azione e film Marvel restano fuori dal giro: sono i piu' popolari e da
+    soli coprirebbero tutto il resto. Si escludono per genere e per casa."""
+    visti = []
+
+    def finta(url):
+        visti.append(url)
+        if "/watch/providers" in url:
+            return json.dumps({}).encode()
+        return json.dumps({"results": []}).encode()
+
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", finta)
+    cinema._scarica(None)
+    scoperte = [u for u in visti if "/discover/movie" in u]
+    assert scoperte
+    for url in scoperte:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        assert q.get("without_genres") == [cinema.GENERI_ESCLUSI]
+        assert q.get("without_companies") == [cinema.CASE_ESCLUSE]
+        assert "28" in cinema.GENERI_ESCLUSI
+        assert "420" in cinema.CASE_ESCLUSE
+
+
+def test_i_film_notevoli_si_accodano_senza_doppioni(monkeypatch):
+    """I film notevoli usciti da un po' si aggiungono in coda, e un film non
+    compare due volte anche se sta in entrambe le scoperte."""
+    scoperta = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+    ]}
+    notevoli = {"results": [
+        {"id": 1, "title": "Del Momento", "release_date": "2026-01-01",
+         "vote_average": 7.5, "poster_path": "/a.jpg"},
+        {"id": 2, "title": "Vecchio Ma Bello", "release_date": "2005-01-01",
+         "vote_average": 8.4, "poster_path": "/b.jpg"},
+    ]}
+    date_viste = []
+
+    def finta(url):
+        if "/watch/providers" in url:
+            return json.dumps({}).encode()
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        if "primary_release_date.lte" in q:
+            date_viste.append(q["primary_release_date.lte"][0])
+            return json.dumps(notevoli).encode()
+        return json.dumps(scoperta).encode()
+
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(cinema, "_apri", finta)
+    film = cinema._scarica(None)
+    assert [f["titolo"] for f in film] == ["Del Momento", "Vecchio Ma Bello"]
+    assert date_viste  # la finestra dei notevoli e' stata usata
+    anno, mese, giorno = (int(x) for x in date_viste[0].split("-"))
+    assert anno < date.today().year or (anno == date.today().year and mese < date.today().month)
+
+
+def test_i_preferiti_si_segnano_e_si_tolgono(client, monkeypatch):
+    """La stella segna un film; `preferiti` lo ritrova, e la risposta lo dice
+    sia come elenco a parte sia come flag sul film."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    risposta = {"results": [
+        {"id": 9, "title": "Da Preferire", "release_date": "2022-09-09",
+         "vote_average": 6.8, "poster_path": "/y.jpg", "overview": "Trama."},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(risposta).encode())
+    cinema.aggiorna(app_module.get_db(), forse=False)
+
+    d = client.get("/api/cinema").get_json()
+    assert d["film"][0]["preferito"] is False and d["preferiti"] == []
+
+    d = client.post("/api/cinema/preferiti", json={"id": 9, "preferito": True}).get_json()
+    assert d["film"][0]["preferito"] is True
+    assert [f["id"] for f in d["preferiti"]] == [9]
+    assert d["preferiti_ids"] == [9]
+
+    d = client.post("/api/cinema/preferiti", json={"id": 9, "preferito": False}).get_json()
+    assert d["film"][0]["preferito"] is False and d["preferiti"] == []
+
+
+def test_un_preferito_resta_anche_se_esce_dal_giro(client, monkeypatch):
+    """La scheda del preferito e' salvata intera: se il film sparisce dai film
+    del momento, il preferito resta (con locandina e titolo)."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    prima = {"results": [
+        {"id": 42, "title": "Sparirà", "release_date": "2020-01-01",
+         "vote_average": 7.9, "poster_path": "/s.jpg", "overview": "Trama."},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(prima).encode())
+    with app_module.app.app_context():
+        cinema.aggiorna(app_module.get_db(), forse=False)
+    client.post("/api/cinema/preferiti", json={"id": 42, "preferito": True})
+
+    # il giro dopo il film non c'e' piu': il preferito resta
+    dopo = {"results": [
+        {"id": 7, "title": "Nuovo", "release_date": "2026-01-01",
+         "vote_average": 7.0, "poster_path": "/n.jpg", "overview": ""},
+    ]}
+    monkeypatch.setattr(cinema, "_apri", lambda url: json.dumps(dopo).encode())
+    with app_module.app.app_context():
+        cinema.aggiorna(app_module.get_db(), forse=False)
+    d = client.get("/api/cinema").get_json()
+    assert [f["id"] for f in d["film"]] == [7]
+    assert [f["titolo"] for f in d["preferiti"]] == ["Sparirà"]
+    assert d["preferiti"][0]["locandina"].endswith("/s.jpg")
+
+
+def test_il_preferito_di_un_film_non_mostrato_non_si_segna(client, monkeypatch):
+    """Non si segna un film che non e' fra quelli mostrati: senza la sua scheda
+    il preferito sarebbe una locandina vuota."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    r = client.post("/api/cinema/preferiti", json={"id": 999999, "preferito": True})
+    assert r.status_code == 400
+    assert client.get("/api/cinema").get_json()["preferiti"] == []
 
 
 def test_i_film_si_mettono_in_cache_e_si_rileggono(client, monkeypatch):

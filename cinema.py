@@ -22,6 +22,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
+from datetime import date, timedelta
 
 import tv  # riusa la cache e i lucchetti: la forma e' la stessa della TV
 
@@ -44,6 +45,27 @@ QUANTI = 20
 ORE_CINEMA = 12
 
 REGIONE_PREDEFINITA = "IT"
+
+# Cosa si toglie dal giro. L'azione e i film Marvel sono esclusi per scelta:
+# sono i piu' popolari, quindi da soli riempirebbero il carosello e coprirebbero
+# tutto il resto. Si tolgono per **genere** e per **casa** di produzione, non
+# per titolo: cosi' un film nuovo non va aggiunto a mano.
+#
+# 28 = Azione. `without_genres` toglie il genere, ma non basta: un cinecomic e'
+# anche "Avventura"/"Fantascienza". 420 = Marvel Studios, 7505 = Marvel
+# Entertainment: con `without_companies` spariscono anche i film Marvel che
+# Azione non marca (es. un film Marvel d'animazione). `|` separa le case in OR.
+GENERI_ESCLUSI = "28"
+CASE_ESCLUSE = "420|7505"
+
+# I film usciti da un po' ma di cui si parla ancora: voto alto e tanti voti sono
+# l'indizio di critica e spettatori d'accordo. Si prendono fuori dalla finestra
+# dei film del momento (usciti da oltre N mesi) e si aggiungono in coda, cosi'
+# non rubano il posto ai film nuovi. Se non ce ne sono, pazienza: sono un di piu'.
+QUANTI_NOTEVOLI = 5
+MESI_NOTEVOLI = 18
+VOTI_NOTEVOLI = 2000
+VOTO_NOTEVOLI = 7.5
 
 # La chiave: l'ambiente, o uno di questi file accanto all'app. Stessi nomi di
 # `voce_cloud` e `comprensione`.
@@ -240,9 +262,54 @@ def _scheda(voce: dict) -> dict:
     }
 
 
+def _escludi(parametri: dict) -> dict:
+    """Aggiunge i filtri di esclusione: via l'azione e via i film Marvel."""
+    return {
+        **parametri,
+        "without_genres": GENERI_ESCLUSI,
+        "without_companies": CASE_ESCLUSE,
+    }
+
+
+def _schede_di(risposta: dict) -> list:
+    """Da una risposta di `discover` alle schede, scartando quelle vuote."""
+    return [s for s in (_scheda(v) for v in risposta.get("results", [])) if s]
+
+
+def _notabili() -> list:
+    """Film usciti da un po' ma ancora di cui si parla.
+
+    Stessa base dei film del momento (presenti in abbonamento, voto alto), ma
+    con la finestra spostata indietro: usciti da oltre `MESI_NOTEVOLI`, e con
+    abbastanza voti da dire che l'attenzione c'e' stata davvero. Si ordina per
+    voto, non per popolarita': qui conta la qualita' riconosciuta, non il
+    momento. Se la chiamata non riesce, non e' un guasto: la sezione ha gia' i
+    film del momento.
+    """
+    fino = (date.today() - timedelta(days=MESI_NOTEVOLI * 30)).isoformat()
+    try:
+        risposta = _chiama("/discover/movie", _escludi({
+            "sort_by": "vote_average.desc",
+            "watch_region": regione(),
+            "with_watch_monetization_types": "flatrate",
+            "vote_count.gte": VOTI_NOTEVOLI,
+            "vote_average.gte": VOTO_NOTEVOLI,
+            "primary_release_date.lte": fino,
+            "include_adult": "false",
+            "page": 1,
+        }))
+    except NonDisponibile:
+        return []
+    return _schede_di(risposta)
+
+
 def _scarica(_db) -> list:
-    """I film del momento, ordinati per popolarita' fra i piu' apprezzati."""
-    dati = _chiama("/discover/movie", {
+    """I film del momento, piu' qualche film notevole uscito da un po'.
+
+    L'azione e i film Marvel restano fuori (vedi `GENERI_ESCLUSI`). I notevoli
+    si accodano e si tolgono i doppioni: un film non compare due volte.
+    """
+    dati = _chiama("/discover/movie", _escludi({
         "sort_by": "popularity.desc",
         "watch_region": regione(),
         "with_watch_monetization_types": "flatrate",
@@ -250,8 +317,15 @@ def _scarica(_db) -> list:
         "vote_average.gte": 6.0,
         "include_adult": "false",
         "page": 1,
-    })
-    schede = [s for s in (_scheda(v) for v in dati.get("results", [])) if s][:QUANTI]
+    }))
+    schede = _schede_di(dati)[:QUANTI]
+    visti = {s["id"] for s in schede}
+    for scheda in _notabili():
+        if len(schede) >= QUANTI + QUANTI_NOTEVOLI:
+            break
+        if scheda["id"] not in visti:
+            visti.add(scheda["id"])
+            schede.append(scheda)
     for scheda in schede:
         scheda["piattaforme"] = _fornitori(scheda["id"])
     return schede
@@ -264,6 +338,55 @@ def aggiorna(db, forse=True) -> bool:
 
 def film(db) -> list:
     return tv._leggi(db, "cinema")[0] or []
+
+
+def preferiti(db) -> list:
+    """Le schede dei film segnati come preferiti, i piu' recenti per primi.
+
+    La scheda salvata e' completa: un preferito si vede anche dopo che e'
+    uscito dal giro dei film del momento.
+    """
+    righe = db.execute(
+        "SELECT dati FROM cinema_preferiti ORDER BY created_at DESC, movie_id DESC"
+    ).fetchall()
+    fuori = []
+    for riga in righe:
+        try:
+            scheda = json.loads(riga["dati"])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(scheda, dict):
+            fuori.append(scheda)
+    return fuori
+
+
+def e_preferito(db, movie_id) -> bool:
+    return db.execute(
+        "SELECT 1 FROM cinema_preferiti WHERE movie_id = ?", (movie_id,)
+    ).fetchone() is not None
+
+
+def segna(db, movie_id, scheda: dict) -> None:
+    """Segna un film come preferito, salvandone la scheda."""
+    db.execute(
+        "INSERT OR REPLACE INTO cinema_preferiti (movie_id, dati, created_at) "
+        "VALUES (?, ?, datetime('now'))",
+        (movie_id, json.dumps(scheda, ensure_ascii=False)),
+    )
+    db.commit()
+
+
+def togli(db, movie_id) -> None:
+    db.execute("DELETE FROM cinema_preferiti WHERE movie_id = ?", (movie_id,))
+    db.commit()
+
+
+def trova(db, movie_id):
+    """La scheda di un film nella copia corrente, se c'e'."""
+    for scheda in film(db):
+        if scheda.get("id") == movie_id:
+            return scheda
+    return None
 
 
 def quando_aggiornato(db):

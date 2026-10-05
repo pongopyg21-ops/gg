@@ -582,26 +582,48 @@
       <button id="cinema-aggiorna" type="button" title="Riscarica i film">Aggiorna</button>
     </div>
 
-    <h3 class="section-title">Il film di stasera</h3>
-    <p class="hint">Le locandine dei film del momento compresi sulle piattaforme
-      di streaming. Una alla volta: sfoglia con le frecce o scorrendo col dito.</p>
-
-    <!-- Una locandina alla volta: il carosello mostra un film per schermata, e
-         si sfoglia da destra a sinistra (frecce, rotellina o dito). Il film
-         successivo e' gia' pronto dietro le quinte, cosi' il passaggio e'
-         immediato. -->
-    <div id="cinema-avviso" class="cinema-avviso hidden"></div>
-    <div id="cinema-carosello" class="cinema-carosello" tabindex="0"
-         role="region" aria-roledescription="carosello" aria-label="Locandine dei film">
-      <button id="cinema-prima" class="cinema-freccia cinema-freccia-sx" type="button"
-              aria-label="Film precedente">‹</button>
-      <div id="cinema-locandina" class="cinema-locandina">
-        <p class="tv-vuoto">Sto caricando…</p>
-      </div>
-      <button id="cinema-dopo" class="cinema-freccia cinema-freccia-dx" type="button"
-              aria-label="Film successivo">›</button>
+    <!-- Due viste: i film del momento e i preferiti, che sono una sezione a
+         se'. La stella su un film lo porta fra i preferiti, e resta li' anche
+         quando esce dal giro dei film del momento. -->
+    <div class="cinema-viste" role="tablist" aria-label="Vista del Cinema">
+      <button id="cinema-vista-ora" class="cinema-vista-btn attivo" type="button"
+              role="tab" aria-selected="true">Del momento</button>
+      <button id="cinema-vista-preferiti" class="cinema-vista-btn" type="button"
+              role="tab" aria-selected="false">★ Preferiti <span id="cinema-conta-preferiti"></span></button>
     </div>
-    <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
+
+    <div id="cinema-vista-del-momento">
+      <h3 class="section-title">Il film di stasera</h3>
+      <p class="hint">Le locandine dei film del momento compresi sulle piattaforme
+        di streaming. Una alla volta: sfoglia con le frecce o scorrendo col dito.</p>
+
+      <!-- Una locandina alla volta: il carosello mostra un film per schermata, e
+           si sfoglia da destra a sinistra (frecce, rotellina o dito). Il film
+           successivo e' gia' pronto dietro le quinte, cosi' il passaggio e'
+           immediato. -->
+      <div id="cinema-avviso" class="cinema-avviso hidden"></div>
+      <div id="cinema-carosello" class="cinema-carosello" tabindex="0"
+           role="region" aria-roledescription="carosello" aria-label="Locandine dei film">
+        <button id="cinema-prima" class="cinema-freccia cinema-freccia-sx" type="button"
+                aria-label="Film precedente">‹</button>
+        <div id="cinema-locandina" class="cinema-locandina">
+          <p class="tv-vuoto">Sto caricando…</p>
+        </div>
+        <button id="cinema-dopo" class="cinema-freccia cinema-freccia-dx" type="button"
+                aria-label="Film successivo">›</button>
+      </div>
+      <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
+      <div class="cinema-azioni">
+        <button id="cinema-preferito" class="cinema-preferito" type="button">☆ Preferito</button>
+      </div>
+    </div>
+
+    <div id="cinema-vista-preferiti" class="hidden">
+      <h3 class="section-title">I tuoi film preferiti</h3>
+      <p class="hint">I film che hai segnato con la stella. Restano qui anche
+        quando non sono piu' fra i film del momento.</p>
+      <div id="cinema-griglia" class="cinema-griglia"></div>
+    </div>
   </section>
 
 </main>

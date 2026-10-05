@@ -430,6 +430,8 @@ $('#gym-aggiorna').addEventListener('click', async () => {
    server lo dice (`manca`), e la sezione lo spiega invece di restare vuota. */
 let cinemaFilm = [];
 let cinemaIndice = 0;
+let cinemaPreferiti = [];
+let cinemaVista = 'ora';
 
 async function renderCinema() {
   try {
@@ -450,6 +452,8 @@ async function renderCinema() {
 
 function disegnaCinema(d) {
   cinemaFilm = d.film || [];
+  cinemaPreferiti = d.preferiti || [];
+  disegnaPreferiti();
   const avviso = $('#cinema-avviso');
 
   // La chiave manca **e** non c'e' niente da mostrare: e' una sezione da
@@ -462,6 +466,7 @@ function disegnaCinema(d) {
     $('#cinema-carosello').classList.add('hidden');
     $('#cinema-punti').innerHTML = '';
     $('#cinema-aggiornato').textContent = '';
+    aggiornaStella();
     return;
   }
   avviso.classList.add('hidden');
@@ -471,6 +476,7 @@ function disegnaCinema(d) {
     $('#cinema-locandina').innerHTML =
       '<p class="tv-vuoto">Nessun film disponibile. Premi «Aggiorna» fra poco.</p>';
     $('#cinema-punti').innerHTML = '';
+    aggiornaStella();
   } else {
     // se la copia e' cambiata, l'indice puo' essere fuori scala: si riporta dentro
     if (cinemaIndice >= cinemaFilm.length) cinemaIndice = 0;
@@ -505,6 +511,77 @@ function disegnaFilm() {
     `<button type="button" class="cinema-punto${i === cinemaIndice ? ' attivo' : ''}"
              role="tab" aria-label="Film ${i + 1} di ${cinemaFilm.length}"
              aria-selected="${i === cinemaIndice}" data-i="${i}"></button>`).join('');
+
+  aggiornaStella();
+}
+
+/* La stella del film corrente: piena se e' fra i preferiti. */
+function aggiornaStella() {
+  const f = cinemaFilm[cinemaIndice];
+  const btn = $('#cinema-preferito');
+  if (!btn) return;
+  const dentro = !!(f && f.preferito);
+  btn.textContent = dentro ? '★ Preferito' : '☆ Preferito';
+  btn.classList.toggle('on', dentro);
+  btn.disabled = !f;
+}
+
+/* La griglia dei preferiti: una locandina per film, col titolo. La sezione e'
+   a se': qui ci sono anche i film usciti dal giro dei film del momento. */
+function disegnaPreferiti() {
+  const griglia = $('#cinema-griglia');
+  const conta = $('#cinema-conta-preferiti');
+  if (conta) conta.textContent = cinemaPreferiti.length ? `(${cinemaPreferiti.length})` : '';
+  if (!griglia) return;
+  if (!cinemaPreferiti.length) {
+    griglia.innerHTML = '<p class="tv-vuoto">Nessun film preferito. Segna un film con ' +
+      '<strong>☆ Preferito</strong> e lo ritrovi qui.</p>';
+    return;
+  }
+  griglia.innerHTML = cinemaPreferiti.map((f) => `
+    <figure class="cinema-mini">
+      <img class="cinema-mini-poster" src="${esc(f.locandina)}" alt="Locandina di ${esc(f.titolo)}"
+           loading="lazy" draggable="false">
+      <figcaption class="cinema-mini-info">
+        <span class="cinema-mini-titolo">${esc(f.titolo)}</span>
+        <span class="cinema-mini-meta">${esc(f.anno || '')}${f.voto ? ' · ★ ' + esc(String(f.voto)) : ''}</span>
+        <button type="button" class="cinema-mini-togli" data-id="${esc(String(f.id))}"
+                title="Togli dai preferiti">★ Togli</button>
+      </figcaption>
+    </figure>`).join('');
+}
+
+/* Cambia vista: i film del momento o i preferiti. */
+function cinemaCambiaVista(vista) {
+  cinemaVista = vista === 'preferiti' ? 'preferiti' : 'ora';
+  const ora = cinemaVista === 'ora';
+  $('#cinema-vista-del-momento').classList.toggle('hidden', !ora);
+  $('#cinema-vista-preferiti').classList.toggle('hidden', ora);
+  const btnOra = $('#cinema-vista-ora');
+  const btnPre = $('#cinema-vista-preferiti');
+  if (btnOra) { btnOra.classList.toggle('attivo', ora); btnOra.setAttribute('aria-selected', String(ora)); }
+  if (btnPre) { btnPre.classList.toggle('attivo', !ora); btnPre.setAttribute('aria-selected', String(!ora)); }
+}
+
+/* Segna o toglie il film corrente dai preferiti, poi ridisegna con la risposta
+   del server: cosi' la stella e la griglia restano d'accordo coi dati veri. */
+async function cinemaCambiaPreferito() {
+  const f = cinemaFilm[cinemaIndice];
+  if (!f) return;
+  const btn = $('#cinema-preferito');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/cinema/preferiti', {
+      method: 'POST',
+      body: { id: f.id, preferito: !f.preferito },
+    });
+    disegnaCinema(d);
+    toast(f.preferito ? 'Tolto dai preferiti' : 'Aggiunto ai preferiti');
+  } catch (e) {
+    toast(e.message || 'Non riesco a salvare il preferito.');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Lo scorrimento e' ciclico: dopo l'ultimo si torna al primo, cosi' non c'e'
@@ -561,6 +638,27 @@ $('#cinema-carosello').addEventListener('touchend', (e) => {
   if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) cinemaVai(dx < 0 ? 1 : -1);
   cinemaTocco = null;
 }, { passive: true });
+
+// La stella del film corrente e il cambio di vista. La griglia dei preferiti
+// e' un contenitore che si ridisegna: il click sul «Togli» si delega.
+$('#cinema-preferito').addEventListener('click', cinemaCambiaPreferito);
+$('#cinema-vista-ora').addEventListener('click', () => cinemaCambiaVista('ora'));
+$('#cinema-vista-preferiti').addEventListener('click', () => cinemaCambiaVista('preferiti'));
+$('#cinema-griglia').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.cinema-mini-togli');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const d = await api('/api/cinema/preferiti', {
+      method: 'POST',
+      body: { id: Number(btn.dataset.id), preferito: false },
+    });
+    disegnaCinema(d);
+    toast('Tolto dai preferiti');
+  } catch (err) {
+    toast(err.message || 'Non riesco a salvare il preferito.');
+  }
+});
 
 $('#cinema-aggiorna').addEventListener('click', async () => {
   const btn = $('#cinema-aggiorna');
