@@ -46,16 +46,25 @@ ORE_CINEMA = 12
 
 REGIONE_PREDEFINITA = "IT"
 
-# Cosa si toglie dal giro. L'azione e i film Marvel sono esclusi per scelta:
-# sono i piu' popolari, quindi da soli riempirebbero il carosello e coprirebbero
-# tutto il resto. Si tolgono per **genere** e per **casa** di produzione, non
-# per titolo: cosi' un film nuovo non va aggiunto a mano.
+# Cosa si toglie dal giro. Si toglie per **genere** e per **casa** di
+# produzione, non per titolo: cosi' un film nuovo non va aggiunto a mano.
 #
-# 28 = Azione. `without_genres` toglie il genere, ma non basta: un cinecomic e'
-# anche "Avventura"/"Fantascienza". 420 = Marvel Studios, 7505 = Marvel
-# Entertainment: con `without_companies` spariscono anche i film Marvel che
-# Azione non marca (es. un film Marvel d'animazione). `|` separa le case in OR.
+# 28 = Azione: e' il genere piu' popolare, quindi da solo riempirebbe il
+# carosello e coprirebbe tutto il resto.
+#
+# 16 = Animazione, 10751 = Famiglia: sono i film destinati a bambini e ragazzi.
+# Si tolgono per genere e non per eta' perche' la certificazione di TMDB non e'
+# affidabile qui: gli operatori `.lte`/`.gte` vengono ignorati (restituiscono
+# sempre lo stesso totale), i valori esatti coprono pochissimi film e molti —
+# Harry Potter, Interstellar — non hanno alcuna certificazione italiana. Il
+# genere invece c'e' sempre. Restano fuori anche i film d'animazione "per
+# tutti" (Studio Ghibli, anime): e' il prezzo di una regola che non sbaglia.
+#
+# 420 = Marvel Studios, 7505 = Marvel Entertainment: con `without_companies`
+# spariscono anche i film Marvel che Azione non marca (es. un film Marvel
+# d'animazione). `|` separa le case in OR.
 GENERI_ESCLUSI = "28"
+GENERI_BAMBINI = "16,10751"
 CASE_ESCLUSE = "420|7505"
 
 # I film usciti da un po' ma di cui si parla ancora: voto alto e tanti voti sono
@@ -263,10 +272,14 @@ def _scheda(voce: dict) -> dict:
 
 
 def _escludi(parametri: dict) -> dict:
-    """Aggiunge i filtri di esclusione: via l'azione e via i film Marvel."""
+    """Aggiunge i filtri di esclusione: via azione, bambini e film Marvel.
+
+    `without_genres` accetta piu' generi separati da virgola, in OR: un film
+    resta fuori se ha **uno qualunque** dei generi elencati.
+    """
     return {
         **parametri,
-        "without_genres": GENERI_ESCLUSI,
+        "without_genres": f"{GENERI_ESCLUSI},{GENERI_BAMBINI}",
         "without_companies": CASE_ESCLUSE,
     }
 
@@ -306,8 +319,9 @@ def _notabili() -> list:
 def _scarica(_db) -> list:
     """I film del momento, piu' qualche film notevole uscito da un po'.
 
-    L'azione e i film Marvel restano fuori (vedi `GENERI_ESCLUSI`). I notevoli
-    si accodano e si tolgono i doppioni: un film non compare due volte.
+    Azione, film per bambini/ragazzi e film Marvel restano fuori (vedi
+    `_escludi`). I notevoli si accodano e si tolgono i doppioni: un film non
+    compare due volte.
     """
     dati = _chiama("/discover/movie", _escludi({
         "sort_by": "popularity.desc",

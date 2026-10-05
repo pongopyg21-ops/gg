@@ -8940,8 +8940,10 @@ def test_un_film_resta_anche_se_i_fornitori_non_rispondono(monkeypatch):
 
 
 def test_la_scoperta_esclude_azione_e_marvel(monkeypatch):
-    """Azione e film Marvel restano fuori dal giro: sono i piu' popolari e da
-    soli coprirebbero tutto il resto. Si escludono per genere e per casa."""
+    """Azione, film per bambini/ragazzi e film Marvel restano fuori dal giro:
+    l'azione e i cinecomic sono i piu' popolari e da soli coprirebbero tutto il
+    resto, mentre i film per bambini non sono quello che si cerca per una
+    serata. Si escludono per genere e per casa, non per titolo."""
     visti = []
 
     def finta(url):
@@ -8958,9 +8960,13 @@ def test_la_scoperta_esclude_azione_e_marvel(monkeypatch):
     assert scoperte
     for url in scoperte:
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        assert q.get("without_genres") == [cinema.GENERI_ESCLUSI]
+        # azione + animazione + famiglia, in un unico parametro
+        assert q.get("without_genres") == [f"{cinema.GENERI_ESCLUSI},{cinema.GENERI_BAMBINI}"]
         assert q.get("without_companies") == [cinema.CASE_ESCLUSE]
         assert "28" in cinema.GENERI_ESCLUSI
+        # 16 = Animazione, 10751 = Famiglia: i film destinati a bambini e ragazzi
+        assert "16" in cinema.GENERI_BAMBINI
+        assert "10751" in cinema.GENERI_BAMBINI
         assert "420" in cinema.CASE_ESCLUSE
 
 

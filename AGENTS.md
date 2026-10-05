@@ -2014,12 +2014,26 @@ immagini, e una senza immagine non ispira niente.
 
 Tre scelte recenti, tutte deliberate:
 
-- **Azione e Marvel restano fuori** (`GENERI_ESCLUSI`, `CASE_ESCLUSE`): sono i
-  film più popolari, e da soli riempirebbero il carosello coprendo tutto il
-  resto. Si escludono per **genere** (28 = Azione) e per **casa** (420 = Marvel
+- **Azione, film per bambini/ragazzi e Marvel restano fuori** (`GENERI_ESCLUSI`,
+  `GENERI_BAMBINI`, `CASE_ESCLUSE`): azione e cinecomic sono i più popolari e da
+  soli riempirebbero il carosello coprendo tutto il resto, mentre i film per
+  bambini non sono quello che si cerca per una serata. Si escludono per **genere**
+  (28 = Azione, 16 = Animazione, 10751 = Famiglia) e per **casa** (420 = Marvel
   Studios, 7505 = Marvel Entertainment), non per titolo: così un film nuovo non
-  va aggiunto a mano. `without_genres` da solo non basta: un cinecomic è anche
-  Avventura/SF, e non tutti i film Marvel sono marcati Azione.
+  va aggiunto a mano. `without_genres` accetta più generi separati da virgola, in
+  OR, quindi stanno in un unico parametro; da solo non basta per i cinecomic: un
+  film Marvel è anche Avventura/SF, e non tutti sono marcati Azione.
+- **Si esclude per genere, non per certificazione d'età.** La certificazione di
+  TMDB non è affidabile per questo scopo, ed è stato verificato con la chiave
+  vera: gli operatori `certification.lte`/`.gte` vengono **ignorati** (tre
+  soglie diverse restituiscono sempre lo stesso totale, 1839), i valori esatti
+  (`certification=18+`) coprono pochissimi film (47), e molti — Harry Potter,
+  Interstellar (certificato «T», tutti) — non hanno alcuna certificazione
+  italiana. Il genere invece c'è sempre. Il prezzo è che restano fuori anche i
+  film d'animazione «per tutti» (Ghibli, anime) e che un fantasy per ragazzi come
+  Harry Potter, marcato Avventura/Fantasia e non Famiglia, **resta**: è il limite
+  di una regola che non sbaglia per eccesso. Il test
+  `test_la_scoperta_esclude_azione_e_marvel` verifica i generi richiesti.
 - **I film notevoli** (`_notabili`) sono una seconda scoperta: usciti da oltre
   `MESI_NOTEVOLI` ma con voto alto e tanti voti, ordinati per voto. Si accodano
   ai film del momento, senza doppioni, e non rubano il posto ai film nuovi. Se
