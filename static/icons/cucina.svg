@@ -1,11 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cucina">
-<!-- Il cappello da chef, sul cielo sereno dell'app: e' l'icona della Cucina.
-     Stessa forma tonda dell'icona dell'app, cosi' le due convivono. -->
-<rect width="64" height="64" rx="14" fill="#4fb3e8"/>
+<!-- Il cappello da chef, su un fondo arancio caldo: e' l'icona della Cucina.
+     Il colore non e' il cielo dell'icona dell'app (azzurro) apposta: cosi' le
+     due non si confondono e la scheda della Cucina si riconosce a colpo
+     d'occhio. L'arancio richiama il cibo. -->
+<rect width="64" height="64" rx="14" fill="#e08a3c"/>
 <path d="M20 42 L20 33 C13.5 33 9 28.4 9 22.5 C9 16.6 13.9 12 20 12
          C22 8.6 25.6 6.5 30 6.5 C34.4 6.5 38 8.6 40 12
          C46.1 12 51 16.6 51 22.5 C51 28.4 46.5 33 40 33 L40 42 Z"
       fill="#ffffff"/>
 <rect x="20" y="42" width="20" height="9" rx="2" fill="#ffffff"/>
-<rect x="20" y="45.5" width="20" height="2" fill="#4fb3e8"/>
+<rect x="20" y="45.5" width="20" height="2" fill="#e08a3c"/>
 </svg>
