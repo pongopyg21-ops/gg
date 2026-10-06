@@ -1151,6 +1151,13 @@ tr:last-child td { border-bottom: none; }
 .ch-panel { display: none; }
 .ch-panel.active { display: block; }
 
+/* Le schede della TV: cinque voci (Intrattenimento, Notizie, Quiz, Film,
+   Giochi). Stessa forma delle schede dell'Igiene — `.ch-nav` — con i bersagli
+   un po' piu' larghi: qui ogni voce ha un'emoji e su schermo stretto vanno a
+   capo. `min-height: 42px` e' la misura toccabile del resto dell'app. */
+.tv-nav { gap: 4px; }
+.tv-nav-btn { padding: 8px 12px; min-height: 42px; }
+
 .ch-hero {
   position: relative; overflow: hidden;
   display: flex; justify-content: space-between; align-items: center; gap: 20px;

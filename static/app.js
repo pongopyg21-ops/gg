@@ -2163,12 +2163,12 @@ function riempiGiorno() {
    senza, cambiando scheda non si saprebbe dove si e'. */
 function mostraChPanel(nome) {
   chPanel = nome;
-  $$('.ch-nav-btn').forEach((b) => {
+  $$('#tab-igiene .ch-nav-btn').forEach((b) => {
     const attivo = b.dataset.chp === nome;
     b.classList.toggle('active', attivo);
     b.setAttribute('aria-selected', attivo ? 'true' : 'false');
   });
-  $$('[data-chp-panel]').forEach((p) => p.classList.toggle('active', p.dataset.chpPanel === nome));
+  $$('#tab-igiene [data-chp-panel]').forEach((p) => p.classList.toggle('active', p.dataset.chpPanel === nome));
 }
 
 /* --- cosa c'e' da fare adesso --- */
@@ -2420,12 +2420,31 @@ $('#ch-blitz').addEventListener('click', () => {
 });
 
 /* Le schede delle pulizie: cambiando scheda si ridisegna solo quella aperta. */
-$$('.ch-nav-btn').forEach((b) => b.addEventListener('click', () => {
+$$('#tab-igiene .ch-nav-btn').forEach((b) => b.addEventListener('click', () => {
   mostraChPanel(b.dataset.chp);
   if (b.dataset.chp === 'routine') renderRoutine();
   if (b.dataset.chp === 'anno') renderAnno();
   if (b.dataset.chp === 'catalogo') renderChoreList();
 }));
+
+/* Le schede della TV: Intrattenimento, Notizie, Quiz, Film, Giochi. Si mostra un
+   pannello solo, come in Igiene. I dati li riempie gia' `renderTv`/`renderCinema`
+   aprendo l'area (una richiesta per fonte, come prima): cambiare scheda qui
+   mostra e nasconde, non riscarica. Il gioco si aggancia da solo (`snake.js`)
+   quando il suo pannello compare: qui non lo si nomina, perche' `app.js` e'
+   scandito da un test che pretende ogni funzione chiamata definita in questo
+   file, e le funzioni del gioco vivono altrove. */
+function mostraTvPanel(nome) {
+  $$('#tab-intrattenimento .tv-nav-btn').forEach((b) => {
+    const attivo = b.dataset.tvp === nome;
+    b.classList.toggle('active', attivo);
+    b.setAttribute('aria-selected', attivo ? 'true' : 'false');
+  });
+  $$('#tab-intrattenimento [data-tvp-panel]').forEach((p) =>
+    p.classList.toggle('active', p.dataset.tvpPanel === nome));
+}
+$$('#tab-intrattenimento .tv-nav-btn').forEach((b) =>
+  b.addEventListener('click', () => mostraTvPanel(b.dataset.tvp)));
 
 /* --- azioni sulle attività --- */
 $('#ch-oggi').addEventListener('click', choreClick);

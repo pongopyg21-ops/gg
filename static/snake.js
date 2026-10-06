@@ -223,7 +223,7 @@ function snakeImpostaDir(d) {
 /* I comandi: frecce e WASD sul computer, la croce direzionale e lo swipe sul
    telefono. Sono tutti lo stesso `snakeImpostaDir`. */
 document.addEventListener('keydown', (e) => {
-  if (!snakeGioco || document.getElementById('tab-giochi').classList.contains('hidden')) return;
+  if (!snakeGioco || !snakeSchedaAperta()) return;
   const mappa = {
     ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
     ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
@@ -264,46 +264,55 @@ document.addEventListener('touchend', (e) => {
 
    Il gioco si accende e si spegne da solo: `app.js` non lo chiama. Non e' un
    vezzo — `app.js` e' scandito da un test che pretende che ogni funzione
-   chiamata esista **nel file**, e `avviaSnake` vive qui: chiamandola di la' il
-   test la vedrebbe come un riferimento a una funzione inesistente, che e' il
+   chiamata esista **in quel file**, e `avviaSnake` vive qui: chiamandola di la'
+   il test la vedrebbe come un riferimento a una funzione inesistente, che e' il
    difetto vero (un `ReferenceError` all'accesso) che quel test esiste per
-   cogliere. Il file resta autosufficiente. */
-const snakeTab = document.getElementById('tab-giochi');
-const snakeBarra = document.getElementById('tabs');
+   cogliere. Il file resta autosufficiente.
 
+   Giochi non e' piu' una scheda della barra ma una **sotto-scheda** della TV:
+   non c'e' un clic da ascoltare. Si osserva lo stato delle classi (il pannello e
+   la sezione) e si sincronizza: una sola regola, `snakeSincronizza`, cosi' i
+   vari inneschi non possono divergere. */
+const snakePannello = document.querySelector('[data-tvp-panel="giochi"]');
+const snakeSezione = document.getElementById('tab-intrattenimento');
+
+/** Il gioco gira solo con la sua sotto-scheda aperta, dentro la TV, con la
+    pagina in primo piano. Fuori da li' e' fermo (ma la partita resta). */
 function snakeSchedaAperta() {
-  return snakeTab && !snakeTab.classList.contains('hidden');
+  const app = document.getElementById('app');
+  return !!(snakePannello && snakePannello.classList.contains('active')
+    && snakeSezione && snakeSezione.classList.contains('active')
+    && app && !app.classList.contains('hidden') && !document.hidden);
 }
 
-if (snakeBarra) {
-  snakeBarra.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-tab]');
-    if (!b) return;
-    if (b.dataset.tab === 'giochi') avviaSnake();
-    else snakeFerma();
-  });
+/** Accende, riprende o ferma secondo lo stato. Idempotente: chiamarla due volte
+    di fila non fa ripartire la partita da capo — gli inneschi sono piu' d'uno e
+    si sovrappongono. */
+function snakeSincronizza() {
+  if (!snakeSchedaAperta()) { snakeFerma(); return; }
+  if (!snakeGioco) { avviaSnake(); return; }
+  if (!snakeGioco.finito && !snakeRAF) snakeCiclo(0);
 }
+
+[snakePannello, snakeSezione].forEach((nodo) => {
+  if (nodo) new MutationObserver(snakeSincronizza)
+    .observe(nodo, { attributes: true, attributeFilter: ['class'] });
+});
 
 const snakeAvviaBtn = document.getElementById('snake-avvia');
 if (snakeAvviaBtn) snakeAvviaBtn.addEventListener('click', avviaSnake);
 
-// Uscendo dall'area l'app nasconde tutto: il ciclo si ferma, altrimenti
-// continuerebbe a girare dietro la home consumando batteria per niente.
+// Uscendo dall'area l'app nasconde tutto: `snakeSincronizza` se ne accorge e
+// ferma il ciclo, che altrimenti girerebbe dietro la home consumando batteria.
 ['to-home', 'home-fab'].forEach((id) => {
   const b = document.getElementById(id);
-  if (b) b.addEventListener('click', snakeFerma);
+  if (b) b.addEventListener('click', snakeSincronizza);
 });
 
-// Telefono bloccato o scheda del browser in secondo piano: si mette in pausa e
-// si riprende al ritorno, **senza azzerare** la partita (e' una pausa, non una
-// sconfitta). `visibilitychange` e' l'unico segnale affidabile su mobile.
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    snakeFerma();
-  } else if (snakeSchedaAperta() && snakeGioco && !snakeGioco.finito) {
-    snakeCiclo(0);
-  }
-});
+// Telefono bloccato o scheda del browser in secondo piano: pausa al ritorno,
+// **senza azzerare** la partita. `visibilitychange` e' l'unico segnale
+// affidabile su mobile, e `document.hidden` e' gia' dentro `snakeSchedaAperta`.
+document.addEventListener('visibilitychange', snakeSincronizza);
 
 // Il record si mostra appena la pagina e' pronta, anche senza aprire la scheda.
 if (document.readyState === 'loading') {

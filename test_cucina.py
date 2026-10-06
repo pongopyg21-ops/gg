@@ -2335,6 +2335,59 @@ console.log(JSON.stringify({
     assert d["pannelliVisibili"] == ["anno"], "si vede piu' di un pannello"
 
 
+def test_la_sezione_tv_ha_le_cinque_schede(client):
+    """Intrattenimento, Notizie, Quiz, Film e Giochi sono cose diverse che prima
+    stavano in un'unica colonna: per arrivare ai film si scorreva oltre i video.
+    Ogni scheda ha il suo pannello, e ne parte aperta una sola."""
+    html = client.get("/").get_data(as_text=True)
+    sezione = html[html.index('id="tab-intrattenimento"'):]
+    sezione = sezione[:sezione.index("</section>")]
+    for chiave in ("intrattenimento", "notizie", "quiz", "film", "giochi"):
+        assert f'data-tvp="{chiave}"' in sezione, f"manca la scheda {chiave}"
+        assert f'data-tvp-panel="{chiave}"' in sezione, f"manca il pannello {chiave}"
+    assert sezione.count('tv-nav-btn active') == 1
+    assert sezione.count('ch-panel active') == 1
+    # la scheda Giochi non e' piu' una voce della barra in basso: e' una
+    # sotto-scheda della TV, e una voce in piu' sarebbe un doppione
+    assert 'data-tab="giochi"' not in html
+    assert 'id="tab-giochi"' not in html
+
+
+def test_il_cambio_scheda_della_tv_mostra_un_pannello_solo():
+    """`mostraTvPanel` e' la resa vera nel client: si esegue con node su un DOM
+    finto. Vale la stessa regola dell'Igiene — un pannello solo visibile — ma i
+    selettori sono quelli della TV, non quelli delle pulizie: mescolarli
+    spegnerebbe la scheda sbagliata."""
+    import subprocess
+    js = open("static/app.js", encoding="utf-8").read()
+    inizio = js.index("function mostraTvPanel")
+    blocco = js[inizio: js.index("\n}\n", inizio) + 3]
+    prova = blocco + """
+class Finto {
+  constructor(dataset) {
+    this.dataset = dataset;
+    this.classes = new Set();
+    this.attrs = {};
+    this.classList = { toggle: (c, on) => (on ? this.classes.add(c) : this.classes.delete(c)) };
+  }
+  setAttribute(k, v) { this.attrs[k] = v; }
+}
+const bottoni = ['intrattenimento', 'notizie', 'quiz', 'film', 'giochi'].map((k) => new Finto({ tvp: k }));
+const pannelli = ['intrattenimento', 'notizie', 'quiz', 'film', 'giochi'].map((k) => new Finto({ tvpPanel: k }));
+const $$ = (sel) => sel.includes('btn') ? bottoni : pannelli;
+mostraTvPanel('film');
+console.log(JSON.stringify({
+  bottoniAttivi: bottoni.filter((b) => b.classes.has('active')).map((b) => b.dataset.tvp),
+  pannelliVisibili: pannelli.filter((p) => p.classes.has('active')).map((p) => p.dataset.tvpPanel),
+}));
+"""
+    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
+    assert esito.returncode == 0, esito.stderr
+    d = json.loads(esito.stdout)
+    assert d["bottoniAttivi"] == ["film"]
+    assert d["pannelliVisibili"] == ["film"], "si vede piu' di un pannello"
+
+
 
 def test_catalogo_ogni_mese_dell_anno_ha_una_voce():
     """Il calendario annuale ha dodici mesi: un mese vuoto sarebbe un buco visibile."""
@@ -8680,7 +8733,7 @@ String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN
 encodeURIComponent decodeURIComponent fetch setTimeout clearTimeout setInterval
 clearInterval confirm alert console requestAnimationFrame cancelAnimationFrame
 AudioContext webkitAudioContext MediaRecorder URL URLSearchParams FormData btoa
-atob structuredClone queueMicrotask crypto getComputedStyle""".split())
+atob structuredClone queueMicrotask crypto getComputedStyle MutationObserver""".split())
     return sorted(set(c for c in chiamate
                       if c not in parole and c not in defs
                       and c not in params and c not in browser))
@@ -9349,11 +9402,12 @@ console.log(JSON.stringify({ indietro: indietro, laterale: laterale, avanti: ava
 
 
 def test_la_sezione_giochi_ha_il_campo_e_i_comandi(client):
-    """La scheda e il pannello con il campo, la croce direzionale e il record.
-    Senza i nodi il disegno scriverebbe nel vuoto e la scheda resterebbe muta."""
+    """Giochi e' una sotto-scheda della TV, con il campo, la croce direzionale e
+    il record. Senza i nodi il disegno scriverebbe nel vuoto e la scheda
+    resterebbe muta."""
     html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'data-tab="giochi"' in html, "manca la scheda nella barra"
-    assert 'id="tab-giochi"' in html, "manca il pannello della scheda"
+    assert 'data-tvp="giochi"' in html, "manca la sotto-scheda Giochi"
+    assert 'data-tvp-panel="giochi"' in html, "manca il pannello Giochi"
     assert 'id="snake-canvas"' in html, "manca il campo di gioco"
     assert 'id="snake-avvia"' in html and 'id="snake-record"' in html
     assert html.count("snake-freccia") == 4, "la croce direzionale ha quattro frecce"

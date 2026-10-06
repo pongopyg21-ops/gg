@@ -63,7 +63,8 @@ dispensa, spesa, profilo e comandi vocali stanno in **Cucina**; le pulizie stann
 in **Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa del
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
-raccoglie l'intrattenimento: i video della playlist di casa, le notizie dal mondo
+raccoglie l'intrattenimento in **cinque schede** (Intrattenimento, Notizie, Quiz,
+Film, Giochi): i video della playlist di casa, le notizie dal mondo
 (vedi `tv.py`), il quiz e i giochi (Snake, vedi `static/snake.js`) e le locandine
 dei film del momento sulle piattaforme di streaming, una alla volta (vedi
 `cinema.py`). Il **Cinema** non ha più una sezione sua:
@@ -2053,10 +2054,39 @@ alla richiesta e, quando `monkeypatch` ha già rimesso a posto `_apri`, scarica
 davvero tenendo aperto il database di prova: la fixture lo cancella sotto e il
 test dopo fallisce con «disk I/O error». È un difetto del test, non dell'app.
 
+### Le schede della sezione TV
+
+La TV è una sezione con **cinque sotto-schede** — Intrattenimento (video di
+casa), Notizie, Quiz, Film, Giochi — sulla stessa forma delle schede dell'Igiene:
+`.ch-nav` con `data-tvp` / `data-tvp-panel`, un pannello solo aperto
+(`mostraTvPanel` in `app.js`). Prima erano in un'unica colonna, e per arrivare ai
+film si scorreva oltre quindici video: separarle è la stessa scelta fatta per
+l'Igiene.
+
+Due cose che sembrano dettagli e non lo sono:
+
+- **Le schede non riscaricano.** I dati li riempie già `renderTv`/`renderCinema`
+  aprendo l'area (una richiesta per fonte, come prima); cambiare sotto-scheda
+  mostra e nasconde, non richiama il server. `mostraTvPanel` non e' un
+  `renderTv`.
+- **I selettori dell'Igiene vanno scopati per sezione.** `mostraChPanel` e il
+  suo gestore usano `#tab-igiene .ch-nav-btn` e `#tab-igiene [data-chp-panel]`:
+  con due `.ch-nav` nel documento, un selettore globale farebbe spegnere la
+  scheda sbagliata (o accendere due pannelli). Le classi sono condivise apposta
+  — la forma è la stessa — ma la ricerca è per contenitore.
+
+Il **gioco** (Giochi) non è più una voce della barra in basso: è una sotto-scheda
+della TV. Siccome non c'è più un clic sulla barra da ascoltare, `snake.js` si
+aggancia **osservando le classi** (`MutationObserver`) del proprio pannello e
+della sezione TV, con una regola sola (`snakeSincronizza`, idempotente): gli
+inneschi sono più d'uno — l'osservatore, il pulsante Home, `visibilitychange` — e
+una funzione unica evita che divergano. Un test verifica che `app.js` **non**
+nomini le funzioni del gioco (vedi «I Giochi: Snake»).
+
 ### I Giochi: Snake
 
-I **Giochi** sono una scheda della sezione TV (`tab-giochi`,
-`data-tab="giochi" data-section="tv"`). Per ora c'è un gioco solo, **Snake**, in
+I **Giochi** sono una sotto-scheda della TV (`data-tvp="giochi"`, pannello
+`data-tvp-panel="giochi"`). Per ora c'è un gioco solo, **Snake**, in
 `static/snake.js`: un file a parte, non dentro `app.js`, perché è un pezzo a sé
 che si carica con la pagina ma vive di vita propria. Non usa librerie e non usa
 la rete: si disegna su un `<canvas>` e funziona **anche senza connessione**,
@@ -2088,9 +2118,10 @@ Tre trappole, tutte nel cuore del gioco:
 test scandisce `app.js` e pretende che ogni funzione chiamata esista **in quel
 file**, e le funzioni del gioco vivono in `snake.js`: nominandole di là il test
 le vedrebbe come orfane, che è il difetto vero (`ReferenceError` all'accesso) che
-quel test esiste per cogliere. Quindi `snake.js` ascolta da sé i clic sulle
-schede. C'è un test che verifica che `app.js` **non** nomini le funzioni del
-gioco.
+quel test esiste per cogliere. Quindi `snake.js` osserva da sé le classi del
+proprio pannello (e della sezione TV) con un `MutationObserver`, e decide con una
+regola sola (`snakeSincronizza`). C'è un test che verifica che `app.js` **non**
+nomini le funzioni del gioco.
 
 I due file sono script classici e **condividono lo scope**: `snake.js` può
 chiamare `suonoAttivo`, definita in `app.js`, perché quando il gioco gira l'altro

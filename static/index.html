@@ -219,8 +219,7 @@
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="profile" data-section="faq">⚠️ Profilo</button>
-  <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
-  <button data-tab="giochi" data-section="tv">🕹️ Giochi</button>
+  <button data-tab="intrattenimento" data-section="tv">📺 TV</button>
   <button data-tab="gym" data-section="gym">🏋️ GYM</button>
 </nav>
 
@@ -505,106 +504,153 @@
     </div>
   </section>
 
-  <!-- TV -->
+  <!-- TV: un'area, cinque schede.
+       Intrattenimento (video di casa), Notizie, Quiz, Film e Giochi sono cose
+       diverse che vivono insieme: prima erano in un'unica colonna, e per
+       arrivare ai film si scorreva oltre i video. Le schede le separano, come
+       in Igiene: si apre quella che serve e le altre restano fuori. -->
   <section id="tab-intrattenimento" class="tab">
-    <div class="toolbar">
-      <strong>Intrattenimento</strong>
-      <span class="spacer"></span>
-      <span id="tv-aggiornato" class="tv-aggiornato"></span>
-      <button id="tv-aggiorna" type="button" title="Riscarica video e notizie">Aggiorna</button>
+    <div class="ch-nav tv-nav" role="tablist" aria-label="Schede della TV">
+      <button class="ch-nav-btn tv-nav-btn active" data-tvp="intrattenimento" role="tab" aria-selected="true">📺 Intrattenimento</button>
+      <button class="ch-nav-btn tv-nav-btn" data-tvp="notizie" role="tab" aria-selected="false">📰 Notizie</button>
+      <button class="ch-nav-btn tv-nav-btn" data-tvp="quiz" role="tab" aria-selected="false">🧠 Quiz</button>
+      <button class="ch-nav-btn tv-nav-btn" data-tvp="film" role="tab" aria-selected="false">🎬 Film</button>
+      <button class="ch-nav-btn tv-nav-btn" data-tvp="giochi" role="tab" aria-selected="false">🕹️ Giochi</button>
     </div>
 
-    <!-- I video partono qui dentro, senza uscire dall'app: e' quello che rende
-         la sezione utile in cucina, dove si vuole schiacciare «play» e basta.
-         `loading="lazy"` fa scaricare il player solo quando lo si raggiunge
-         scorrendo: quindici player caricati insieme sono quindici volte il
-         lavoro di uno. -->
-    <h3 class="section-title">Playlist di casa</h3>
-    <div class="tv-playlist-riga">
-      <input id="tv-playlist" type="text"
-             placeholder="Indirizzo o id della playlist YouTube"
-             aria-label="Playlist YouTube della casa">
-      <button id="tv-playlist-salva" type="button">Cambia playlist</button>
+    <!-- Intrattenimento: i video della playlist di casa, dentro l'app. E' quello
+         che rende la sezione utile in cucina, dove si vuole schiacciare «play» e
+         basta. `loading="lazy"` fa scaricare il player solo quando lo si
+         raggiunge scorrendo: quindici player caricati insieme sono quindici
+         volte il lavoro di uno. -->
+    <div class="ch-panel active" data-tvp-panel="intrattenimento">
+      <div class="toolbar">
+        <strong>Playlist di casa</strong>
+        <span class="spacer"></span>
+        <span id="tv-aggiornato" class="tv-aggiornato"></span>
+        <button id="tv-aggiorna" type="button" title="Riscarica i video">Aggiorna</button>
+      </div>
+      <p class="hint">La playlist è della casa: cambiandola qui, la TV scarica
+        subito i video della nuova.</p>
+      <div class="tv-playlist-riga">
+        <input id="tv-playlist" type="text"
+               placeholder="Indirizzo o id della playlist YouTube"
+               aria-label="Playlist YouTube della casa">
+        <button id="tv-playlist-salva" type="button">Cambia playlist</button>
+      </div>
+      <div id="tv-video" class="tv-video"></div>
     </div>
-    <p class="hint">La playlist è della casa: cambiandola qui, la TV scarica
-      subito i video della nuova.</p>
-    <div id="tv-video" class="tv-video"></div>
 
-    <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>
-    <p class="hint">Le ultime venti, dalle sezioni ANSA (cronaca, politica,
-      economia, mondo), aggiornate una volta al giorno.</p>
-    <div id="tv-notizie" class="tv-notizie"></div>
+    <!-- Notizie: le sezioni ANSA, rinnovate una volta al giorno. -->
+    <div class="ch-panel" data-tvp-panel="notizie">
+      <h3 class="section-title">Notizie dall'Italia e dal mondo</h3>
+      <p class="hint">Le ultime venti, dalle sezioni ANSA (cronaca, politica,
+        economia, mondo), aggiornate una volta al giorno.</p>
+      <div id="tv-notizie" class="tv-notizie"></div>
+    </div>
 
     <!-- Quiz: un servizio pubblico che da' contenuto pronto da leggere. Stessa
          regola dei video e delle notizie: quello che si e' gia' scaricato resta,
          e un guasto di rete non svuota il riquadro. Le domande sono tradotte in
          italiano sul server (Open Trivia DB non ne ha): se la traduzione non
          riesce restano in inglese, e il riquadro funziona lo stesso. -->
-    <h3 class="section-title">Quiz</h3>
-    <p class="hint">Dieci domande di cultura generale di difficoltà media, dal
-      servizio Open Trivia DB, tradotte in italiano. Tocca una risposta per
-      scoprire se è giusta.</p>
-    <div id="tv-quiz" class="tv-quiz"></div>
-
-    <!-- CINEMA: le locandine dei film del momento, dentro la stessa sezione.
-         E' intrattenimento come i video e le notizie, quindi non ha piu' una
-         sezione a parte: si guarda da qui, con la sua riga di stato e il suo
-         «Aggiorna», perche' la fonte e' un'altra (TMDB) e si aggiorna a parte. -->
-    <div class="toolbar toolbar-cinema">
-      <h3 class="section-title">Al cinema stasera</h3>
-      <span class="spacer"></span>
-      <span id="cinema-aggiornato" class="tv-aggiornato"></span>
-      <button id="cinema-aggiorna" type="button" title="Riscarica i film">Aggiorna</button>
+    <div class="ch-panel" data-tvp-panel="quiz">
+      <h3 class="section-title">Quiz</h3>
+      <p class="hint">Dieci domande di cultura generale di difficoltà media, dal
+        servizio Open Trivia DB, tradotte in italiano. Tocca una risposta per
+        scoprire se è giusta.</p>
+      <div id="tv-quiz" class="tv-quiz"></div>
     </div>
 
-    <!-- Due viste: i film del momento e i preferiti, che sono un elenco a se'.
-         La stella su un film lo porta fra i preferiti, e resta li' anche quando
-         esce dal giro dei film del momento. -->
-    <div class="cinema-viste" role="tablist" aria-label="Vista del Cinema">
-      <button id="cinema-vista-ora" class="cinema-vista-btn attivo" type="button"
-              role="tab" aria-selected="true">Del momento</button>
-      <button id="cinema-vista-preferiti" class="cinema-vista-btn" type="button"
-              role="tab" aria-selected="false">★ Preferiti <span id="cinema-conta-preferiti"></span></button>
-    </div>
+    <!-- Film: le locandine TMDB e i preferiti. E' intrattenimento come i video e
+         le notizie, quindi sta dentro la sezione TV, ma con la sua riga di stato
+         e il suo «Aggiorna»: la fonte e' un'altra (TMDB) e si aggiorna a parte. -->
+    <div class="ch-panel" data-tvp-panel="film">
+      <div class="toolbar">
+        <strong>Al cinema stasera</strong>
+        <span class="spacer"></span>
+        <span id="cinema-aggiornato" class="tv-aggiornato"></span>
+        <button id="cinema-aggiorna" type="button" title="Riscarica i film">Aggiorna</button>
+      </div>
 
-    <div id="cinema-vista-del-momento">
-      <p class="hint">Le locandine dei film del momento compresi sulle piattaforme
-        di streaming. Una alla volta: sfoglia con le frecce o scorrendo col dito.</p>
+      <!-- Due viste: i film del momento e i preferiti, che sono un elenco a se'.
+           La stella su un film lo porta fra i preferiti, e resta li' anche quando
+           esce dal giro dei film del momento. -->
+      <div class="cinema-viste" role="tablist" aria-label="Vista del Cinema">
+        <button id="cinema-vista-ora" class="cinema-vista-btn attivo" type="button"
+                role="tab" aria-selected="true">Del momento</button>
+        <button id="cinema-vista-preferiti" class="cinema-vista-btn" type="button"
+                role="tab" aria-selected="false">★ Preferiti <span id="cinema-conta-preferiti"></span></button>
+      </div>
 
-      <!-- Una locandina alla volta: il carosello mostra un film per schermata, e
-           si sfoglia da destra a sinistra (frecce, rotellina o dito). Il film
-           successivo e' gia' pronto dietro le quinte, cosi' il passaggio e'
-           immediato. -->
-      <div id="cinema-avviso" class="cinema-avviso hidden"></div>
-      <div id="cinema-carosello" class="cinema-carosello" tabindex="0"
-           role="region" aria-roledescription="carosello" aria-label="Locandine dei film">
-        <button id="cinema-prima" class="cinema-freccia cinema-freccia-sx" type="button"
-                aria-label="Film precedente">‹</button>
-        <div id="cinema-locandina" class="cinema-locandina">
-          <p class="tv-vuoto">Sto caricando…</p>
+      <div id="cinema-vista-del-momento">
+        <p class="hint">Le locandine dei film del momento compresi sulle piattaforme
+          di streaming. Una alla volta: sfoglia con le frecce o scorrendo col dito.</p>
+
+        <!-- Una locandina alla volta: il carosello mostra un film per schermata, e
+             si sfoglia da destra a sinistra (frecce, rotellina o dito). Il film
+             successivo e' gia' pronto dietro le quinte, cosi' il passaggio e'
+             immediato. -->
+        <div id="cinema-avviso" class="cinema-avviso hidden"></div>
+        <div id="cinema-carosello" class="cinema-carosello" tabindex="0"
+             role="region" aria-roledescription="carosello" aria-label="Locandine dei film">
+          <button id="cinema-prima" class="cinema-freccia cinema-freccia-sx" type="button"
+                  aria-label="Film precedente">‹</button>
+          <div id="cinema-locandina" class="cinema-locandina">
+            <p class="tv-vuoto">Sto caricando…</p>
+          </div>
+          <button id="cinema-dopo" class="cinema-freccia cinema-freccia-dx" type="button"
+                  aria-label="Film successivo">›</button>
         </div>
-        <button id="cinema-dopo" class="cinema-freccia cinema-freccia-dx" type="button"
-                aria-label="Film successivo">›</button>
-      </div>
-      <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
-      <div class="cinema-azioni">
-        <button id="cinema-preferito" class="cinema-preferito" type="button">☆ Preferito</button>
-        <button id="cinema-elimina" class="cinema-elimina" type="button"
-                title="Togli questo film dalla sezione">🗑 Elimina</button>
+        <div id="cinema-punti" class="cinema-punti" role="tablist" aria-label="Vai al film"></div>
+        <div class="cinema-azioni">
+          <button id="cinema-preferito" class="cinema-preferito" type="button">☆ Preferito</button>
+          <button id="cinema-elimina" class="cinema-elimina" type="button"
+                  title="Togli questo film dalla sezione">🗑 Elimina</button>
+        </div>
+
+        <!-- I film eliminati restano qui, in una riga discreta: non si
+             cancellano davvero, quindi si possono rimettere. Senza questa riga
+             un'eliminazione sembrerebbe definitiva e non si oserebbe toccare
+             niente. -->
+        <div id="cinema-nascosti" class="cinema-nascosti hidden"></div>
       </div>
 
-      <!-- I film eliminati restano qui, in una riga discreta: non si
-           cancellano davvero, quindi si possono rimettere. Senza questa riga
-           un'eliminazione sembrerebbe definitiva e non si oserebbe toccare
-           niente. -->
-      <div id="cinema-nascosti" class="cinema-nascosti hidden"></div>
+      <div id="cinema-pannello-preferiti" class="hidden">
+        <h3 class="section-title">I tuoi film preferiti</h3>
+        <p class="hint">I film che hai segnato con la stella. Restano qui anche
+          quando non sono piu' fra i film del momento.</p>
+        <div id="cinema-griglia" class="cinema-griglia"></div>
+      </div>
     </div>
 
-    <div id="cinema-pannello-preferiti" class="hidden">
-      <h3 class="section-title">I tuoi film preferiti</h3>
-      <p class="hint">I film che hai segnato con la stella. Restano qui anche
-        quando non sono piu' fra i film del momento.</p>
-      <div id="cinema-griglia" class="cinema-griglia"></div>
+    <!-- Giochi: l'arcade di casa. Un gioco solo (Snake), scritto in casa e senza
+         rete: si gioca anche senza connessione, come il resto della sezione.
+         Il ciclo si accende aprendo la scheda e si spegne uscendo, altrimenti
+         resterebbe a girare consumando batteria per un gioco che nessuno guarda. -->
+    <div class="ch-panel" data-tvp-panel="giochi">
+      <div class="toolbar">
+        <strong>🕹️ Giochi</strong>
+        <span class="spacer"></span>
+        <span class="tv-aggiornato">Record: <span id="snake-record">0</span></span>
+        <button id="snake-avvia" type="button">Nuova partita</button>
+      </div>
+
+      <h3 class="section-title">Snake</h3>
+      <p class="hint">Frecce (o WASD) sul computer, swipe o la croce sul telefono.
+        Mangia il pallino e non toccare il muro né la tua coda.</p>
+      <div class="snake-area">
+        <canvas id="snake-canvas" width="330" height="330"
+                aria-label="Campo di gioco di Snake"></canvas>
+        <p id="snake-esito" class="snake-esito hidden" role="status"></p>
+        <div class="snake-croce" aria-label="Comandi direzionali">
+          <button type="button" class="snake-freccia" data-dx="0" data-dy="-1" aria-label="Su">▲</button>
+          <button type="button" class="snake-freccia" data-dx="-1" data-dy="0" aria-label="Sinistra">◀</button>
+          <button type="button" class="snake-freccia" data-dx="0" data-dy="1" aria-label="Giù">▼</button>
+          <button type="button" class="snake-freccia" data-dx="1" data-dy="0" aria-label="Destra">▶</button>
+        </div>
+        <p class="snake-punti">Punteggio: <strong id="snake-punteggio">0</strong></p>
+      </div>
     </div>
   </section>
 
@@ -631,35 +677,6 @@
     <p class="hint">La playlist è della casa: cambiandola qui, il GYM scarica
       subito i video della nuova. Resta separata da quella della TV.</p>
     <div id="gym-video" class="tv-video"></div>
-  </section>
-
-  <!-- GIOCHI: l'arcade di casa. Un gioco solo (Snake), scritto in casa e senza
-       rete: si gioca anche senza connessione, come il resto della sezione.
-       Il ciclo si accende aprendo la scheda e si spegne uscendo, altrimenti
-       resterebbe a girare consumando batteria per un gioco che nessuno guarda. -->
-  <section id="tab-giochi" class="tab">
-    <div class="toolbar">
-      <strong>🕹️ Giochi</strong>
-      <span class="spacer"></span>
-      <span class="tv-aggiornato">Record: <span id="snake-record">0</span></span>
-      <button id="snake-avvia" type="button">Nuova partita</button>
-    </div>
-
-    <h3 class="section-title">Snake</h3>
-    <p class="hint">Frecce (o WASD) sul computer, swipe o la croce sul telefono.
-      Mangia il pallino e non toccare il muro né la tua coda.</p>
-    <div class="snake-area">
-      <canvas id="snake-canvas" width="330" height="330"
-              aria-label="Campo di gioco di Snake"></canvas>
-      <p id="snake-esito" class="snake-esito hidden" role="status"></p>
-      <div class="snake-croce" aria-label="Comandi direzionali">
-        <button type="button" class="snake-freccia" data-dx="0" data-dy="-1" aria-label="Su">▲</button>
-        <button type="button" class="snake-freccia" data-dx="-1" data-dy="0" aria-label="Sinistra">◀</button>
-        <button type="button" class="snake-freccia" data-dx="0" data-dy="1" aria-label="Giù">▼</button>
-        <button type="button" class="snake-freccia" data-dx="1" data-dy="0" aria-label="Destra">▶</button>
-      </div>
-      <p class="snake-punti">Punteggio: <strong id="snake-punteggio">0</strong></p>
-    </div>
   </section>
 
 </main>
