@@ -11,7 +11,7 @@ L'app si apre su una **pagina iniziale** con sette aree:
 - **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
 - **📋 Appunti** — lavori in corso e idee, con il **Calendario** degli impegni (appuntamenti, scadenze e promemoria) e il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
 - **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
-- **📺 TV** — intrattenimento, in cinque schede: **Intrattenimento** (i video della playlist di casa), **Notizie** (dal mondo, ANSA), **Quiz**, **Film** (le locandine dei film del momento sulle piattaforme di streaming) e **Giochi**.
+- **📺 TV** — intrattenimento, in cinque schede: **Intrattenimento** (i video della playlist di casa e qualche dipinto della collezione pubblica del Metropolitan Museum), **Notizie** (dal mondo, ANSA), **Quiz** (con un suggerimento di cosa fare), **Film** (le locandine dei film del momento sulle piattaforme di streaming) e **Giochi**.
 - **🏋️ GYM** — la playlist degli esercizi, per allenarsi in casa; la playlist è separata da quella della TV e si cambia dalla sezione.
 
 Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non si

@@ -101,8 +101,9 @@ _CSP_BASE = (
     "script-src 'self'{nonce}; "
     "style-src 'self' 'unsafe-inline'; "
     # i dati del dispositivo: le foto si ridimensionano in un canvas e diventano
-    # data URL; le locandine arrivano da TMDB, che e' un'altra origine
-    "img-src 'self' data: https://image.tmdb.org; "
+    # data URL; le locandine arrivano da TMDB e le opere d'arte dal Met, che
+    # sono altre origini
+    "img-src 'self' data: https://image.tmdb.org https://images.metmuseum.org; "
     "font-src 'self'; "
     "connect-src 'self'; "
     # l'audio della voce neurale e il WAV muto sono blob/data URL, non risorse
@@ -628,9 +629,11 @@ def api_tv():
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
         "quiz": tv.quiz(db),
+        "suggerimento": tv.suggerimento(db),
+        "arte": tv.arte(db),
         "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
-                       "quiz": _iso(quando["quiz"])},
+                       "quiz": _iso(quando["quiz"]), "arte": _iso(quando["arte"])},
     })
 
 
@@ -727,9 +730,11 @@ def api_tv_aggiorna():
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
         "quiz": tv.quiz(db),
+        "suggerimento": tv.suggerimento(db),
+        "arte": tv.arte(db),
         "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
-                       "quiz": _iso(quando["quiz"])},
+                       "quiz": _iso(quando["quiz"]), "arte": _iso(quando["arte"])},
     })
 
 
@@ -811,10 +816,16 @@ def api_quiz_rispondi():
     esito = tv.rispondi(db, data.get("indice"))
     if esito is None:
         return bad_request("Domanda non trovata")
+    # un suggerimento nuovo accanto alle domande nuove: si rinnova a ogni
+    # risposta esatta, come il quiz. Non e' un guasto se non arriva (la copia
+    # vecchia resta), quindi non fa fallire la risposta.
+    tv.aggiorna_suggerimento(db, forse=True)
+    quando = tv.quando_aggiornate(db)
     return jsonify({
         "quiz": esito["quiz"],
         "risposta": esito["risposta"],
-        "aggiornato": {"quiz": _iso(esito["quando"])},
+        "suggerimento": tv.suggerimento(db),
+        "aggiornato": {"quiz": _iso(quando["quiz"])},
     })
 
 
@@ -976,9 +987,13 @@ def _aggiorna_tv_in_sottofondo(db):
     _, video_quando = tv._leggi(db, "video")
     _, gym_quando = tv._leggi(db, "gym")
     _, quiz_quando = tv._leggi(db, "quiz")
+    _, arte_quando = tv._leggi(db, "arte")
+    _, sugg_quando = tv._leggi(db, "suggerimento")
     if (tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO)
             and tv._fresco(gym_quando, tv.ORE_VIDEO)
-            and tv._fresco(quiz_quando, tv.ORE_EXTRA)):
+            and tv._fresco(quiz_quando, tv.ORE_EXTRA)
+            and tv._fresco(arte_quando, tv.ORE_ARTE)
+            and tv._fresco(sugg_quando, tv.ORE_BORED)):
         return
     percorso = db.execute("PRAGMA database_list").fetchone()[2]
 

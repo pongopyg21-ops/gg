@@ -5203,7 +5203,7 @@ def test_la_csp_consente_solo_il_necessario(client):
     difesa contro uno script iniettato."""
     csp = client.get("/").headers["Content-Security-Policy"]
     assert "frame-src https://www.youtube-nocookie.com" in csp
-    assert "img-src 'self' data: https://image.tmdb.org" in csp
+    assert "img-src 'self' data: https://image.tmdb.org https://images.metmuseum.org" in csp
     assert "media-src 'self' blob: data:" in csp
     assert "object-src 'none'" in csp
     assert "frame-ancestors 'self'" in csp
@@ -7947,13 +7947,20 @@ def test_l_intestazione_della_home_e_centrata(client):
 
 
 def test_la_cucina_ha_la_sua_icona(client):
-    """La scheda Cucina ha un'icona sua (il cappello da chef), non il logo
+    """La scheda Cucina ha un'icona sua (la pentola sul fuoco), non il logo
     dell'app: prima erano lo stesso disegno, quindi la scheda non si
-    distingueva. L'icona e' un file vero, e la sezione la usa."""
+    distingueva. L'icona e' un file vero, e la sezione la usa. Il disegno e'
+    stato cambiato dal cappello da chef: il colore della pentola lo distingue
+    dal vecchio, cosi' un ritorno al cappello non passa inosservato."""
     import os
     radice = os.path.dirname(os.path.abspath(app_module.__file__))
     percorso = os.path.join(radice, "static", "icons", "cucina.svg")
     assert os.path.isfile(percorso), "l'icona della Cucina deve esistere su disco"
+    disegno = open(percorso, encoding="utf-8").read()
+    # la pentola e' il disegno nuovo: il cappello aveva il fondo #f7e58a e il
+    # contorno ambra, che qui non ci sono piu'
+    assert "#c1440e" in disegno, "la Cucina mostra la pentola, non il cappello"
+    assert "#f7e58a" not in disegno, "il vecchio cappello non deve restare"
     html = client.get("/").get_data(as_text=True)
     card = html[html.index('data-section="cucina"'):html.index('data-section="igiene"')]
     assert "/static/icons/cucina.svg" in card
@@ -9409,6 +9416,244 @@ def test_la_sezione_tv_mostra_il_quiz(client):
     assert "tv-barzellette" not in js
 
 
+# ---------- Suggerimento (Bored API) ----------
+# Sotto le domande, un'idea di cosa fare. E' una fonte diversa dal quiz, letta
+# allo stesso modo: si scarica un JSON e si tiene cio' che serve. Si chiede
+# `/filter?type=` (non `/random`): `/random` restituisce spesso un tipo scartato,
+# `/filter` solo quello chiesto.
+
+
+def _suggerimento_finto(tipo="recreational", attivita="Impara a fare il pane"):
+    return {"activity": attivita, "availability": 0.1, "type": tipo,
+            "participants": 2, "price": 0.0,
+            "accessibility": "Few to no challenges",
+            "duration": "minutes", "kidFriendly": True,
+            "link": "", "key": "12345"}
+
+
+def test_il_suggerimento_legge_i_campi_e_traduce_l_attivita(monkeypatch):
+    """La Bored API da' l'attivita' in inglese: si traduce (come le domande), e
+    i campi strutturati si mostrano. `/filter` risponde con un elenco."""
+    def apri(url):
+        if url.startswith(tv.BORED_BASE):
+            return json.dumps([_suggerimento_finto()]).encode("utf-8")
+        if url.startswith(tv.TRADUZIONE_URL):
+            testo = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+            return json.dumps({"responseData": {"translatedText": "IT: " + testo}}).encode("utf-8")
+        raise tv.NonDisponibile(f"indirizzo di prova non previsto: {url}")
+    monkeypatch.setattr(tv, "_apri", apri)
+    s = tv.suggerimento_dal_servizio()
+    assert s["attivita"] == "IT: Impara a fare il pane"
+    assert s["tipo"] == "svago"
+    assert s["partecipanti"] == 2
+    assert s["bambini"] is True
+    assert s["chiave"] == "12345"
+
+
+def test_la_bored_si_chiede_col_filtro_per_tipo(monkeypatch):
+    """Si usa `/filter?type=`, non `/random`: senza il filtro la meta' delle
+    risposte sarebbe di un tipo scartato e il riquadro resterebbe vuoto."""
+    visti = []
+
+    def apri(url):
+        visti.append(url)
+        return json.dumps([_suggerimento_finto(tipo="recreational")]).encode("utf-8")
+    monkeypatch.setattr(tv, "_apri", apri)
+    tv.suggerimento_dal_servizio()
+    bored = [u for u in visti if u.startswith(tv.BORED_BASE)]
+    assert bored, "la Bored API deve essere chiamata"
+    assert all("/filter?type=" in u for u in bored)
+
+
+def test_un_tipo_non_gradito_non_e_un_suggerimento(monkeypatch):
+    """`busywork`/`education` non sono un passatempo da mostrare: si scartano.
+    Solo i tipi tenuti diventano un suggerimento."""
+    assert tv._suggerimento(_suggerimento_finto(tipo="busywork")) is None
+    assert tv._suggerimento(_suggerimento_finto(tipo="education")) is None
+    assert tv._suggerimento(_suggerimento_finto(tipo="recreational")) is not None
+
+
+def test_un_campo_numerico_storto_non_fa_cadere_il_suggerimento():
+    """Un campo non numerico non deve sollevare: l'aggiornamento gira anche in
+    un filo di sottofondo, dove un'eccezione non la vedrebbe nessuno. Si prende
+    il valore di riserva invece di perdere l'attivita'."""
+    s = tv._suggerimento({**_suggerimento_finto(), "participants": "due", "price": "gratis"})
+    assert s is not None
+    assert s["partecipanti"] == 1
+    assert s["prezzo"] == 0.0
+
+
+def test_se_un_tipo_non_risponde_si_passa_al_successivo(monkeypatch):
+    """Un tipo che non risponde non deve svuotare il riquadro: si prova il
+    successivo, e il primo buono si tiene."""
+    def apri(url):
+        if "type=music" in url:
+            return json.dumps([_suggerimento_finto(tipo="music", attivita="Suona la chitarra")]).encode("utf-8")
+        raise tv.NonDisponibile("tipo giu")
+    monkeypatch.setattr(tv, "_apri", apri)
+    s = tv.suggerimento_dal_servizio()
+    assert s["attivita"] == "Suona la chitarra"
+    assert s["tipo"] == "musica"
+
+
+def test_il_suggerimento_senza_rete_non_svuota_la_copia(client, monkeypatch):
+    """La rete cade dopo che la copia c'era gia': il suggerimento resta. E' la
+    regola di tutta la sezione."""
+    db = app_module.get_db()
+    monkeypatch.setattr(
+        tv, "_apri",
+        lambda url: json.dumps([_suggerimento_finto()]).encode("utf-8"))
+    tv.aggiorna_suggerimento(db, forse=False)
+    _niente_rete(monkeypatch)
+    tv.aggiorna_suggerimento(db, forse=False)
+    assert tv.suggerimento(db)["attivita"] == "Impara a fare il pane"
+
+
+def test_l_endpoint_tv_porta_il_suggerimento(client, monkeypatch):
+    """`/api/tv` serve il suggerimento dalla cache, come il quiz. E la risposta
+    esatta del quiz ne porta uno nuovo, cosi' si rinnova giocando."""
+    db = app_module.get_db()
+    monkeypatch.setattr(
+        tv, "_apri",
+        lambda url: json.dumps([_suggerimento_finto()]).encode("utf-8"))
+    tv.aggiorna_suggerimento(db, forse=False)
+    _niente_rete(monkeypatch)
+    d = client.get("/api/tv").get_json()
+    assert d["suggerimento"]["attivita"] == "Impara a fare il pane"
+
+
+def test_la_sezione_tv_mostra_il_suggerimento(client):
+    """Il riquadro del suggerimento ha il suo contenitore nel Quiz, e il client
+    lo riempie. Sta **sotto** le domande: si legge dopo aver risposto."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="tv-suggerimento"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "disegnaSuggerimento" in js
+    assert "tv-suggerimento" in js
+
+
+# ---------- Opere d'arte (Met Museum) ----------
+# Accanto ai video di casa, qualche dipinto della collezione pubblica del Met.
+# Due chiamate: la ricerca su **v1.1** (la v1 e' stata ritirata il 2026-10-01) e
+# il dettaglio su **v1**. Si prova l'interpretazione, che e' la parte che
+# sbaglia, senza toccare la rete.
+
+MET_OPERA = {
+    "objectID": 436535, "isPublicDomain": True,
+    "title": "Wheat Field with Cypresses", "artistDisplayName": "Vincent van Gogh",
+    "objectDate": "1889", "medium": "Oil on canvas", "department": "European Paintings",
+    "primaryImageSmall": "https://images.metmuseum.org/esempio.jpg",
+    "objectURL": "https://www.metmuseum.org/art/collection/search/436535",
+}
+
+
+def _finta_met(monkeypatch, opere, ids=None):
+    """Sostituisce la rete del Met: la ricerca e i dettagli delle opere date."""
+    if ids is None:
+        ids = [o["objectID"] for o in opere]
+    per_id = {o["objectID"]: o for o in opere}
+
+    def apri(url):
+        if url.startswith(tv.MET_RICERCA):
+            return json.dumps({"total": len(ids), "objectIDs": ids}).encode("utf-8")
+        prefisso = tv.MET_BASE + "/objects/"
+        if url.startswith(prefisso):
+            oid = int(url[len(prefisso):])
+            if oid not in per_id:
+                raise tv.NonDisponibile("opera di prova non prevista")
+            return json.dumps(per_id[oid]).encode("utf-8")
+        raise tv.NonDisponibile(f"indirizzo di prova non previsto: {url}")
+    monkeypatch.setattr(tv, "_apri", apri)
+
+
+def test_le_opere_del_met_si_leggono_con_i_loro_campi(monkeypatch):
+    """Titolo, autore, data e foto. La foto arriva dal sito del museo: senza, in
+    una striscia di immagini l'opera non si puo' mostrare."""
+    _finta_met(monkeypatch, [MET_OPERA])
+    arte = tv.arte_dal_servizio()
+    assert len(arte) == 1
+    o = arte[0]
+    assert o["titolo"] == "Wheat Field with Cypresses"
+    assert o["autore"] == "Vincent van Gogh"
+    assert o["data"] == "1889"
+    assert o["foto"] == "https://images.metmuseum.org/esempio.jpg"
+
+
+def test_un_opera_senza_foto_o_non_pubblica_non_si_mostra(monkeypatch):
+    """Si tengono solo le opere di **pubblico dominio** con una foto: un'opera
+    ancora coperta da diritto d'autore non si ridistribuisce, e una senza foto
+    non si vede. Si scartano in silenzio, non e' un guasto."""
+    senza_foto = {**MET_OPERA, "objectID": 1, "primaryImageSmall": ""}
+    coperta = {**MET_OPERA, "objectID": 2, "isPublicDomain": False}
+    buona = {**MET_OPERA, "objectID": 3, "title": "Quadro buono"}
+    _finta_met(monkeypatch, [senza_foto, coperta, buona])
+    arte = tv.arte_dal_servizio()
+    assert [o["titolo"] for o in arte] == ["Quadro buono"]
+
+
+def test_se_nessuna_opera_e_mostrabile_e_un_guasto(monkeypatch):
+    """Se il museo risponde ma nessuna opera e' mostrabile, la copia vecchia
+    deve restare: sollevare `NonDisponibile` e' quello che lo permette."""
+    coperta = {**MET_OPERA, "isPublicDomain": False}
+    _finta_met(monkeypatch, [coperta])
+    with pytest.raises(tv.NonDisponibile):
+        tv.arte_dal_servizio()
+
+
+def test_la_ricerca_del_met_usa_v1_1_e_il_dipartimento(monkeypatch):
+    """La ricerca e' passata a **v1.1** (la v1 risponde 410): l'indirizzo vero
+    deve usare la versione nuova e il dipartimento dei quadri, altrimenti
+    arrivano pitture murali e un manuale a stampa al posto dei dipinti."""
+    visti = []
+
+    def apri(url):
+        visti.append(url)
+        if url.startswith(tv.MET_RICERCA):
+            return json.dumps({"objectIDs": [MET_OPERA["objectID"]]}).encode("utf-8")
+        return json.dumps(MET_OPERA).encode("utf-8")
+    monkeypatch.setattr(tv, "_apri", apri)
+    tv.arte_dal_servizio()
+    assert visti[0].startswith(tv.MET_RICERCA)
+    assert "v1.1/search" in visti[0]
+    assert "departmentId=11" in visti[0]
+    # il dettaglio resta su v1
+    assert "/v1/objects/" in visti[1]
+
+
+def test_la_copia_delle_opere_non_si_svuota_col_guasto(client, monkeypatch):
+    """La rete cade dopo che la copia c'era gia': le opere restano."""
+    db = app_module.get_db()
+    _finta_met(monkeypatch, [MET_OPERA])
+    tv.aggiorna_arte(db, forse=False)
+    _niente_rete(monkeypatch)
+    tv.aggiorna_arte(db, forse=False)
+    assert len(tv.arte(db)) == 1
+
+
+def test_l_endpoint_tv_porta_le_opere(client, monkeypatch):
+    """`/api/tv` serve le opere dalla cache, come video e notizie."""
+    db = app_module.get_db()
+    _finta_met(monkeypatch, [MET_OPERA])
+    tv.aggiorna_arte(db, forse=False)
+    _niente_rete(monkeypatch)
+    d = client.get("/api/tv").get_json()
+    assert len(d["arte"]) == 1
+    assert d["arte"][0]["titolo"] == "Wheat Field with Cypresses"
+    assert d["aggiornato"]["arte"]
+
+
+def test_la_sezione_tv_mostra_le_opere(client):
+    """Il riquadro delle opere ha il suo contenitore in Intrattenimento, e il
+    client lo riempie. Resta nascosto se non c'e' niente, come i riquadri della
+    home: un riquadro vuoto e' peggio di un riquadro in meno."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="tv-arte"' in html
+    assert 'id="tv-arte-box"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "disegnaArte" in js
+    assert "tv-arte" in js
+
+
 # ---------- Snake ----------
 # La logica del gioco e' pura (`snakeNuovo`, `snakePasso`, `snakeDirezione`):
 # prende lo stato e ne restituisce uno nuovo, senza DOM e senza attese. Cosi' si
@@ -9578,7 +9823,7 @@ def test_il_gioco_e_nella_scocca_e_versionato(client):
     la copia vecchia dopo un aggiornamento."""
     sw = client.get("/static/sw.js").get_data(as_text=True)
     assert "/static/snake.js" in sw, "il gioco deve stare nella scocca"
-    assert "maggiordomo-scocca-v6" in sw, "alzare la versione sfratta le copie vecchie"
+    assert "maggiordomo-scocca-v7" in sw, "alzare la versione sfratta le copie vecchie"
     html = client.get("/").get_data(as_text=True)
     import re
     assert re.search(r'/static/snake\.js\?v=', html), "manca la versione nell'indirizzo"
@@ -10851,7 +11096,7 @@ def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkey
     monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
     d = client.post("/api/tv/aggiorna").get_json()
     assert d["aggiornati"] == {"video": False, "notizie": False, "gym": False,
-                               "quiz": False}
+                               "quiz": False, "suggerimento": False, "arte": False}
 
 
 def test_il_database_vecchio_riceve_la_tabella_della_cache(client):

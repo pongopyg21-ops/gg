@@ -2008,6 +2008,28 @@ button { transition: transform .12s ease; }
 .tv-video-titolo { font-weight: 600; font-size: 14px; line-height: 1.35; }
 .tv-video-sotto { font-size: 12px; color: var(--muted); }
 
+/* Le opere del Met: una striscia che scorre in orizzontale, non una griglia.
+   Sono una pausa fra un video e l'altro, quindi devono stare in una riga sola
+   e non allungare la pagina. Ogni scheda ha una misura fissa, cosi' il titolo
+   non ne deforma la larghezza. */
+.tv-arte-box { margin-bottom: 28px; }
+.tv-arte {
+  display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px;
+  scroll-snap-type: x proximity;
+}
+.tv-opera {
+  flex: 0 0 190px; margin: 0; scroll-snap-align: start;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+}
+.tv-opera img {
+  display: block; width: 100%; height: 190px; object-fit: cover;
+  background: var(--accent-soft);
+}
+.tv-opera figcaption { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; }
+.tv-opera-titolo { font-weight: 600; font-size: 13px; line-height: 1.35; }
+.tv-opera-sotto { font-size: 11.5px; color: var(--muted); }
+
 .tv-notizie { display: flex; flex-direction: column; gap: 2px; }
 .tv-notizia a {
   display: flex; flex-direction: column; gap: 3px;
@@ -2058,6 +2080,22 @@ button { transition: transform .12s ease; }
   display: inline-block; margin-top: 10px; font-size: 11.5px;
   color: var(--muted); letter-spacing: .02em;
 }
+
+/* Il suggerimento della Bored API, sotto le domande: una cosa da fare. E' un
+   riquadro con un occhiello, come il riquadro-guida dell'Igiene, non una card
+   del quiz: non si tocca, si legge. */
+.tv-suggerimento {
+  margin-top: 16px; padding: 14px 16px;
+  background: var(--accent-soft); border: 1px solid var(--attenzione-bordo);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.tv-sug-occhiello {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--accent-deep); font-weight: 700;
+}
+.tv-sug-attivita { font-size: 15px; font-weight: 600; line-height: 1.4; }
+.tv-sug-dettagli { font-size: 12px; color: var(--muted); }
 
 /* ---------- GIOCHI ----------
    Snake: il campo e i comandi. Il canvas ha una misura fissa ma `max-width:100%`

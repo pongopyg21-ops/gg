@@ -541,6 +541,18 @@
         <button id="tv-playlist-salva" type="button">Cambia playlist</button>
       </div>
       <div id="tv-video" class="tv-video"></div>
+
+      <!-- Le opere d'arte del Metropolitan Museum, accanto ai video di casa: una
+           pausa di gusto fra un video e l'altro. E' una fonte diversa (Met) e si
+           aggiorna a parte, ma vive qui perche' e' intrattenimento come i video.
+           Il riquadro resta nascosto se non c'e' niente, come i riquadri della
+           home: un riquadro vuoto e' peggio di un riquadro in meno. -->
+      <div id="tv-arte-box" class="tv-arte-box hidden">
+        <h3 class="section-title">Opere dal Metropolitan</h3>
+        <p class="hint">Qualche dipinto della collezione pubblica del Metropolitan
+          Museum of Art, accanto ai video di casa.</p>
+        <div id="tv-arte" class="tv-arte"></div>
+      </div>
     </div>
 
     <!-- Notizie: le sezioni ANSA, rinnovate una volta al giorno. -->
@@ -555,13 +567,15 @@
          regola dei video e delle notizie: quello che si e' gia' scaricato resta,
          e un guasto di rete non svuota il riquadro. Le domande sono tradotte in
          italiano sul server (Open Trivia DB non ne ha): se la traduzione non
-         riesce restano in inglese, e il riquadro funziona lo stesso. -->
+         riesce restano in inglese, e il riquadro funziona lo stesso. Sotto le
+         domande, un suggerimento di cosa fare dalla Bored API. -->
     <div class="ch-panel" data-tvp-panel="quiz">
       <h3 class="section-title">Quiz</h3>
       <p class="hint">Dieci domande di cultura generale di difficoltà media, dal
         servizio Open Trivia DB, tradotte in italiano. Tocca una risposta per
         scoprire se è giusta.</p>
       <div id="tv-quiz" class="tv-quiz"></div>
+      <div id="tv-suggerimento" class="tv-suggerimento hidden"></div>
     </div>
 
     <!-- Film: le locandine TMDB e i preferiti. E' intrattenimento come i video e

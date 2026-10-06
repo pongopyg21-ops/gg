@@ -7,15 +7,20 @@ senza connessione. La regola e' una sola e vale per entrambe: quello che si e'
 gia' scaricato **resta**, e un guasto di rete non deve svuotare la sezione. Si
 mostra l'ultima copia buona e si riprova piu' tardi.
 
-Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per
-leggere i due formati (Atom per la playlist, RSS per le notizie). Sono formati
-semplici, e una libreria in piu' sarebbe una cosa da aggiornare per leggere
-cinque campi.
+Vale identica per le due fonti aggiunte dopo: il **quiz** (Open Trivia DB) con
+un suggerimento di cosa fare dalla **Bored API**, e le **opere d'arte** della
+collezione pubblica del **Met** (Metropolitan Museum) accanto ai video. Anche
+loro passano dalla cache della casa, e un guasto non le fa sparire.
 
-Le notizie sono **max venti**, da piu' testate (ANSA e RaiNews), mescolate e si
-rinnovano una volta al giorno: un titolo, una riga di sommario e un rimando alla
-fonte, non l'articolo. Il testo e' di chi lo scrive, e la casa non e' il posto
-per ricopiarlo.
+Nessuna dipendenza nuova: `urllib.request` per scaricare, `ElementTree` per
+leggere i due formati dei feed (Atom per la playlist, RSS per le notizie) e
+`json` per il resto. Sono formati semplici, e una libreria in piu' sarebbe una
+cosa da aggiornare per leggere cinque campi.
+
+Le notizie sono **max venti**, da piu' testate (ANSA), mescolate e si rinnovano
+una volta al giorno: un titolo, una riga di sommario e un rimando alla fonte,
+non l'articolo. Il testo e' di chi lo scrive, e la casa non e' il posto per
+ricopiarlo.
 
 Il modulo non apre database per conto suo: riceve una connessione. Cosi' non
 importa `app` (che importa questo) e resta provabile da solo.
@@ -127,6 +132,65 @@ TRADUZIONE_URL = os.environ.get(
 # La difficolta' e' una parola sola: si mappa invece di tradurla, cosi' non
 # dipende dal servizio e non costa una richiesta.
 DIFFICOLTA_IT = {"easy": "facile", "medium": "medio", "hard": "difficile"}
+
+# --- Un suggerimento di cosa fare (Bored API) ------------------------------
+# Nella scheda Quiz, sotto le domande, un'idea di cosa fare quando ci si annoia:
+# e' il pubblico della Bored API (`bored-api.appbrewery.com`), un servizio
+# pubblico senza chiave. La risposta e' in inglese, quindi passa dalla stessa
+# traduzione delle domande; i campi strutturati (quanti partecipanti, se adatto
+# ai bambini) si mostrano cosi' come sono.
+#
+# L'indirizzo base si puo' sostituire da `TV_BORED` senza toccare il modulo,
+# come le altre fonti.
+BORED_BASE = os.environ.get(
+    "TV_BORED", "https://bored-api.appbrewery.com")
+# Il tipo di attivita' che si accetta. La Bored API ne offre nove; quelle
+# "cerebrali" (busywork, education, diy, charity) non sono un passatempo da
+# mostrare a casa, e i tipi strambi — "relaxation", "cooking" — non sono
+# affidabili. Si tengono i tre che sono davvero qualcosa da fare insieme o per
+# svago.
+#
+# Si chiede **`/filter?type=`** e non `/random`: `/random` non accetta un filtro
+# per tipo e restituisce spesso un tipo scartato, quindi con `/random` la meta'
+# dei tentativi andrebbe buttata. `/filter` restituisce solo il tipo chiesto,
+# quindi ogni risposta e' buona.
+BORED_TIPI = ("recreational", "social", "music")
+# Quanti tipi provare, se uno non risponde o non da' niente di usabile. Ogni
+# tentativo e' una richiesta breve.
+BORED_TENTATIVI = 4
+# L'attivita' si rinnova spesso: e' un suggerimento, non una notizia.
+ORE_BORED = 1
+
+# --- Opere d'arte (Metropolitan Museum) ------------------------------------
+# Nella scheda Intrattenimento, accanto ai video di casa, qualche opera della
+# collezione pubblica del Met: e' una pausa di gusto fra un video e l'altro, non
+# un catalogo da sfogliare. Il servizio e' pubblico e senza chiave.
+#
+# La ricerca (`/search`) e' passata a **v1.1** il 2026-10-01: la v1 risponde
+# 410 con l'indicazione di usare la nuova, che e' paginata con `offset`/`limit`.
+# Il dettaglio dell'opera resta su **v1** (`/objects/{id}`): sono due versioni
+# diverse dello stesso servizio, e usarne una sola per tutto non funziona.
+MET_BASE = "https://collectionapi.metmuseum.org/public/collection/v1"
+MET_RICERCA = MET_BASE + ".1/search"
+# Il tema della ricerca. `q=painting` con `isHighlight=true` porta i dipinti
+# scelti dagli editori del museo: sono i piu' riconoscibili, che e' quello che
+# serve accanto ai video. `hasImages=true` esclude le opere senza foto, che in
+# una striscia di immagini non si possono mostrare.
+#
+# `departmentId=11` e' il dipartimento **European Paintings**: senza, `painting`
+# pesca anche un manuale a stampa e le pitture murali di Pompei — bei pezzi, ma
+# un libro in una striscia di quadri non c'entra. E' il dipartimento dei quadri
+# che si riconoscono, ed e' quello che ci si aspetta accanto ai video.
+MET_QUERY = "painting"
+MET_HIGHLIGHT = "true"
+MET_DIPARTIMENTO = "11"
+# Quante opere tenere, e il tetto ai dettagli chiesti: la ricerca puo' elencare
+# centinaia di id, ma ogni opera e' una chiamata a parte e il tetto tiene basso
+# il lavoro. Si chiede solo il necessario a riempire le opere tenute.
+MET_QUANTE = 12
+MET_MAX_DETTAGLI = 24
+# Le opere d'arte non cambiano: si rinnovano una volta al giorno come i video.
+ORE_ARTE = 24
 
 UA = "IlMaggiordomo"
 
@@ -703,6 +767,191 @@ def _mescola_una(d) -> dict | None:
             "difficolta": DIFFICOLTA_IT.get(difficolta, difficolta)}
 
 
+# ------------------------------------------------------- suggerimento (Bored)
+# Un'idea di cosa fare, per la scheda Quiz. E' una fonte diversa dalle domande,
+# letta allo stesso modo: si scarica un JSON e si tiene solo cio' che serve.
+
+# Le etichette italiane dei campi strutturati. Si mappano invece di tradurle:
+# sono valori chiusi, non frasi, quindi non vale una richiesta di rete — la
+# stessa scelta di `DIFFICOLTA_IT`.
+TIPI_IT = {"recreational": "svago", "social": "in compagnia", "music": "musica"}
+ACCESSIBILITA_IT = {
+    "Few to no challenges": "Poche difficolta'",
+    "Minor challenges": "Qualche difficolta'",
+    "Major challenges": "Impegnativa",
+}
+
+
+def _intero(valore, predefinito=1) -> int:
+    try:
+        return int(valore)
+    except (TypeError, ValueError):
+        return predefinito
+
+
+def _decimale(valore, predefinito=0.0) -> float:
+    try:
+        return float(valore)
+    except (TypeError, ValueError):
+        return predefinito
+
+
+def _suggerimento(dati) -> dict | None:
+    """Da una risposta della Bored API al suggerimento, o `None` se non va bene.
+
+    Un'attivita' di un tipo che non si vuole mostrare, o senza testo, non e' un
+    guasto: si scarta e si passa al tipo successivo (vedi
+    `suggerimento_dal_servizio`). Il campo `type` e' l'unico obbligatorio: il
+    resto si mostra se c'e'. I numeri si convertono con cautela: un campo non
+    numerico non deve far cadere l'aggiornamento (sarebbe un errore in un filo
+    di sottofondo, dove non lo si vede).
+    """
+    if not isinstance(dati, dict):
+        return None
+    attivita = _pulisci(dati.get("activity"))
+    tipo = _pulisci(dati.get("type")).lower()
+    if not attivita or tipo not in BORED_TIPI:
+        return None
+    return {
+        "attivita": attivita,
+        "tipo": TIPI_IT.get(tipo, tipo),
+        "partecipanti": _intero(dati.get("participants")),
+        "accessibilita": ACCESSIBILITA_IT.get(_pulisci(dati.get("accessibility")),
+                                              _pulisci(dati.get("accessibility"))),
+        "bambini": bool(dati.get("kidFriendly")),
+        "prezzo": _decimale(dati.get("price")),
+        "link": _pulisci(dati.get("link")),
+        "chiave": _pulisci(dati.get("key")),
+    }
+
+
+def _url_bored(tipo: str) -> str:
+    """L'indirizzo della Bored API per un tipo di attivita'."""
+    return f"{BORED_BASE}/filter?{urllib.parse.urlencode({'type': tipo})}"
+
+
+def suggerimento_dal_servizio() -> dict:
+    """Un suggerimento dalla Bored API, tradotto in italiano.
+
+    Si chiede `/filter?type=` per un tipo che si vuole mostrare e si sceglie una
+    voce a caso fra quelle. `/random` restituirebbe spesso un tipo scartato (le
+    attivita' "cerebrali", di cui non si vuole mostrare niente), quindi la meta'
+    dei tentativi andrebbe buttata. Se un tipo non risponde si passa al
+    successivo; se nessuno risponde si solleva `NonDisponibile`, e la copia
+    vecchia resta, come per ogni altra fonte. La traduzione e' un di piu' (come
+    per le domande): se non riesce, il suggerimento resta in inglese e si mostra
+    lo stesso.
+    """
+    tipi = list(BORED_TIPI)
+    random.shuffle(tipi)
+    for tipo in tipi[:max(1, BORED_TENTATIVI)]:
+        try:
+            dati = _json(_url_bored(tipo))
+        except NonDisponibile:
+            continue
+        if not isinstance(dati, list) or not dati:
+            continue
+        scelto = _suggerimento(random.choice(dati))
+        if not scelto:
+            continue
+        tradotto = _traduci(scelto["attivita"])
+        if tradotto:
+            scelto["attivita"] = tradotto
+        return scelto
+    raise NonDisponibile("La Bored API non ha dato un'attivita' adatta")
+
+
+def aggiorna_suggerimento(db, forse=True) -> bool:
+    return _aggiorna(db, "suggerimento", ORE_BORED,
+                     lambda _db: suggerimento_dal_servizio(), forse=forse)
+
+
+def suggerimento(db) -> dict:
+    return _leggi(db, "suggerimento")[0] or {}
+
+
+# --------------------------------------------------- opere d'arte (Met Museum)
+# Qualche opera della collezione pubblica del Metropolitan Museum, accanto ai
+# video di casa. Due chiamate: la ricerca (che da' gli id) e il dettaglio di
+# ogni opera (che da' titolo, autore, data e foto). La ricerca e' su **v1.1**,
+# il dettaglio su **v1**: sono due versioni diverse dello stesso servizio.
+
+def _opere_id() -> list:
+    """Gli id delle opere da mostrare: i dipinti scelti dal museo, con foto."""
+    parametri = {
+        "isHighlight": MET_HIGHLIGHT,
+        "hasImages": "true",
+        "q": MET_QUERY,
+        "departmentId": MET_DIPARTIMENTO,
+        "limit": str(MET_MAX_DETTAGLI),
+    }
+    dati = _json(f"{MET_RICERCA}?{urllib.parse.urlencode(parametri)}")
+    if not isinstance(dati, dict):
+        raise NonDisponibile("La ricerca del Met non e' leggibile")
+    return [i for i in (dati.get("objectIDs") or []) if isinstance(i, int)]
+
+
+def _opera(id_opera) -> dict | None:
+    """Una singola opera, nella forma della copia, o `None` se non si mostra.
+
+    Si tiene solo cio' che e' **pubblico dominio** e ha una foto: un'immagine di
+    un'opera ancora coperta da diritto d'autore non si ridistribuisce, e in una
+    striscia di immagini un'opera senza foto non si puo' mostrare. Il resto si
+    scarta in silenzio: non e' un guasto, e' il criterio.
+    """
+    try:
+        dati = _json(f"{MET_BASE}/objects/{id_opera}")
+    except NonDisponibile:
+        return None
+    if not isinstance(dati, dict):
+        return None
+    titolo = _pulisci(dati.get("title"))
+    foto = _pulisci(dati.get("primaryImageSmall")) or _pulisci(dati.get("primaryImage"))
+    if not titolo or not foto or not dati.get("isPublicDomain"):
+        return None
+    return {
+        "id": dati.get("objectID"),
+        "titolo": titolo,
+        "autore": _pulisci(dati.get("artistDisplayName")),
+        "data": _pulisci(dati.get("objectDate")),
+        "tecnica": _pulisci(dati.get("medium")),
+        "museo": _pulisci(dati.get("department")),
+        "foto": foto,
+        "link": _pulisci(dati.get("objectURL")),
+    }
+
+
+def arte_dal_servizio() -> list:
+    """Le opere da mostrare: pubblico dominio, con foto, fino a `MET_QUANTE`.
+
+    Il dettaglio si chiede solo finche' non si sono riempite le opere tenute:
+    la ricerca puo' elencare centinaia di id, e chiederli tutti sarebbe centinaia
+    di richieste per mostrarne dodici. Il tetto `MET_MAX_DETTAGLI` limita anche
+    il caso in cui molte opere vengano scartate.
+    """
+    id_opere = _opere_id()[:MET_MAX_DETTAGLI]
+    if not id_opere:
+        raise NonDisponibile("Il Met non ha dato opere")
+    tenute = []
+    for id_opera in id_opere:
+        if len(tenute) >= MET_QUANTE:
+            break
+        opera = _opera(id_opera)
+        if opera:
+            tenute.append(opera)
+    if not tenute:
+        raise NonDisponibile("Nessuna opera del Met mostrabile")
+    return tenute
+
+
+def aggiorna_arte(db, forse=True) -> bool:
+    return _aggiorna(db, "arte", ORE_ARTE, lambda _db: arte_dal_servizio(), forse=forse)
+
+
+def arte(db) -> list:
+    return _leggi(db, "arte")[0] or []
+
+
 def _data_iso(testo: str) -> str:
     """Da `Thu, 1 Oct 2026 16:58:22 +0200` a `2026-10-01T16:58:22`.
 
@@ -846,11 +1095,13 @@ def rispondi(db, indice) -> dict | None:
 
 
 def aggiorna(db, forse=True) -> dict:
-    """Aggiorna TV, notizie, GYM e quiz. Non solleva mai."""
+    """Aggiorna TV, notizie, GYM, quiz, suggerimento e opere d'arte. Non solleva mai."""
     return {"video": aggiorna_video(db, forse=forse),
             "notizie": aggiorna_notizie(db, forse=forse),
             "gym": aggiorna_gym(db, forse=forse),
-            "quiz": aggiorna_quiz(db, forse=forse)}
+            "quiz": aggiorna_quiz(db, forse=forse),
+            "suggerimento": aggiorna_suggerimento(db, forse=forse),
+            "arte": aggiorna_arte(db, forse=forse)}
 
 
 def video(db) -> list:
@@ -876,7 +1127,7 @@ def quando_aggiornate(db) -> dict:
     settimana fa quando la rete non ha risposto.
     """
     esito = {}
-    for chiave in ("video", "notizie", "gym", "quiz"):
+    for chiave in ("video", "notizie", "gym", "quiz", "suggerimento", "arte"):
         _, quando = _leggi(db, chiave)
         esito[chiave] = quando or None
     return esito

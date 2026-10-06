@@ -777,9 +777,12 @@ Conseguenze pratiche per chi mette mano al codice:
   **L'ordine delle schede è: Cucina, Appunti, FAQ, TV, GYM, Igiene**
   (`test_l_ordine_delle_categorie_in_home` lo fissa). L'Igiene è in fondo perché
   è la cosa che si guarda meno spesso; l'ordine è dell'utente, non alfabetico.
-  La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, un cappello
-  da chef sul cielo dell'app): prima usava il logo dell'app, quindi non si
-  distingueva. Le altre schede tengono la loro emoji (`test_la_cucina_ha_la_sua_icona`).
+  La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, una pentola
+  sul fuoco col vapore): prima usava il logo dell'app, quindi non si
+  distingueva. Il disegno era un cappello da chef ed è stato cambiato su
+  richiesta dell'utente: il colore della pentola (`#c1440e`) distingue il nuovo
+  dal vecchio, così un ritorno al cappello non passa inosservato
+  (`test_la_cucina_ha_la_sua_icona`). Le altre schede tengono la loro emoji.
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
@@ -1907,20 +1910,21 @@ I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte co
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
 
 
-## La sezione TV: video, notizie e quiz
+## La sezione TV: video, notizie, quiz, arte e giochi
 
 `tv.py` tiene insieme cose che non sono dati dell'app — la playlist YouTube
-della casa, le notizie dal mondo (ANSA) e il quiz (Open Trivia DB) — perché
-vivono nella stessa sezione e hanno lo stesso problema: **la rete**. Un feed si
-sposta, un sito cambia, e la casa può restare senza connessione. La regola è una
-e vale per tutte: quello che si è già scaricato **resta**, e un guasto di rete
-non deve svuotare la sezione. Si mostra l'ultima copia buona e si riprova più
-tardi.
+della casa, le notizie dal mondo (ANSA), il quiz (Open Trivia DB) con un
+suggerimento di cosa fare (Bored API) e le opere d'arte del Metropolitan Museum
+— perché vivono nella stessa sezione e hanno lo stesso problema: **la rete**. Un
+feed si sposta, un sito cambia, e la casa può restare senza connessione. La
+regola è una e vale per tutte: quello che si è già scaricato **resta**, e un
+guasto di rete non deve svuotare la sezione. Si mostra l'ultima copia buona e si
+riprova più tardi.
 
 Nessuna dipendenza nuova: `urllib.request` per scaricare, `ElementTree` per i
 due formati dei feed (Atom per la playlist, RSS per le notizie) e `json` per il
-quiz. Sono formati semplici, e una libreria in più sarebbe una cosa da
-aggiornare per leggere cinque campi.
+resto (quiz, suggerimento, opere). Sono formati semplici, e una libreria in più
+sarebbe una cosa da aggiornare per leggere cinque campi.
 
 **Il quiz è tradotto in italiano sul server.** Open Trivia DB **non ha contenuti
 in italiano** (ignora `lang=it` e risponde comunque in inglese), quindi le
@@ -1979,6 +1983,62 @@ All'avvio il giro su tutte le case aspetta fra una casa e l'altra
 (`_giro_su_tutte_le_case(..., ritardo=True)`): senza, il quiz arriverebbe solo
 alla prima casa e le altre resterebbero vuote fino al giro dopo, con l'aria che
 il quiz non funzioni.
+
+### Il suggerimento di cosa fare (Bored API)
+
+Sotto le domande, un'idea di cosa fare quando ci si annoia, dalla **Bored API**
+(`bored-api.appbrewery.com`, pubblica e senza chiave). Sta nella cache della
+casa (`tv_cache`, chiave `suggerimento`), si rinnova ogni `ORE_BORED` (1 ora) e
+si mostra tradotto (stessa traduzione delle domande: se non riesce, resta in
+inglese). Il riquadro `#tv-suggerimento` **resta nascosto** se non c'è niente,
+come i riquadri della home.
+
+La scelta che conta: **si chiede `/filter?type=` e non `/random`.** `/random`
+non accetta un filtro per tipo e restituisce spesso un tipo che non si vuole
+mostrare (busywork, education, charity…): con `/random` metà dei tentativi
+andrebbe buttata e il riquadro resterebbe vuoto anche quando la fonte risponde.
+`/filter` restituisce solo il tipo chiesto (`BORED_TIPI` = recreational, social,
+music), quindi ogni risposta è buona; si sceglie una voce a caso fra quelle. Se
+un tipo non risponde si passa al successivo, e se nessuno risponde la copia
+vecchia resta (`NonDisponibile`).
+
+I campi numerici (`participants`, `price`) si convertono con `_intero`/
+`_decimale`: un valore non numerico non deve sollevare, perché l'aggiornamento
+gira anche in un filo di sottofondo dove un'eccezione non la vedrebbe nessuno.
+La risposta esatta del quiz rinnova **anche** il suggerimento
+(`POST /api/quiz/rispondi`), così si aggiorna giocando.
+
+### Le opere d'arte del Metropolitan (Met Museum)
+
+Nella scheda **Intrattenimento**, accanto ai video di casa, una striscia di
+dipinti della collezione pubblica del **Metropolitan Museum**
+(`collectionapi.metmuseum.org`, pubblico e senza chiave). Sono una pausa di
+gusto fra un video e l'altro, non un catalogo: si scorrono in orizzontale, e il
+riquadro resta nascosto se non c'è niente. Cache `tv_cache` chiave `arte`,
+rinnovata ogni `ORE_ARTE` (24 ore).
+
+**La trappola è il cambio di versione: la ricerca è su `v1.1`, il dettaglio su
+`v1`.** Il 2026-10-01 il museo ha ritirato `/v1/search` (risponde 410 con
+l'indicazione di usare `/v1.1/search`, paginata con `offset`/`limit`), ma il
+dettaglio dell'opera è rimasto su `/v1/objects/{id}`: sono due versioni diverse
+dello stesso servizio, e usarne una sola per tutto non funziona. Un test lo
+fissa (`test_la_ricerca_del_met_usa_v1_1_e_il_dipartimento`).
+
+Si tengono solo le opere di **pubblico dominio con una foto**: un'immagine
+ancora coperta da diritto d'autore non si ridistribuisce, e un'opera senza foto
+in una striscia di immagini non si può mostrare. Si scartano in silenzio, e se
+nessuna è mostrabile si solleva `NonDisponibile` (la copia vecchia resta).
+
+`departmentId=11` è il dipartimento **European Paintings**: senza, `q=painting`
+pesca anche un manuale a stampa e le pitture murali di Pompei — bei pezzi, ma un
+libro in una striscia di quadri non c'entra. Il dettaglio si chiede solo finché
+non si sono riempite le opere tenute (`MET_QUANTE`), con un tetto ai dettagli
+(`MET_MAX_DETTAGLI`): la ricerca elenca centinaia di id, e chiederli tutti
+sarebbe centinaia di richieste per mostrarne dodici.
+
+**La CSP deve permettere `https://images.metmuseum.org` in `img-src`**, come già
+fa per TMDB: senza, il browser blocca le foto in silenzio e la striscia resta
+vuota. C'è un test che lo verifica.
 
 **Le barzellette (JokeAPI) sono state tolte** su richiesta dell'utente: JokeAPI
 non ha contenuti in italiano e le battute in inglese non avevano senso in una

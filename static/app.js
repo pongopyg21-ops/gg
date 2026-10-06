@@ -253,6 +253,9 @@ async function renderTv() {
     $('#tv-video').innerHTML = '';
     $('#tv-notizie').innerHTML = '';
     $('#tv-quiz').innerHTML = '';
+    $('#tv-arte').innerHTML = '';
+    $('#tv-arte-box').classList.add('hidden');
+    $('#tv-suggerimento').classList.add('hidden');
     toast('Non riesco a caricare la sezione TV.');
   }
 }
@@ -261,6 +264,7 @@ function disegnaTv(d) {
   const video = d.video || [];
   const notizie = d.notizie || [];
   const quiz = d.quiz || [];
+  const arte = d.arte || [];
 
   // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
   // guardando. Non si riscrive sopra quello che l'utente sta digitando.
@@ -282,6 +286,8 @@ function disegnaTv(d) {
     </article>`).join('')
     : `<p class="tv-vuoto">Nessun video disponibile. Premi «Aggiorna» fra poco.</p>`;
 
+  disegnaArte(arte);
+
   $('#tv-notizie').innerHTML = notizie.length ? notizie.map((n) => `
     <article class="tv-notizia">
       <a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
@@ -298,11 +304,51 @@ function disegnaTv(d) {
   // risposta non si dice subito: si tocca, e la riga si colora. Testi e
   // difficolta' arrivano gia' in italiano dal server.
   disegnaQuiz(quiz);
+  disegnaSuggerimento(d.suggerimento || {});
 
   // quando sono state prese le copie: senza, non si sa se si sta guardando
   // quello di oggi o quello di una settimana fa
   const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
   $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
+}
+
+// Le opere d'arte del Met, accanto ai video: una striscia di dipinti della
+// collezione pubblica. La foto arriva dal sito del museo (dominio in `img-src`
+// della CSP): un'opera senza foto non ci sarebbe, il server la scarta prima.
+function disegnaArte(arte) {
+  $('#tv-arte').innerHTML = arte.length ? arte.map((o) => `
+    <figure class="tv-opera">
+      <img src="${esc(o.foto)}" alt="${esc(o.titolo)}" loading="lazy">
+      <figcaption>
+        <span class="tv-opera-titolo">${esc(o.titolo)}</span>
+        <span class="tv-opera-sotto">${esc([o.autore, o.data].filter(Boolean).join(', '))}</span>
+      </figcaption>
+    </figure>`).join('')
+    : '';
+  $('#tv-arte-box').classList.toggle('hidden', !arte.length);
+}
+
+// Il suggerimento della Bored API, sotto le domande: una cosa da fare quando ci
+// si annoia. E' un di piu': se non c'e' (rete assente, copia vuota) il riquadro
+// resta nascosto, come i riquadri della home quando non hanno niente da dire.
+function disegnaSuggerimento(s) {
+  const box = $('#tv-suggerimento');
+  if (!s || !s.attivita) {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  const dettagli = [
+    s.tipo,
+    s.partecipanti > 1 ? `${s.partecipanti} persone` : 'da soli',
+    s.bambini ? 'adatta ai bambini' : '',
+    s.accessibilita,
+  ].filter(Boolean);
+  box.innerHTML = `
+    <span class="tv-sug-occhiello">Se ti annoi</span>
+    <span class="tv-sug-attivita">${esc(s.attivita)}</span>
+    <span class="tv-sug-dettagli">${esc(dettagli.join(' · '))}</span>`;
+  box.classList.remove('hidden');
 }
 
 function disegnaQuiz(quiz) {
@@ -343,6 +389,7 @@ $('#tv-quiz').addEventListener('click', async (e) => {
   try {
     const d = await api('/api/quiz/rispondi', { method: 'POST', body: { indice } });
     disegnaQuiz(d.quiz || []);
+    if (d.suggerimento) disegnaSuggerimento(d.suggerimento);
   } catch (_e) {
     // la domanda resta a schermo, con la risposta colorata: non e' un guasto
   }
