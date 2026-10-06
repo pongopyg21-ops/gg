@@ -65,6 +65,13 @@
   --cielo-alto: #cdeafb;
   --cielo-luce-1: rgba(255, 255, 255, .85);
   --cielo-luce-2: rgba(255, 255, 255, .7);
+  /* Lo sfondo della home (`.home::before`): tre aloni che respirano dietro le
+     schede. Sono **trasparenze**, non colori pieni: suggeriscono il mare senza
+     coprire il testo, che sui riquadri resta su carta opaca. Deboli apposta —
+     la home si guarda per scegliere dove andare, non per ammirare lo sfondo. */
+  --home-alone-1: rgba(11, 110, 143, .12);
+  --home-alone-2: rgba(23, 121, 107, .10);
+  --home-alone-3: rgba(176, 118, 28, .07);
 }
 
 /* Tema scuro: la stessa palette «mare», ma di notte. Non e' un negativo
@@ -109,6 +116,12 @@ html[data-tema="scuro"] {
   --cielo-alto: #0a1d26;
   --cielo-luce-1: rgba(120, 180, 205, .10);
   --cielo-luce-2: rgba(120, 180, 205, .08);
+  /* Di notte gli aloni si schiariscono invece di scurirsi: sulla notte un alone
+     scuro non si vedrebbe. Piu' tenui del giorno, perche' al buio anche una
+     luce debole si nota. */
+  --home-alone-1: rgba(79, 179, 232, .10);
+  --home-alone-2: rgba(76, 192, 172, .09);
+  --home-alone-3: rgba(224, 169, 74, .06);
 
   color-scheme: dark;
 }
@@ -140,6 +153,29 @@ body {
   max-width: 960px; margin: 0 auto;
   padding: 56px 28px 72px;
   min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+  position: relative;
+}
+/* Lo sfondo della home: tre aloni che respirano **lentamente** dietro le
+   schede. E' la sola pagina dove il contenuto lascia respirare il fondo — le
+   aree sono di lavoro e restano piatte. Sta su `.home::before` con `z-index`
+   negativo: cosi' i riquadri (opachi) restano leggibili e il testo non ci
+   finisce mai sopra. I colori sono trasparenze del tema (vedi `--home-alone-*`),
+   quindi il tema scuro si schiarisce da solo invece di restare a macchie.
+   L'animazione e' lenta (30s) e il movimento e' di pochi punti percentuali: si
+   percepisce che il fondo vive, non che si muove. Chi ha chiesto meno movimento
+   non vede niente animarsi (la regola globale piu' sotto). */
+.home::before {
+  content: "";
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 34% at 22% 16%, var(--home-alone-1), transparent 62%),
+    radial-gradient(ellipse 38% 30% at 78% 30%, var(--home-alone-2), transparent 64%),
+    radial-gradient(ellipse 46% 36% at 55% 86%, var(--home-alone-3), transparent 66%);
+  animation: home-respira 30s ease-in-out infinite;
+}
+@keyframes home-respira {
+  0%, 100% { background-position: 0 0, 0 0, 0 0; }
+  50%      { background-position: 3% -2%, -3% 3%, 2% -2%; }
 }
 .home-hero { margin-bottom: 34px; }
 /* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non

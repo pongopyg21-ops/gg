@@ -135,6 +135,11 @@ SCIA = (
     1110358,  # Yannick - La rivincita dello spettatore (2023)
 )
 QUANTI_SCIA = 8
+# Quante pagine di `discover` al massimo si guardano per trovare un rimpiazzo.
+# Un tetto c'e' perche' ogni pagina sono piu' chiamate di dettaglio: se dopo
+# qualche pagina non si e' trovato niente di nuovo, e' meglio lasciare la copia
+# com'e' che continuare a girare.
+RIMPIAZZI_MASSIMI = 4
 # I generi che non entrano nella scia: azione e film per bambini li toglie gia'
 # `_escludi`, ma le raccomandazioni portano anche documentari (99) e film
 # musicali (10402), che qui non si cercano. Sono gli stessi gusti dei film del
@@ -423,6 +428,64 @@ def _scia() -> list:
     return _schede_di({"results": ordinati})
 
 
+def _con_dettagli(scheda: dict) -> dict | None:
+    """La scheda con le piattaforme, o `None` se il film non ha versione italiana.
+
+    Il dettaglio (una chiamata a film) e' l'unico posto dove si scopre se il
+    film e' doppiato/sottotitolato in italiano. E' il filtro che rende la
+    sezione una serata che si puo' davvero guardare.
+    """
+    dettagli = _dettagli(scheda["id"])
+    if not dettagli["italiano"]:
+        return None
+    return {**scheda, "piattaforme": dettagli["piattaforme"]}
+
+
+def _candidati(pagina: int = 1) -> list:
+    """I candidati da cui pescare, mescolando film del momento, nicchia e scia.
+
+    E' la parte di `_scarica` che costruisce l'elenco, **senza** il filtro
+    italiano: si estrae perche' anche `sostituisci` (il rimpiazzo di un titolo
+    eliminato) deve poter pescare, e da una **pagina diversa** per non ripescare
+    gli stessi. La nicchia e la scia si chiedono solo per la prima pagina: sono
+    elenchi fissi, e ripeterli a ogni pagina sarebbe lavoro sprecato.
+    """
+    dati = _chiama("/discover/movie", _escludi({
+        "sort_by": "popularity.desc",
+        "vote_count.gte": VOTI_MIN,
+        "vote_count.lte": VOTI_MAX,
+        "vote_average.gte": VOTO_MIN,
+        "include_adult": "false",
+        "page": pagina,
+    }))
+    candidate = []
+    visti = set()
+
+    def aggiungi(gruppo, quanti=None):
+        presi = 0
+        for scheda in gruppo:
+            if quanti is not None and presi >= quanti:
+                break
+            if scheda["id"] in visti:
+                continue
+            visti.add(scheda["id"])
+            candidate.append(scheda)
+            presi += 1
+
+    principale = _schede_di(dati)
+    aggiungi(principale, QUANTI)
+    if pagina == 1:
+        nicchia, scia = _nicchia(), _scia()
+        aggiungi(nicchia, QUANTI_NICCHIA)
+        aggiungi(scia, QUANTI_SCIA)
+        aggiungi(principale)
+        aggiungi(nicchia)
+        aggiungi(scia)
+    else:
+        aggiungi(principale)
+    return candidate
+
+
 def _scarica(db) -> list:
     """I film del momento, piu' nicchia e "sulla scia", **solo in italiano**.
 
@@ -438,41 +501,13 @@ def _scarica(db) -> list:
     che la casa ha eliminato pure. Il taglio viene **prima** di riempire i
     posti, cosi' restano i film previsti e non un elenco bucato.
     """
-    dati = _chiama("/discover/movie", _escludi({
-        "sort_by": "popularity.desc",
-        "vote_count.gte": VOTI_MIN,
-        "vote_count.lte": VOTI_MAX,
-        "vote_average.gte": VOTO_MIN,
-        "include_adult": "false",
-        "page": 1,
-    }))
     # Ogni sorgente ha i suoi posti: i film del momento aprono, poi la nicchia
     # e infine la scia. Senza quote la nicchia, che ne porta fino a venti,
     # riempirebbe da sola il tetto e la scia non comparirebbe **mai**: e' il
     # difetto per cui i film "sulla scia" non si vedevano. Gli avanzi si
     # riprendono in coda, cosi' se il filtro italiano toglie qualcuno i posti
     # liberi si riempiono invece di lasciare l'elenco bucato.
-    candidate = []
-    visti = set()
-
-    def aggiungi(gruppo, quanti=None):
-        presi = 0
-        for scheda in gruppo:
-            if quanti is not None and presi >= quanti:
-                break
-            if scheda["id"] in visti:
-                continue
-            visti.add(scheda["id"])
-            candidate.append(scheda)
-            presi += 1
-
-    principale, nicchia, scia = _schede_di(dati), _nicchia(), _scia()
-    aggiungi(principale, QUANTI)
-    aggiungi(nicchia, QUANTI_NICCHIA)
-    aggiungi(scia, QUANTI_SCIA)
-    aggiungi(principale)
-    aggiungi(nicchia)
-    aggiungi(scia)
+    candidate = _candidati(1)
     scelti = _nascosti(db)
     fuori = []
     for scheda in candidate:
@@ -480,12 +515,12 @@ def _scarica(db) -> list:
             break
         if scheda["id"] in scelti:
             continue
-        dettagli = _dettagli(scheda["id"])
-        if not dettagli["italiano"]:
+        buona = _con_dettagli(scheda)
+        if buona is None:
             continue
-        scheda["piattaforme"] = dettagli["piattaforme"]
-        fuori.append(scheda)
+        fuori.append(buona)
     return fuori
+
 
 
 def aggiorna(db, forse=True) -> bool:
@@ -523,6 +558,55 @@ def nascondi(db, movie_id) -> None:
         (movie_id,),
     )
     db.commit()
+
+
+def sostituisci(db, quanti: int = 1) -> list:
+    """Pesca `quanti` film nuovi e li **accoda** alla copia.
+
+    E' il rimpiazzo dopo un'eliminazione: la sezione non deve accorciarsi a ogni
+    titolo tolto. Si pesca da una pagina di `discover` **diversa** da quella
+    della copia (cosi' non ripesca gli stessi), si saltano i gia' nascosti e
+    quelli gia' in elenco, e si filtra l'italiano come `_scarica`. La copia
+    **cresce** invece di essere riscritta: il film appena eliminato resta nei
+    nascosti, e non torna perche' lo salta `_nascosti`.
+
+    Non solleva mai: e' chiamata dopo l'eliminazione, che deve riuscire lo
+    stesso. Se non c'e' niente di nuovo (rete assente, niente da pescare) la
+    copia resta com'e' e si restituisce una lista vuota.
+    """
+    if quanti <= 0:
+        return []
+    with tv._lucchetto("cinema"):
+        attuali = tv._leggi(db, "cinema")[0] or []
+        presenti = {f.get("id") for f in attuali}
+        scelti = _nascosti(db)
+        nuovi = []
+        pagina = 1
+        while len(nuovi) < quanti and pagina <= RIMPIAZZI_MASSIMI:
+            try:
+                candidate = _candidati(pagina)
+            except NonDisponibile:
+                break
+            for scheda in candidate:
+                if len(nuovi) >= quanti:
+                    break
+                if scheda["id"] in presenti or scheda["id"] in scelti:
+                    continue
+                try:
+                    buona = _con_dettagli(scheda)
+                except NonDisponibile:
+                    # il dettaglio di un film non risponde: si salta quello,
+                    # non si perde il rimpiazzo
+                    continue
+                if buona is None:
+                    continue
+                presenti.add(scheda["id"])
+                nuovi.append(buona)
+            pagina += 1
+        if nuovi:
+            tv._scrivi(db, "cinema", attuali + nuovi)
+        return nuovi
+
 
 
 def ripristina(db, movie_id=None) -> None:

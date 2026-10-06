@@ -792,16 +792,23 @@ async function cinemaCambiaPreferito() {
 }
 
 /* Elimina il film corrente dalla sezione. Non lo cancella davvero: lo annota,
-   e `film()` lo salta. Reversibile col ripristino. */
+   e `film()` lo salta. Reversibile col ripristino. Il server, appena eliminato,
+   **accoda un film nuovo** al posto di quello tolto: cosi' la sezione non si
+   accorcia a ogni titolo rifiutato. Il carosello resta sulla stessa posizione,
+   che ora mostra il film successivo, e il messaggio dice qual e' quello nuovo. */
 async function cinemaElimina() {
   const f = cinemaFilm[cinemaIndice];
   if (!f) return;
   const btn = $('#cinema-elimina');
   btn.disabled = true;
+  const prima = new Set(cinemaFilm.map((x) => x.id));
   try {
     const d = await api('/api/cinema/nascondi', { method: 'POST', body: { id: f.id } });
+    const nuovo = (d.film || []).find((x) => !prima.has(x.id));
     disegnaCinema(d);
-    toast(`«${f.titolo}» eliminato`);
+    toast(nuovo
+      ? `«${f.titolo}» eliminato · aggiunto «${nuovo.titolo}»`
+      : `«${f.titolo}» eliminato`);
   } catch (e) {
     toast(e.message || 'Non riesco a eliminare il film.');
   } finally {

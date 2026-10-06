@@ -1232,6 +1232,7 @@ Direzione: mare. Fondo schiuma, inchiostro blu profondo, un solo accento acqua. 
 - `--sand` è l'unico accento caldo (stelle delle preferite e priorità dei progetti). Scurito a `#b0761c` perché il tono più chiaro scendeva a 2.88:1 sul fondo carta, sotto il minimo di 3:1 per gli elementi grafici.
 - Ogni combinazione testo/fondo deve restare sopra 4.5:1 (WCAG AA). Il grigio `--muted` è scelto per passare anche sui fondi colorati come `--accent-soft`, dove un grigio più chiaro scenderebbe a 4.37.
 - Le cifre delle quantità usano `tabular-nums`.
+- **Lo sfondo della home respira, ma è discreto** (`.home::before`, `home-respira`): tre aloni del mare dietro le schede, in movimento lentissimo (30 s) e di pochi punti percentuali. È la sola pagina dove il fondo si muove — le aree sono di lavoro e restano piatte. Sta su un `::before` con `z-index: -1`, quindi i riquadri (opachi) restano leggibili e il testo non ci finisce mai sopra. I colori sono **trasparenze** del tema (`--home-alone-1/2/3`, ~10%): non coprono niente, e il tema scuro si schiarisce da solo invece di restare a macchie. Chi ha chiesto meno movimento non vede niente animarsi (la regola globale `prefers-reduced-motion` spegne anche questo). Il test `test_lo_sfondo_della_home_e_dinamico_ma_discreto` fissa trasparenze, lentezza, `z-index` e i colori in entrambi i temi.
 
 Test di verifica senza browser grafico: Chromium headless è già presente.
 
@@ -2512,6 +2513,25 @@ Tre scelte recenti, tutte deliberate:
   I test `test_i_film_eliminati_spariscono_e_si_ripristinano` e
   `test_la_tabella_dei_film_eliminati_arriva_anche_a_un_db_vecchio` lo tengono
   fermo.
+- **Eliminando un titolo se ne accoda subito uno nuovo** (`cinema.sostituisci`,
+  chiamata da `POST /api/cinema/nascondi`): la sezione non deve accorciarsi a
+  ogni titolo rifiutato. Si pesca da una pagina di `discover` **diversa** da
+  quella della copia (`_candidati(pagina)`, che senza il parametro serve
+  `_scarica`), si saltano i già nascosti e quelli già in elenco, e si filtra
+  l'italiano come `_scarica`. La copia **cresce** invece di essere riscritta, e
+  il film appena eliminato resta nei nascosti, quindi non torna. Due dettagli
+  che sembrano tali: la nicchia e la scia si chiedono **solo** per la prima
+  pagina (sono elenchi fissi, ripeterli sarebbe lavoro sprecato), e c'è un tetto
+  alle pagine (`RIMPIAZZI_MASSIMI`) perché ogni pagina sono più chiamate di
+  dettaglio. Il rimpiazzo **non solleva mai**: se la rete manca l'eliminazione è
+  riuscita lo stesso e la copia resta com'è. Il messaggio del client dice il
+  titolo aggiunto (`«X» eliminato · aggiunto «Y»`). I test
+  `test_eliminare_un_film_ne_carica_subito_uno_nuovo`,
+  `test_il_rimpiazzo_non_ripesca_i_gia_mostrati`,
+  `test_senza_rete_l_eliminazione_riesce_lo_stesso` e
+  `test_il_rimpiazzo_non_esce_dal_tetto_delle_pagine` lo fissano. Nota:
+  `sostituisci` prende lo **stesso lucchetto** di `aggiorna` (`tv._lucchetto`),
+  quindi il rimpiazzo e il giro di sottofondo non si sovrappongono.
 
 
 

@@ -8179,6 +8179,37 @@ def test_il_tema_scuro_e_l_opposto_di_quello_chiaro():
     assert luminanza(valore("ink", chiaro)) < 0.25, "--ink del tema chiaro non e' scuro"
 
 
+def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
+    """La home ha uno sfondo che respira (aloni del mare dietro le schede), ma
+    **discreto**: e' trasparenza, non colore pieno, l'animazione e' lenta e il
+    movimento e' di pochi punti percentuali. I colori sono variabili del tema,
+    cosi' il tema scuro non resta a macchie chiare, e chi ha chiesto meno
+    movimento non vede niente animarsi."""
+    import re
+    css = open(f"{BASE_APP}/static/style.css", encoding="utf-8").read()
+    assert ".home::before {" in css, "lo sfondo della home deve esserci"
+    blocco = css[css.index(".home::before {"):css.index("@keyframes home-respira")]
+    # trasparenze del tema, non colori fissi
+    assert "var(--home-alone-1)" in blocco
+    assert "var(--home-alone-2)" in blocco
+    assert "var(--home-alone-3)" in blocco
+    assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
+    # sta dietro al contenuto: senza, coprirebbe le schede e il testo
+    assert "z-index: -1" in blocco
+    assert "pointer-events: none" in blocco
+    # l'animazione e' lenta: 'respira', non 'si muove'
+    m = re.search(r"animation: home-respira (\d+)s", blocco)
+    assert m and int(m.group(1)) >= 20, "lo sfondo della home non deve muoversi in fretta"
+    # i colori sono definiti in entrambi i temi (altrimenti di notte sparirebbero)
+    chiaro = css.split('html[data-tema="scuro"]')[0]
+    scuro = css.split('html[data-tema="scuro"]', 1)[1]
+    for v in ("--home-alone-1", "--home-alone-2", "--home-alone-3"):
+        assert f"{v}:" in chiaro, f"{v} manca nel tema chiaro"
+        assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
+    # e la regola del movimento ridotto lo spegne (vale per ogni ::before)
+    assert "animation: none !important" in css
+
+
 def test_il_tetto_della_voce_non_lascia_muti_per_venti_secondi(client):
     """Il difetto riferito: dopo il "Si." l'assistente torna muto e non trascrive
     i comandi. La causa e' il tetto dell'attesa di "fine parlato": se la sintesi
@@ -10342,6 +10373,119 @@ def test_il_preferito_di_un_film_non_mostrato_non_si_segna(client, monkeypatch):
     r = client.post("/api/cinema/preferiti", json={"id": 999999, "preferito": True})
     assert r.status_code == 400
     assert client.get("/api/cinema").get_json()["preferiti"] == []
+
+
+def _apri_tmdb_a_pagine(per_pagina: dict):
+    """Un `_apri` finto che distingue le pagine di `discover`.
+
+    `per_pagina` mappa il numero di pagina all'elenco di film. Serve al
+    rimpiazzo: pesca da una pagina diversa, e senza questo ogni pagina
+    risponderebbe uguale e il rimpiazzo non troverebbe mai niente di nuovo.
+    """
+    def apri(url):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        if "/recommendations" in url:
+            return json.dumps({"results": []}).encode()
+        if "/discover/movie" in url:
+            if "with_keywords" in q:
+                return json.dumps({"results": []}).encode()
+            pagina = int(q.get("page", ["1"])[0])
+            return json.dumps({"results": per_pagina.get(pagina, [])}).encode()
+        if re.search(r"/movie/\d+", url):
+            return json.dumps({"translations": {"translations": [{"iso_639_1": "it"}]},
+                               "watch/providers": {}}).encode()
+        return json.dumps({"results": []}).encode()
+    return apri
+
+
+def _film(id_, titolo):
+    return {"id": id_, "title": titolo, "release_date": "2026-01-01",
+            "vote_average": 7.0, "poster_path": f"/{id_}.jpg", "overview": ""}
+
+
+def test_eliminare_un_film_ne_carica_subito_uno_nuovo(client, monkeypatch):
+    """Eliminando un titolo la sezione non si accorcia: il server ne accoda
+    subito uno nuovo. Pescando da una pagina **diversa**, il film appena tolto
+    non torna e il rimpiazzo e' davvero nuovo."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb_a_pagine({
+        1: [_film(1, "Primo")],
+        2: [_film(2, "Secondo")],
+    }))
+    cinema.aggiorna(app_module.get_db(), forse=False)
+    assert [f["titolo"] for f in cinema.film(app_module.get_db())] == ["Primo"]
+
+    d = client.post("/api/cinema/nascondi", json={"id": 1}).get_json()
+    titoli = [f["titolo"] for f in d["film"]]
+    assert "Primo" not in titoli, "il film eliminato non deve restare"
+    assert "Secondo" in titoli, "il server deve aver accodato un film nuovo"
+    assert d["nascosti"] == [1]
+
+
+def test_il_rimpiazzo_non_ripesca_i_gia_mostrati(client, monkeypatch):
+    """Se la pagina nuova riporta un film che c'e' gia', si salta: la copia non
+    deve riempirsi di doppioni."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb_a_pagine({
+        1: [_film(1, "Primo")],
+        # la pagina 2 riporta lo stesso film, poi uno nuovo
+        2: [_film(1, "Primo"), _film(2, "Secondo")],
+    }))
+    cinema.aggiorna(app_module.get_db(), forse=False)
+    d = client.post("/api/cinema/nascondi", json={"id": 1}).get_json()
+    ids = [f["id"] for f in d["film"]]
+    assert ids.count(1) == 0
+    assert ids == [2]
+
+
+def test_senza_rete_l_eliminazione_riesce_lo_stesso(client, monkeypatch):
+    """Il rimpiazzo e' un di piu': se la rete manca, il titolo si elimina
+    comunque e la copia resta com'e' (senza il film tolto)."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    monkeypatch.setattr(app_module, "_aggiorna_cinema_in_sottofondo", lambda db: None)
+    monkeypatch.setattr(cinema, "_apri", _apri_tmdb_a_pagine({
+        1: [_film(1, "Primo"), _film(2, "Secondo")],
+    }))
+    cinema.aggiorna(app_module.get_db(), forse=False)
+
+    monkeypatch.setattr(cinema, "_apri",
+                        lambda url: (_ for _ in ()).throw(cinema.NonDisponibile("giu")))
+    d = client.post("/api/cinema/nascondi", json={"id": 1}).get_json()
+    assert [f["id"] for f in d["film"]] == [2]
+    assert d["nascosti"] == [1]
+
+
+def test_il_rimpiazzo_non_esce_dal_tetto_delle_pagine(monkeypatch):
+    """Se ogni pagina porta solo film gia' visti, `sostituisci` si ferma al
+    tetto invece di girare all'infinito: ogni pagina sono chiamate di dettaglio."""
+    monkeypatch.setenv("TMDB_API_KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setattr(cinema, "_letto", {"fatto": True})
+    pagine = []
+
+    def apri(url):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        if "/discover/movie" in url and "with_keywords" not in q:
+            pagine.append(int(q.get("page", ["1"])[0]))
+            return json.dumps({"results": [_film(1, "Sempre lo stesso")]}).encode()
+        if re.search(r"/movie/\d+", url):
+            return json.dumps({"translations": {"translations": [{"iso_639_1": "it"}]},
+                               "watch/providers": {}}).encode()
+        return json.dumps({"results": []}).encode()
+
+    monkeypatch.setattr(cinema, "_apri", apri)
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE tv_cache (chiave TEXT PRIMARY KEY, dati TEXT, aggiornato REAL)")
+    db.execute("INSERT INTO tv_cache (chiave, dati, aggiornato) VALUES ('cinema', ?, 0)",
+               (json.dumps([_film(1, "Sempre lo stesso")]),))
+    assert cinema.sostituisci(db) == []
+    # si e' fermato: nessuna pagina oltre il tetto
+    assert pagine and max(pagine) <= cinema.RIMPIAZZI_MASSIMI
 
 
 def test_i_film_si_mettono_in_cache_e_si_rileggono(client, monkeypatch):

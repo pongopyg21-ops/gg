@@ -926,6 +926,12 @@ def api_cinema_nascondi():
     Non si cancella dalla copia di TMDB: si annota l'id e `cinema.film` lo
     salta. L'eliminazione e' reversibile (`/api/cinema/ripristina`): un titolo
     eliminato per sbaglio si rimette, e non serve riscaricare niente.
+
+    Subito dopo si **accoda un film nuovo** (`cinema.sostituisci`): la sezione
+    non deve accorciarsi a ogni titolo tolto. Si aspetta la rete perche' e'
+    l'utente ad aver chiesto l'eliminazione, e la risposta porta gia' il
+    rimpiazzo. Se il rimpiazzo non arriva (rete assente, niente di nuovo) la
+    copia resta com'e': l'eliminazione e' riuscita lo stesso.
     """
     db = get_db()
     if db is None:
@@ -938,6 +944,8 @@ def api_cinema_nascondi():
     if cinema.trova(db, movie_id) is None:
         return bad_request("Film non trovato fra quelli mostrati.")
     cinema.nascondi(db, movie_id)
+    if cinema.configurato():
+        cinema.sostituisci(db)
     return jsonify(_cinema_risposta(db))
 
 
