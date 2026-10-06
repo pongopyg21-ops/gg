@@ -29,6 +29,7 @@ import random
 import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -107,28 +108,25 @@ TIMEOUT = 10.0
 # una pagina sbagliata (o ostile) riempie la memoria del server di casa.
 MAX_BYTE = 2 * 1024 * 1024
 
-# Barzellette e quiz: due servizi pubblici che danno contenuto pronto da leggere,
-# non un elenco di dati della casa. Non sono della stessa natura delle notizie,
-# ma vivono nella stessa sezione e hanno lo stesso problema — la rete — quindi
-# seguono la stessa regola: quello che si e' scaricato resta, e un guasto non
-# svuota la sezione.
-#
-# Attenzione, ed e' scritto perche' non lo si scopra leggendo il codice:
-# **nessuno dei due servizi ha contenuti in italiano.** JokeAPI supporta
-# cs/de/en/es/fr/pt (non `it`); Open Trivia DB ignora `lang=it` e restituisce
-# comunque l'inglese. I contenuti arrivano quindi in inglese. Le fonti restano
-# sostituibili da ambiente (`TV_BARZELLETTE`, `TV_QUIZ`) perche' il giorno in cui
-# si vorra' una fonte italiana si cambia l'indirizzo senza toccare il codice.
-BARZELLETTE_URL = os.environ.get(
-    "TV_BARZELLETTE", "https://v2.jokeapi.dev/joke/Any?amount=5&safe-mode")
+# Il quiz: un servizio pubblico che da' contenuto pronto da leggere, non un
+# elenco di dati della casa. Non e' della stessa natura delle notizie, ma vive
+# nella stessa sezione e ha lo stesso problema — la rete — quindi segue la stessa
+# regola: quello che si e' scaricato resta, e un guasto non svuota la sezione.
 QUIZ_URL = os.environ.get(
     "TV_QUIZ", "https://opentdb.com/api.php?amount=10&difficulty=medium")
-# Il tetto alle barzellette tenute: cinque riempiono il riquadro senza farne un
-# elenco da scorrere. Il quiz porta le dieci domande che chiede l'indirizzo.
-MAX_BARZELLETTE = 5
-# Ogni quanto si rinnovano: piu' spesso delle notizie, perche' sono contenuti
-# leggeri e una barzelletta gia' letta non fa ridere due volte.
+# Ogni quanto si rinnova: piu' spesso delle notizie, perche' e' un contenuto
+# leggero e dieci domande gia' viste non divertono due volte.
 ORE_EXTRA = 6
+# La traduzione automatica delle domande. Open Trivia DB **non ha contenuti in
+# italiano** (ignora `lang=it`): le domande arrivano in inglese, quindi si
+# traducono con un servizio pubblico senza chiave (MyMemory). La traduzione e'
+# un di piu': se non riesce, le domande restano in inglese e la sezione funziona
+# lo stesso. `TV_TRADUZIONE` vuoto spegne la traduzione.
+TRADUZIONE_URL = os.environ.get(
+    "TV_TRADUZIONE", "https://api.mymemory.translated.net/get")
+# La difficolta' e' una parola sola: si mappa invece di tradurla, cosi' non
+# dipende dal servizio e non costa una richiesta.
+DIFFICOLTA_IT = {"easy": "facile", "medium": "medio", "hard": "difficile"}
 
 UA = "IlMaggiordomo"
 
@@ -554,8 +552,8 @@ def notizie_dal_feed(db=None) -> list:
     return _mescola_per_fonte(scelte)[:MAX_NOTIZIE]
 
 
-# ------------------------------------------------------- barzellette e quiz
-# Due fonti diverse dalle notizie, lette allo stesso modo: si scarica un JSON e
+# ------------------------------------------------------------------ quiz
+# Una fonte diversa dalle notizie, letta allo stesso modo: si scarica un JSON e
 # si tiene solo cio' che serve. Vale la stessa regola di tutto il modulo: se la
 # risposta non e' quella che ci si aspetta si solleva `NonDisponibile`, cosi' la
 # copia vecchia resta e la sezione non si svuota per un guasto di rete.
@@ -573,45 +571,33 @@ def _json(url: str):
 
 
 def _pulisci(testo) -> str:
-    """Il testo di una barzelletta o di una domanda, senza entita' HTML.
+    """Il testo di una domanda, senza entita' HTML.
 
-    JokeAPI manda testo semplice, Open Trivia DB manda `&quot;` e `&#039;`:
-    senza `unescape` la domanda si legge con i codici in mezzo.
+    Open Trivia DB manda `&quot;` e `&#039;`: senza `unescape` la domanda si
+    legge con i codici in mezzo.
     """
     return html.unescape(str(testo or "")).strip()
 
 
-def barzellette_dal_servizio(db=None) -> list:
-    """Le barzellette dal servizio, al massimo `MAX_BARZELLETTE`.
+def _traduci(testo: str) -> str:
+    """Traduce una stringa dall'inglese all'italiano con un servizio pubblico.
 
-    JokeAPI risponde in due forme: `single` (una battuta sola) e `twopart`
-    (domanda e risposta). Si normalizzano nella stessa coppia `testo`/`risposta`,
-    con la risposta vuota per le single, cosi' il client ha una forma sola.
-
-    Con `amount` maggiore di uno la risposta e' `{"jokes": [...]}`; con uno solo
-    sarebbe l'oggetto nudo. Si gestiscono entrambe: cambiare `amount`
-    nell'indirizzo non deve rompere la sezione.
+    Ritorna la stringa vuota se la traduzione non riesce: chi chiama la ignora e
+    tiene l'originale. Non e' un errore, e' la rete che non c'e' — la sezione
+    deve funzionare lo stesso.
     """
-    dati = _json(BARZELLETTE_URL)
-    if not isinstance(dati, dict) or dati.get("error"):
-        raise NonDisponibile("Il servizio delle barzellette non risponde")
-    grezze = dati.get("jokes")
-    if not isinstance(grezze, list):
-        grezze = [dati] if dati.get("type") else []
-    voci = []
-    for g in grezze:
-        if not isinstance(g, dict):
-            continue
-        if g.get("type") == "twopart":
-            testo, risposta = _pulisci(g.get("setup")), _pulisci(g.get("delivery"))
-        else:
-            testo, risposta = _pulisci(g.get("joke")), ""
-        if testo:
-            voci.append({"testo": testo, "risposta": risposta,
-                         "categoria": _pulisci(g.get("category"))})
-    if not voci:
-        raise NonDisponibile("Il servizio delle barzellette non ha dato nulla")
-    return voci[:MAX_BARZELLETTE]
+    if not TRADUZIONE_URL or not testo.strip():
+        return ""
+    url = TRADUZIONE_URL + "?" + urllib.parse.urlencode(
+        {"q": testo, "langpair": "en|it"})
+    try:
+        dati = _json(url)
+    except NonDisponibile:
+        return ""
+    if not isinstance(dati, dict):
+        return ""
+    tradotto = (dati.get("responseData") or {}).get("translatedText") or ""
+    return str(tradotto).strip()
 
 
 def _mescola_risposte(domanda: dict) -> list:
@@ -628,6 +614,39 @@ def _mescola_risposte(domanda: dict) -> list:
     risposte += [{"testo": a, "giusta": False} for a in sbagliate if a]
     random.shuffle(risposte)
     return risposte
+
+
+def _traduci_domande(domande: list) -> list:
+    """Traduce in italiano domanda, risposte e categoria, una domanda per volta.
+
+    Si manda un blocco di righe (domanda, poi le risposte, poi la categoria) e il
+    servizio conserva i ritorni a capo, quindi le righe restano allineate. Si
+    controlla comunque che il numero di righe torni: se il servizio le
+    accorpasse, si tiene l'inglese invece di rimescolare le risposte.
+
+    La traduzione e' **per domanda**, non per l'intero elenco: il servizio
+    tronca i testi lunghi, e un blocco unico perderebbe le domande in fondo.
+    Il campo `giusta` resta al suo posto: si cambiano solo i testi.
+    """
+    tradotte = []
+    for d in domande:
+        risposte = d.get("risposte") or []
+        righe = [d["testo"]] + [r["testo"] for r in risposte] + [d.get("categoria", "")]
+        fuori = _traduci("\n".join(righe))
+        parti = fuori.split("\n") if fuori else []
+        if len(parti) != len(righe):
+            tradotte.append(d)  # traduzione inaffidabile: resta l'inglese
+            continue
+        nuova = dict(d)
+        nuova["testo"] = parti[0].strip() or d["testo"]
+        nuova["risposte"] = [
+            {**r, "testo": parti[i + 1].strip() or r["testo"]}
+            for i, r in enumerate(risposte)
+        ]
+        if d.get("categoria"):
+            nuova["categoria"] = parti[-1].strip() or d["categoria"]
+        tradotte.append(nuova)
+    return tradotte
 
 
 def quiz_dal_servizio(db=None) -> list:
@@ -647,12 +666,13 @@ def quiz_dal_servizio(db=None) -> list:
         testo = _pulisci(d.get("question"))
         risposte = _mescola_risposte(d)
         if testo and len(risposte) >= 2:
+            difficolta = _pulisci(d.get("difficulty")).lower()
             voci.append({"testo": testo, "risposte": risposte,
                          "categoria": _pulisci(d.get("category")),
-                         "difficolta": _pulisci(d.get("difficulty"))})
+                         "difficolta": DIFFICOLTA_IT.get(difficolta, difficolta)})
     if not voci:
         raise NonDisponibile("Il servizio del quiz non ha dato domande")
-    return voci
+    return _traduci_domande(voci)
 
 
 def _data_iso(testo: str) -> str:
@@ -754,20 +774,15 @@ def aggiorna_notizie(db, forse=True) -> bool:
     return _aggiorna(db, "notizie", ORE_NOTIZIE, notizie_dal_feed, forse=forse)
 
 
-def aggiorna_barzellette(db, forse=True) -> bool:
-    return _aggiorna(db, "barzellette", ORE_EXTRA, barzellette_dal_servizio, forse=forse)
-
-
 def aggiorna_quiz(db, forse=True) -> bool:
     return _aggiorna(db, "quiz", ORE_EXTRA, quiz_dal_servizio, forse=forse)
 
 
 def aggiorna(db, forse=True) -> dict:
-    """Aggiorna TV, notizie, GYM, barzellette e quiz. Non solleva mai."""
+    """Aggiorna TV, notizie, GYM e quiz. Non solleva mai."""
     return {"video": aggiorna_video(db, forse=forse),
             "notizie": aggiorna_notizie(db, forse=forse),
             "gym": aggiorna_gym(db, forse=forse),
-            "barzellette": aggiorna_barzellette(db, forse=forse),
             "quiz": aggiorna_quiz(db, forse=forse)}
 
 
@@ -783,10 +798,6 @@ def notizie(db) -> list:
     return _leggi(db, "notizie")[0] or []
 
 
-def barzellette(db) -> list:
-    return _leggi(db, "barzellette")[0] or []
-
-
 def quiz(db) -> list:
     return _leggi(db, "quiz")[0] or []
 
@@ -798,7 +809,7 @@ def quando_aggiornate(db) -> dict:
     settimana fa quando la rete non ha risposto.
     """
     esito = {}
-    for chiave in ("video", "notizie", "gym", "barzellette", "quiz"):
+    for chiave in ("video", "notizie", "gym", "quiz"):
         _, quando = _leggi(db, chiave)
         esito[chiave] = quando or None
     return esito

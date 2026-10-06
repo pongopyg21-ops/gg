@@ -252,7 +252,6 @@ async function renderTv() {
   } catch (_e) {
     $('#tv-video').innerHTML = '';
     $('#tv-notizie').innerHTML = '';
-    $('#tv-barzellette').innerHTML = '';
     $('#tv-quiz').innerHTML = '';
     toast('Non riesco a caricare la sezione TV.');
   }
@@ -261,7 +260,6 @@ async function renderTv() {
 function disegnaTv(d) {
   const video = d.video || [];
   const notizie = d.notizie || [];
-  const barzellette = d.barzellette || [];
   const quiz = d.quiz || [];
 
   // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
@@ -295,20 +293,10 @@ function disegnaTv(d) {
     </article>`).join('')
     : `<p class="tv-vuoto">Nessuna notizia disponibile. Premi «Aggiorna» fra poco.</p>`;
 
-  // Le barzellette: testo semplice, con la risposta (battuta finale) se c'e'.
-  // Le "single" non hanno risposta, quindi la riga sparisce invece di restare
-  // vuota. Il contenuto e' in inglese: il servizio non ne ha di italiane.
-  $('#tv-barzellette').innerHTML = barzellette.length ? barzellette.map((b) => `
-    <article class="tv-barzelletta">
-      <p class="tv-barz-testo">${esc(b.testo)}</p>
-      ${b.risposta ? `<p class="tv-barz-risposta">${esc(b.risposta)}</p>` : ''}
-      ${b.categoria ? `<span class="tv-barz-cat">${esc(b.categoria)}</span>` : ''}
-    </article>`).join('')
-    : `<p class="tv-vuoto">Nessuna barzelletta. Premi «Aggiorna» fra poco.</p>`;
-
   // Il quiz: una domanda, le risposte mescolate (il server le mescola, cosi'
   // quella giusta non e' sempre la prima) e il segnale di qual e' giusta. La
-  // risposta non si dice subito: si tocca, e la riga si colora.
+  // risposta non si dice subito: si tocca, e la riga si colora. Testi e
+  // difficolta' arrivano gia' in italiano dal server.
   $('#tv-quiz').innerHTML = quiz.length ? quiz.map((q, i) => `
     <article class="tv-domanda" data-domanda="${i}">
       <p class="tv-dom-testo">${esc(q.testo)}</p>

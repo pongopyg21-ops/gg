@@ -573,11 +573,9 @@ def api_tv():
     return jsonify({
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
-        "barzellette": tv.barzellette(db),
         "quiz": tv.quiz(db),
         "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
-                       "barzellette": _iso(quando["barzellette"]),
                        "quiz": _iso(quando["quiz"])},
     })
 
@@ -674,11 +672,9 @@ def api_tv_aggiorna():
         "aggiornati": esito,
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
-        "barzellette": tv.barzellette(db),
         "quiz": tv.quiz(db),
         "playlist": tv.playlist_id(db),
         "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
-                       "barzellette": _iso(quando["barzellette"]),
                        "quiz": _iso(quando["quiz"])},
     })
 
@@ -899,11 +895,9 @@ def _aggiorna_tv_in_sottofondo(db):
     _, quando = tv._leggi(db, "notizie")
     _, video_quando = tv._leggi(db, "video")
     _, gym_quando = tv._leggi(db, "gym")
-    _, barz_quando = tv._leggi(db, "barzellette")
     _, quiz_quando = tv._leggi(db, "quiz")
     if (tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO)
             and tv._fresco(gym_quando, tv.ORE_VIDEO)
-            and tv._fresco(barz_quando, tv.ORE_EXTRA)
             and tv._fresco(quiz_quando, tv.ORE_EXTRA)):
         return
     percorso = db.execute("PRAGMA database_list").fetchone()[2]
@@ -3805,12 +3799,12 @@ def _giro_su_tutte_le_case(aggiorna_una, ritardo=False):
 
 
 def avvia_tv():
-    """Scarica video, notizie, barzellette e quiz all'avvio, e poi ogni ora.
+    """Scarica video, notizie e quiz all'avvio, e poi ogni ora.
 
     Il primo giro parte **subito**: un server appena installato non ha ancora
     nessuna copia, ed e' proprio la prima che serve quando si apre la sezione.
     I giri successivi non scaricano a vuoto, perche' `tv.aggiorna` salta quello
-    che e' gia' fresco (le notizie una volta al giorno, barzellette e quiz ogni
+    che e' gia' fresco (le notizie una volta al giorno, il quiz ogni
     `tv.ORE_EXTRA`).
     """
     def ciclo():

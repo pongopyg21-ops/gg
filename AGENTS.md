@@ -1872,49 +1872,64 @@ I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte co
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
 
 
-## La sezione TV: video, notizie, barzellette e quiz
+## La sezione TV: video, notizie e quiz
 
 `tv.py` tiene insieme cose che non sono dati dell'app — la playlist YouTube
-della casa, le notizie dal mondo (ANSA), le barzellette (JokeAPI) e il quiz
-(Open Trivia DB) — perché vivono nella stessa sezione e hanno lo stesso problema:
-**la rete**. Un feed si sposta, un sito cambia, e la casa può restare senza
-connessione. La regola è una e vale per tutte: quello che si è già scaricato
-**resta**, e un guasto di rete non deve svuotare la sezione. Si mostra l'ultima
-copia buona e si riprova più tardi.
+della casa, le notizie dal mondo (ANSA) e il quiz (Open Trivia DB) — perché
+vivono nella stessa sezione e hanno lo stesso problema: **la rete**. Un feed si
+sposta, un sito cambia, e la casa può restare senza connessione. La regola è una
+e vale per tutte: quello che si è già scaricato **resta**, e un guasto di rete
+non deve svuotare la sezione. Si mostra l'ultima copia buona e si riprova più
+tardi.
 
 Nessuna dipendenza nuova: `urllib.request` per scaricare, `ElementTree` per i
-due formati dei feed (Atom per la playlist, RSS per le notizie) e `json` per i
-due servizi di barzellette e quiz. Sono formati semplici, e una libreria in più
-sarebbe una cosa da aggiornare per leggere cinque campi.
+due formati dei feed (Atom per la playlist, RSS per le notizie) e `json` per il
+quiz. Sono formati semplici, e una libreria in più sarebbe una cosa da
+aggiornare per leggere cinque campi.
 
-**Barzellette e quiz non hanno contenuti in italiano, ed è la cosa da sapere.**
-JokeAPI supporta `cs/de/en/es/fr/pt` (non `it`); Open Trivia DB ignora `lang=it`
-e risponde comunque in inglese. I contenuti arrivano quindi in inglese, e il
-riquadro lo dice all'utente. Le fonti restano sostituibili da ambiente
-(`TV_BARZELLETTE`, `TV_QUIZ`): il giorno in cui esisterà una fonte italiana si
-cambia l'indirizzo senza toccare il codice. Le barzellette si rinnovano ogni
-`ORE_EXTRA` (6 ore), più spesso delle notizie, perché sono contenuti leggeri e
-una barzelletta già letta non fa ridere due volte; il quiz porta le dieci domande
-medie che chiede l'indirizzo. Entrambi stanno nella cache **della casa**
-(`tv_cache`, chiavi `barzellette` e `quiz`), come video e notizie, e il filo di
-sottofondo li aggiorna insieme agli altri.
+**Il quiz è tradotto in italiano sul server.** Open Trivia DB **non ha contenuti
+in italiano** (ignora `lang=it` e risponde comunque in inglese), quindi le
+domande si traducono con un servizio pubblico senza chiave (MyMemory,
+`TRADUZIONE_URL`, sostituibile con `TV_TRADUZIONE`, e spegnibile con un valore
+vuoto). La traduzione è un di più: se non riesce, le domande restano in inglese e
+la sezione funziona lo stesso — `_traduci` non solleva mai, ritorna vuoto e chi
+chiama tiene l'originale.
 
-Due normalizzazioni che servono al client: JokeAPI risponde in due forme
-(`single` con un solo `joke`, `twopart` con `setup`/`delivery`) e si riducono
-alla stessa coppia `testo`/`risposta` (vuota per le `single`); con `amount=1`
-la risposta è l'oggetto nudo, non `{"jokes": [...]}`, e si gestiscono entrambe.
+Tre trappole, tutte già pagate:
+
+- **La traduzione è per domanda, non per l'intero elenco.** Il servizio tronca i
+  testi lunghi: un blocco unico perderebbe le domande in fondo, e quelle
+  resterebbero in inglese senza un motivo visibile.
+- **Le righe devono restare allineate.** Si manda un blocco di righe (domanda,
+  poi le risposte, poi la categoria) e il servizio conserva i ritorni a capo.
+  `_traduci_domande` controlla comunque che il numero di righe torni: se il
+  servizio le accorpasse, allineare per posizione metterebbe la «giusta» su una
+  risposta sbagliata, quindi in quel caso si tiene l'inglese. Meglio una domanda
+  in inglese che una risposta falsa.
+- **La difficoltà non si traduce.** È una parola sola (`easy`/`medium`/`hard`) e
+  si mappa con `DIFFICOLTA_IT`: non costa una richiesta e non dipende dal
+  servizio.
+
 Open Trivia DB mette la risposta giusta in un campo a parte e le risposte
 arrivano **mescolate** (`_mescola_risposte`): senza, quella giusta sarebbe
 sempre la prima e il quiz si indovinerebbe senza sapere. Il testo passa da
 `html.unescape`, perché Open Trivia DB manda `&quot;` e `&#039;`. Il quiz si
 risponde **toccando** la risposta (verde/rossa), non è un dato da salvare: è una
-funzione di gioco, e ricaricando la sezione le domande tornano neutre.
+funzione di gioco, e ricaricando la sezione le domande tornano neutre. Il quiz si
+rinnova ogni `ORE_EXTRA` (6 ore), più spesso delle notizie, perché è un
+contenuto leggero; sta nella cache **della casa** (`tv_cache`, chiave `quiz`),
+come video e notizie.
 
 **Open Trivia DB limita a una richiesta ogni cinque secondi per indirizzo.**
 All'avvio il giro su tutte le case aspetta fra una casa e l'altra
 (`_giro_su_tutte_le_case(..., ritardo=True)`): senza, il quiz arriverebbe solo
 alla prima casa e le altre resterebbero vuote fino al giro dopo, con l'aria che
 il quiz non funzioni.
+
+**Le barzellette (JokeAPI) sono state tolte** su richiesta dell'utente: JokeAPI
+non ha contenuti in italiano e le battute in inglese non avevano senso in una
+sezione italiana. Restano nella storia (`git log`) se un giorno servissero, ma
+non nel codice.
 
 Le notizie sono **max venti**, dalle sezioni ANSA, mescolate fra loro, e si
 rinnovano **una volta al giorno**; i video una volta al giorno anche loro. Si
