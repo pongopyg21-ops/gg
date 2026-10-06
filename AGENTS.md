@@ -370,6 +370,17 @@ cose con gli strumenti di Windows.
 
 Cose che sembrano dettagli e non lo sono:
 
+- **Lo stato del modello si legge dalla cartella dell'app, non da `windows\`.**
+  `avvia.bat` fa `cd /d "%~dp0"` (entra in `windows\`) e poi chiama
+  `modello.ps1`, che esegue `python -c "import comprensione"`. Il processo python
+  eredita la cartella corrente, e da `windows\` i moduli non si trovano:
+  l'import falliva e lo stato diceva «Modello: non riesco a leggere la
+  configurazione dell'app. Avvia l'app una volta con avvia.bat e riprova» —
+  proprio mentre l'utente **stava** usando `avvia.bat` e tutto era a posto. Il
+  rimedio e' `Push-Location $App` intorno alla chiamata. Il difetto e' di
+  **percorso**, quindi non si vede leggendo il codice: il test
+  `test_lo_stato_del_modello_si_legge_anche_da_windows` esegue il comando vero
+  dalla cartella dell'app e pretende che risponda.
 - **L'avvio automatico e' un'attivita' pianificata, non un collegamento nella
   cartella di avvio.** Il collegamento fa partire l'app una volta; se poi cade,
   resta caduta. In un'app di casa la differenza e' che nessuno se ne accorge. Si

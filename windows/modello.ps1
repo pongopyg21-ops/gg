@@ -52,8 +52,19 @@ print(c.modello())
 print("1" if c._e_locale() else "0")
 print("1" if c.configurato() else "0")
 '@
-    $righe = & $Python -c $py 2>$null
-    if ($LASTEXITCODE -eq 0 -and $righe.Count -ge 4) {
+    # `avvia.bat` entra in `windows\` prima di chiamare questo file, quindi il
+    # processo python erediterebbe quella cartella: da li' `import comprensione`
+    # fallisce (i moduli stanno nella cartella sopra) e lo stato del modello
+    # sembrava illeggibile proprio quando tutto era a posto. Si esegue dalla
+    # cartella dell'app, dove i moduli si trovano.
+    Push-Location $App
+    try {
+        $righe = & $Python -c $py 2>$null
+        $codice = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    if ($codice -eq 0 -and $righe.Count -ge 4) {
         $Base = "$($righe[0])".Trim()
         $Modello = "$($righe[1])".Trim()
         $Locale = "$($righe[2])".Trim() -eq "1"

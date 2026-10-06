@@ -7623,6 +7623,38 @@ def test_verifica_modello_guarda_le_tre_cause(client):
     assert "ollama pull" in ps1
 
 
+def test_lo_stato_del_modello_si_legge_anche_da_windows(client):
+    """`avvia.bat` entra in `windows\\` prima di chiamare `modello.ps1`, quindi il
+    processo python eredita quella cartella. Se il controllo non si sposta nella
+    cartella dell'app, `import comprensione` fallisce e lo stato del modello
+    sembrava illeggibile («Avvia l'app una volta con avvia.bat») proprio quando
+    l'utente **stava** usando avvia.bat e tutto era a posto.
+
+    Qui si esegue il comando vero dalla cartella `windows\\` dopo essersi spostati
+    in quella dell'app, come fa `Push-Location $App`: e' l'unico modo per
+    accorgersi di un difetto di *percorso*, che leggendo il codice non si vede."""
+    import subprocess
+    ps1 = open(f"{BASE_APP}/windows/modello.ps1", encoding="utf-8").read()
+    assert "Push-Location $App" in ps1, (
+        "il controllo del modello deve eseguire python dalla cartella dell'app")
+    py = os.path.join(BASE_APP, ".venv", "bin", "python")
+    if not os.path.exists(py):
+        py = sys.executable
+    script = (
+        "import comprensione as c\n"
+        "print(c.base_url())\n"
+        "print(c.modello())\n"
+        'print("1" if c._e_locale() else "0")\n'
+        'print("1" if c.configurato() else "0")\n'
+    )
+    esito = subprocess.run([py, "-c", script], cwd=BASE_APP,
+                           capture_output=True, text=True)
+    assert esito.returncode == 0, (
+        "il comando di lettura del modello deve funzionare dalla cartella "
+        "dell'app: " + esito.stderr)
+    assert len(esito.stdout.strip().splitlines()) >= 4
+
+
 def test_il_pulsante_voce_c_e_su_ogni_pagina(client):
     """Il pulsante del microfono deve restare raggiungibile da ogni area: serve
     proprio quando non si possono usare le mani, e un'area senza pulsante e' una
