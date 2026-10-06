@@ -1,26 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cucina">
-<!-- La pentola sul fuoco, con il vapore che sale: e' l'icona della Cucina.
-     Prima era un cappello da chef; si e' cambiata perche' la pentola dice
-     meglio cosa si fa qui — si cucina — e si distingue a colpo d'occhio dalle
-     altre schede. Il fondo e' sabbia calda, della stessa famiglia del cappello,
-     quindi la scheda non cambia tono: cambia disegno. -->
-<rect width="64" height="64" rx="14" fill="#f7d9a6"/>
-
-<!-- il vapore: tre fili che salgono dal coperchio -->
-<g fill="none" stroke="#b0761c" stroke-width="2" stroke-linecap="round">
-  <path d="M25 19c-2-3 2-5 0-8"/>
-  <path d="M32 17c-2-3 2-5 0-8"/>
-  <path d="M39 19c-2-3 2-5 0-8"/>
+<!-- La pentola sul fuoco, col vapore che sale: e' l'icona della Cucina.
+     Disegno piatto su fondo **trasparente**, come le emoji delle altre schede
+     (Appunti, FAQ, TV, GYM, Igiene): un simbolo, non una tessera. Prima aveva
+     un riquadro di fondo colorato, e in mezzo alle emoji sembrava il logo
+     dell'app incollato sulla scheda: quella era l'incoerenza. Senza fondo,
+     l'icona si posa come le altre. -->
+<!-- il vapore: tre fili che salgono dal coperchio, in azzurro tenue -->
+<g transform="translate(0,3)">
+<g fill="none" stroke="#8fb4c4" stroke-width="2.6" stroke-linecap="round">
+  <path d="M24 17c-2.5-3 2.5-5 0-8"/>
+  <path d="M32 15c-2.5-3 2.5-5 0-8"/>
+  <path d="M40 17c-2.5-3 2.5-5 0-8"/>
 </g>
-
-<!-- il coperchio, col pomello -->
-<ellipse cx="32" cy="31" rx="15" ry="4.5" fill="#a83a0c"/>
-<circle cx="32" cy="24.5" r="3" fill="#8f2f08"/>
-
 <!-- i manici -->
-<rect x="12" y="33" width="6" height="4.5" rx="2.2" fill="#a83a0c"/>
-<rect x="46" y="33" width="6" height="4.5" rx="2.2" fill="#a83a0c"/>
-
+<rect x="9" y="31" width="8" height="5" rx="2.5" fill="#8f2f08"/>
+<rect x="47" y="31" width="8" height="5" rx="2.5" fill="#8f2f08"/>
 <!-- la pentola: si restringe verso il fondo, come una pentola vera -->
-<path d="M19 31h26l-2.5 20a4 4 0 0 1-4 3.6h-13a4 4 0 0 1-4-3.6z" fill="#c1440e"/>
+<path d="M16 29h32l-2.6 20a4.5 4.5 0 0 1-4.4 4H23a4.5 4.5 0 0 1-4.4-4z" fill="#c1440e"/>
+<!-- il bordo, piu' scuro, chiude la pentola in alto -->
+<rect x="14" y="26" width="36" height="6" rx="3" fill="#8f2f08"/>
+</g>
 </svg>

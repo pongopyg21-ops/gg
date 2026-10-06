@@ -136,9 +136,9 @@ async function applicaPasti(n) {
    a un'area (`data-section`): aprendo un'area si mostrano solo le sue, così
    le aree restano separate invece di mischiarsi in un'unica barra piena di voci. */
 const SEZIONI = {
-  // La Cucina ha un cappello da chef sul cielo sereno dell'app: e' l'area
-  // principale e la si riconosce a colpo d'occhio. Le altre tengono la loro
-  // emoji, che le distingue meglio di un simbolo unico.
+  // La Cucina ha una pentola sul fuoco al posto dell'emoji: e' l'area
+  // principale e la si riconosce a colpo d'occhio. Il disegno e' piatto e senza
+  // fondo, come le emoji delle altre aree, che restano quelle.
   cucina:   { titolo: 'Cucina',   icona: '/static/icons/cucina.svg', prima: 'plan' },
   igiene:   { titolo: '\u{1F9FD} Igiene',   prima: 'igiene' },
   progetti: { titolo: '\u{1F4CB} Appunti', prima: 'progetti' },

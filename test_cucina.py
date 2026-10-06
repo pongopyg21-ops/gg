@@ -7950,8 +7950,9 @@ def test_la_cucina_ha_la_sua_icona(client):
     """La scheda Cucina ha un'icona sua (la pentola sul fuoco), non il logo
     dell'app: prima erano lo stesso disegno, quindi la scheda non si
     distingueva. L'icona e' un file vero, e la sezione la usa. Il disegno e'
-    stato cambiato dal cappello da chef: il colore della pentola lo distingue
-    dal vecchio, cosi' un ritorno al cappello non passa inosservato."""
+    **piatto e su fondo trasparente**, come le emoji delle altre schede: senza,
+    sembrava una tessera col fondo colorato incollata in mezzo a simboli piatti,
+    che era l'incoerenza da correggere."""
     import os
     radice = os.path.dirname(os.path.abspath(app_module.__file__))
     percorso = os.path.join(radice, "static", "icons", "cucina.svg")
@@ -7961,12 +7962,19 @@ def test_la_cucina_ha_la_sua_icona(client):
     # contorno ambra, che qui non ci sono piu'
     assert "#c1440e" in disegno, "la Cucina mostra la pentola, non il cappello"
     assert "#f7e58a" not in disegno, "il vecchio cappello non deve restare"
+    # il fondo trasparente e' quello che la rende coerente con le emoji: un
+    # `<rect>` di fondo a tutta tela era il riquadro che la staccava dalle altre
+    assert 'width="64" height="64" rx="14"' not in disegno, \
+        "l'icona non deve avere il riquadro di fondo: e' piatta, come le emoji"
     html = client.get("/").get_data(as_text=True)
     card = html[html.index('data-section="cucina"'):html.index('data-section="igiene"')]
     assert "/static/icons/cucina.svg" in card
     assert "icona.svg" not in card, "la Cucina non usa piu' il logo dell'app"
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "icona: '/static/icons/cucina.svg'" in js
+    # e la resa non ritaglia piu' gli angoli, che erano del riquadro rimosso
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert ".icona-sezione img { width: 34px; height: 34px; display: block; }" in css
 
 
 def test_l_endpoint_notizie_serve_solo_le_notizie_dalla_cache(client, monkeypatch):

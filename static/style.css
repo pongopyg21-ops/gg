@@ -1414,12 +1414,14 @@ tr:last-child td { border-bottom: none; }
   box-shadow: 0 6px 18px -10px rgba(11, 110, 143, .55);
 }
 
-/* La stessa icona nella scheda della Cucina, al posto dell'emoji. */
-.icona-sezione img { width: 34px; height: 34px; border-radius: 22%; display: block; }
+/* La stessa icona nella scheda della Cucina, al posto dell'emoji. Il disegno e'
+   piatto e su fondo trasparente, come le emoji delle altre schede: niente
+   angoli arrotondati, che erano per il riquadro di fondo che ora non c'e' piu'. */
+.icona-sezione img { width: 34px; height: 34px; display: block; }
 
 /* L'icona nella testata dell'area. */
 .icona-titolo {
-  width: 1.1em; height: 1.1em; border-radius: 22%;
+  width: 1.1em; height: 1.1em;
   vertical-align: -0.16em; margin-right: 8px;
 }
 

@@ -780,9 +780,14 @@ Conseguenze pratiche per chi mette mano al codice:
   La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, una pentola
   sul fuoco col vapore): prima usava il logo dell'app, quindi non si
   distingueva. Il disegno era un cappello da chef ed è stato cambiato su
-  richiesta dell'utente: il colore della pentola (`#c1440e`) distingue il nuovo
-  dal vecchio, così un ritorno al cappello non passa inosservato
-  (`test_la_cucina_ha_la_sua_icona`). Le altre schede tengono la loro emoji.
+  richiesta dell'utente. **Il disegno è piatto e su fondo trasparente**, come le
+  emoji delle altre schede (Appunti, FAQ, TV, GYM, Igiene): la prima versione
+  aveva un riquadro di fondo colorato a tutta tela, e in mezzo ai simboli piatti
+  sembrava il logo dell'app incollato sulla scheda — quella era l'incoerenza. Il
+  colore della pentola (`#c1440e`) distingue il nuovo dal vecchio, così un
+  ritorno al cappello non passa inosservato (`test_la_cucina_ha_la_sua_icona`,
+  che verifica anche l'assenza del riquadro di fondo). Le altre schede tengono la
+  loro emoji.
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
