@@ -1823,6 +1823,52 @@ sente e' fatta di **attese del client**, e ognuna si somma. Tre tagli:
   da `parlaCloud` che la riproduce: il test del tempo di `parlaCloud` estrae
   entrambe.
 
+### L'assistente inutile da telefono e da certi browser: tre rimedi
+
+Il sintomo riferito — «l'assistente vocale e' inutile da smartphone e da vari
+browser per pc» — non era il riconoscimento (Azure trascrive bene: misurato con
+un round-trip sintesi→trascrizione, «aggiungi due chili di farina in dispensa»
+torna identico). Era tutto intorno: **contesto sicuro**, **ripiego silenzioso** e
+**interfaccia del pulsante**. Tre rimedi, scelti dall'utente.
+
+1. **La riga di stato (`statoAscoltoTesto`, `#voice-stato-ascolto`).** Dice in
+   una riga **chi** ascolta: «Ascolto: server (Azure)…» oppure «Ascolto: browser
+   (ripiego). La chiave della voce non e' configurata…». Prima il ripiego era
+   silenzioso, e l'utente credeva che l'app fosse rotta invece di sapere che
+   mancava una cosa da accendere. Il contesto non sicuro **vince su tutto**: da
+   `http://IP` la riga dice subito che serve HTTPS o `localhost`.
+2. **`voce.senzaMicrofono` (`apriVoce`).** Da un indirizzo non sicuro
+   `getUserMedia` non arriva: l'app **non tenta a vuoto**, dice cosa manca e porta
+   il cursore al campo di testo (`mostraSenzaMicrofono`). Prima apriva un
+   microfono che non avrebbe mai sentito.
+3. **Push-to-talk (`modoParla`, `#voice-parla`, `#voice-livello`).** Col dito si
+   **tiene premuto** e si invia al rilascio; col mouse resta l'interruttore. Il
+   toggle a due tocchi si sbaglia (chi tocca una volta aspetta, chi tocca due crede
+   di aver annullato). La barra del livello dice che il microfono manda audio
+   davvero. `guardaSeRilascia` tollera il dito che scorre fuori dal pulsante
+   (`setPointerCapture` piu' 40 px di margine): senza, la frase si perderebbe
+   proprio mentre si parla. La corsa «dito alzato prima che il microfono si apra»
+   si chiude con `voce.rilasciato`, altrimenti un tocco brevissimo aprirebbe il
+   microfono per 12 s. In push-to-talk **il silenzio non chiude la frase** (chiude
+   il rilascio): il tetto `ASCOLTO_MAX_MS` resta come rete di sicurezza.
+4. **«Prova il microfono» (`provaMicrofono`, `#voice-prova`).** Un pulsante che
+   verifica in fila contesto sicuro, API, permesso, stato dell'`AudioContext` e
+   chi trascrive, poi registra una frase e **mostra cosa ha sentito**. Il ramo
+   `voce.provaMicrofono` intercetta l'esito **prima** di `eseguiComando`: chi prova
+   vuole sapere se il microfono funziona, non scrivere in dispensa. `audioSbloccato`
+   mette un tetto a `resume()` perche' senza gesto puo' non risolversi mai.
+
+Le tre funzioni di regola (`statoAscoltoTesto`, `verdettoMicrofono`,
+`modoParla`/`guardaSeRilascia`) sono **pure**, quindi si provano con node senza
+browser. Il test `_ascolta_senza_campioni_js` esegue `ascoltaSulServer` **vera**:
+il suo finto DOM deve conoscere i nuovi helper (`aggiornaParla`, `mostraLivello`,
+`$` con `focus`), altrimenti il test fallisce per un motivo che non c'entra.
+
+Resta il limite che **nessuna di queste modifiche risolve**: il telefono ha bisogno
+di HTTPS per il microfono, e questo si ottiene solo con il Funnel Tailscale sul PC
+di casa (`windows\dominio.bat`) o un proxy TLS. E' la strada A, e va fatta sulla
+macchina sempre accesa, non nell'app.
+
 ## Il tema scuro
 
 La pagina nasce chiara (palette «mare»), e il tema **scuro e' l'opposto**: sfondo

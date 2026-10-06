@@ -979,6 +979,41 @@ tr:last-child td { border-bottom: none; }
   background: var(--surface); color: var(--muted); font-size: 12px;
 }
 .voice-ex:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+
+/* Push-to-talk: il pulsante grande e la barra del livello. Su un telefono si
+   tiene premuto e si parla; la barra dice che il microfono manda audio davvero,
+   invece di lasciarlo intuire. */
+.voice-parla { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.voice-parla .hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+#voice-parla {
+  font: inherit; font-size: 15px; font-weight: 700; min-height: 48px;
+  touch-action: none;   /* il dito che tiene premuto non deve scorrere la pagina */
+}
+#voice-parla:active { transform: scale(.99); }
+.voice-livello {
+  height: 8px; border-radius: 999px; background: var(--paper);
+  border: 1px solid var(--line); overflow: hidden;
+}
+.voice-livello[hidden] { display: none; }
+#voice-livello-barra {
+  height: 100%; width: 3%; border-radius: 999px; background: var(--accent);
+  transition: width .08s linear;
+}
+
+/* Esito della prova del microfono: una riga per controllo, con il segno. */
+.voice-prova-esito {
+  list-style: none; margin: 10px 0 0; padding: 0; font-size: 12.5px; line-height: 1.55;
+  max-height: 180px; overflow-y: auto;
+}
+.voice-prova-esito[hidden] { display: none; }
+.voice-prova-esito li { padding: 3px 0 3px 20px; position: relative; color: var(--muted); }
+.voice-prova-esito li::before { position: absolute; left: 0; }
+.voice-prova-esito li.ok { color: var(--green); }
+.voice-prova-esito li.ok::before { content: '✓'; }
+.voice-prova-esito li.err { color: var(--accent-deep); font-weight: 600; }
+.voice-prova-esito li.err::before { content: '✕'; }
+.voice-prova-esito li.esito::before { content: '→'; }
+
 .voice-result {
   margin: 0 0 14px; padding: 10px 13px; border-radius: 8px; font-size: 13.5px;
 }

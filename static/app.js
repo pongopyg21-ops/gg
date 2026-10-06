@@ -4448,6 +4448,8 @@ async function caricaVoceCloud() {
     voceCloud.llmManca = d.llm_manca || '';
     voceCloud.llmAbilitato = !!d.llm_abilitato;
     mostraAvvisoRobotica();
+    // la riga "chi ascolta" dipende dal cloud: si aggiorna appena si sa
+    mostraStatoAscolto();
     // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
     // significa non farle aspettare dopo, quando servono davvero
     preriscaldaFrasiFisse();
@@ -4556,6 +4558,72 @@ function fineRegistrazione({ inizio, ultimoSuono, parlatoDa, adesso }) {
   return adesso - inizio > ASCOLTO_MAX_MS;
 }
 
+/** Come funzionera' l'ascolto, in una riga. Pura: si prova senza browser.
+
+    Il guasto che risolve: quando il server non ha la chiave, l'ascolto ripiega
+    in silenzio sul browser, e l'utente crede che l'app sia rotta. Dicendo **chi**
+    ascolta e **cosa manca**, la stessa situazione diventa una cosa da accendere,
+    non un guasto da cercare. */
+function statoAscoltoTesto({ ascoltoServer, contesto }) {
+  if (!contesto) {
+    // corta apposta: il rimedio (HTTPS o localhost, e il rimando a Tailscale)
+    // sta gia' nell'avviso qui sotto (`mostraAvvisoSicurezza`), e ripeterlo in
+    // due paragrafi adiacenti confonderebbe invece di aiutare
+    return 'Ascolto: non disponibile da questo indirizzo.';
+  }
+  if (ascoltoServer) {
+    return 'Ascolto: server (Azure). Funziona anche se il browser non raggiunge '
+      + 'il servizio di Google.';
+  }
+  return 'Ascolto: browser (ripiego). La chiave della voce non e\' configurata, '
+    + 'quindi l\'ascolto dipende dal browser e puo\' non essere disponibile.';
+}
+
+/** Cosa dire dei controlli del microfono, in fila. Pura: si prova senza browser.
+
+    `esito` e' `'ok'` (si puo' registrare), `'bloccato'` (il browser tiene l'audio
+    sospeso: serve un tocco) o `'no'` (non si puo' registrare da qui). Il testo
+    dice **quale** controllo ha fermato cosa, invece di lasciare il pulsante muto. */
+function verdettoMicrofono({ contesto, haApi, permesso, bloccato }) {
+  if (!contesto) {
+    return { esito: 'no', testo: 'Indirizzo non sicuro (serve HTTPS o localhost).' };
+  }
+  if (!haApi) {
+    return { esito: 'no', testo: 'Questo browser non sa registrare dal microfono.' };
+  }
+  if (permesso === 'denied') {
+    return { esito: 'no', testo: 'Microfono non autorizzato: consentilo nelle '
+      + 'impostazioni del browser.' };
+  }
+  if (bloccato) {
+    return { esito: 'bloccato', testo: 'Il browser tiene l\'audio in pausa: tocca '
+      + 'lo schermo una volta e riprova.' };
+  }
+  return { esito: 'ok', testo: 'Microfono pronto.' };
+}
+
+/** Push-to-talk sul telefono, interruttore sul computer. Pura.
+
+    Su un telefono non c'e' il passaggio "sospeso" di un puntatore: un tocco e'
+    un inizio e una fine insieme, e il toggle a due tocchi (primo apre, secondo
+    chiude) si sbaglia — chi tocca una volta aspetta, chi tocca due crede di aver
+    annullato. Quindi col dito si tiene premuto, e si invia al rilascio. */
+function modoParla(touch) {
+  return touch ? 'push' : 'toggle';
+}
+
+/** Rilascio del dito, con tolleranza. Pura.
+
+    Il dito che scorre un po' esce dal pulsante (`pointerleave`): senza tolleranza
+    la frase si perderebbe proprio mentre si parla. Quindi si chiude quando il
+    puntatore e' uscito **molto** dal pulsante, non appena sfiora il bordo. */
+function guardaSeRilascia({ pushAttivo, dentro, tipo }) {
+  if (!pushAttivo) return false;
+  if (tipo === 'up' || tipo === 'cancel') return true;
+  if (tipo === 'leave' && dentro === false) return true;
+  return false;
+}
+
 
 /** Quanto è "forte" un blocco di campioni, per distinguere voce e silenzio.
     Un picco, non una media: una media su blocchi quasi muti resta a zero anche
@@ -4623,7 +4691,23 @@ function wavDaCampioni(campioni, frequenza) {
 }
 
 let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: null,
-             aFineParlato: null, tempoVoce: null };
+             aFineParlato: null, tempoVoce: null,
+             // push-to-talk: il microfono resta aperto finche' si tiene premuto,
+             // e il silenzio non chiude la frase (chiude il rilascio)
+             pushAttivo: false,
+             // il dito si e' gia' alzato mentre il microfono si apriva: quando si
+             // apre, la frase e' gia' finita e non si registra (una corsa reale:
+             // un tocco brevissimo non deve aprire il microfono per 12 s)
+             rilasciato: false,
+             // il microfono non e' utilizzabile da questo indirizzo (contesto non
+             // sicuro): si spiega invece di far finta di ascoltare
+             senzaMicrofono: false,
+             // prova del microfono in corso: l'esito non esegue il comando, lo
+             // mostra soltanto
+             provaMicrofono: false,
+             // aggiorna la barra del livello audio (impostata durante la
+             // registrazione sul server, null quando non c'e')
+             livello: null };
 // Ascolto continuo ("hey Google"): il microfono resta aperto e i comandi partono
 // solo dopo la parola di sveglia. `continuo` e' l'intenzione dell'utente,
 // `sospeso` dice che in questo momento l'assistente sta parlando e non deve
@@ -4792,9 +4876,195 @@ async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
 function ascolta() {
   // già in ascolto (dal server o dal browser): il clic ferma e fa partire la frase
   if (voce.attivo) { fermaAscolto(); return; }
-  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto)) return;
+  avviaAscoltoSingolo();
+}
+
+/** Avvia un ascolto singolo (non continuo). `tenuto` e' il push-to-talk: il
+    microfono resta aperto finche' il dito non si alza. */
+function avviaAscoltoSingolo({ tenuto = false } = {}) {
+  voce.provaMicrofono = false;
+  if (voce.senzaMicrofono) { mostraSenzaMicrofono(); return; }
+  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto })) return;
   ascoltaDalBrowser();
 }
+
+/** Il push-to-talk: il dito si appoggia e si parla. */
+function iniziaParla(e) {
+  if (voce.attivo || ascoltoContinuo.continuo) return;
+  if (voce.senzaMicrofono) { mostraSenzaMicrofono(); return; }
+  voce.pushAttivo = true;
+  voce.rilasciato = false;
+  aggiornaParla();
+  // il puntatore si "cattura": cosi' il rilascio arriva anche se il dito esce dal
+  // pulsante, e la frase non si perde mentre si parla
+  try { if (e && e.target && e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId); } catch (_e) { /* niente cattura */ }
+  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto: true })) return;
+  ascoltaDalBrowser();
+}
+
+/** Il dito si alza: la frase e' finita, si manda. */
+function finisciParla() {
+  if (!voce.pushAttivo) return;
+  voce.pushAttivo = false;
+  voce.rilasciato = true;
+  aggiornaParla();
+  fermaAscolto();
+}
+
+/** Il pulsante «Parla» si adatta al dispositivo: sul dito si tiene premuto, col
+    mouse e' un interruttore. L'etichetta dice cosa fare. */
+function aggiornaParla() {
+  const btn = $('#voice-parla');
+  const hint = $('#voice-parla-hint');
+  if (!btn) return;
+  const dito = typeof window !== 'undefined' && window.matchMedia
+    && window.matchMedia('(hover: none)').matches;
+  if (voce.attivo && voce.pushAttivo) {
+    btn.textContent = '🔴 Parla… (rilascia per inviare)';
+    if (hint) hint.textContent = 'Rilascia quando hai finito.';
+  } else if (voce.attivo) {
+    btn.textContent = '⏹ Ferma';
+    if (hint) hint.textContent = 'Parla, poi premi di nuovo per inviare.';
+  } else {
+    btn.textContent = modoParla(dito) === 'push' ? '🎙 Tieni premuto e parla' : '🎙 Parla';
+    if (hint) hint.textContent = modoParla(dito) === 'push'
+      ? 'Tieni premuto il pulsante mentre detti il comando.'
+      : 'Premi per parlare, premi di nuovo per inviare.';
+  }
+}
+
+/** La barra del livello: dice che il microfono manda audio, non solo che l'app
+    "sta ascoltando". Un picco non basta, quindi la barra sale e scende. */
+function aggiornaLivello(amp) {
+  const barra = $('#voice-livello-barra');
+  if (!barra) return;
+  const pct = Math.max(3, Math.min(100, Math.round((amp / 0.3) * 100)));
+  barra.style.width = pct + '%';
+}
+
+function mostraLivello(on) {
+  const liv = $('#voice-livello');
+  if (liv) liv.hidden = !on;
+  if (!on) aggiornaLivello(0);
+}
+
+/** Aggiorna la riga che dice **chi** ascolta (server o browser). */
+function mostraStatoAscolto() {
+  const el = $('#voice-stato-ascolto');
+  if (!el) return;
+  // il contesto si legge qui e non dallo stato di `voce`: questa riga si aggiorna
+  // anche prima che il pannello sia stato aperto
+  const contesto = typeof window === 'undefined' ? true : !!window.isSecureContext;
+  const testo = statoAscoltoTesto({
+    ascoltoServer: !!voceCloud.ascolto,
+    contesto,
+  });
+  el.textContent = testo;
+  el.className = 'voice-avviso' + (voceCloud.ascolto ? ' ok' : '');
+}
+
+/** L'indirizzo non e' sicuro: si spiega e si porta il cursore al campo di testo,
+    invece di lasciare il pulsante muto. */
+function mostraSenzaMicrofono() {
+  voceStato('Da qui il microfono non è disponibile: usa http://localhost sul '
+    + 'computer o un indirizzo HTTPS dal telefono. Intanto scrivi il comando qui sotto.', 'err');
+  const campo = $('#voice-text');
+  if (campo) campo.focus();
+}
+
+/** Aggiunge una riga all'esito della prova del microfono. */
+function esitoProvaMicrofono(esito, testo) {
+  const lista = $('#voice-prova-esito');
+  if (!lista) return;
+  lista.hidden = false;
+  const li = document.createElement('li');
+  li.className = esito;   // 'ok' | 'err' | 'esito'
+  li.textContent = testo;
+  lista.appendChild(li);
+  lista.scrollTop = lista.scrollHeight;
+}
+
+/** Ferma la prova e rimette l'esito: si chiama quando la prova finisce. */
+function fineProvaMicrofono() {
+  voce.provaMicrofono = false;
+  aggiornaParla();
+}
+
+/** Il contesto audio e' sbloccato? Prova breve, senza restare appesi: `resume()`
+    puo' non risolversi mai senza un gesto, quindi si mette un tetto. */
+async function audioSbloccato() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return false;
+  let ctx;
+  try { ctx = new Ctx(); } catch (_e) { return false; }
+  try {
+    if (ctx.state === 'running') return true;
+    await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 600))]);
+    return ctx.state === 'running';
+  } catch (_e) {
+    return false;
+  } finally {
+    try { ctx.close(); } catch (_e) { /* non era aperto */ }
+  }
+}
+
+/** «Prova il microfono»: i controlli in fila, poi un giro di prova.
+
+    Trasforma "non funziona" in una causa precisa. Controlla, nell'ordine in cui
+    possono fermare le cose: contesto sicuro, API di registrazione, permesso,
+    contesto audio, e chi trascrive (server o browser). Poi registra una frase e
+    **mostra cosa ha sentito**, senza eseguire il comando: chi prova vuole sapere
+    se il microfono funziona, non modificare la dispensa. */
+async function provaMicrofono() {
+  const lista = $('#voice-prova-esito');
+  if (lista) { lista.innerHTML = ''; lista.hidden = false; }
+  voce.provaMicrofono = true;
+  aggiornaParla();
+
+  const contesto = !voce.senzaMicrofono;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const haApi = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && Ctx);
+  let permesso = '';
+  try {
+    permesso = (await navigator.permissions.query({ name: 'microphone' })).state;
+  } catch (_e) { permesso = ''; }   // browser che non sa dire lo stato
+
+  esitoProvaMicrofono(contesto ? 'ok' : 'err',
+    contesto ? 'Indirizzo sicuro (HTTPS o localhost): ok.'
+             : 'Indirizzo non sicuro: il browser non concede il microfono. Usa http://localhost o HTTPS.');
+  esitoProvaMicrofono(haApi ? 'ok' : 'err',
+    haApi ? 'Questo browser sa registrare dal microfono: ok.'
+          : 'Questo browser non sa registrare dal microfono.');
+  if (permesso) {
+    esitoProvaMicrofono(permesso === 'denied' ? 'err' : 'ok',
+      permesso === 'denied' ? 'Permesso microfono: negato. Consentilo nelle impostazioni del browser.'
+                            : `Permesso microfono: ${permesso}.`);
+  }
+  esitoProvaMicrofono(voceCloud.ascolto ? 'ok' : '',
+    voceCloud.ascolto ? 'Trascrizione: server (Azure). Non dipende dal browser.'
+                      : 'Trascrizione: browser (ripiego). La chiave della voce non è configurata.');
+
+  let bloccato = false;
+  if (contesto && haApi) {
+    bloccato = !(await audioSbloccato());
+    esitoProvaMicrofono(bloccato ? 'err' : 'ok',
+      bloccato ? 'Audio in pausa: tocca lo schermo una volta e riprova.'
+               : 'Audio sbloccato: ok.');
+  }
+
+  const verdetto = verdettoMicrofono({ contesto, haApi, permesso, bloccato });
+  if (verdetto.esito !== 'ok') {
+    voceStato(verdetto.testo, 'err');
+    esitoProvaMicrofono('err', verdetto.testo);
+    fineProvaMicrofono();
+    return;
+  }
+  voceStato('Prova: di\' una frase dopo il segnale.');
+  esitoProvaMicrofono('', 'Ora dì una frase breve, ad esempio «prova microfono».');
+  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto: true })) return;
+  ascoltaDalBrowser();
+}
+
 
 /** Cosa fare col testo arrivato dal server nell'ascolto singolo. */
 function esitoAscolto(d) {
@@ -4807,8 +5077,23 @@ function esitoAscolto(d) {
     return;
   }
   const testo = (d.testo || '').trim();
-  if (!testo) { voceStato('Non ho sentito nulla, riprova.'); return; }
+  if (!testo) {
+    voceStato('Non ho sentito nulla, riprova.');
+    if (voce.provaMicrofono) {
+      esitoProvaMicrofono('err', 'Non ho sentito nulla: avvicinati al microfono e riprova.');
+      fineProvaMicrofono();
+    }
+    return;
+  }
   $('#voice-heard').textContent = testo;
+  // la prova del microfono **non** esegue il comando: mostra cosa ha sentito e
+  // basta, perche' chi prova vuole sapere se il microfono funziona, non
+  // modificare la dispensa
+  if (voce.provaMicrofono) {
+    esitoProvaMicrofono('ok', `Ho sentito: «${testo}» — il microfono funziona.`);
+    fineProvaMicrofono();
+    return;
+  }
   eseguiComando(testo);
 }
 
@@ -4817,6 +5102,8 @@ function fermaAscolto() {
   if (voce.attivo && voce.rec) {
     try { voce.rec.stop(); } catch (_e) { /* niente da fermare */ }
   }
+  voce.pushAttivo = false;
+  aggiornaParla();
 }
 
 /** Registra dal microfono e manda l'audio al server.
@@ -4824,8 +5111,11 @@ function fermaAscolto() {
     Restituisce `false` se non c'e' modo di registrare qui (microfono negato o
     API assente): chi chiama ripiega sul riconoscimento del browser.
     `alTesto` riceve l'esito, anche quando il microfono viene negato: l'ascolto
-    continuo deve saperlo per non restare in attesa di un ciclo mai partito. */
-function ascoltaSulServer(alTesto) {
+    continuo deve saperlo per non restare in attesa di un ciclo mai partito.
+    `opts.tenuto` (push-to-talk) tiene il microfono aperto finche' il dito non si
+    alza: il silenzio non chiude la frase, la chiude il rilascio. */
+function ascoltaSulServer(alTesto, opts = {}) {
+  const tenuto = !!opts.tenuto;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !Ctx) return false;
 
@@ -4887,6 +5177,10 @@ function ascoltaSulServer(alTesto) {
       flusso.getTracks().forEach((t) => t.stop());
       voce.registratore = null;
       voce.attivo = false;
+      voce.pushAttivo = false;
+      voce.livello = null;
+      mostraLivello(false);
+      aggiornaParla();
       $('#mic').classList.remove('on');
     };
     const termina = () => {
@@ -4908,6 +5202,12 @@ function ascoltaSulServer(alTesto) {
         si chiude comunque, e al massimo si sente "non ho sentito nulla". */
     const valutaFine = () => {
       if (chiuso) return;
+      // push-to-talk: la frase la chiude il rilascio del dito, non il silenzio.
+      // Il tetto massimo resta: un dito dimenticato non deve registrare per sempre.
+      if (tenuto) {
+        if (Date.now() - inizio > ASCOLTO_MAX_MS) termina();
+        return;
+      }
       const adesso = Date.now();
       if (fineRegistrazione({
         inizio, ultimoSuono, parlatoDa: parlatoDa !== null, adesso,
@@ -4919,10 +5219,14 @@ function ascoltaSulServer(alTesto) {
       const blocco = e.inputBuffer.getChannelData(0);
       pezzi.push(new Float32Array(blocco));
       const adesso = Date.now();
-      if (ampiezza(blocco) > ASCOLTO_SILENZIO) {
+      const livello = ampiezza(blocco);
+      if (livello > ASCOLTO_SILENZIO) {
         ultimoSuono = adesso;
         if (parlatoDa === null) parlatoDa = adesso;
       }
+      // il livello alimenta la barra del push-to-talk: dice che il microfono
+      // manda audio davvero, invece di lasciarlo intuire dal silenzio
+      if (voce.livello) voce.livello(livello);
       valutaFine();
     };
 
@@ -4935,10 +5239,21 @@ function ascoltaSulServer(alTesto) {
 
     voce.registratore = { ferma: termina, annulla: chiudi };
     voce.attivo = true;
+    voce.pushAttivo = tenuto;
+    // se il dito si e' gia' alzato mentre il microfono si apriva, la frase e'
+    // finita: si chiude subito invece di registrare fino al tetto massimo
+    if (tenuto && voce.rilasciato) { termina(); return; }
+    // la barra del livello si mostra solo nel push-to-talk: nell'ascolto continuo
+    // accenderebbe un elemento in piu' a ogni giro, senza servire
+    if (tenuto) {
+      voce.livello = aggiornaLivello;
+      mostraLivello(true);
+    }
     $('#mic').classList.add('on');
     voceStato('Ti ascolto…');
     $('#voice-result').hidden = true;
     $('#voice-heard').textContent = '…';
+    aggiornaParla();
   }).catch(() => {
     clearTimeout(scadenza);
     // microfono negato o assente: non è un guasto del server, si ripiega
@@ -4947,6 +5262,8 @@ function ascoltaSulServer(alTesto) {
     $('#voice-heard').hidden = true;
     const campo = $('#voice-text');
     if (campo) campo.focus();
+    voce.pushAttivo = false;
+    aggiornaParla();
     // l'ascolto continuo va fermato: senza questo avviso resterebbe "acceso"
     // ad aspettare un ciclo che non partirà mai, e il pulsante mentirebbe
     if (alTesto) alTesto({ errore: true });
@@ -5048,8 +5365,15 @@ function ascoltaDalBrowser() {
   rec.onend = () => {
     voce.attivo = false;
     $('#mic').classList.remove('on');
+    aggiornaParla();
     const testo = (voce.finale || '').trim();
     voce.finale = '';
+    if (testo && voce.provaMicrofono) {
+      // la prova mostra cosa ha sentito e non esegue: chi prova vuole sapere se
+      // il microfono funziona, non modificare i dati
+      esitoProvaMicrofono('esito', `Ho sentito: «${testo}» — il microfono funziona.`);
+      return;
+    }
     if (testo) eseguiComando(testo);
     else if ($('#voice-status').dataset.tipo !== 'err') voceStato('Nessun comando riconosciuto, riprova.');
   };
@@ -5100,15 +5424,28 @@ function messaggioMicrofono(errore, serverAscolta) {
 
 function apriVoce() {
   tentaSuonoApertura();
+  // il contesto sicuro e' la prima cosa da sapere: da un indirizzo http:// di
+  // rete il browser non da' il microfono, e senza questo controllo il pulsante
+  // resterebbe muto senza spiegare perche'
+  voce.senzaMicrofono = !window.isSecureContext;
   mostraAvvisoSicurezza();
   $('#voice').classList.remove('hidden');
   nascondiFuori();   // il pannello aperto mostra gia' #voice-heard
   $('#voice-result').hidden = true;
   aggiornaSpiaAscolto();
+  mostraStatoAscolto();
+  aggiornaParla();
   // con l'ascolto continuo acceso il microfono sta gia' girando: avviarne uno
   // singolo lo sovrapporrebbe, e due registrazioni insieme non si capiscono
   if (ascoltoContinuo.continuo) {
     voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
+    return;
+  }
+  if (voce.senzaMicrofono) {
+    // non si tenta nemmeno: si dice cosa manca e si porta al campo di testo
+    voceStato('Microfono non disponibile da questo indirizzo');
+    $('#voice-heard').textContent = "Scrivi il comando qui sotto: da questo "
+      + 'indirizzo il browser non concede il microfono.';
     return;
   }
   $('#voice-heard').textContent = "Parla ora: ad esempio «aggiungi due chili di farina in dispensa».";
@@ -5771,6 +6108,7 @@ function chiudiVoce() {
   // Con l'ascolto continuo acceso, chiudere il pannello non lo spegne: e' anzi
   // il modo d'uso normale (si cucina e si parla da un'altra stanza), e fermare
   // il microfono qui renderebbe la funzione inutile proprio quando serve.
+  voce.provaMicrofono = false;
   if (ascoltoContinuo.continuo) {
     $('#voice').classList.add('hidden');
     return;
@@ -5778,6 +6116,8 @@ function chiudiVoce() {
   if (voce.registratore) voce.registratore.annulla();
   if (voce.attivo && voce.rec) voce.rec.stop();
   if (window.speechSynthesis) speechSynthesis.cancel();
+  voce.pushAttivo = false;
+  aggiornaParla();
   $('#voice').classList.add('hidden');
 }
 
@@ -5795,6 +6135,31 @@ $('#voice-sempre').addEventListener('click', () => {
 });
 $('#voice-close').addEventListener('click', chiudiVoce);
 $('#voice-retry').addEventListener('click', ascolta);
+
+/* Push-to-talk: sul telefono si tiene premuto (pointerdown) e si invia al
+   rilascio (pointerup). Col mouse resta un interruttore: un clic apre, un altro
+   chiude. `setPointerCapture` fa arrivare il rilascio anche col dito fuori dal
+   pulsante. */
+$('#voice-parla').addEventListener('pointerdown', (e) => {
+  const dito = modoParla(window.matchMedia && window.matchMedia('(hover: none)').matches) === 'push';
+  if (dito) { e.preventDefault(); iniziaParla(e); return; }
+  // mouse: interruttore
+  if (voce.attivo) { fermaAscolto(); return; }
+  avviaAscoltoSingolo();
+});
+$('#voice-parla').addEventListener('pointerup', () => { if (voce.pushAttivo) finisciParla(); });
+$('#voice-parla').addEventListener('pointercancel', () => { if (voce.pushAttivo) finisciParla(); });
+$('#voice-parla').addEventListener('pointerleave', (e) => {
+  // il dito che scorre un po' fuori non deve perdere la frase: si chiude solo se
+  // il puntatore e' uscito **molto** dal pulsante (la cattura lo mantiene dentro)
+  if (!voce.pushAttivo) return;
+  const r = e.target.getBoundingClientRect();
+  const dentro = e.clientX >= r.left - 40 && e.clientX <= r.right + 40
+    && e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40;
+  if (guardaSeRilascia({ pushAttivo: true, dentro, tipo: 'leave' })) finisciParla();
+});
+$('#voice-prova').addEventListener('click', provaMicrofono);
+
 $('#voice-registro-pulisci').addEventListener('click', () => {
   const lista = $('#voice-registro');
   if (lista) lista.innerHTML = '';

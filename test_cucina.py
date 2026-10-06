@@ -4891,7 +4891,7 @@ def test_il_microfono_prova_prima_il_server(client):
     assert "/api/voce/ascolta" in js
     assert "ascoltaSulServer" in js and "ascoltaDalBrowser" in js
     # il dispatcher sceglie il server quando è disponibile
-    assert "if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto)) return;" in js
+    assert "if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto })) return;" in js
     # e il 503 non è un errore da mostrare: si ripiega sul browser
     assert "if (d && d.ripiega) { ascoltaDalBrowser(); return; }" in js
 
@@ -5019,9 +5019,11 @@ Object.defineProperty(globalThis, "navigator", {
 });
 function ampiezza() { return 0; }
 function inviaAscolto() { return Promise.resolve({ testo: '' }); }
-function $() { return { classList: { add() {}, remove() {} } }; }
+function $() { return { classList: { add() {}, remove() {} }, focus() {} }; }
 function voceStato() {}
-let voce = { registratore: null, attivo: false };
+function aggiornaParla() {}
+function mostraLivello() {}
+let voce = { registratore: null, attivo: false, pushAttivo: false, livello: null };
 """
     prova = (preludio + "\n".join(pezzi) + """
 const t0 = Date.now();
@@ -5048,6 +5050,119 @@ def _fine_registrazione_js(client, casi):
                 "const ASCOLTO_MAX_MS = 15000;\n")
     return _esegui_node(costanti + blocco
                         + "\nconsole.log(JSON.stringify(" + casi + "));")
+
+
+def _stato_ascolto_js(client, casi):
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "statoAscoltoTesto")
+    return _esegui_node(blocco + "\nconsole.log(JSON.stringify(" + casi + "));")
+
+
+def _verdetto_microfono_js(client, casi):
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocco = _estrai_funzione_js(js, "verdettoMicrofono")
+    return _esegui_node(blocco + "\nconsole.log(JSON.stringify(" + casi + "));")
+
+
+def _modo_parla_js(client, casi):
+    js = client.get("/static/app.js").get_data(as_text=True)
+    blocchi = "\n".join(_estrai_funzione_js(js, n) for n in ("modoParla", "guardaSeRilascia"))
+    return _esegui_node(blocchi + "\nconsole.log(JSON.stringify(" + casi + "));")
+
+
+def test_lo_stato_dell_ascolto_dice_chi_ascolta(client):
+    """Il guasto che risolve: senza chiave l'ascolto ripiega in silenzio sul
+    browser, e l'utente crede che l'app sia rotta. La riga dice **chi** ascolta e
+    **cosa manca**, cosi' la stessa situazione e' una cosa da accendere."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "statoAscoltoTesto" in js
+    assert "voice-stato-ascolto" in js
+    d = _stato_ascolto_js(client, """{
+      server: statoAscoltoTesto({ ascoltoServer: true, contesto: true }),
+      browser: statoAscoltoTesto({ ascoltoServer: false, contesto: true }),
+      insicuro: statoAscoltoTesto({ ascoltoServer: true, contesto: false }),
+    }""")
+    assert "server" in d["server"].lower() and "azure" in d["server"].lower()
+    assert "browser" in d["browser"].lower()
+    assert "chiave" in d["browser"].lower(), "senza server deve dire cosa manca"
+    # il contesto non sicuro vince su tutto: e' quello che impedisce il microfono.
+    # Il rimedio (HTTPS/localhost) sta nell'avviso dedicato, non qui: la riga dice
+    # solo che l'ascolto non e' disponibile, senza promettere Azure.
+    assert "non disponibile" in d["insicuro"].lower()
+    assert "azure" not in d["insicuro"].lower()
+
+
+def test_il_verdetto_del_microfono_dice_quale_controllo_ha_fermato(client):
+    """La prova del microfono deve dire **quale** controllo ha fermato cosa,
+    invece di lasciare il pulsante muto."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "verdettoMicrofono" in js
+    d = _verdetto_microfono_js(client, """{
+      ok: verdettoMicrofono({ contesto: true, haApi: true, permesso: 'granted', bloccato: false }),
+      insicuro: verdettoMicrofono({ contesto: false, haApi: true, permesso: '', bloccato: false }),
+      senzaApi: verdettoMicrofono({ contesto: true, haApi: false, permesso: '', bloccato: false }),
+      negato: verdettoMicrofono({ contesto: true, haApi: true, permesso: 'denied', bloccato: false }),
+      bloccato: verdettoMicrofono({ contesto: true, haApi: true, permesso: 'granted', bloccato: true }),
+    }""")
+    assert d["ok"]["esito"] == "ok"
+    assert d["insicuro"]["esito"] == "no"
+    assert d["senzaApi"]["esito"] == "no"
+    assert d["negato"]["esito"] == "no"
+    assert d["bloccato"]["esito"] == "bloccato", "il blocco audio non e' 'no': si sblocca con un tocco"
+    assert "https" in d["insicuro"]["testo"].lower() or "localhost" in d["insicuro"]["testo"].lower()
+    assert "autorizzato" in d["negato"]["testo"].lower()
+    assert "tocca" in d["bloccato"]["testo"].lower()
+
+
+def test_il_push_to_talk_si_adatta_al_dispositivo(client):
+    """Sul telefono il tocco e' un inizio e una fine insieme: il toggle a due
+    tocchi si sbaglia. Col dito si tiene premuto, col mouse e' un interruttore."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "modoParla" in js and "voice-parla" in js
+    d = _modo_parla_js(client, """{
+      dito: modoParla(true),
+      mouse: modoParla(false),
+      // il dito che scorre fuori dal pulsante non deve perdere la frase
+      rilascio: guardaSeRilascia({ pushAttivo: true, dentro: true, tipo: 'leave' }),
+      uscito: guardaSeRilascia({ pushAttivo: true, dentro: false, tipo: 'leave' }),
+      su: guardaSeRilascia({ pushAttivo: true, dentro: true, tipo: 'up' }),
+      spento: guardaSeRilascia({ pushAttivo: false, dentro: false, tipo: 'up' }),
+    }""")
+    assert d["dito"] == "push"
+    assert d["mouse"] == "toggle"
+    assert d["rilascio"] is False, "un dito ancora dentro non chiude la frase"
+    assert d["uscito"] is True
+    assert d["su"] is True
+    assert d["spento"] is False, "senza push attivo non c'e' niente da chiudere"
+
+
+def test_la_prova_del_microfono_esiste_e_non_esegue_il_comando(client):
+    """La prova dice cosa non va, ma non deve scrivere in dispensa: chi prova
+    vuole sapere se il microfono funziona, non modificare i dati."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "provaMicrofono" in js
+    assert "voice-prova" in js
+    assert "voice-prova-esito" in js
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="voice-prova"' in html
+    assert 'id="voice-prova-esito"' in html
+    # il ramo della prova deve essere prima dell'esecuzione del comando
+    i_prova = js.index("if (voce.provaMicrofono) {", js.index("function esitoAscolto"))
+    i_esegui = js.index("eseguiComando(testo);", js.index("function esitoAscolto"))
+    assert i_prova < i_esegui, "la prova deve intercettare l'esito prima di eseguire"
+    assert "fineProvaMicrofono" in js
+
+
+def test_l_ascolto_non_tenta_a_vuoto_da_un_indirizzo_non_sicuro(client):
+    """Da http://IP il browser non da' il microfono: l'app deve dirlo e portare al
+    campo di testo, invece di aprire un microfono che non sentira' mai."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "senzaMicrofono" in js
+    assert "isSecureContext" in js
+    assert "mostraSenzaMicrofono" in js
+    # il pulsante del microfono flottante resta raggiungibile: apriVoce() non
+    # tenta la registrazione quando il contesto non e' sicuro
+    assert "if (voce.senzaMicrofono) {" in js
 
 
 def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
