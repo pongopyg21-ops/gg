@@ -1312,6 +1312,39 @@ distinguere le versioni e va onorato, non aggirato con la cache. Il
 `fetch` finto: online vince la rete, offline regge la copia. Alzando `CACHE`
 (`...-v2`) le copie vecchie vengono sfrattate al prossimo `activate`.
 
+## Intestazioni di sicurezza e CSP
+
+Le risposte portano `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`,
+`Permissions-Policy: camera=(), geolocation=(), payment=()` e una
+`Content-Security-Policy`. Servono a limitare cosa la pagina può caricare e
+incorporare, se un giorno un contenuto esterno (un titolo di notizia, un nome di
+ricetta) riuscisse a iniettare markup.
+
+Tre cose che non sono ovvie:
+
+- **Stanno in un `after_request` a parte**, non in quello della cache. Quello
+  della cache **esce subito** per le risorse versionate (le foto, la voce di
+  conferma) perché scelgono da sole la loro scadenza: mettere le intestazioni lì
+  significherebbe non averle proprio su quelle risposte. Un secondo
+  `after_request` le applica a tutto.
+- **La CSP ha un `nonce` per pagina, non `'unsafe-inline'` per gli script.** La
+  pagina ha script inline (il tema scuro nello `<head>`, la configurazione
+  iniziale): `script-src 'unsafe-inline'` li autorizzerebbe, ma autorizzerebbe
+  anche qualsiasi script iniettato — cioè renderebbe la CSP inutile. La rotta `/`
+  genera un nonce casuale, lo mette in `g.csp_nonce` e lo inietta negli script
+  inline; l'intestazione lo cita. Un nonce diverso a ogni pagina è ciò che lo
+  rende una difesa e non un permesso fisso.
+- **`style-src` ha `'unsafe-inline'`**, invece: il client usa stili inline
+  (`style="..."` e `<style>`), e gli stili non eseguono codice. È un compromesso
+  consapevole, non una dimenticanza.
+
+I domini esterni ammessi sono quelli che l'app usa davvero: `image.tmdb.org` per
+le locandine, `youtube-nocookie.com` per gli embed. `object-src 'none'` e
+`base-uri 'self'` chiudono i vettori classici (plugin, dirottamento dei link
+relativi). Aggiungendo un contenuto esterno nuovo, va aggiunto il suo dominio
+**qui**, altrimenti resta invisibile e sembra un guasto della sezione.
+
 ## Capire i comandi con un modello (facoltativo)
 
 > **Stato attuale: la funzione esiste sul server, ma non ha piu' un pannello.**
@@ -1916,11 +1949,30 @@ Open Trivia DB mette la risposta giusta in un campo a parte e le risposte
 arrivano **mescolate** (`_mescola_risposte`): senza, quella giusta sarebbe
 sempre la prima e il quiz si indovinerebbe senza sapere. Il testo passa da
 `html.unescape`, perché Open Trivia DB manda `&quot;` e `&#039;`. Il quiz si
-risponde **toccando** la risposta (verde/rossa), non è un dato da salvare: è una
-funzione di gioco, e ricaricando la sezione le domande tornano neutre. Il quiz si
+risponde **toccando** la risposta (verde/rossa). Il quiz si
 rinnova ogni `ORE_EXTRA` (6 ore), più spesso delle notizie, perché è un
 contenuto leggero; sta nella cache **della casa** (`tv_cache`, chiave `quiz`),
 come video e notizie.
+
+**Indovinando, la domanda esce e ne arriva una nuova** (`tv.rispondi`, `POST
+/api/quiz/rispondi`). È la richiesta dell'utente: senza, le stesse dieci domande
+si rivedevano a ogni giro e il gioco stufava. La domanda indovinata si **toglie**
+dalla copia (non si rivede) e se ne accoda una **nuova**, scaricata al volo dal
+servizio, così il quiz resta lungo uguale. Tre scelte:
+
+- **La nuova domanda si scarica al momento, non da una riserva.** Una coda di
+  riserva sarebbe un secondo elenco da tenere fresco; una domanda in più è un di
+  più, e `_domanda_nuova` cattura `NonDisponibile` ritornando `[]`.
+- **Senza rete la domanda indovinata esce lo stesso.** Ripetere una domanda a cui
+  si è appena risposto è peggio di averne una in meno: la copia perde una voce,
+  non si blocca.
+- **Rispondendo male il quiz non cambia.** Il client chiama la rotta **solo**
+  quando si indovina (`if (!giusta) return;` prima della chiamata): altrimenti la
+  risposta giusta non si potrebbe mai leggere. Un test fissa l'ordine.
+
+La scrittura è sulla cache (contenuto scaricato, non un dato dell'utente), quindi
+non c'è nulla da sincronizzare: il quiz è **della casa**, come la cache, e resta
+uguale su tutti i dispositivi.
 
 **Open Trivia DB limita a una richiesta ogni cinque secondi per indirizzo.**
 All'avvio il giro su tutte le case aspetta fra una casa e l'altra
@@ -2234,6 +2286,14 @@ Tre scelte recenti, tutte deliberate:
   va aggiunto a mano. `without_genres` accetta più generi separati da virgola, in
   OR, quindi stanno in un unico parametro; da solo non basta per i cinecomic: un
   film Marvel è anche Avventura/SF, e non tutti sono marcati Azione.
+  **Verificato con la chiave vera** (2026-10-05): con `sort_by=revenue.desc`
+  senza filtri la prima pagina apriva con Avengers: Endgame, Avatar, Spider-Man:
+  No Way Home, Avengers: Infinity War, Star Wars (tutti col genere 28); con
+  `_escludi` i film d'azione passavano da **12 a 0**. La scoperta Marvel
+  (`with_companies=420`) dà 20 film, **tutti** marcati Azione — quindi in questo
+  momento `without_companies` è una cintura in più rispetto a `without_genres`,
+  ma resta perché copre il film Marvel d'animazione o per famiglie che Azione
+  non marca (è la ragione scritta sopra).
 - **Si esclude per genere, non per certificazione d'età.** La certificazione di
   TMDB non è affidabile per questo scopo, ed è stato verificato con la chiave
   vera: gli operatori `certification.lte`/`.gte` vengono **ignorati** (tre
@@ -2440,4 +2500,46 @@ che ricade, i limiti del promemoria e l'ora tollerante — tutte funzioni pure �
 poi le rotte per ciò che aggiungono: persistenza, validazione, `done` isolato,
 gli avvisi che sono solo i promemoria scattati, il 401 senza accesso e la tabella
 `appointments` che arriva anche a un database vecchio.
+
+### I promemoria del sistema (Notification API)
+
+Il calendario calcola da solo i promemoria scattati, ma finché restano dentro
+l'app li si vede solo aprendola. Con il pulsante **🔔 Attiva i promemoria**, in
+cima alla scheda Calendario, l'avviso arriva come **notifica del sistema**: anche
+a pagina chiusa o in secondo piano, che è il momento in cui un promemoria serve.
+Il client è in `app.js` (`notificheAttive`, `controllaPromemoria`,
+`avviaPromemoria`, `mostraPulsanteNotifiche`); non c'è codice nuovo sul server,
+si riusa `GET /api/appointments?giorno=<oggi>` e i suoi `prossimi`.
+
+Quattro scelte, tutte con un motivo:
+
+- **Il permesso si chiede da un tocco**, mai da soli: un browser che vede una
+  richiesta senza un gesto la blocca, e il permesso negato non si riprende più.
+  Per questo c'è un **pulsante** e non una richiesta all'avvio; il pulsante
+  compare solo se il browser sa fare le notifiche (`typeof Notification`).
+- **Un avviso per impegno, una volta al giorno.** La memoria di cosa è già stato
+  avvisato sta in `localStorage` (del **dispositivo**, non della casa) sotto
+  `promemoriaAvvisati`, col giorno dentro la chiave: così il controllo periodico
+  non ripete lo stesso avviso e il cambio di data azzera da solo la memoria. La
+  chiave è `id|when_date`, non il solo id: un impegno spostato è un impegno nuovo
+  e deve poter riavvisare.
+- **Il controllo è leggero e periodico**: ogni mezz'ora (`setInterval`) e al
+  ritorno sulla pagina (`visibilitychange`), non un filo sempre acceso. La casa
+  non ha bisogno di un servizio di notifiche.
+- **Se il permesso manca non si chiama nemmeno il server** (`notificheAttive`
+  esce prima della `fetch`): senza, ogni mezz'ora partirebbe una richiesta per
+  non fare niente.
+
+`mostraPulsanteNotifiche` è l'unico posto che decide se il pulsante si vede
+(nascosto se il browser non supporta le notifiche o se il permesso è già
+concesso): due regole in due posti divergono, e il pulsante resterebbe a chiedere
+un permesso già dato.
+
+I test eseguono `controllaPromemoria` **vera** con node, con `Notification` e
+`localStorage` finti: con permesso concesso e un impegno che avvisa parte **una**
+notifica e richiamandola non ne parte una seconda; senza permesso non parte
+niente e il server non viene chiamato. Il controllo delle funzioni non definite
+(`test_app_js_non_chiama_funzioni_che_non_esiste`) ha in elenco anche
+`Notification`, `localStorage`, `sessionStorage`, `navigator`, `document` e
+`window`, altrimenti li scambierebbe per funzioni mancanti.
 
