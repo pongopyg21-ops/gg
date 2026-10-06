@@ -9662,6 +9662,97 @@ def test_la_sezione_tv_mostra_le_opere(client):
     assert "tv-arte" in js
 
 
+def test_ogni_opera_porta_anche_la_foto_grande(monkeypatch):
+    """Per l'ingrandimento serve la foto **originale** (`primaryImage`, qualche
+    migliaio di pixel): la misura `web-large` (~600 px) non basta a schermo
+    intero. La piccola resta per la striscia, la grande si carica solo al clic."""
+    grande = {**MET_OPERA, "primaryImage": "https://images.metmuseum.org/grande.jpg"}
+    _finta_met(monkeypatch, [grande])
+    o = tv.arte_dal_servizio()[0]
+    assert o["foto"] == "https://images.metmuseum.org/esempio.jpg"
+    assert o["foto_grande"] == "https://images.metmuseum.org/grande.jpg"
+
+
+def test_senza_foto_grande_si_usa_quella_piccola(monkeypatch):
+    """Se il museo non da' l'originale, l'ingrandimento ripiega sulla piccola:
+    meglio un'immagine piu' morbida che una finestra vuota."""
+    _finta_met(monkeypatch, [MET_OPERA])
+    assert tv.arte_dal_servizio()[0]["foto_grande"] == MET_OPERA["primaryImageSmall"]
+
+
+def test_altre_opere_saltano_quelle_gia_mostrate(monkeypatch):
+    """Il pulsante «Altre opere» deve portare roba **nuova**: si escludono gli id
+    gia' mostrati, altrimenti il pulsante ripescherebbe le stesse."""
+    tutte = [{**MET_OPERA, "objectID": n, "title": f"Quadro {n}"} for n in range(1, 6)]
+    _finta_met(monkeypatch, tutte)
+    scelte = tv.arte_dal_servizio(escludi={1, 2})
+    assert {o["id"] for o in scelte}.isdisjoint({1, 2})
+    assert len(scelte) == 3
+
+
+def test_se_escludere_svuota_si_ripiega_su_tutte(monkeypatch):
+    """Se si sono gia' mostrate tutte le opere, escluderle lascerebbe il vuoto:
+    meglio ripetere un'opera che non darne nessuna."""
+    _finta_met(monkeypatch, [MET_OPERA])
+    scelte = tv.arte_dal_servizio(escludi={MET_OPERA["objectID"]})
+    assert len(scelte) == 1
+
+
+def test_altre_arte_salva_il_gruppo_nuovo_in_copia(client, monkeypatch):
+    """Il gruppo nuovo **sostituisce** la copia: ricaricando la pagina si
+    rivedono le stesse opere, non quelle di prima."""
+    db = app_module.get_db()
+    prime = [{**MET_OPERA, "objectID": 1, "title": "Prima"}]
+    _finta_met(monkeypatch, prime)
+    tv.aggiorna_arte(db, forse=False)
+    seconde = [{**MET_OPERA, "objectID": 2, "title": "Seconda"}]
+    _finta_met(monkeypatch, seconde)
+    tv.altre_arte(db)
+    assert [o["titolo"] for o in tv.arte(db)] == ["Seconda"]
+
+
+def test_l_endpoint_altre_opere_porta_un_gruppo_nuovo(client, monkeypatch):
+    """La rotta del pulsante aspetta la rete e risponde con le opere nuove."""
+    db = app_module.get_db()
+    _finta_met(monkeypatch, [{**MET_OPERA, "objectID": 1, "title": "Prima"}])
+    tv.aggiorna_arte(db, forse=False)
+    _finta_met(monkeypatch, [{**MET_OPERA, "objectID": 2, "title": "Seconda"}])
+    d = client.post("/api/tv/arte/altre").get_json()
+    assert d["nuove"] is True
+    assert [o["titolo"] for o in d["arte"]] == ["Seconda"]
+    assert d["aggiornato"]
+
+
+def test_se_il_met_non_risponde_l_endpoint_tiene_le_opere(client, monkeypatch):
+    """Un giro a vuoto non deve svuotare il riquadro ne' sembrare riuscito:
+    resta la copia di prima e lo si dice (`nuove: false`)."""
+    db = app_module.get_db()
+    _finta_met(monkeypatch, [MET_OPERA])
+    tv.aggiorna_arte(db, forse=False)
+    _niente_rete(monkeypatch)
+    d = client.post("/api/tv/arte/altre").get_json()
+    assert d["nuove"] is False
+    assert len(d["arte"]) == 1
+    assert d["arte"][0]["titolo"] == "Wheat Field with Cypresses"
+
+
+def test_la_sezione_ha_il_pulsante_e_l_ingrandimento(client):
+    """Il pulsante «Altre opere» e la finestra d'ingrandimento stanno nella
+    pagina, e il client li collega. L'ingrandimento e' **dentro** l'app: non
+    manda l'utente su una scheda nuova, altrimenti perderebbe il posto."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="tv-arte-altre"' in html
+    assert 'id="tv-arte-grande"' in html
+    assert 'id="tv-arte-img"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "apriOpera" in js
+    assert "chiudiOpera" in js
+    assert "/api/tv/arte/altre" in js
+    # l'immagine della striscia e' cliccabile: senza, non si aprirebbe niente
+    assert "data-opera" in js
+    assert "cursor: zoom-in" in client.get("/static/style.css").get_data(as_text=True)
+
+
 # ---------- Snake ----------
 # La logica del gioco e' pura (`snakeNuovo`, `snakePasso`, `snakeDirezione`):
 # prende lo stato e ne restituisce uno nuovo, senza DOM e senza attese. Cosi' si
@@ -9831,7 +9922,7 @@ def test_il_gioco_e_nella_scocca_e_versionato(client):
     la copia vecchia dopo un aggiornamento."""
     sw = client.get("/static/sw.js").get_data(as_text=True)
     assert "/static/snake.js" in sw, "il gioco deve stare nella scocca"
-    assert "maggiordomo-scocca-v7" in sw, "alzare la versione sfratta le copie vecchie"
+    assert "maggiordomo-scocca-v8" in sw, "alzare la versione sfratta le copie vecchie"
     html = client.get("/").get_data(as_text=True)
     import re
     assert re.search(r'/static/snake\.js\?v=', html), "manca la versione nell'indirizzo"

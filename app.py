@@ -745,6 +745,32 @@ def _iso(quando):
     return datetime.datetime.fromtimestamp(quando).isoformat(timespec="minutes")
 
 
+@app.route("/api/tv/arte/altre", methods=["POST"])
+def api_tv_arte_altre():
+    """Genera un gruppo nuovo di opere del Met, diverse da quelle mostrate.
+
+    Il pulsante «Altre opere» della sezione Intrattenimento. Come gli altri
+    pulsanti «Aggiorna» **aspetta** la rete: e' l'utente a chiederlo, quindi la
+    risposta lenta e' quello che si aspetta di vedere. Salta gli id gia'
+    mostrati, cosi' il pulsante porta davvero qualcosa di nuovo.
+
+    Se il Met non risponde (o non da' opere) la copia vecchia **resta** e la
+    risposta lo dice (`nuove: false`) con le opere di prima: il riquadro non si
+    svuota per un guasto di rete, e un giro a vuoto non sembra riuscito.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    try:
+        nuove = tv.altre_arte(db)
+        esito = True
+    except tv.NonDisponibile:
+        nuove = tv.arte(db)
+        esito = False
+    _, quando = tv._leggi(db, "arte")
+    return jsonify({"nuove": esito, "arte": nuove, "aggiornato": _iso(quando)})
+
+
 @app.route("/api/gym/aggiorna", methods=["POST"])
 def api_gym_aggiorna():
     """Riscarica subito i video del GYM, senza aspettare il giro quotidiano.

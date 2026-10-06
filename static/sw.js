@@ -21,7 +21,7 @@
    - le API: mai la copia. Un dato vecchio mostrato come fresco e' peggio di un
      dato mancante: la dispensa di ieri non e' la dispensa di oggi. */
 
-const CACHE = 'maggiordomo-scocca-v7';
+const CACHE = 'maggiordomo-scocca-v8';
 
 // La scocca minima. `app.js` e `style.css` senza versione: la richiesta vera
 // porta `?v=...`, e la ricerca in cache ignora la parte dopo `?` (vedi sotto).

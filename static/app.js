@@ -243,7 +243,11 @@ async function renderTv() {
     // il server la riempie in sottofondo: si riprova qualche volta invece di
     // mostrare «nessun video» e sembrare rotta. Non si chiama l'aggiornamento
     // bloccante: la sezione non deve mai restare appesa a un sito esterno.
-    for (let tentativo = 0; tentativo < 4 && !d.video.length && !d.notizie.length; tentativo++) {
+    // Il controllo include anche le opere: una casa nuova le riceve in
+    // sottofondo come i video, e senza guardarle il riquadro resterebbe vuoto
+    // finche' non si riapre la sezione.
+    for (let tentativo = 0; tentativo < 4
+         && !d.video.length && !d.notizie.length && !(d.arte || []).length; tentativo++) {
       $('#tv-video').innerHTML = '<p class="tv-vuoto">Sto caricando…</p>';
       await new Promise((r) => setTimeout(r, 2000));
       d = await api('/api/tv');
@@ -315,10 +319,18 @@ function disegnaTv(d) {
 // Le opere d'arte del Met, accanto ai video: una striscia di dipinti della
 // collezione pubblica. La foto arriva dal sito del museo (dominio in `img-src`
 // della CSP): un'opera senza foto non ci sarebbe, il server la scarta prima.
+// Toccare un'opera la ingrandisce senza uscire dall'app (`apriOpera`).
+
+// Le opere attualmente in striscia: servono all'ingrandimento e al pulsante
+// «Altre opere». Il clic porta solo l'indice, cosi' i dati (compresa la foto
+// grande) si leggono da qui invece che dal DOM.
+let opereCorrenti = [];
+
 function disegnaArte(arte) {
-  $('#tv-arte').innerHTML = arte.length ? arte.map((o) => `
+  $('#tv-arte').innerHTML = arte.length ? arte.map((o, i) => `
     <figure class="tv-opera">
-      <img src="${esc(o.foto)}" alt="${esc(o.titolo)}" loading="lazy">
+      <img src="${esc(o.foto)}" alt="${esc(o.titolo)}" loading="lazy"
+           data-opera="${i}" title="Tocca per ingrandire">
       <figcaption>
         <span class="tv-opera-titolo">${esc(o.titolo)}</span>
         <span class="tv-opera-sotto">${esc([o.autore, o.data].filter(Boolean).join(', '))}</span>
@@ -326,7 +338,68 @@ function disegnaArte(arte) {
     </figure>`).join('')
     : '';
   $('#tv-arte-box').classList.toggle('hidden', !arte.length);
+  // le opere correnti servono all'ingrandimento: il clic porta solo l'indice,
+  // cosi' i dati (e la foto grande) li legge da qui invece che dal DOM
+  opereCorrenti = arte;
 }
+
+// Ingrandisce un'opera in una finestra dentro l'app. La foto grande (`foto_grande`,
+// l'originale del museo) si carica **qui**, non all'apertura della sezione:
+// pesa qualche MB, e caricarla per dodici schede da 190 px sarebbe sprecato.
+function apriOpera(indice) {
+  const o = opereCorrenti[indice];
+  if (!o) return;
+  const img = $('#tv-arte-img');
+  img.src = o.foto_grande || o.foto;
+  img.alt = o.titolo;
+  const dettagli = [o.autore, o.data, o.tecnica].filter(Boolean).join(' · ');
+  $('#tv-arte-didascalia').innerHTML =
+    `<strong>${esc(o.titolo)}</strong>${dettagli ? `<br>${esc(dettagli)}` : ''}`;
+  $('#tv-arte-grande').classList.remove('hidden');
+}
+function chiudiOpera() {
+  const box = $('#tv-arte-grande');
+  if (box.classList.contains('hidden')) return;
+  box.classList.add('hidden');
+  // si stacca la foto grande: senza, resta in memoria l'originale da qualche MB
+  $('#tv-arte-img').src = '';
+}
+$('#tv-arte').addEventListener('click', (e) => {
+  const img = e.target.closest('[data-opera]');
+  if (img) apriOpera(Number(img.dataset.opera));
+});
+$('#tv-arte-chiudi').addEventListener('click', chiudiOpera);
+$('#tv-arte-grande').addEventListener('click', (e) => {
+  if (e.target.id === 'tv-arte-grande') chiudiOpera();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') chiudiOpera();
+});
+
+// «Altre opere»: chiede al server un gruppo nuovo, diverso da quello mostrato.
+// Aspetta la rete (e' l'utente a chiederlo), e se il Met non risponde tiene le
+// opere di prima dicendolo: un giro a vuoto non deve sembrare riuscito.
+$('#tv-arte-altre').addEventListener('click', async () => {
+  const bottone = $('#tv-arte-altre');
+  const testo = bottone.textContent;
+  bottone.disabled = true;
+  bottone.textContent = 'Cerco…';
+  try {
+    const d = await api('/api/tv/arte/altre', { method: 'POST' });
+    disegnaArte(d.arte || []);
+    if (d.nuove) {
+      $('#tv-arte').scrollLeft = 0;
+      toast('Ecco altre opere dal Metropolitan.');
+    } else {
+      toast('Il Metropolitan non risponde: restano le opere di prima.');
+    }
+  } catch (_e) {
+    toast('Non riesco a cercare altre opere.');
+  } finally {
+    bottone.disabled = false;
+    bottone.textContent = testo;
+  }
+});
 
 // Il suggerimento della Bored API, sotto le domande: una cosa da fare quando ci
 // si annoia. E' un di piu': se non c'e' (rete assente, copia vuota) il riquadro

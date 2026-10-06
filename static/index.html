@@ -548,9 +548,13 @@
            Il riquadro resta nascosto se non c'e' niente, come i riquadri della
            home: un riquadro vuoto e' peggio di un riquadro in meno. -->
       <div id="tv-arte-box" class="tv-arte-box hidden">
-        <h3 class="section-title">Opere dal Metropolitan</h3>
+        <div class="tv-arte-testata">
+          <h3 class="section-title">Opere dal Metropolitan</h3>
+          <span class="spacer"></span>
+          <button id="tv-arte-altre" type="button" title="Mostra altre opere">Altre opere</button>
+        </div>
         <p class="hint">Qualche dipinto della collezione pubblica del Metropolitan
-          Museum of Art, accanto ai video di casa.</p>
+          Museum of Art, accanto ai video di casa. Tocca un'opera per ingrandirla.</p>
         <div id="tv-arte" class="tv-arte"></div>
       </div>
     </div>
@@ -707,6 +711,22 @@
     </div>
     <div id="modal-body"></div>
   </div>
+</div>
+
+<!-- Ingrandimento di un'opera del Met: una finestra a schermo intero che sta
+     **dentro** l'app, non una scheda nuova. Serve ad apprezzare il dipinto, e
+     il riquadro della striscia (190 px) non basta. La foto grande si carica
+     solo quando si apre, quindi la striscia resta leggera. Si chiude con la ✕,
+     col tocco sullo sfondo o con Esc: e' un ingrandimento, non una pagina da
+     cui tornare indietro. -->
+<div id="tv-arte-grande" class="arte-grande hidden" role="dialog" aria-modal="true"
+     aria-label="Opera ingrandita">
+  <button id="tv-arte-chiudi" class="arte-grande-chiudi icon" type="button"
+          aria-label="Chiudi">✕</button>
+  <figure class="arte-grande-figura">
+    <img id="tv-arte-img" src="" alt="">
+    <figcaption id="tv-arte-didascalia" class="arte-grande-didascalia"></figcaption>
+  </figure>
 </div>
 
 <div id="toast" class="toast hidden"></div>

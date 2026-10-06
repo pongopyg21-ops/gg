@@ -187,8 +187,12 @@ MET_DIPARTIMENTO = "11"
 # Quante opere tenere, e il tetto ai dettagli chiesti: la ricerca puo' elencare
 # centinaia di id, ma ogni opera e' una chiamata a parte e il tetto tiene basso
 # il lavoro. Si chiede solo il necessario a riempire le opere tenute.
+#
+# `MET_MAX_DETTAGLI` e' piu' largo di `MET_QUANTE` perche' il gruppo si sceglie
+# **a caso** fra i candidati: cosi' due giri danno gruppi diversi, e il pulsante
+# «Altre opere» puo' saltare quelle gia' mostrate senza restare senza candidati.
 MET_QUANTE = 12
-MET_MAX_DETTAGLI = 24
+MET_MAX_DETTAGLI = 60
 # Le opere d'arte non cambiano: si rinnovano una volta al giorno come i video.
 ORE_ARTE = 24
 
@@ -907,6 +911,7 @@ def _opera(id_opera) -> dict | None:
         return None
     titolo = _pulisci(dati.get("title"))
     foto = _pulisci(dati.get("primaryImageSmall")) or _pulisci(dati.get("primaryImage"))
+    grande = _pulisci(dati.get("primaryImage")) or foto
     if not titolo or not foto or not dati.get("isPublicDomain"):
         return None
     return {
@@ -917,28 +922,52 @@ def _opera(id_opera) -> dict | None:
         "tecnica": _pulisci(dati.get("medium")),
         "museo": _pulisci(dati.get("department")),
         "foto": foto,
+        # la foto grande serve all'ingrandimento: si mostra in una finestra a
+        # schermo intero, e li' la misura `web-large` (~600 px) non basta. Si
+        # scarica **solo al clic**, quindi non pesa sull'apertura della sezione.
+        "foto_grande": grande,
         "link": _pulisci(dati.get("objectURL")),
     }
 
 
-def arte_dal_servizio() -> list:
+def _gruppo(id_opere: list, quante: int, escludi: set) -> list:
+    """Da un elenco di id a un gruppo di opere, saltando quelle da escludere.
+
+    Si chiedono i dettagli **a caso** fra i candidati, cosi' due giri danno
+    gruppi diversi: e' quello che rende utile il pulsante «Altre opere». Se
+    scartandone troppe non si arriva a `quante`, ci si ferma con quello che c'e'
+    (un gruppo piu' corto e' meglio di nessun gruppo).
+    """
+    candidati = [i for i in id_opere if i not in escludi]
+    random.shuffle(candidati)
+    tenute = []
+    for id_opera in candidati:
+        if len(tenute) >= quante:
+            break
+        opera = _opera(id_opera)
+        if opera:
+            tenute.append(opera)
+    return tenute
+
+
+def arte_dal_servizio(escludi=None) -> list:
     """Le opere da mostrare: pubblico dominio, con foto, fino a `MET_QUANTE`.
 
     Il dettaglio si chiede solo finche' non si sono riempite le opere tenute:
     la ricerca puo' elencare centinaia di id, e chiederli tutti sarebbe centinaia
     di richieste per mostrarne dodici. Il tetto `MET_MAX_DETTAGLI` limita anche
     il caso in cui molte opere vengano scartate.
+
+    `escludi` sono gli id gia' mostrati: il pulsante «Altre opere» li passa per
+    non ripescare le stesse. Se il filtro svuota i candidati, si ripiega su
+    tutti: meglio ripetere un'opera che non darne nessuna.
     """
     id_opere = _opere_id()[:MET_MAX_DETTAGLI]
     if not id_opere:
         raise NonDisponibile("Il Met non ha dato opere")
-    tenute = []
-    for id_opera in id_opere:
-        if len(tenute) >= MET_QUANTE:
-            break
-        opera = _opera(id_opera)
-        if opera:
-            tenute.append(opera)
+    tenute = _gruppo(id_opere, MET_QUANTE, set(escludi or ()))
+    if not tenute and escludi:
+        tenute = _gruppo(id_opere, MET_QUANTE, set())
     if not tenute:
         raise NonDisponibile("Nessuna opera del Met mostrabile")
     return tenute
@@ -950,6 +979,26 @@ def aggiorna_arte(db, forse=True) -> bool:
 
 def arte(db) -> list:
     return _leggi(db, "arte")[0] or []
+
+
+def altre_arte(db) -> list:
+    """Un gruppo **nuovo** di opere, diverse da quelle in copia, e lo salva.
+
+    E' il pulsante «Altre opere»: si genera un gruppo saltando gli id gia'
+    mostrati, cosi' il pulsante porta davvero qualcosa di nuovo invece di
+    ripescare le stesse. Il gruppo nuovo **sostituisce** la copia: ricaricando
+    la pagina si rivedono le stesse opere, non quelle di prima. Non passa da
+    `_aggiorna` (che salta lo scaricamento se la copia e' fresca): qui l'utente
+    ha **chiesto** opere nuove, quindi si scarica subito.
+
+    Solleva `NonDisponibile` se non si ottiene niente: la copia vecchia resta,
+    e chi chiama risponde con quello che c'era invece di svuotare il riquadro.
+    """
+    with _lucchetto("arte"):
+        attuali = {o.get("id") for o in arte(db)}
+        nuove = arte_dal_servizio(escludi=attuali)
+        _scrivi(db, "arte", nuove)
+        return nuove
 
 
 def _data_iso(testo: str) -> str:

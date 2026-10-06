@@ -2041,6 +2041,30 @@ non si sono riempite le opere tenute (`MET_QUANTE`), con un tetto ai dettagli
 (`MET_MAX_DETTAGLI`): la ricerca elenca centinaia di id, e chiederli tutti
 sarebbe centinaia di richieste per mostrarne dodici.
 
+**Le opere si scelgono a caso, e il tetto ai dettagli è più largo di quelle
+tenute.** Il gruppo si pesca a caso fra i candidati (`_gruppo`, `random.shuffle`),
+e `MET_MAX_DETTAGLI` (60) è più largo di `MET_QUANTE` (12): è quello che rende
+possibile il pulsante **«Altre opere»** (`altre_arte`, `POST /api/tv/arte/altre`).
+Il pulsante passa gli id già mostrati come `escludi` e genera un gruppo **nuovo**,
+che **sostituisce** la copia: ricaricando la pagina si rivedono le stesse opere,
+non quelle di prima. Non passa da `_aggiorna` (che salta lo scaricamento se la
+copia è fresca): qui l'utente ha *chiesto* opere nuove, quindi si scarica subito.
+Se il filtro svuota i candidati si ripiega su tutti (meglio ripetere un'opera che
+non darne nessuna), e se il Met non risponde la copia vecchia **resta** con
+`nuove: false`: un giro a vuoto non svuota il riquadro e non sembra riuscito.
+
+**L'ingrandimento è dentro l'app.** Ogni opera porta anche la foto **originale**
+(`primaryImage`, `foto_grande`), oltre alla `web-large` (~600 px) della striscia:
+toccando un dipinto si apre `#tv-arte-grande`, una finestra a schermo intero
+**dentro** l'app (✕, tocco sullo sfondo o Esc per chiudere), non una scheda nuova
+— così non si perde il posto. L'originale pesa qualche MB e si carica **solo al
+clic**: scaricarlo per dodici schede da 190 px sarebbe sprecato. La finestra
+chiude staccando `img.src`, altrimenti l'originale resta in memoria.
+
+Il retry di `renderTv` guarda **anche** le opere (`d.arte`), non solo video e
+notizie: una casa nuova le riceve in sottofondo come i video, e senza guardarle
+il riquadro resterebbe vuoto finché non si riapre la sezione.
+
 **La CSP deve permettere `https://images.metmuseum.org` in `img-src`**, come già
 fa per TMDB: senza, il browser blocca le foto in silenzio e la striscia resta
 vuota. C'è un test che lo verifica.
