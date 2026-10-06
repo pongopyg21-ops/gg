@@ -2052,6 +2052,39 @@ button { transition: transform .12s ease; }
   color: var(--muted); letter-spacing: .02em;
 }
 
+/* ---------- GIOCHI ----------
+   Snake: il campo e i comandi. Il canvas ha una misura fissa ma `max-width:100%`
+   lo fa rimpicciolire sul telefono senza deformarlo (il rapporto resta 1:1).
+   La croce direzionale e' tre colonne per due righe, con i quattro pulsanti
+   disposti a croce: si usa col pollice, e ogni bersaglio e' 42px come le altre
+   voci toccabili dell'app. */
+.snake-area { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+#snake-canvas {
+  width: 330px; max-width: 100%; height: auto; aspect-ratio: 1 / 1;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--surface); touch-action: none;
+}
+.snake-esito {
+  margin: 0; padding: 8px 14px; font-size: 14px; font-weight: 600;
+  color: var(--accent-deep); background: var(--accent-soft);
+  border-radius: 999px;
+}
+.snake-croce {
+  display: grid; grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(2, 52px); gap: 8px;
+}
+.snake-freccia {
+  min-height: 42px; font-size: 20px; line-height: 1;
+  background: var(--paper); border: 1px solid var(--line-strong);
+  border-radius: 8px; color: var(--ink); cursor: pointer;
+}
+.snake-freccia:active { background: var(--accent-soft); border-color: var(--accent); }
+.snake-freccia[data-dy="-1"] { grid-column: 2; grid-row: 1; }
+.snake-freccia[data-dx="-1"] { grid-column: 1; grid-row: 2; }
+.snake-freccia[data-dy="1"]  { grid-column: 2; grid-row: 2; }
+.snake-freccia[data-dx="1"]  { grid-column: 3; grid-row: 2; }
+.snake-punti { margin: 0; font-size: 14px; color: var(--muted); }
+
 /* La playlist della casa si cambia da qui: un campo e un pulsante, sulla stessa
    riga. Sul telefono vanno a capo, perche' un indirizzo incollato e' lungo e un
    campo stretto lo nasconde a meta'. */

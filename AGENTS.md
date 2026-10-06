@@ -64,8 +64,9 @@ in **Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa d
 **Calendario** degli impegni e del **Magazzino**; **FAQ** raccoglie le
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
 raccoglie l'intrattenimento: i video della playlist di casa, le notizie dal mondo
-(vedi `tv.py`) e le locandine dei film del momento sulle piattaforme di streaming,
-una alla volta (vedi `cinema.py`). Il **Cinema** non ha più una sezione sua:
+(vedi `tv.py`), il quiz e i giochi (Snake, vedi `static/snake.js`) e le locandine
+dei film del momento sulle piattaforme di streaming, una alla volta (vedi
+`cinema.py`). Il **Cinema** non ha più una sezione sua:
 è intrattenimento come i video e le notizie, e sta dentro la TV. Il **GYM**
 resta invece una sezione a sé, perché è una cosa diversa — si guarda *per fare*,
 non per passare il tempo.
@@ -2051,6 +2052,57 @@ sia `_aggiorna_tv_in_sottofondo`. Il filo di sottofondo di `/api/tv` sopravvive
 alla richiesta e, quando `monkeypatch` ha già rimesso a posto `_apri`, scarica
 davvero tenendo aperto il database di prova: la fixture lo cancella sotto e il
 test dopo fallisce con «disk I/O error». È un difetto del test, non dell'app.
+
+### I Giochi: Snake
+
+I **Giochi** sono una scheda della sezione TV (`tab-giochi`,
+`data-tab="giochi" data-section="tv"`). Per ora c'è un gioco solo, **Snake**, in
+`static/snake.js`: un file a parte, non dentro `app.js`, perché è un pezzo a sé
+che si carica con la pagina ma vive di vita propria. Non usa librerie e non usa
+la rete: si disegna su un `<canvas>` e funziona **anche senza connessione**,
+come il resto della sezione (sta nella scocca del service worker).
+
+La scelta che conta: **la logica è pura e separata dal disegno**. `snakeNuovo`,
+`snakePasso` e `snakeDirezione` prendono lo stato e ne restituiscono uno nuovo,
+senza DOM e senza attese, e ricevono un `rand` iniettato. Così si eseguono
+**davvero** con node nei test — che è l'unico modo di verificare un gioco senza
+giocarlo — e il disegno (`snakeDisegna`) e i comandi restano l'unica parte che
+non si può provare con un test unitario.
+
+Tre trappole, tutte nel cuore del gioco:
+
+- **La coda in movimento non è un muro.** Le collisioni si controllano **dopo**
+  aver mosso la testa, e sul corpo senza l'ultimo tratto quando non si mangia:
+  la cella che la coda sta lasciando libera si può occupare. Senza, il serpente
+  morirebbe inseguendo la propria coda, che è un movimento normale.
+- **Il contrario si ignora, non si applica.** Premendo «indietro» la testa
+  entrerebbe nel collo e morirebbe: `snakeDirezione` tiene la direzione attuale
+  se la richiesta è quella opposta.
+- **Il ciclo parte solo a scheda aperta e si ferma uscendo.** Un
+  `requestAnimationFrame` sempre acceso consuma batteria per un gioco che nessuno
+  guarda: si accende aprendo la scheda «Giochi» e si spegne uscendo dall'area
+  (home) o quando la pagina va in secondo piano (`visibilitychange`, che mette in
+  pausa **senza azzerare** la partita).
+
+**Il gioco si aggancia da solo: `app.js` non lo chiama.** Non è un vezzo — un
+test scandisce `app.js` e pretende che ogni funzione chiamata esista **in quel
+file**, e le funzioni del gioco vivono in `snake.js`: nominandole di là il test
+le vedrebbe come orfane, che è il difetto vero (`ReferenceError` all'accesso) che
+quel test esiste per cogliere. Quindi `snake.js` ascolta da sé i clic sulle
+schede. C'è un test che verifica che `app.js` **non** nomini le funzioni del
+gioco.
+
+I due file sono script classici e **condividono lo scope**: `snake.js` può
+chiamare `suonoAttivo`, definita in `app.js`, perché quando il gioco gira l'altro
+file è già caricato. Il test delle funzioni orfane controlla l'**unione** dei
+due file, non `snake.js` da solo.
+
+Comandi: frecce/WASD sul computer, swipe o croce direzionale sul telefono (ogni
+bersaglio 42px, come il resto dell'app). L'audio usa la preferenza «suono» già
+esistente (`suonoAttivo`) e crea l'`AudioContext` al primo bip — cioè dopo un
+tocco — perché un contesto creato senza gesto nasce sospeso. Il record sta in
+`localStorage` (`snakeRecord`): è una preferenza del dispositivo, come tema e
+voce, non un dato della casa.
 
 ### La sezione GYM
 

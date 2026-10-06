@@ -220,6 +220,7 @@
   <button data-tab="faq" data-section="faq">📌 FAQ</button>
   <button data-tab="profile" data-section="faq">⚠️ Profilo</button>
   <button data-tab="intrattenimento" data-section="tv">📺 Intrattenimento</button>
+  <button data-tab="giochi" data-section="tv">🕹️ Giochi</button>
   <button data-tab="gym" data-section="gym">🏋️ GYM</button>
 </nav>
 
@@ -632,6 +633,34 @@
     <div id="gym-video" class="tv-video"></div>
   </section>
 
+  <!-- GIOCHI: l'arcade di casa. Un gioco solo (Snake), scritto in casa e senza
+       rete: si gioca anche senza connessione, come il resto della sezione.
+       Il ciclo si accende aprendo la scheda e si spegne uscendo, altrimenti
+       resterebbe a girare consumando batteria per un gioco che nessuno guarda. -->
+  <section id="tab-giochi" class="tab">
+    <div class="toolbar">
+      <strong>🕹️ Giochi</strong>
+      <span class="spacer"></span>
+      <span class="tv-aggiornato">Record: <span id="snake-record">0</span></span>
+      <button id="snake-avvia" type="button">Nuova partita</button>
+    </div>
+
+    <h3 class="section-title">Snake</h3>
+    <p class="hint">Frecce (o WASD) sul computer, swipe o la croce sul telefono.
+      Mangia il pallino e non toccare il muro né la tua coda.</p>
+    <div class="snake-area">
+      <canvas id="snake-canvas" width="330" height="330"
+              aria-label="Campo di gioco di Snake"></canvas>
+      <p id="snake-esito" class="snake-esito hidden" role="status"></p>
+      <div class="snake-croce" aria-label="Comandi direzionali">
+        <button type="button" class="snake-freccia" data-dx="0" data-dy="-1" aria-label="Su">▲</button>
+        <button type="button" class="snake-freccia" data-dx="-1" data-dy="0" aria-label="Sinistra">◀</button>
+        <button type="button" class="snake-freccia" data-dx="0" data-dy="1" aria-label="Giù">▼</button>
+        <button type="button" class="snake-freccia" data-dx="1" data-dy="0" aria-label="Destra">▶</button>
+      </div>
+      <p class="snake-punti">Punteggio: <strong id="snake-punteggio">0</strong></p>
+    </div>
+  </section>
 
 </main>
 </div>
@@ -748,6 +777,9 @@
 </div>
 
 <script src="/static/app.js"></script>
+<!-- Il gioco sta in un file suo: si carica sempre (pesa poco), ma il ciclo
+     parte solo aprendo la scheda «Giochi». -->
+<script src="/static/snake.js"></script>
 <script>
 /* Il service worker si registra da qui e non dal codice dell'app: cosi' parte
    anche se `app.js` non e' stato ancora caricato. Non e' indispensabile — senza
