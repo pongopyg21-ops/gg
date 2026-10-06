@@ -2203,7 +2203,8 @@ def test_catalogo_pulizie_senza_duplicati():
 def test_catalogo_copre_tutte_le_frequenze():
     """Ogni frequenza deve avere voce: senza, un blocco della pagina resta vuoto."""
     voci = igiene.catalogo()
-    for chiave in ("giornaliera", "frazionaria", "settimanale", "mensile", "stagionale"):
+    for chiave in ("giornaliera", "frazionaria", "settimanale", "mensile",
+                   "semestrale", "stagionale"):
         assert any(v["frequency"] == chiave for v in voci), chiave
 
 
@@ -2220,6 +2221,68 @@ def test_il_catalogo_ha_la_lavatrice_a_giorno_e_mezzo():
     assert igiene.CADENZE["frazionaria"] == 1.5
     # e la frequenza e' dichiarata fra le scelte dell'interfaccia
     assert any(f["key"] == "frazionaria" for f in igiene.FREQUENZE)
+
+
+
+
+def test_il_condizionatore_si_disinfetta_ogni_sei_mesi():
+    """«Disinfettare il condizionatore» e' una voce semestrale: due volte l'anno,
+    non una del mese. E' una cadenza sua — piu' lunga del mese, piu' corta
+    dell'anno — e non entra nel blocco del mese, dove sembrerebbe una cosa da
+    fare adesso. Il condizionatore si **pulisce** ogni anno (agosto), ma si
+    disinfetta ogni sei mesi: tra una pulizia e l'altra raccoglie polvere."""
+    voci = igiene.catalogo()
+    condizionatore = next((v for v in voci
+                           if v["name"] == "Disinfettare il condizionatore"), None)
+    assert condizionatore is not None
+    assert condizionatore["frequency"] == "semestrale"
+    assert condizionatore["month"] is None, "non e' una voce di un mese"
+    assert igiene.CADENZE["semestrale"] == 182
+    # e la frequenza e' dichiarata fra le scelte dell'interfaccia
+    assert any(f["key"] == "semestrale" for f in igiene.FREQUENZE)
+
+
+def test_scadenza_semestrale_torna_dopo_sei_mesi():
+    """La semestrale e' in scadenza se non e' mai stata fatta o se sono passati
+    almeno sei mesi; non lo e' se e' stata fatta da poco."""
+    oggi = date(2026, 10, 5)
+    mai = igiene.scadenza("semestrale", None, oggi)
+    assert mai["in_scadenza"] is True
+    assert mai["giorni"] is None
+    assert mai["cadenza_giorni"] == 182
+
+    recente = igiene.scadenza("semestrale", "2026-08-01", oggi)
+    assert recente["in_scadenza"] is False
+    assert recente["giorni"] > 0
+
+    vecchia = igiene.scadenza("semestrale", "2026-01-01", oggi)
+    assert vecchia["in_scadenza"] is True
+    assert vecchia["giorni"] < 0
+
+
+def test_piano_mette_i_semestrali_a_parte():
+    """Le semestrali non stanno ne' nel piano di oggi ne' in quello del mese:
+    hanno un blocco loro. Una cosa che tocca ogni sei mesi non e' una cosa del
+    mese, e mescolarla al mese darebbe l'idea di doverla fare adesso."""
+    voci = [
+        {"id": 1, "name": "Mensile", "frequency": "mensile", "minutes": 40,
+         "area": "Cucina", "active": 1, "month": None},
+        {"id": 2, "name": "Semestrale", "frequency": "semestrale", "minutes": 30,
+         "area": "Tutta la casa", "active": 1, "month": None},
+        {"id": 3, "name": "Quotidiana", "frequency": "giornaliera", "minutes": 5,
+         "area": "Cucina", "active": 1, "month": None},
+    ]
+    today = date(2026, 10, 5)
+    piano = igiene.piano(voci, {}, today, giorno_pulizie=5, giorni={})
+
+    oggi_ids = {v["id"] for elenco in piano["gruppi"].values() for v in elenco}
+    mese_ids = {v["id"] for elenco in (piano["mese"]["mensili"],
+                                       piano["mese"]["stagionali"]) for v in elenco}
+    sem_ids = {v["id"] for v in piano["semestrali"]}
+    assert oggi_ids == {3}, "oggi solo la quotidiana"
+    assert mese_ids == {1}, "nel mese solo la mensile"
+    assert sem_ids == {2}, "la semestrale sta nel suo blocco"
+    assert piano["semestrali_da_fare"] == 1
 
 
 def test_la_sezione_igiene_ha_le_schede_e_i_pannelli(client):
@@ -2511,7 +2574,7 @@ def test_api_pulizie_meta(client):
     m = client.get("/api/chores/meta").get_json()
     assert len(m["months"]) == 12
     assert len(m["days"]) == 7
-    assert len(m["frequencies"]) == 5
+    assert len(m["frequencies"]) == 6
     assert m["areas"]
     assert 0 <= m["chore_day"] <= 6
 
@@ -8995,6 +9058,139 @@ def test_cambiare_playlist_gym_azzera_solo_i_suoi_video(client, monkeypatch):
     assert [v["id"] for v in client.get("/api/tv").get_json()["video"]] == ["aaa111", "bbb222"]
 
 
+def test_le_barzellette_si_leggono_dal_servizio(monkeypatch):
+    """JokeAPI risponde in due forme — `single` e `twopart` — e si normalizzano
+    nella stessa coppia testo/risposta. Le `single` hanno la risposta vuota: il
+    client mostra solo il testo, senza una riga vuota sotto."""
+    finta_tv(monkeypatch, {tv.BARZELLETTE_URL: json.dumps({
+        "error": False, "amount": 2, "jokes": [
+            {"category": "Programming", "type": "twopart",
+             "setup": "Come si chiama?", "delivery": "Non lo so."},
+            {"category": "Pun", "type": "single", "joke": "Una battuta sola."},
+        ]})})
+    voci = tv.barzellette_dal_servizio()
+    assert len(voci) == 2
+    assert voci[0]["testo"] == "Come si chiama?"
+    assert voci[0]["risposta"] == "Non lo so."
+    assert voci[1]["testo"] == "Una battuta sola."
+    assert voci[1]["risposta"] == ""
+
+
+def test_il_servizio_delle_barzellette_con_un_solo_elemento(monkeypatch):
+    """Con `amount=1` JokeAPI risponde con l'oggetto nudo, non con `jokes`: la
+    forma si gestisce, altrimenti cambiare l'indirizzo romperebbe la sezione."""
+    finta_tv(monkeypatch, {tv.BARZELLETTE_URL: json.dumps({
+        "error": False, "category": "Misc", "type": "single", "joke": "Sola."})})
+    voci = tv.barzellette_dal_servizio()
+    assert [v["testo"] for v in voci] == ["Sola."]
+
+
+def test_il_servizio_delle_barzellette_che_non_risponde_e_un_guasto(monkeypatch):
+    """`error: true` non e' "nessuna barzelletta": e' il servizio che non
+    risponde. Si solleva `NonDisponibile`, cosi' la copia vecchia resta invece di
+    essere sovrascritta con il vuoto."""
+    finta_tv(monkeypatch, {tv.BARZELLETTE_URL: json.dumps(
+        {"error": True, "message": "Nessuna barzelletta"})})
+    with pytest.raises(tv.NonDisponibile):
+        tv.barzellette_dal_servizio()
+
+
+def test_il_quiz_legge_le_domande_e_mescola_le_risposte(monkeypatch):
+    """Open Trivia DB manda la risposta giusta in un campo a parte: senza
+    mescolare sarebbe sempre la prima e il quiz si indovinerebbe senza sapere.
+    La risposta giusta resta segnata con `giusta`."""
+    finta_tv(monkeypatch, {tv.QUIZ_URL: json.dumps({
+        "response_code": 0, "results": [
+            {"type": "multiple", "difficulty": "medium", "category": "Science",
+             "question": "Quanti sono i pianeti?",
+             "correct_answer": "Otto",
+             "incorrect_answers": ["Nove", "Sette", "Dieci"]},
+        ]})})
+    domande = tv.quiz_dal_servizio()
+    assert len(domande) == 1
+    d = domande[0]
+    assert d["testo"] == "Quanti sono i pianeti?"
+    assert len(d["risposte"]) == 4
+    # esattamente una risposta e' quella giusta, e c'e' sempre
+    giuste = [r for r in d["risposte"] if r["giusta"]]
+    assert len(giuste) == 1 and giuste[0]["testo"] == "Otto"
+
+
+def test_il_quiz_senza_domande_e_un_guasto(monkeypatch):
+    """`response_code` diverso da zero vuol dire "nessuna domanda" (il servizio
+    usa 5 per il vuoto): la copia vecchia resta, non si sovrascrive con il vuoto."""
+    finta_tv(monkeypatch, {tv.QUIZ_URL: json.dumps({"response_code": 5, "results": []})})
+    with pytest.raises(tv.NonDisponibile):
+        tv.quiz_dal_servizio()
+
+
+def test_le_entita_html_delle_domande_si_leggono(monkeypatch):
+    """Open Trivia DB manda `&quot;` e `&#039;`: senza `unescape` la domanda si
+    legge con i codici in mezzo."""
+    finta_tv(monkeypatch, {tv.QUIZ_URL: json.dumps({
+        "response_code": 0, "results": [
+            {"question": "Chi ha detto &quot;andiamo&#039;?&quot;",
+             "correct_answer": "Lui", "incorrect_answers": ["Lei", "Noi"]},
+        ]})})
+    domande = tv.quiz_dal_servizio()
+    assert domande[0]["testo"] == 'Chi ha detto "andiamo\'?"'
+
+
+def test_l_endpoint_tv_porta_barzellette_e_quiz(client, monkeypatch):
+    """`/api/tv` serve barzellette e quiz dalla cache, come video e notizie."""
+    finta_tv(monkeypatch, {
+        _url_playlist(): FEED_PLAYLIST,
+        tv.FEED_PREDEFINITI[0]: FEED_NOTIZIE,
+        tv.BARZELLETTE_URL: json.dumps({
+            "error": False, "amount": 1, "jokes": [
+                {"type": "single", "joke": "Ciao.", "category": "Misc"}]}),
+        tv.QUIZ_URL: json.dumps({
+            "response_code": 0, "results": [
+                {"question": "Due più due?", "correct_answer": "Quattro",
+                 "incorrect_answers": ["Cinque", "Sei", "Tre"], "category": "Math"}]}),
+    })
+    tv.aggiorna(app_module.get_db(), forse=False)
+    _niente_rete(monkeypatch)  # la copia e' fresca: il sottofondo non deve partire
+    d = client.get("/api/tv").get_json()
+    assert [b["testo"] for b in d["barzellette"]] == ["Ciao."]
+    assert len(d["quiz"]) == 1
+    assert d["quiz"][0]["testo"] == "Due più due?"
+    assert d["aggiornato"]["barzellette"] and d["aggiornato"]["quiz"]
+
+
+def test_la_cache_di_barzellette_e_quiz_non_si_svuota_col_guasto(client, monkeypatch):
+    """La rete cade dopo che la copia c'era gia': barzellette e quiz restano.
+    E' la regola di tutta la sezione: quello che si e' scaricato non si perde."""
+    finta_tv(monkeypatch, {
+        tv.BARZELLETTE_URL: json.dumps({"error": False, "jokes": [
+            {"type": "single", "joke": "Resta.", "category": "Misc"}]}),
+        tv.QUIZ_URL: json.dumps({"response_code": 0, "results": [
+            {"question": "Resta?", "correct_answer": "Si",
+             "incorrect_answers": ["No"], "category": "Math"}]}),
+    })
+    db = app_module.get_db()
+    tv.aggiorna_barzellette(db, forse=False)
+    tv.aggiorna_quiz(db, forse=False)
+    # ora la rete cade: la copia resta
+    _niente_rete(monkeypatch)
+    tv.aggiorna_barzellette(db, forse=False)
+    tv.aggiorna_quiz(db, forse=False)
+    assert [b["testo"] for b in tv.barzellette(db)] == ["Resta."]
+    assert len(tv.quiz(db)) == 1
+
+
+def test_la_sezione_tv_mostra_barzellette_e_quiz(client):
+    """I due riquadri nuovi hanno i loro contenitori nella sezione TV, e il
+    client li riempie e risponde al tocco. Senza i contenitori il disegno
+    scriverebbe su nodi che non esistono e la sezione resterebbe muta."""
+    html = client.get("/static/index.html").get_data(as_text=True)
+    assert 'id="tv-barzellette"' in html
+    assert 'id="tv-quiz"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "tv-barzellette" in js and "tv-quiz" in js
+    assert "tv-risposta" in js, "il quiz si risponde al tocco"
+
+
 def test_migrazione_aggiunge_gym_playlist_a_un_db_esistente():
     """`tv_prefs` esisteva gia' prima del GYM: la colonna `gym_playlist` va
     aggiunta a mano alle case che l'hanno creata senza, altrimenti cambiare la
@@ -10075,6 +10271,10 @@ def test_l_endpoint_tv_serve_la_cache_e_gli_incorpora(client, monkeypatch):
     finta_tv(monkeypatch, {_url_playlist(): FEED_PLAYLIST, tv.feed_urls()[0]: FEED_NOTIZIE})
     db = app_module.get_db()
     tv.aggiorna(db, forse=False)
+    # barzellette e quiz non sono in cache: senza spegnere il filo di sottofondo
+    # questo test lo lascerebbe partire, e sopravvivendo alla richiesta
+    # toccherebbe il database di prova mentre la fixture lo cancella
+    _niente_rete(monkeypatch)
 
     d = client.get("/api/tv").get_json()
     assert len(d["video"]) == 2
@@ -10257,7 +10457,8 @@ def test_l_aggiornamento_manuale_lo_dice_se_non_ha_portato_niente(client, monkey
     che non ha portato niente di nuovo non deve sembrare riuscito."""
     monkeypatch.setattr(tv, "_apri", lambda url: (_ for _ in ()).throw(tv.NonDisponibile("giu")))
     d = client.post("/api/tv/aggiorna").get_json()
-    assert d["aggiornati"] == {"video": False, "notizie": False, "gym": False}
+    assert d["aggiornati"] == {"video": False, "notizie": False, "gym": False,
+                               "barzellette": False, "quiz": False}
 
 
 def test_il_database_vecchio_riceve_la_tabella_della_cache(client):

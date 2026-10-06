@@ -22,8 +22,10 @@ importa `app` (che importa questo) e resta provabile da solo.
 """
 from __future__ import annotations
 
+import html
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -104,6 +106,29 @@ TIMEOUT = 10.0
 # megabyte sono gia' un'anomalia, e leggerla per intero sarebbe il modo in cui
 # una pagina sbagliata (o ostile) riempie la memoria del server di casa.
 MAX_BYTE = 2 * 1024 * 1024
+
+# Barzellette e quiz: due servizi pubblici che danno contenuto pronto da leggere,
+# non un elenco di dati della casa. Non sono della stessa natura delle notizie,
+# ma vivono nella stessa sezione e hanno lo stesso problema — la rete — quindi
+# seguono la stessa regola: quello che si e' scaricato resta, e un guasto non
+# svuota la sezione.
+#
+# Attenzione, ed e' scritto perche' non lo si scopra leggendo il codice:
+# **nessuno dei due servizi ha contenuti in italiano.** JokeAPI supporta
+# cs/de/en/es/fr/pt (non `it`); Open Trivia DB ignora `lang=it` e restituisce
+# comunque l'inglese. I contenuti arrivano quindi in inglese. Le fonti restano
+# sostituibili da ambiente (`TV_BARZELLETTE`, `TV_QUIZ`) perche' il giorno in cui
+# si vorra' una fonte italiana si cambia l'indirizzo senza toccare il codice.
+BARZELLETTE_URL = os.environ.get(
+    "TV_BARZELLETTE", "https://v2.jokeapi.dev/joke/Any?amount=5&safe-mode")
+QUIZ_URL = os.environ.get(
+    "TV_QUIZ", "https://opentdb.com/api.php?amount=10&difficulty=medium")
+# Il tetto alle barzellette tenute: cinque riempiono il riquadro senza farne un
+# elenco da scorrere. Il quiz porta le dieci domande che chiede l'indirizzo.
+MAX_BARZELLETTE = 5
+# Ogni quanto si rinnovano: piu' spesso delle notizie, perche' sono contenuti
+# leggeri e una barzelletta gia' letta non fa ridere due volte.
+ORE_EXTRA = 6
 
 UA = "IlMaggiordomo"
 
@@ -529,6 +554,107 @@ def notizie_dal_feed(db=None) -> list:
     return _mescola_per_fonte(scelte)[:MAX_NOTIZIE]
 
 
+# ------------------------------------------------------- barzellette e quiz
+# Due fonti diverse dalle notizie, lette allo stesso modo: si scarica un JSON e
+# si tiene solo cio' che serve. Vale la stessa regola di tutto il modulo: se la
+# risposta non e' quella che ci si aspetta si solleva `NonDisponibile`, cosi' la
+# copia vecchia resta e la sezione non si svuota per un guasto di rete.
+
+def _json(url: str):
+    """Scarica e interpreta una risposta JSON.
+
+    `_apri` resta l'unico punto di rete (e' quello che si sostituisce nei test);
+    qui si aggiunge solo la lettura del JSON, che un feed XML non ha.
+    """
+    try:
+        return json.loads(_apri(url).decode("utf-8", "replace"))
+    except (ValueError, UnicodeDecodeError) as errore:
+        raise NonDisponibile(f"Risposta non leggibile da {url}") from errore
+
+
+def _pulisci(testo) -> str:
+    """Il testo di una barzelletta o di una domanda, senza entita' HTML.
+
+    JokeAPI manda testo semplice, Open Trivia DB manda `&quot;` e `&#039;`:
+    senza `unescape` la domanda si legge con i codici in mezzo.
+    """
+    return html.unescape(str(testo or "")).strip()
+
+
+def barzellette_dal_servizio(db=None) -> list:
+    """Le barzellette dal servizio, al massimo `MAX_BARZELLETTE`.
+
+    JokeAPI risponde in due forme: `single` (una battuta sola) e `twopart`
+    (domanda e risposta). Si normalizzano nella stessa coppia `testo`/`risposta`,
+    con la risposta vuota per le single, cosi' il client ha una forma sola.
+
+    Con `amount` maggiore di uno la risposta e' `{"jokes": [...]}`; con uno solo
+    sarebbe l'oggetto nudo. Si gestiscono entrambe: cambiare `amount`
+    nell'indirizzo non deve rompere la sezione.
+    """
+    dati = _json(BARZELLETTE_URL)
+    if not isinstance(dati, dict) or dati.get("error"):
+        raise NonDisponibile("Il servizio delle barzellette non risponde")
+    grezze = dati.get("jokes")
+    if not isinstance(grezze, list):
+        grezze = [dati] if dati.get("type") else []
+    voci = []
+    for g in grezze:
+        if not isinstance(g, dict):
+            continue
+        if g.get("type") == "twopart":
+            testo, risposta = _pulisci(g.get("setup")), _pulisci(g.get("delivery"))
+        else:
+            testo, risposta = _pulisci(g.get("joke")), ""
+        if testo:
+            voci.append({"testo": testo, "risposta": risposta,
+                         "categoria": _pulisci(g.get("category"))})
+    if not voci:
+        raise NonDisponibile("Il servizio delle barzellette non ha dato nulla")
+    return voci[:MAX_BARZELLETTE]
+
+
+def _mescola_risposte(domanda: dict) -> list:
+    """Le risposte possibili mescolate, cosi' quella giusta non e' sempre prima.
+
+    Open Trivia DB mette la risposta giusta in un campo a parte: senza mescolare
+    sarebbe sempre la prima e il quiz si indovinerebbe senza sapere. La risposta
+    giusta resta segnata con `giusta`, che il client usa per dire se si e'
+    indovinato.
+    """
+    giusta = _pulisci(domanda.get("correct_answer"))
+    sbagliate = [_pulisci(a) for a in (domanda.get("incorrect_answers") or [])]
+    risposte = [{"testo": giusta, "giusta": True}]
+    risposte += [{"testo": a, "giusta": False} for a in sbagliate if a]
+    random.shuffle(risposte)
+    return risposte
+
+
+def quiz_dal_servizio(db=None) -> list:
+    """Le domande del quiz, cosi' come le da' Open Trivia DB.
+
+    `response_code` diverso da zero vuol dire "nessuna domanda" (il servizio usa
+    5 per il vuoto, 1 per parametri storti): si solleva `NonDisponibile` e la
+    copia vecchia resta, invece di sovrascriverla con un elenco vuoto.
+    """
+    dati = _json(QUIZ_URL)
+    if not isinstance(dati, dict) or dati.get("response_code") != 0:
+        raise NonDisponibile("Il servizio del quiz non ha domande")
+    voci = []
+    for d in dati.get("results") or []:
+        if not isinstance(d, dict):
+            continue
+        testo = _pulisci(d.get("question"))
+        risposte = _mescola_risposte(d)
+        if testo and len(risposte) >= 2:
+            voci.append({"testo": testo, "risposte": risposte,
+                         "categoria": _pulisci(d.get("category")),
+                         "difficolta": _pulisci(d.get("difficulty"))})
+    if not voci:
+        raise NonDisponibile("Il servizio del quiz non ha dato domande")
+    return voci
+
+
 def _data_iso(testo: str) -> str:
     """Da `Thu, 1 Oct 2026 16:58:22 +0200` a `2026-10-01T16:58:22`.
 
@@ -628,11 +754,21 @@ def aggiorna_notizie(db, forse=True) -> bool:
     return _aggiorna(db, "notizie", ORE_NOTIZIE, notizie_dal_feed, forse=forse)
 
 
+def aggiorna_barzellette(db, forse=True) -> bool:
+    return _aggiorna(db, "barzellette", ORE_EXTRA, barzellette_dal_servizio, forse=forse)
+
+
+def aggiorna_quiz(db, forse=True) -> bool:
+    return _aggiorna(db, "quiz", ORE_EXTRA, quiz_dal_servizio, forse=forse)
+
+
 def aggiorna(db, forse=True) -> dict:
-    """Aggiorna TV, notizie e GYM. Non solleva mai: e' chiamata in sottofondo."""
+    """Aggiorna TV, notizie, GYM, barzellette e quiz. Non solleva mai."""
     return {"video": aggiorna_video(db, forse=forse),
             "notizie": aggiorna_notizie(db, forse=forse),
-            "gym": aggiorna_gym(db, forse=forse)}
+            "gym": aggiorna_gym(db, forse=forse),
+            "barzellette": aggiorna_barzellette(db, forse=forse),
+            "quiz": aggiorna_quiz(db, forse=forse)}
 
 
 def video(db) -> list:
@@ -647,6 +783,14 @@ def notizie(db) -> list:
     return _leggi(db, "notizie")[0] or []
 
 
+def barzellette(db) -> list:
+    return _leggi(db, "barzellette")[0] or []
+
+
+def quiz(db) -> list:
+    return _leggi(db, "quiz")[0] or []
+
+
 def quando_aggiornate(db) -> dict:
     """Quando la copia e' stata presa, per dirlo nella sezione.
 
@@ -654,7 +798,7 @@ def quando_aggiornate(db) -> dict:
     settimana fa quando la rete non ha risposto.
     """
     esito = {}
-    for chiave in ("video", "notizie", "gym"):
+    for chiave in ("video", "notizie", "gym", "barzellette", "quiz"):
         _, quando = _leggi(db, chiave)
         esito[chiave] = quando or None
     return esito

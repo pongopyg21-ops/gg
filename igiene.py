@@ -30,7 +30,8 @@ from datetime import date, datetime, time, timedelta
 # La cadenza in giorni di ogni blocco. "stagionale" non ha una cadenza vera:
 # si fa una volta l'anno, nel mese indicato, e il conto lo fa `scadenza`.
 # "frazionaria" e' l'unica che ammette mezze giornate (vedi `FRAZIONARIA`).
-CADENZE = {"giornaliera": 1, "frazionaria": 1.5, "settimanale": 7, "mensile": 30}
+CADENZE = {"giornaliera": 1, "frazionaria": 1.5, "settimanale": 7, "mensile": 30,
+           "semestrale": 182}
 
 # La cadenza di "ogni giorno e mezzo". Mezza giornata conta: con 1 o 2 giorni
 # tondi non sarebbe ne' "ogni giorno" ne' "ogni giorno e mezzo". Il conto usa
@@ -43,6 +44,7 @@ FREQUENZE = [
     {"key": "frazionaria", "label": "Ogni giorno e mezzo", "giorni": FRAZIONARIA},
     {"key": "settimanale", "label": "Ogni settimana", "giorni": 7},
     {"key": "mensile", "label": "Ogni mese", "giorni": 30},
+    {"key": "semestrale", "label": "Ogni sei mesi", "giorni": 182},
     {"key": "stagionale", "label": "Una volta l'anno", "giorni": None},
 ]
 
@@ -139,6 +141,15 @@ MENSILI = [
     ("Togliere la polvere alta: armadi, battiscopa, porte", "Tutta la casa", 25),
     ("Pulire i filtri degli elettrodomestici", "Cucina", 20),
     ("Riordinare armadi e cassetti a rotazione", "Camere", 40),
+]
+
+# Cadenza di sei mesi: piu' lunga del mese, piu' corta dell'anno. Non entra nel
+# blocco del mese (mensili e stagionali), dove sembrerebbe una cosa del mese:
+# ha un blocco suo nel piano. Il condizionatore si pulisce ogni anno (agosto,
+# vedi STAGIONALI) ma si **disinfetta** ogni sei mesi, perche' tra una pulizia
+# e l'altra raccoglie polvere e umidita'.
+SEMESTRALI = [
+    ("Disinfettare il condizionatore", "Tutta la casa", 30),
 ]
 
 # ------------------------------------------------------- calendario annuale
@@ -258,6 +269,9 @@ def catalogo():
                      "minutes": minuti, "month": None})
     for nome, area, minuti in MENSILI:
         voci.append({"name": nome, "area": area, "frequency": "mensile",
+                     "minutes": minuti, "month": None})
+    for nome, area, minuti in SEMESTRALI:
+        voci.append({"name": nome, "area": area, "frequency": "semestrale",
                      "minutes": minuti, "month": None})
     for blocco in STAGIONALI:
         for nome, area, minuti in blocco["attivita"]:
@@ -400,13 +414,18 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None, bucati_giorno=0
       sui giorni e' in `giorni_settimanali`: senza, le settimanali si
       ammassavano tutte nel giorno fisso.
     - `mese`: mensili e stagionali in scadenza, con il focus del mese corrente.
+    - `semestrali`: le voci a cadenza di sei mesi in scadenza. Hanno un blocco
+      **loro**, non quello del mese: una cosa che tocca ogni sei mesi non e' una
+      cosa del mese, e mescolarle darebbe l'idea di doverle fare adesso.
     """
     oggi_d = _data(oggi) or date.today()
     oggi_gruppi = {"quotidiane": [], "frazionarie": [], "settimanali": []}
     mese_gruppi = {"mensili": [], "stagionali": []}
+    semestrali = []
     chiave = {"giornaliera": "quotidiane", "frazionaria": "frazionarie",
               "settimanale": "settimanali",
-              "mensile": "mensili", "stagionale": "stagionali"}
+              "mensile": "mensili", "semestrale": "semestrali",
+              "stagionale": "stagionali"}
     if giorni is None:
         giorni = giorni_settimanali(attivita, giorno_pulizie)
 
@@ -437,7 +456,7 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None, bucati_giorno=0
             # non gonfiare il "da fare" di oggi con una lavatrice non dovuta; nel
             # frattempo resta visibile in Routine e nel catalogo.
             dentro = stato["in_scadenza"]
-        elif freq in ("mensile", "stagionale"):
+        elif freq in ("mensile", "stagionale", "semestrale"):
             dentro = stato["in_scadenza"]
         if not dentro:
             continue
@@ -455,11 +474,14 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None, bucati_giorno=0
             voce_stato["giorno_settimanale_oggi"] = assegnato == oggi_d.weekday()
         if freq in ("giornaliera", "frazionaria", "settimanale"):
             oggi_gruppi[gruppo].append(voce_stato)
+        elif freq == "semestrale":
+            semestrali.append(voce_stato)
         else:
             mese_gruppi[gruppo].append(voce_stato)
 
     for elenco in (oggi_gruppi | mese_gruppi).values():
         elenco.sort(key=lambda v: (v["fatto_oggi"], v["area"], v["name"]))
+    semestrali.sort(key=lambda v: (v["fatto_oggi"], v["area"], v["name"]))
 
     da_fare = [v for elenco in oggi_gruppi.values() for v in elenco if not v["fatto_oggi"]]
     # il focus del mese e' il senso del blocco stagionale: senza il titolo, le
@@ -473,6 +495,7 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None, bucati_giorno=0
         "mese": {**mese_gruppi, "nome": corrente["nome"] if corrente else "",
                  "titolo": corrente["titolo"] if corrente else "",
                  "focus": corrente["focus"] if corrente else ""},
+        "semestrali": semestrali,
         "da_fare": len(da_fare),
         "fatto_oggi": sum(1 for elenco in oggi_gruppi.values()
                           for v in elenco if v["fatto_oggi"]),
@@ -482,6 +505,7 @@ def piano(attivita, ultime, oggi, giorno_pulizie=5, giorni=None, bucati_giorno=0
         "minuti_previsti": sum(v.get("minutes") or 0 for v in da_fare),
         "mese_da_fare": sum(1 for elenco in mese_gruppi.values()
                             for v in elenco if not v["fatto_oggi"]),
+        "semestrali_da_fare": sum(1 for v in semestrali if not v["fatto_oggi"]),
         "mese_minuti": sum(v.get("minutes") or 0 for elenco in mese_gruppi.values()
                            for v in elenco if not v["fatto_oggi"]),
         # com'e' divisa la settimana: serve all'interfaccia per mostrare che le

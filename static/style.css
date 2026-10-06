@@ -2018,6 +2018,58 @@ button { transition: transform .12s ease; }
 .tv-vuoto { color: var(--muted); font-size: 14px; padding: 10px 0; }
 .tv-aggiornato { font-size: 12px; color: var(--muted); }
 
+/* Barzellette: testo semplice, una scheda per battuta. La risposta (la battuta
+   finale delle "twopart") sta sotto, in accento: si legge prima la domanda, poi
+   la si scopre scorrendo. */
+.tv-barzellette { display: flex; flex-direction: column; gap: 10px; }
+.tv-barzelletta {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px;
+}
+.tv-barz-testo { margin: 0; font-size: 14px; line-height: 1.5; }
+.tv-barz-risposta {
+  margin: 6px 0 0; font-weight: 600; font-size: 14px; line-height: 1.5;
+  color: var(--accent-deep);
+}
+.tv-barz-cat {
+  display: inline-block; margin-top: 6px; font-size: 11.5px;
+  color: var(--muted); letter-spacing: .02em;
+}
+
+/* Quiz: una scheda per domanda, le risposte in griglia. Il bersaglio toccabile
+   e' 42px come le altre voci: si risponde col pollice. Il verde e il rosso sono
+   quelli del tema (--green / --errore-*), quindi si schiariscono da soli nella
+   palette scura. */
+.tv-quiz { display: flex; flex-direction: column; gap: 10px; }
+.tv-domanda {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px;
+}
+.tv-dom-testo { margin: 0 0 10px; font-size: 14px; font-weight: 600; line-height: 1.45; }
+.tv-dom-risposte {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px;
+}
+.tv-risposta {
+  text-align: left; min-height: 42px; padding: 10px 12px;
+  background: var(--paper); border: 1px solid var(--line-strong);
+  border-radius: 8px; color: var(--ink); font: inherit; font-size: 13.5px;
+  cursor: pointer;
+}
+.tv-risposta:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.tv-risposta:disabled { cursor: default; opacity: .85; }
+.tv-risposta.giusta {
+  background: var(--green-soft); border-color: var(--green);
+  color: var(--green); font-weight: 600; opacity: 1;
+}
+.tv-risposta.sbagliata {
+  background: var(--errore-sfondo); border-color: var(--errore-bordo);
+  color: var(--errore-testo); opacity: 1;
+}
+.tv-dom-cat {
+  display: inline-block; margin-top: 10px; font-size: 11.5px;
+  color: var(--muted); letter-spacing: .02em;
+}
+
 /* La playlist della casa si cambia da qui: un campo e un pulsante, sulla stessa
    riga. Sul telefono vanno a capo, perche' un indirizzo incollato e' lungo e un
    campo stretto lo nasconde a meta'. */

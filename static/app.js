@@ -252,6 +252,8 @@ async function renderTv() {
   } catch (_e) {
     $('#tv-video').innerHTML = '';
     $('#tv-notizie').innerHTML = '';
+    $('#tv-barzellette').innerHTML = '';
+    $('#tv-quiz').innerHTML = '';
     toast('Non riesco a caricare la sezione TV.');
   }
 }
@@ -259,6 +261,8 @@ async function renderTv() {
 function disegnaTv(d) {
   const video = d.video || [];
   const notizie = d.notizie || [];
+  const barzellette = d.barzellette || [];
+  const quiz = d.quiz || [];
 
   // la playlist della casa: si mostra quella vera, cosi' si vede cosa si sta
   // guardando. Non si riscrive sopra quello che l'utente sta digitando.
@@ -291,11 +295,52 @@ function disegnaTv(d) {
     </article>`).join('')
     : `<p class="tv-vuoto">Nessuna notizia disponibile. Premi «Aggiorna» fra poco.</p>`;
 
+  // Le barzellette: testo semplice, con la risposta (battuta finale) se c'e'.
+  // Le "single" non hanno risposta, quindi la riga sparisce invece di restare
+  // vuota. Il contenuto e' in inglese: il servizio non ne ha di italiane.
+  $('#tv-barzellette').innerHTML = barzellette.length ? barzellette.map((b) => `
+    <article class="tv-barzelletta">
+      <p class="tv-barz-testo">${esc(b.testo)}</p>
+      ${b.risposta ? `<p class="tv-barz-risposta">${esc(b.risposta)}</p>` : ''}
+      ${b.categoria ? `<span class="tv-barz-cat">${esc(b.categoria)}</span>` : ''}
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessuna barzelletta. Premi «Aggiorna» fra poco.</p>`;
+
+  // Il quiz: una domanda, le risposte mescolate (il server le mescola, cosi'
+  // quella giusta non e' sempre la prima) e il segnale di qual e' giusta. La
+  // risposta non si dice subito: si tocca, e la riga si colora.
+  $('#tv-quiz').innerHTML = quiz.length ? quiz.map((q, i) => `
+    <article class="tv-domanda" data-domanda="${i}">
+      <p class="tv-dom-testo">${esc(q.testo)}</p>
+      <div class="tv-dom-risposte">
+        ${(q.risposte || []).map((r) => `
+          <button type="button" class="tv-risposta" data-giusta="${r.giusta ? '1' : '0'}">${esc(r.testo)}</button>`).join('')}
+      </div>
+      ${q.categoria ? `<span class="tv-dom-cat">${esc(q.categoria)}${q.difficolta ? ` · ${esc(q.difficolta)}` : ''}</span>` : ''}
+    </article>`).join('')
+    : `<p class="tv-vuoto">Nessuna domanda. Premi «Aggiorna» fra poco.</p>`;
+
   // quando sono state prese le copie: senza, non si sa se si sta guardando
   // quello di oggi o quello di una settimana fa
   const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
   $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
 }
+
+// Il quiz si risponde toccando: la risposta scelta si colora di verde se giusta,
+// di rosso se sbagliata, e le altre si spengono. E' una funzione di gioco, non
+// un dato da salvare: ricaricando la sezione le domande tornano neutre.
+$('#tv-quiz').addEventListener('click', (e) => {
+  const scelta = e.target.closest('.tv-risposta');
+  if (!scelta) return;
+  const domanda = scelta.closest('.tv-domanda');
+  const giusta = scelta.dataset.giusta === '1';
+  domanda.classList.add('risposta-data');
+  domanda.querySelectorAll('.tv-risposta').forEach((b) => {
+    if (b === scelta) b.classList.add(giusta ? 'giusta' : 'sbagliata');
+    else if (b.dataset.giusta === '1') b.classList.add('giusta');
+    b.disabled = true;
+  });
+});
 
 $('#tv-playlist-salva').addEventListener('click', async () => {
   const btn = $('#tv-playlist-salva');
@@ -325,7 +370,7 @@ $('#tv-aggiorna').addEventListener('click', async () => {
   try {
     const d = await api('/api/tv/aggiorna', { method: 'POST' });
     disegnaTv(d);
-    const nuovo = d.aggiornati && (d.aggiornati.video || d.aggiornati.notizie);
+    const nuovo = d.aggiornati && Object.values(d.aggiornati).some(Boolean);
     if (!nuovo) toast('Niente di nuovo: la fonte non ha risposto.');
   } catch (_e) {
     toast('Aggiornamento non riuscito.');
@@ -2187,7 +2232,8 @@ function renderOggi() {
   $('#ch-oggi').innerHTML = testa + settimana
     + blocco('Ogni giorno', p.gruppi.quotidiane)
     + blocco('Ogni giorno e mezzo', p.gruppi.frazionarie)
-    + blocco('Ogni settimana', p.gruppi.settimanali);
+    + blocco('Ogni settimana', p.gruppi.settimanali)
+    + blocco('Ogni sei mesi', p.semestrali || []);
 
   const m = p.mese;
   if (m.mensili.length || m.stagionali.length) {
@@ -2247,7 +2293,8 @@ function renderRoutine() {
   $('#ch-routine').innerHTML =
     sezione('Ogni giorno', di('giornaliera'), 'pochi minuti, tengono la casa in ordine', false) +
     sezione('Ogni giorno e mezzo', di('frazionaria'), 'a mezza giornata, non a giorni tondi', false) +
-    sezione('Ogni settimana', di('settimanale'), 'uno o due al giorno, non tutte insieme', true);
+    sezione('Ogni settimana', di('settimanale'), 'uno o due al giorno, non tutte insieme', true) +
+    sezione('Ogni sei mesi', di('semestrale'), 'due volte l\'anno, non una del mese', false);
 }
 
 /* --- calendario dell'anno: un mese per riga, con il suo focus ---
@@ -2281,7 +2328,7 @@ function renderChoreList() {
   const label = (k) => (chMeta.frequencies.find((f) => f.key === k) || {}).label || k;
   const gruppi = {};
   chDati.attivita.forEach((v) => (gruppi[v.frequency] = gruppi[v.frequency] || []).push(v));
-  const ordine = ['giornaliera', 'frazionaria', 'settimanale', 'mensile', 'stagionale'];
+  const ordine = ['giornaliera', 'frazionaria', 'settimanale', 'mensile', 'semestrale', 'stagionale'];
 
   $('#ch-count').textContent = `${chDati.attive} attività attive su ${chDati.attivita.length}`;
   $('#ch-list').innerHTML = ordine.filter((k) => gruppi[k]).map((k) => `
@@ -2376,7 +2423,8 @@ $('#ch-timer-done').addEventListener('click', async () => {
    chiedere nient'altro. */
 $('#ch-blitz').addEventListener('click', () => {
   const prime = chDati.piano.gruppi.quotidiane
-    .concat(chDati.piano.gruppi.settimanali, chDati.piano.mese.mensili, chDati.piano.mese.stagionali)
+    .concat(chDati.piano.gruppi.settimanali, chDati.piano.mese.mensili,
+            chDati.piano.mese.stagionali, chDati.piano.semestrali || [])
     .filter((v) => !v.fatto_oggi);
   if (!prime.length) return toast('Non resta niente da fare');
   avviaTimer(prime[0].id, prime[0].name, 15);
@@ -2408,7 +2456,8 @@ async function choreClick(e) {
   const id = Number(d.dataset.done);
   const v = chDati.attivita.find((x) => x.id === id);
   const fatto = chDati.piano.gruppi.quotidiane.concat(chDati.piano.gruppi.settimanali,
-    chDati.piano.mese.mensili, chDati.piano.mese.stagionali).find((x) => x.id === id);
+    chDati.piano.mese.mensili, chDati.piano.mese.stagionali,
+    chDati.piano.semestrali || []).find((x) => x.id === id);
   if (fatto && fatto.fatto_oggi) await api(`/api/chores/${id}/done`, { method: 'DELETE' });
   else await api(`/api/chores/${id}/done`, { method: 'POST', body: {} });
   toast(v && fatto && fatto.fatto_oggi ? 'Completamento annullato' : 'Segnata come fatta');

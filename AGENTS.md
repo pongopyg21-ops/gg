@@ -868,14 +868,21 @@ Conseguenze pratiche per chi mette mano al codice:
   giacenza e scorta minima resta in un posto solo.
 - **Igiene**: il catalogo di partenza sta in `igiene.py` e viene seminato in
   `chores`, come le ricette. La cadenza (`giornaliera`, `frazionaria`,
-  `settimanale`, `mensile`, `stagionale`) decide quando una voce rientra; le
-  stagionali solo nel loro `month` e una volta l'anno. `piano()` in `igiene.py` è
-  il cuore del metodo: **quotidiane, frazionarie e settimanali stanno nel piano di
-  oggi, mensili e stagionali nel blocco del mese**. Se finissero tutte nel piano di
-  oggi la giornata diventerebbe impraticabile e il piano verrebbe abbandonato: è il
-  motivo per cui il test `test_piano_separa_oggi_dal_mese` esiste. `minuti_previsti`
-  conta solo oggi, `mese_minuti` solo il mese: mescolarli darebbe una cifra falsa in
-  entrambi i casi.
+  `settimanale`, `mensile`, `semestrale`, `stagionale`) decide quando una voce
+  rientra; le stagionali solo nel loro `month` e una volta l'anno, le
+  **semestrali** ogni `CADENZE["semestrale"]` = 182 giorni. `piano()` in
+  `igiene.py` è il cuore del metodo: **quotidiane, frazionarie e settimanali
+  stanno nel piano di oggi, mensili e stagionali nel blocco del mese, e le
+  semestrali in un blocco loro** (`piano()["semestrali"]`, con
+  `semestrali_da_fare`). Se finissero tutte nel piano di oggi la giornata
+  diventerebbe impraticabile e il piano verrebbe abbandonato; una cosa che tocca
+  ogni sei mesi non è una cosa del mese, quindi non va mescolata al mese: è il
+  motivo per cui i test `test_piano_separa_oggi_dal_mese` e
+  `test_piano_mette_i_semestrali_a_parte` esistono. La voce semestrale è
+  «Disinfettare il condizionatore» (area «Tutta la casa», 15 min): l'aria
+  condizionata va igienizzata due volte l'anno, non è una pulizia mensile.
+  `minuti_previsti` conta solo oggi, `mese_minuti` solo il mese: mescolarli
+  darebbe una cifra falsa in entrambi i casi.
 - La cadenza **frazionaria** («ogni giorno e mezzo», `FRAZIONARIE` — la lavatrice)
   non è un blocco tondo e per questo non entra mai nel blocco mensile: `CADENZE`
   le dà 1,5 giorni. Conta **l'ora del completamento**, non solo la data: con la
@@ -1865,18 +1872,49 @@ I test non toccano la rete: sostituiscono `_apri` e costruiscono pagine finte co
 JSON-LD vero. Si prova l'interpretazione, che è la parte che sbaglia.
 
 
-## La sezione TV: video e notizie
+## La sezione TV: video, notizie, barzellette e quiz
 
-`tv.py` tiene insieme due cose che non sono dati dell'app — la playlist YouTube
-della casa e le notizie dal mondo (ANSA) — perché vivono nella stessa sezione e
-hanno lo stesso problema: **la rete**. Un feed si sposta, un sito cambia, e la
-casa può restare senza connessione. La regola è una e vale per entrambe: quello
-che si è già scaricato **resta**, e un guasto di rete non deve svuotare la
-sezione. Si mostra l'ultima copia buona e si riprova più tardi.
+`tv.py` tiene insieme cose che non sono dati dell'app — la playlist YouTube
+della casa, le notizie dal mondo (ANSA), le barzellette (JokeAPI) e il quiz
+(Open Trivia DB) — perché vivono nella stessa sezione e hanno lo stesso problema:
+**la rete**. Un feed si sposta, un sito cambia, e la casa può restare senza
+connessione. La regola è una e vale per tutte: quello che si è già scaricato
+**resta**, e un guasto di rete non deve svuotare la sezione. Si mostra l'ultima
+copia buona e si riprova più tardi.
 
-Nessuna dipendenza nuova: `urllib.request` per scaricare ed `ElementTree` per i
-due formati (Atom per la playlist, RSS per le notizie). Sono formati semplici, e
-una libreria in più sarebbe una cosa da aggiornare per leggere cinque campi.
+Nessuna dipendenza nuova: `urllib.request` per scaricare, `ElementTree` per i
+due formati dei feed (Atom per la playlist, RSS per le notizie) e `json` per i
+due servizi di barzellette e quiz. Sono formati semplici, e una libreria in più
+sarebbe una cosa da aggiornare per leggere cinque campi.
+
+**Barzellette e quiz non hanno contenuti in italiano, ed è la cosa da sapere.**
+JokeAPI supporta `cs/de/en/es/fr/pt` (non `it`); Open Trivia DB ignora `lang=it`
+e risponde comunque in inglese. I contenuti arrivano quindi in inglese, e il
+riquadro lo dice all'utente. Le fonti restano sostituibili da ambiente
+(`TV_BARZELLETTE`, `TV_QUIZ`): il giorno in cui esisterà una fonte italiana si
+cambia l'indirizzo senza toccare il codice. Le barzellette si rinnovano ogni
+`ORE_EXTRA` (6 ore), più spesso delle notizie, perché sono contenuti leggeri e
+una barzelletta già letta non fa ridere due volte; il quiz porta le dieci domande
+medie che chiede l'indirizzo. Entrambi stanno nella cache **della casa**
+(`tv_cache`, chiavi `barzellette` e `quiz`), come video e notizie, e il filo di
+sottofondo li aggiorna insieme agli altri.
+
+Due normalizzazioni che servono al client: JokeAPI risponde in due forme
+(`single` con un solo `joke`, `twopart` con `setup`/`delivery`) e si riducono
+alla stessa coppia `testo`/`risposta` (vuota per le `single`); con `amount=1`
+la risposta è l'oggetto nudo, non `{"jokes": [...]}`, e si gestiscono entrambe.
+Open Trivia DB mette la risposta giusta in un campo a parte e le risposte
+arrivano **mescolate** (`_mescola_risposte`): senza, quella giusta sarebbe
+sempre la prima e il quiz si indovinerebbe senza sapere. Il testo passa da
+`html.unescape`, perché Open Trivia DB manda `&quot;` e `&#039;`. Il quiz si
+risponde **toccando** la risposta (verde/rossa), non è un dato da salvare: è una
+funzione di gioco, e ricaricando la sezione le domande tornano neutre.
+
+**Open Trivia DB limita a una richiesta ogni cinque secondi per indirizzo.**
+All'avvio il giro su tutte le case aspetta fra una casa e l'altra
+(`_giro_su_tutte_le_case(..., ritardo=True)`): senza, il quiz arriverebbe solo
+alla prima casa e le altre resterebbero vuote fino al giro dopo, con l'aria che
+il quiz non funzioni.
 
 Le notizie sono **max venti**, dalle sezioni ANSA, mescolate fra loro, e si
 rinnovano **una volta al giorno**; i video una volta al giorno anche loro. Si

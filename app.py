@@ -573,8 +573,12 @@ def api_tv():
     return jsonify({
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "barzellette": tv.barzellette(db),
+        "quiz": tv.quiz(db),
         "playlist": tv.playlist_id(db),
-        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
+                       "barzellette": _iso(quando["barzellette"]),
+                       "quiz": _iso(quando["quiz"])},
     })
 
 
@@ -670,8 +674,12 @@ def api_tv_aggiorna():
         "aggiornati": esito,
         "video": [{**v, "embed": tv.incorpora(v["id"])} for v in tv.video(db)],
         "notizie": tv.notizie(db),
+        "barzellette": tv.barzellette(db),
+        "quiz": tv.quiz(db),
         "playlist": tv.playlist_id(db),
-        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"])},
+        "aggiornato": {"video": _iso(quando["video"]), "notizie": _iso(quando["notizie"]),
+                       "barzellette": _iso(quando["barzellette"]),
+                       "quiz": _iso(quando["quiz"])},
     })
 
 
@@ -891,8 +899,12 @@ def _aggiorna_tv_in_sottofondo(db):
     _, quando = tv._leggi(db, "notizie")
     _, video_quando = tv._leggi(db, "video")
     _, gym_quando = tv._leggi(db, "gym")
+    _, barz_quando = tv._leggi(db, "barzellette")
+    _, quiz_quando = tv._leggi(db, "quiz")
     if (tv._fresco(quando, tv.ORE_NOTIZIE) and tv._fresco(video_quando, tv.ORE_VIDEO)
-            and tv._fresco(gym_quando, tv.ORE_VIDEO)):
+            and tv._fresco(gym_quando, tv.ORE_VIDEO)
+            and tv._fresco(barz_quando, tv.ORE_EXTRA)
+            and tv._fresco(quiz_quando, tv.ORE_EXTRA)):
         return
     percorso = db.execute("PRAGMA database_list").fetchone()[2]
 
@@ -3758,7 +3770,7 @@ def avvia_copie_automatiche():
     threading.Thread(target=ciclo, name="copie-automatiche", daemon=True).start()
 
 
-def _giro_su_tutte_le_case(aggiorna_una):
+def _giro_su_tutte_le_case(aggiorna_una, ritardo=False):
     """Esegue un aggiornamento su **tutte** le case, una per una.
 
     Si aggiornano tutte, non solo quella che si sta guardando: la sezione deve
@@ -3767,6 +3779,12 @@ def _giro_su_tutte_le_case(aggiorna_una):
     l'utente preme un pulsante.
 
     Un guasto su una casa non ferma le altre: il ciclo isola ogni caso.
+
+    `ritardo=True` aspetta fra una casa e l'altra. Serve ai servizi che
+    limitano le richieste per indirizzo (Open Trivia DB: una ogni cinque
+    secondi): senza, il quiz arriverebbe solo alla prima casa e le altre
+    resterebbero vuote fino al giro dopo. Non e' un'attesa di comodo, e' il
+    rispetto del limite della fonte.
     """
     for casa in houses.elenco():
         slug = casa.get("slug")
@@ -3782,21 +3800,28 @@ def _giro_su_tutte_le_case(aggiorna_una):
                 aggiorna_una(db)
         except Exception:
             app.logger.debug("Aggiornamento non riuscito per la casa %s", slug)
+        if ritardo:
+            time.sleep(5.5)
 
 
 def avvia_tv():
-    """Scarica video e notizie all'avvio, e poi una volta al giorno.
+    """Scarica video, notizie, barzellette e quiz all'avvio, e poi ogni ora.
 
     Il primo giro parte **subito**: un server appena installato non ha ancora
     nessuna copia, ed e' proprio la prima che serve quando si apre la sezione.
     I giri successivi non scaricano a vuoto, perche' `tv.aggiorna` salta quello
-    che e' gia' fresco.
+    che e' gia' fresco (le notizie una volta al giorno, barzellette e quiz ogni
+    `tv.ORE_EXTRA`).
     """
     def ciclo():
-        _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True))
+        # `ritardo=True`: Open Trivia DB limita a una richiesta ogni cinque
+        # secondi per indirizzo, e senza pausa fra una casa e l'altra il quiz
+        # arriverebbe solo alla prima. Le altre resterebbero senza domande fino
+        # al giro dopo, e sembrerebbe che il quiz non funzioni.
+        _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True), ritardo=True)
         while True:
             time.sleep(3600)
-            _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True))
+            _giro_su_tutte_le_case(lambda db: tv.aggiorna(db, forse=True), ritardo=True)
 
     threading.Thread(target=ciclo, name="tv", daemon=True).start()
 
