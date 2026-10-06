@@ -8326,6 +8326,69 @@ def test_il_tema_scuro_e_l_opposto_di_quello_chiaro():
     assert luminanza(valore("ink", chiaro)) < 0.25, "--ink del tema chiaro non e' scuro"
 
 
+def test_i_testi_colorati_restano_leggibili_nei_due_temi():
+    """Ogni testo colorato deve restare sopra 4,5:1 (WCAG AA) **in entrambi** i
+    temi. Il caso che ha motivato il test e' l'etichetta dell'ambiente
+    "soggiorno": il fondo sabbia era chiaro fisso e il testo era `--sand`, che
+    di notte diventa chiaro — testo dorato su fondo dorato, 1,85:1, illeggibile.
+
+    Si leggono le variabili dalle due palette nel CSS e si calcola il contrasto
+    vero (luminanza relativa WCAG), non si guarda se il colore "sembra" giusto:
+    un colore fissato a mano fuori dalla palette non si vede leggendo il codice,
+    e torna a ogni cambio di tema."""
+    import re
+    css = open(f"{BASE_APP}/static/style.css", encoding="utf-8").read()
+
+    def blocco(inizio):
+        return css[inizio:css.index("}", inizio)]
+
+    def valore(nome, testo):
+        m = re.search(rf"--{nome}:\s*([^;]+);", testo)
+        assert m, f"manca --{nome}"
+        return m.group(1).strip()
+
+    def luminanza(colore):
+        colore = colore.lstrip("#")
+        if len(colore) == 3:
+            colore = "".join(c * 2 for c in colore)
+        canali = [int(colore[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        canali = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+                  for c in canali]
+        return 0.2126 * canali[0] + 0.7152 * canali[1] + 0.0722 * canali[2]
+
+    def contrasto(a, b):
+        l1, l2 = sorted((luminanza(a), luminanza(b)), reverse=True)
+        return (l1 + 0.05) / (l2 + 0.05)
+
+    chiaro = blocco(css.index(":root {"))
+    scuro = blocco(css.index('html[data-tema="scuro"]'))
+
+    # coppie (testo, sfondo): sono i testi colorati che non usano `--ink`/`--muted`
+    coppie = [
+        ("scadenza vicina", "sand-testo", "surface"),
+        ("scadenza vicina sul fondo", "sand-testo", "paper"),
+        ("zona soggiorno", "zona-soggiorno-testo", "zona-soggiorno"),
+        ("zona bagno", "zona-bagno-testo", "zona-bagno"),
+        ("zona cucina", "zona-cucina-testo", "zona-cucina"),
+        ("zona camere", "zona-camere-testo", "zona-camere"),
+        ("scheda attiva", "testo-su-accento", "accent"),
+    ]
+    for nome, testo, sfondo in coppie:
+        for tema, pal in (("chiaro", chiaro), ("scuro", scuro)):
+            rapporto = contrasto(valore(testo, pal), valore(sfondo, pal))
+            assert rapporto >= 4.5, (
+                f"{nome} in tema {tema}: {rapporto:.2f}:1, sotto il minimo 4,5:1")
+
+    # le regole devono davvero usare le variabili: un colore fissato a mano
+    # tornerebbe a rompersi al cambio di tema senza che questo test se ne accorga
+    assert ".scad-testo.scad-vicino { color: var(--sand-testo); }" in css
+    assert ".ch-area[data-area=\"soggiorno\"], .ch-area[data-area=\"ingresso\"] " \
+           "{ background: var(--zona-soggiorno); border-color: var(--zona-soggiorno); " \
+           "color: var(--zona-soggiorno-testo); }" in css
+    assert "color: var(--sand-testo);" in css[css.index(".sug-card .sug-scade"):
+                                             css.index(".sug-card .sug-scade") + 200]
+
+
 def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
     """La home ha uno sfondo che respira (aloni del mare dietro le schede), ma
     **discreto**: e' trasparenza, non colore pieno, l'animazione e' lenta e il

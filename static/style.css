@@ -26,6 +26,20 @@
 
   /* sabbia: l'unico accento caldo, per le stelle e le priorita' */
   --sand: #b0761c;
+  /* La stessa sabbia ma per il **testo**: #b0761c su fondo chiaro si ferma a
+     3,4:1, che basta a una stella o a un bordo (3:1) ma non a una parola. Le
+     scadenze e l'etichetta dell'ambiente "soggiorno" sono testo, quindi hanno
+     la loro variabile, piu' scura: 5,2:1. Tenerle separate evita che un
+     domani si schiarisca l'una credendo di migliorare l'altra. */
+  --sand-testo: #8a5a12;
+
+  /* I fondi tenui delle zone della casa in Igiene (cucina, bagno, camere,
+     soggiorno). Il testo di ogni zona e' una variabile accanto: cosi' il tema
+     scuro schiarisce le due insieme e non resta testo scuro su fondo scuro. */
+  --zona-cucina: #e2f1f8;      --zona-cucina-testo: #05506b;
+  --zona-bagno: #e6f0fb;       --zona-bagno-testo: #2a5b8f;
+  --zona-camere: #e0f2ef;      --zona-camere-testo: #17796b;
+  --zona-soggiorno: #f6efe3;   --zona-soggiorno-testo: #8a5a12;
 
   /* Colori delle categorie del calendario. Sono accenti per i puntini e le
      barre, non per il testo: bastano 3:1 col fondo, come le stelle. Scelti per
@@ -94,6 +108,17 @@ html[data-tema="scuro"] {
   --green-soft: #14302b;
 
   --sand: #e0a94a;
+  /* La sabbia-testo resta accesa anche di notte: sul fondo notte #e0a94a da'
+     7:1, mentre la sabbia "da stella" serve solo a puntini e bordi. */
+  --sand-testo: #e0a94a;
+
+  /* Le zone della casa di notte: fondo scuro, testo chiaro. Il fondo *non*
+     riprende il tenue del giorno, che resterebbe chiaro sotto un testo chiaro
+     (era il difetto dell'etichetta "soggiorno": 1,85:1). */
+  --zona-cucina: #16303d;      --zona-cucina-testo: #8fd0f0;
+  --zona-bagno: #16303d;       --zona-bagno-testo: #7fb8d2;
+  --zona-camere: #14332b;      --zona-camere-testo: #4cc0ac;
+  --zona-soggiorno: #3a2f1c;   --zona-soggiorno-testo: #e0a94a;
 
   /* le stesse cinque categorie, schiarite per il fondo notte */
   --cat-lavoro: #4fb3e8;
@@ -540,7 +565,7 @@ button:focus-visible {
 }
 .scad-testo.scad-niente { color: var(--muted); font-weight: 400; }
 .scad-testo.scad-oltre { color: var(--errore-testo); }
-.scad-testo.scad-vicino { color: #d98a2b; }
+.scad-testo.scad-vicino { color: var(--sand-testo); }
 .scad-testo.scad-lontano { color: var(--muted); font-weight: 400; }
 .date-cell.scad-oltre { border-color: var(--errore-bordo); }
 .date-cell.scad-vicino { border-color: #d98a2b; }
@@ -647,7 +672,7 @@ button:focus-visible {
    sta in cima, quindi si dice invece di lasciarlo intuire dall'ordine. */
 .sug-card .sug-scade {
   font-size: 11.5px; font-weight: 600; margin-top: 5px; line-height: 1.4;
-  color: #d98a2b;
+  color: var(--sand-testo);
 }
 
 /* Campo foto nel form ricetta: anteprima a sinistra, controlli a destra. */
@@ -1350,10 +1375,10 @@ tr:last-child td { border-bottom: none; }
 }
 /* l'ambiente prende un colore tenue: aiuta a raggruppare a colpo d'occhio le
    voci della stessa zona (cucina, bagno...) senza aggiungere filtri */
-.ch-area[data-area="cucina"] { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent-deep); }
-.ch-area[data-area="bagno"] { background: #e6f0fb; border-color: #e6f0fb; color: #2a5b8f; }
-.ch-area[data-area="camere"] { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
-.ch-area[data-area="soggiorno"], .ch-area[data-area="ingresso"] { background: #f6efe3; border-color: #f6efe3; color: var(--sand); }
+.ch-area[data-area="cucina"] { background: var(--zona-cucina); border-color: var(--zona-cucina); color: var(--zona-cucina-testo); }
+.ch-area[data-area="bagno"] { background: var(--zona-bagno); border-color: var(--zona-bagno); color: var(--zona-bagno-testo); }
+.ch-area[data-area="camere"] { background: var(--zona-camere); border-color: var(--zona-camere); color: var(--zona-camere-testo); }
+.ch-area[data-area="soggiorno"], .ch-area[data-area="ingresso"] { background: var(--zona-soggiorno); border-color: var(--zona-soggiorno); color: var(--zona-soggiorno-testo); }
 .ch-when { font-size: 12px; color: var(--muted); white-space: nowrap; }
 /* il giorno assegnato a una settimanale: si legge come stato, non come scadenza */
 .ch-when.ch-giorno { color: var(--accent-deep); }
