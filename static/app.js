@@ -297,6 +297,15 @@ function disegnaTv(d) {
   // quella giusta non e' sempre la prima) e il segnale di qual e' giusta. La
   // risposta non si dice subito: si tocca, e la riga si colora. Testi e
   // difficolta' arrivano gia' in italiano dal server.
+  disegnaQuiz(quiz);
+
+  // quando sono state prese le copie: senza, non si sa se si sta guardando
+  // quello di oggi o quello di una settimana fa
+  const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
+  $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
+}
+
+function disegnaQuiz(quiz) {
   $('#tv-quiz').innerHTML = quiz.length ? quiz.map((q, i) => `
     <article class="tv-domanda" data-domanda="${i}">
       <p class="tv-dom-testo">${esc(q.testo)}</p>
@@ -307,20 +316,17 @@ function disegnaTv(d) {
       ${q.categoria ? `<span class="tv-dom-cat">${esc(q.categoria)}${q.difficolta ? ` · ${esc(q.difficolta)}` : ''}</span>` : ''}
     </article>`).join('')
     : `<p class="tv-vuoto">Nessuna domanda. Premi «Aggiorna» fra poco.</p>`;
-
-  // quando sono state prese le copie: senza, non si sa se si sta guardando
-  // quello di oggi o quello di una settimana fa
-  const quando = (d.aggiornato && d.aggiornato.notizie) ? d.aggiornato.notizie : '';
-  $('#tv-aggiornato').textContent = quando ? `Aggiornato: ${quando.replace('T', ' ')}` : '';
 }
 
 // Il quiz si risponde toccando: la risposta scelta si colora di verde se giusta,
-// di rosso se sbagliata, e le altre si spengono. E' una funzione di gioco, non
-// un dato da salvare: ricaricando la sezione le domande tornano neutre.
-$('#tv-quiz').addEventListener('click', (e) => {
+// di rosso se sbagliata, e le altre si spengono. Indovinando, la domanda esce e
+// ne arriva una nuova: e' quello che impedisce di rivedere sempre le stesse.
+// E' una funzione di gioco, non un dato da salvare.
+$('#tv-quiz').addEventListener('click', async (e) => {
   const scelta = e.target.closest('.tv-risposta');
   if (!scelta) return;
   const domanda = scelta.closest('.tv-domanda');
+  if (domanda.classList.contains('risposta-data')) return;
   const giusta = scelta.dataset.giusta === '1';
   domanda.classList.add('risposta-data');
   domanda.querySelectorAll('.tv-risposta').forEach((b) => {
@@ -328,6 +334,18 @@ $('#tv-quiz').addEventListener('click', (e) => {
     else if (b.dataset.giusta === '1') b.classList.add('giusta');
     b.disabled = true;
   });
+  if (!giusta) return;
+  // Si lascia vedere il verde un momento, poi la domanda esce e ne subentra una
+  // nuova. Il nuovo elenco lo decide il server (che toglie l'indovinata e ne
+  // scarica una): cosi' il quiz resta uguale su tutti i dispositivi della casa.
+  const indice = Number(domanda.dataset.domanda);
+  await new Promise((r) => setTimeout(r, 900));
+  try {
+    const d = await api('/api/quiz/rispondi', { method: 'POST', body: { indice } });
+    disegnaQuiz(d.quiz || []);
+  } catch (_e) {
+    // la domanda resta a schermo, con la risposta colorata: non e' un guasto
+  }
 });
 
 $('#tv-playlist-salva').addEventListener('click', async () => {
@@ -2893,6 +2911,101 @@ function apriImpegnoForm(a, giorno) {
 }
 
 $('#cal-new').addEventListener('click', () => apriImpegnoForm(null));
+
+/* ---------- PROMEMORIA DEL SISTEMA ----------
+   Il calendario calcola gia' i promemoria scattati, ma si vedevano solo aprendo
+   l'app. Con le notifiche del sistema un promemoria diventa tale: avvisa anche
+   se l'app e' chiusa o in secondo piano, che e' il momento in cui serve.
+
+   Tre scelte, tutte con un motivo:
+
+   - **Il permesso si chiede da un tocco**, mai da soli: un browser che vede una
+     richiesta senza un gesto la blocca, e il permesso negato non si riprende
+     piu'. Il pulsante compare solo se il browser sa fare le notifiche.
+   - **Un avviso per impegno, una volta sola al giorno.** La memoria di cosa e'
+     stato avvisato oggi sta in `localStorage`, del dispositivo: senza, il
+     controllo periodico ripeterebbe lo stesso avviso ogni volta. Si azzera da
+     solo cambiando giorno.
+   - **Il controllo e' leggero e periodico.** Ogni mezz'ora si richiede
+     `?giorno=oggi` al calendario e si avvisa solo cio' che avvisa adesso. Non
+     un filo continuo: la casa non ha bisogno di un servizio sempre acceso. */
+let notificheTimer = null;
+
+function notificheAttive() {
+  return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+}
+
+function mostraPulsanteNotifiche() {
+  const btn = $('#cal-notifiche');
+  if (!btn) return;
+  // niente notifiche nel browser, oppure gia' attive: il pulsante non serve
+  btn.hidden = !(typeof Notification !== 'undefined') || notificheAttive();
+}
+
+// Le chiavi gia' avvisate **oggi**. Il giorno fa parte della chiave, quindi il
+// cambio di data azzera la memoria senza doverla cancellare a mano.
+function avvisiGia_(titolo, quando) {
+  let stato;
+  try { stato = JSON.parse(localStorage.getItem('promemoriaAvvisati') || '{}'); }
+  catch (_e) { stato = {}; }
+  const oggi = iso(new Date());
+  if (stato.giorno !== oggi) stato = { giorno: oggi, chiavi: [] };
+  return stato;
+}
+
+function segnaAvvisato(stato, chiave) {
+  if (!stato.chiavi.includes(chiave)) stato.chiavi.push(chiave);
+  try { localStorage.setItem('promemoriaAvvisati', JSON.stringify(stato)); } catch (_e) {}
+}
+
+async function controllaPromemoria() {
+  if (!notificheAttive()) return;
+  let d;
+  try { d = await api('/api/appointments?giorno=' + iso(new Date())); }
+  catch (_e) { return; }
+  const avvisi = d.prossimi || [];
+  if (!avvisi.length) return;
+  const stato = avvisiGia_();
+  avvisi.forEach((a) => {
+    const chiave = `${a.id}|${a.when_date}`;
+    if (stato.chiavi.includes(chiave)) return;
+    const corpo = [a.quando_detto, a.time].filter(Boolean).join(' · ');
+    try {
+      new Notification(`📆 ${a.title}`, { body: corpo || 'Promemoria', tag: chiave });
+      segnaAvvisato(stato, chiave);
+    } catch (_e) { /* un browser senza notifiche non deve rompere il resto */ }
+  });
+}
+
+$('#cal-notifiche').addEventListener('click', async () => {
+  if (typeof Notification === 'undefined') return;
+  let permesso = Notification.permission;
+  try { permesso = await Notification.requestPermission(); } catch (_e) {}
+  mostraPulsanteNotifiche();
+  if (permesso === 'granted') {
+    toast('Promemoria attivi: ti avviso anche ad app chiusa.');
+    await controllaPromemoria();
+  } else {
+    toast('Permesso negato: i promemoria restano nella scheda Calendario.');
+  }
+});
+
+/* Avvia il controllo periodico, se il permesso c'e' gia'. Si chiama dopo
+   l'accesso: il permesso si chiede da un tocco, non da qui. */
+function avviaPromemoria() {
+  mostraPulsanteNotifiche();
+  if (!notificheAttive()) return;
+  controllaPromemoria();
+  if (!notificheTimer) notificheTimer = setInterval(controllaPromemoria, 30 * 60 * 1000);
+  // tornando sull'app si ricontrolla subito: il controllo periodico da solo
+  // farebbe aspettare fino a mezz'ora proprio quando si riapre la pagina
+  if (!avviaPromemoria.collegato) {
+    avviaPromemoria.collegato = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) controllaPromemoria();
+    });
+  }
+}
 
 /* ---------- MAGAZZINO ----------
    Quello che si tiene in casa e non si mangia: sapone, ferramenta, batterie.
@@ -5815,6 +5928,10 @@ async function init() {
   renderHomeCalendario();
   renderHomeNotizie();
   renderHomeDomani();
+  // i promemoria del sistema: se il permesso c'e' gia' si parte, altrimenti il
+  // pulsante nel calendario lo chiede da un tocco (mai da soli: un browser
+  // blocca la richiesta senza gesto, e il permesso negato non si riprende)
+  avviaPromemoria();
 }
 
 /* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi, gli

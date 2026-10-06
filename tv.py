@@ -649,30 +649,58 @@ def _traduci_domande(domande: list) -> list:
     return tradotte
 
 
-def quiz_dal_servizio(db=None) -> list:
+def quiz_dal_servizio(db=None, quanti=10) -> list:
     """Le domande del quiz, cosi' come le da' Open Trivia DB.
 
     `response_code` diverso da zero vuol dire "nessuna domanda" (il servizio usa
     5 per il vuoto, 1 per parametri storti): si solleva `NonDisponibile` e la
     copia vecchia resta, invece di sovrascriverla con un elenco vuoto.
+
+    `quanti` e' il numero di domande: la copia ne tiene dieci, le domande di
+    riserva che si accodano quando si indovina ne prendono altre.
     """
-    dati = _json(QUIZ_URL)
+    return _interpreta_quiz(_json(_url_quiz(quanti)))
+
+
+def _url_quiz(quanti: int) -> str:
+    """L'indirizzo del quiz con `amount` impostato, mantenendo gli altri
+    parametri (la difficolta') e **l'ordine** di `QUIZ_URL`: cosi' i test che
+    sostituiscono l'indirizzo continuano a riconoscerlo."""
+    parti = urllib.parse.urlsplit(QUIZ_URL)
+    query = [(k, (str(quanti) if k == "amount" else v))
+             for (k, v) in urllib.parse.parse_qsl(parti.query)]
+    if not any(k == "amount" for k, _ in query):
+        query.append(("amount", str(quanti)))
+    return urllib.parse.urlunsplit(parti._replace(query=urllib.parse.urlencode(query)))
+
+
+def _interpreta_quiz(dati) -> list:
+    """Da una risposta JSON di Open Trivia DB all'elenco delle domande."""
     if not isinstance(dati, dict) or dati.get("response_code") != 0:
         raise NonDisponibile("Il servizio del quiz non ha domande")
-    voci = []
-    for d in dati.get("results") or []:
-        if not isinstance(d, dict):
-            continue
-        testo = _pulisci(d.get("question"))
-        risposte = _mescola_risposte(d)
-        if testo and len(risposte) >= 2:
-            difficolta = _pulisci(d.get("difficulty")).lower()
-            voci.append({"testo": testo, "risposte": risposte,
-                         "categoria": _pulisci(d.get("category")),
-                         "difficolta": DIFFICOLTA_IT.get(difficolta, difficolta)})
+    voci = [v for v in (_mescola_una(d) for d in (dati.get("results") or [])) if v]
     if not voci:
         raise NonDisponibile("Il servizio del quiz non ha dato domande")
     return _traduci_domande(voci)
+
+
+def _mescola_una(d) -> dict | None:
+    """Una domanda del servizio nella forma della copia, o `None` se non valida.
+
+    Una domanda senza testo o con meno di due risposte non e' un guasto: si
+    scarta, come fa `_interpreta_quiz`. La risposta giusta resta segnata con
+    `giusta` (vedi `_mescola_risposte`).
+    """
+    if not isinstance(d, dict):
+        return None
+    testo = _pulisci(d.get("question"))
+    risposte = _mescola_risposte(d)
+    if not testo or len(risposte) < 2:
+        return None
+    difficolta = _pulisci(d.get("difficulty")).lower()
+    return {"testo": testo, "risposte": risposte,
+            "categoria": _pulisci(d.get("category")),
+            "difficolta": DIFFICOLTA_IT.get(difficolta, difficolta)}
 
 
 def _data_iso(testo: str) -> str:
@@ -776,6 +804,45 @@ def aggiorna_notizie(db, forse=True) -> bool:
 
 def aggiorna_quiz(db, forse=True) -> bool:
     return _aggiorna(db, "quiz", ORE_EXTRA, quiz_dal_servizio, forse=forse)
+
+
+def _domanda_nuova(quanti=1):
+    """Domande nuove dal servizio, o `[]` se non si riesce.
+
+    Non e' un guasto: una domanda in piu' e' un di piu' (il gioco funziona lo
+    stesso senza), quindi una rete assente non deve far fallire la risposta ne'
+    svuotare la copia.
+    """
+    if quanti <= 0:
+        return []
+    try:
+        return quiz_dal_servizio(quanti=quanti)
+    except NonDisponibile:
+        return []
+
+
+def rispondi(db, indice) -> dict | None:
+    """Segna una domanda come indovinata: la toglie e ne mette una nuova.
+
+    E' quello che fa cambiare domanda a ogni risposta esatta. Si toglie quella
+    indovinata (non si rivede) e se ne accoda una nuova scaricata al volo, cosi'
+    il quiz resta lungo uguale; se la rete non risponde la domanda si toglie lo
+    stesso — ripetere una domanda a cui si e' appena risposto e' peggio di
+    averne una in meno.
+
+    Restituisce il quiz aggiornato, o `None` se l'indice non esiste.
+    """
+    voci = quiz(db)
+    if not isinstance(indice, int) or not (0 <= indice < len(voci)):
+        return None
+    domanda = voci[indice]
+    resto = [d for i, d in enumerate(voci) if i != indice]
+    nuove = _domanda_nuova(1)
+    if nuove:
+        resto.append(nuove[0])
+    _scrivi(db, "quiz", resto)
+    return {"quiz": resto, "risposta": domanda,
+            "quando": quando_aggiornate(db)["quiz"]}
 
 
 def aggiorna(db, forse=True) -> dict:

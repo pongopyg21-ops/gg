@@ -75,6 +75,60 @@ def _non_tenere_in_memoria(risposta):
         risposta.headers["Pragma"] = "no-cache"
         risposta.headers["Expires"] = "0"
     return risposta
+
+
+# ------------------------------------------------------------ sicurezza
+# Le intestazioni di sicurezza. Stanno in un `after_request` **a parte** da
+# quello della cache, non dentro: quello esce presto per gli asset versionati,
+# e le intestazioni non devono dipendere da quel ramo. Qui passano tutte le
+# risposte, sempre.
+#
+# La CSP e' la parte che conta davvero: l'app mostra dati della casa e incorpora
+# iframe di terzi (i video YouTube), quindi limitare da dove si carica cosa e'
+# l'unica difesa che ferma uno script iniettato. `'unsafe-inline'` **non** c'e':
+# gli unici due script inline (il tema nello `<head>` e la registrazione del
+# service worker) portano un `nonce` generato per ogni pagina, che il browser
+# accetta e un iniettore no, perche' non puo' indovinarlo. Gli stili inline
+# invece restano permessi: il client ne usa parecchi (`style="--pct:..."`,
+# `element.style...`) e toglierli richiederebbe riscrivere il disegno.
+#
+# `frame-ancestors`/`X-Frame-Options` impediscono che la pagina venga incorniciata
+# da un altro sito (clickjacking). `form-action` limita dove puo' finire un
+# modulo, `base-uri` impedisce di dirottare gli indirizzi relativi con un `<base>`
+# iniettato, `object-src 'none'` spegne plugin e oggetti.
+_CSP_BASE = (
+    "default-src 'self'; "
+    "script-src 'self'{nonce}; "
+    "style-src 'self' 'unsafe-inline'; "
+    # i dati del dispositivo: le foto si ridimensionano in un canvas e diventano
+    # data URL; le locandine arrivano da TMDB, che e' un'altra origine
+    "img-src 'self' data: https://image.tmdb.org; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    # l'audio della voce neurale e il WAV muto sono blob/data URL, non risorse
+    # della rete: senza queste due origini la voce resterebbe muta in silenzio
+    "media-src 'self' blob: data:; "
+    "frame-src https://www.youtube-nocookie.com; "
+    "worker-src 'self'; manifest-src 'self'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; "
+    "frame-ancestors 'self'"
+)
+
+
+@app.after_request
+def _intestazioni_sicurezza(risposta):
+    risposta.headers.setdefault("X-Content-Type-Options", "nosniff")
+    risposta.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    risposta.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    # Il microfono serve solo alla casa collegata: gli iframe dei video non
+    # devono poterlo chiedere, e camera e posizione non servono a niente.
+    risposta.headers.setdefault(
+        "Permissions-Policy", "camera=(), geolocation=(), payment=(), microphone=(self)")
+    nonce = getattr(g, "csp_nonce", "")
+    risposta.headers.setdefault(
+        "Content-Security-Policy",
+        _CSP_BASE.format(nonce=f" 'nonce-{nonce}'" if nonce else ""))
+    return risposta
 app.secret_key = houses.secret_key()
 
 
@@ -738,6 +792,32 @@ def api_gym_playlist():
     })
 
 
+@app.route("/api/quiz/rispondi", methods=["POST"])
+def api_quiz_rispondi():
+    """Segna una domanda del quiz come indovinata e ne mette una nuova in coda.
+
+    Il client chiama questa rotta **solo quando si indovina**: e' quello che fa
+    cambiare domanda a ogni risposta esatta, senza ripetere le stesse. La domanda
+    indovinata si toglie dalla copia e al suo posto ne subentra una di riserva.
+
+    Non e' una scrittura nei dati della casa (la copia del quiz e' contenuto
+    scaricato, non un dato dell'utente), ma richiede comunque l'accesso come
+    tutte le altre rotte.
+    """
+    db = get_db()
+    if db is None:
+        return jsonify({"error": "Non sei collegato a nessuna casa"}), 401
+    data = request.get_json(force=True) or {}
+    esito = tv.rispondi(db, data.get("indice"))
+    if esito is None:
+        return bad_request("Domanda non trovata")
+    return jsonify({
+        "quiz": esito["quiz"],
+        "risposta": esito["risposta"],
+        "aggiornato": {"quiz": _iso(esito["quando"])},
+    })
+
+
 @app.route("/api/cinema")
 def api_cinema():
     """La sezione Cinema: le locandine dei film sulle piattaforme di streaming.
@@ -1281,6 +1361,14 @@ def index():
         versione = _versione_asset(nome)
         if versione:
             html = html.replace(f'/static/{nome}"', f'/static/{nome}?v={versione}"')
+    # Il nonce della CSP: uno per pagina, casuale. Va messo sugli **script
+    # inline** (il tema nello `<head>` e la registrazione del service worker in
+    # fondo): il browser li accetta solo col nonce giusto, e un codice iniettato
+    # non puo' indovinarlo. Gli `<script src=...>` non ne hanno bisogno: sono
+    # gia' coperti da `'self'`.
+    nonce = secrets.token_urlsafe(16)
+    g.csp_nonce = nonce
+    html = html.replace("<script>", f'<script nonce="{nonce}">')
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 

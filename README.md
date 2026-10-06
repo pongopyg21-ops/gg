@@ -5,19 +5,25 @@ della spesa — insieme alle altre aree di casa.
 
 ## Sezioni
 
-L'app si apre su una **pagina iniziale** con sei aree:
+L'app si apre su una **pagina iniziale** con sette aree:
 
 - **🍳 Cucina** — piano pasti, ricette, dispensa, lista della spesa, profilo e comandi vocali.
 - **🧽 Igiene** — pulizie di casa e della cucina, con le scadenze da ricordare.
 - **📋 Appunti** — lavori in corso e idee, con il **Calendario** degli impegni (appuntamenti, scadenze e promemoria) e il **Magazzino** di quello che si tiene in casa (categorie, luoghi, scorte).
 - **📌 FAQ** — informazioni utili: password del Wi-Fi, indirizzi, contatti e codici.
-- **📺 TV** — intrattenimento: i video della playlist di casa e le notizie dal mondo (ANSA), aggiornate una volta al giorno.
+- **📺 TV** — intrattenimento, in cinque schede: **Intrattenimento** (i video della playlist di casa), **Notizie** (dal mondo, ANSA), **Quiz**, **Film** (le locandine dei film del momento sulle piattaforme di streaming) e **Giochi**.
 - **🏋️ GYM** — la playlist degli esercizi, per allenarsi in casa; la playlist è separata da quella della TV e si cambia dalla sezione.
-- **🎬 Cinema** — le locandine dei film del momento compresi sulle piattaforme di streaming, **una alla volta**, da sfogliare da destra a sinistra. Serve una chiave TMDB (`TMDB_API_KEY`): senza, la sezione lo spiega invece di restare vuota.
 
 Aprendo un'area la barra mostra solo le schede di quell'area, così le voci non si
-mescolano. Il pulsante vocale 🎙 resta raggiungibile da ogni area, e in home c'è
-un pulsante **Parla al maggiordomo** accanto al titolo.
+mescolano. La TV ha le sue cinque schede in alto; il **Cinema** è la scheda
+**Film**, non una sezione a sé: è intrattenimento come gli altri e così non
+allunga la pagina iniziale. Il pulsante vocale 🎙 resta raggiungibile da ogni
+area, e in home c'è un pulsante **Parla al maggiordomo** accanto al titolo.
+
+La sezione **Film** mostra una locandina alla volta, da sfogliare da destra a
+sinistra (frecce, tastiera, rotellina o dito), con i **preferiti** in una vista a
+parte. Serve una chiave TMDB (`TMDB_API_KEY`): senza, la scheda lo spiega invece
+di restare vuota.
 
 ## Case separate
 
@@ -84,8 +90,32 @@ lasciarla di comodo.
 - **Allergie e intolleranze** — alla prima apertura l'app chiede di dichiarare allergie e intolleranze. Le ricette che le contengono vengono evidenziate, sia nell'elenco sia nel piano settimanale, e possono essere nascoste con un filtro.
 - **Ricette preferite** — in fase di profilazione l'app dice che il ricettario di partenza è già pronto (45 ricette italiane) e si limita a chiedere quali preferisci, ritrovabili con il filtro **Solo preferite** e contrassegnate da una stella. Nessuna ricetta va inserita a mano per cominciare. La scelta si cambia dalla scheda Profilo o dalla stella su ogni ricetta.
 - **Appunti e Magazzino** — lavori in corso e idee da fare, con priorità e periodo, più il magazzino di quello che si tiene in casa e non si mangia (categorie, luoghi, scorte e foto).
-- **Calendario** — gli impegni con un giorno preciso e, se serve, un'ora: appuntamenti, scadenze, ricorrenze. La griglia del mese mostra a colpo d'occhio i giorni occupati (un puntino per categoria), l'elenco del giorno dice cosa c'è, e in cima compaiono gli **avvisi**: i promemoria scattati e le cose in ritardo. Il promemoria si imposta **quanti giorni prima** (dal giorno stesso a un mese), così spostando un impegno si sposta anche l'avviso.
+- **Calendario** — gli impegni con un giorno preciso e, se serve, un'ora: appuntamenti, scadenze, ricorrenze. La griglia del mese mostra a colpo d'occhio i giorni occupati (un puntino per categoria), l'elenco del giorno dice cosa c'è, e in cima compaiono gli **avvisi**: i promemoria scattati e le cose in ritardo. Il promemoria si imposta **quanti giorni prima** (dal giorno stesso a un mese), così spostando un impegno si sposta anche l'avviso. Il pulsante **🔔 Attiva i promemoria** fa arrivare l'avviso anche **fuori dall'app**, come notifica del sistema: così un promemoria avvisa davvero, anche a pagina chiusa.
+- **TV e Cinema** — in una sezione sola, a schede: i video della playlist di casa, le notizie del giorno (ANSA, rinnovate una volta al giorno), un **quiz** che cambia domanda a ogni risposta esatta, le **locandine** dei film del momento sulle piattaforme di streaming (una alla volta, da sfogliare) e i **giochi**.
 - **Comandi vocali** — il pulsante 🎙 in basso a destra apre la dettatura da ogni area, e in home lo stesso pannello si apre dal pulsante **Parla al maggiordomo**. Si può chiedere di aggiungere qualcosa alla dispensa, alla spesa o al magazzino, dichiarare un'allergia, cercare una ricetta o **detta la ricetta nuova**: «crea la ricetta pasta al forno» apre il modulo già col nome scritto, e si completano ingredienti e preparazione. Utile proprio quando le mani sono occupate o sporche, in cucina; e quando si ordina il ripostiglio, non serve aprire Progetti per mettere via il detersivo: basta dirlo. La conferma può arrivare da una **voce neurale cloud**, uguale su ogni dispositivo, o dalla voce del sistema come ripiego.
+
+## Promemoria del sistema
+
+Il calendario calcola da solo i promemoria scattati, ma finché restano dentro
+l'app li si vede solo aprendola. Con il pulsante **🔔 Attiva i promemoria**, in
+cima alla scheda Calendario, l'avviso arriva come **notifica del sistema**: anche
+se l'app è chiusa o in secondo piano, che è il momento in cui un promemoria
+serve davvero.
+
+Tre cose da sapere:
+
+- **Il permesso si chiede una volta**, toccando il pulsante. Il browser non
+  concede le notifiche senza un gesto dell'utente, quindi l'app non le chiede da
+  sola: se il permesso viene negato, i promemoria restano dentro la scheda
+  Calendario e il pulsante lo dice.
+- **Ogni impegno avvisa una volta al giorno.** La memoria di cosa è già stato
+  avvisato sta nel dispositivo (non nella casa), così il controllo periodico non
+  ripete lo stesso avviso ogni mezz'ora.
+- **Il controllo è leggero**: l'app riguarda il calendario ogni mezz'ora e quando
+  si torna sulla pagina, non tiene un servizio sempre acceso.
+
+Le notifiche sono una capacità del browser: se il dispositivo non le supporta, il
+pulsante non compare e tutto il resto funziona come prima.
 
 ## Allergie e intolleranze
 
@@ -190,7 +220,9 @@ Viene usato per avere subito contenuti da selezionare nel piano pasti. Il databa
 
 ## Comandi vocali
 
-Il pulsante 🎙 in basso a destra apre la dettatura e resta raggiungibile da ogni scheda. Il riconoscimento avviene nel browser con la **Web Speech API** (`it-IT`), quindi nessun audio lascia il dispositivo: al server arriva solo il testo, come se fosse scritto a mano.
+Il pulsante 🎙 in basso a destra apre la dettatura e resta raggiungibile da ogni scheda. Il browser **registra** l'audio e lo manda al server, che lo trascrive (con la stessa chiave Azure della voce); senza chiave si ripiega sulla **Web Speech API** del browser. Il motivo è che la Web Speech API manda l'audio ai server di Google, e in molte case quel traffico è bloccato: il microfono resterebbe muto senza rimedio. Trascrivendo sul server, la casa non dipende da quella strada. Al server arriva l'audio della frase, e la trascrizione non viene conservata.
+
+Con l'ascolto continuo si dice **«Hey GG»** (o «maggiordomo») e poi il comando, anche a pannello chiuso: l'app risponde «Sì.» e resta in ascolto per la frase successiva. Il riconoscimento dei nomi propri non è perfetto, quindi sono accettate anche le forme storpiate che il trascrittore produce davvero.
 
 La comprensione della frase sta invece in `voice.py`, non nel browser, così è verificabile con i test. `POST /api/voice` restituisce l'intento riconosciuto e lo esegue:
 
@@ -228,13 +260,23 @@ Una frase senza verbo di comando, senza destinazione e senza quantità è consid
 
 ### La voce che risponde
 
-La conferma a voce usa la sintesi del sistema operativo e si può cambiare dal pannello con il selettore **Voce**: tre timbri fra cui scegliere, con anteprima immediata al momento della scelta. Il timbro preferito resta memorizzato, come la possibilità di spegnere del tutto la conferma parlata.
+La conferma a voce usa la sintesi del sistema operativo. Il timbro è una
+*preferenza*, non un nome fisso: la voce concreta cambia fra Windows, macOS,
+Android e Chrome, quindi l'app cerca la voce italiana più vicina e la usa. La
+ricerca è per genere e lingua, con una lista di nomi noti in ordine di
+preferenza (`alice`, `elsa`, `paola`… per il timbro femminile) e, se nessuna voce
+italiana esiste, si ripiega su quella predefinita invece di restare muta. Le
+voci **naturali** (neurali), quando il sistema le espone, sono preferite da sole.
 
-Il timbro è una *preferenza*, non un nome fisso: la voce concreta cambia fra Windows, macOS, Android e Chrome, quindi l'app cerca la voce italiana più vicina e mostra accanto al timbro il nome che sta usando davvero. La ricerca è per genere e lingua, con una lista di nomi noti in ordine di preferenza (`alice`, `elsa`, `paola`… per il timbro femminile) e, se nessuna voce italiana esiste, si ripiega su quella predefinita invece di restare muta.
+I valori di velocità e tonalità restano **vicini a 1**: le voci di sistema sono
+sintetiche, e allontanarsi dalla loro intonazione naturale le rende artificiali
+invece che espressive. Il carattere di un timbro si distingue per il registro
+(più acuto o più grave), non per la velocità.
 
-I valori di velocità e tonalità di ogni timbro restano **vicini a 1**: le voci di sistema sono sintetiche, e allontanarsi dalla loro intonazione naturale le rende artificiali invece che espressive. Il carattere di un timbro si distingue per il registro (più acuto o più grave), non per la velocità.
-
-Dalla tendina **Voce di sistema** si può anche scegliere una voce precisa fra quelle che il sistema espone, non solo un timbro. Le voci **naturali** (neurali) sono contrassegnate e messe in cima, e i timbri le preferiscono da soli quando ci sono.
+Non c'è più un pannello per cambiare il timbro: le preferenze restano memorizzate
+nel dispositivo e il codice le legge con i valori predefiniti. La strada per una
+voce migliore è la **voce neurale cloud**, che non dipende da cosa ha installato
+il dispositivo.
 
 ### Voce neurale cloud (consigliata)
 
@@ -306,7 +348,7 @@ Le conferme vengono pronunciate **una frase per volta**, non in un'unica fila: l
 
 Il jingle breve, due note in salita, è sintetizzato al volo con la **Web Audio API**: non c'è nessun file audio da scaricare e la pagina resta usabile anche senza rete.
 
-> **Perché non suona da solo all'apertura** — i browser bloccano l'audio finché l'utente non tocca la pagina. Non è una scelta dell'app: è una protezione loro contro i suoni automatici. Il jingle parte quindi in un modo che aggira il problema senza violarlo: se il contesto audio è già attivo suona subito, altrimenti scatta **al primo tocco o tasto** — la prima occasione in cui il browser lo permette. Suona una volta sola per visita e si può disattivare con la casella **Suono all'avvio**, scelta che viene ricordata.
+> **Perché non suona da solo all'apertura** — i browser bloccano l'audio finché l'utente non tocca la pagina. Non è una scelta dell'app: è una protezione loro contro i suoni automatici. Il jingle parte quindi in un modo che aggira il problema senza violarlo: se il contesto audio è già attivo suona subito, altrimenti scatta **al primo tocco o tasto** — la prima occasione in cui il browser lo permette. Suona una volta sola per visita e la preferenza di disattivarlo viene ricordata.
 
 ## Test
 
@@ -315,7 +357,7 @@ pip install pytest
 python -m pytest test_cucina.py -q
 ```
 
-Seicentosessantadue test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), condivisione della spesa (oggi, un giorno, un intervallo, voci spuntate escluse, testo e scheda grafica col logo), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta. La copia dei dati ha i suoi: l'archivio contiene il database della casa collegata e da esso si ricostruisce un database vero, richiede l'accesso, e non contiene ne' il registro delle case ne' altre case. I percorsi dei dati hanno il loro: `MAGGIORDOMO_DATA` sposta registro, case e database storico insieme. Il calendario ha i suoi: griglia del mese con settimane intere, giorni di distanza e segno (come le pulizie), promemoria che scatta da N giorni prima e non per una cosa già passata, ritardo che resta finché non si chiude, categoria sconosciuta che ricade sulla predefinita, limiti del promemoria, ora tollerante, `done` che non cancella il resto, e la tabella `appointments` che arriva anche a un database vecchio.
+Settecentoventisette test coprono conversione, normalizzazione, fusione di unità compatibili nella lista della spesa, scala delle porzioni, riconoscimento degli allergeni (incluse le eccezioni e le forme di pasta del ricettario), filtro delle ricette, giacenza in dispensa nella lista, ripartizione della spesa per giorno (incluso il caso della dispensa che copre i giorni più vicini), condivisione della spesa (oggi, un giorno, un intervallo, voci spuntate escluse, testo e scheda grafica col logo), dettaglio di una ricetta con la sua preparazione, gestione della foto (validazione del nome file inclusa), ricette preferite (persistenza, cascata all'eliminazione della ricetta, salvataggi parziali), coerenza del ricettario di partenza, migrazione delle colonne `fav_prompted` e `meals_per_day` su un database esistente i comandi vocali (quantità a parole e in cifre, etti, frazioni, numeri composti, pulizia del nome, allergie dette a voce, ricerca, rumore di fondo ignorato, distinzione fra dispensa, spesa e magazzino con categoria e luogo dedotti, esecuzione reale degli intenti via `/api/voice`) la scelta dei pasti al giorno (numero valido, effetto sui pasti ammessi, pasti tolti che non pesano più sulla spesa) e le case separate (401 senza accesso, separazione reale fra due case su ricette e dispensa, ricettario di partenza nella casa nuova, password verificata e non salvata in chiaro, nomi duplicati rifiutati, slug a prova di traversal, sessione di una casa eliminata che riporta all'accesso). La voce neurale cloud ha i suoi: costruzione dell'SSML con escape del testo, limiti dei valori prosodici, rifiuto di una voce inventata prima della chiamata di rete, 503 quando non è configurata, 400 su richiesta sbagliata, e il controllo che la chiave non compaia mai nella risposta. La copia dei dati ha i suoi: l'archivio contiene il database della casa collegata e da esso si ricostruisce un database vero, richiede l'accesso, e non contiene ne' il registro delle case ne' altre case. I percorsi dei dati hanno il loro: `MAGGIORDOMO_DATA` sposta registro, case e database storico insieme. Il calendario ha i suoi: griglia del mese con settimane intere, giorni di distanza e segno (come le pulizie), promemoria che scatta da N giorni prima e non per una cosa già passata, ritardo che resta finché non si chiude, categoria sconosciuta che ricade sulla predefinita, limiti del promemoria, ora tollerante, `done` che non cancella il resto, e la tabella `appointments` che arriva anche a un database vecchio. I promemoria del sistema hanno i loro: `controllaPromemoria` eseguita con node avvisa una volta sola al giorno, e senza permesso non parte nessuna notifica. Il quiz ha i suoi: domanda nuova quando si indovina (e niente domanda nuova quando si sbaglia), la domanda indovinata che esce, il quiz che resta lungo uguale, e la copia che non si svuota se la rete manca. Le intestazioni di sicurezza hanno i loro: presenti su ogni risposta, la CSP non contiene `'unsafe-inline'` per gli script, e gli script inline portano un nonce diverso a ogni pagina.
 
 
 ## Interfaccia
@@ -499,6 +541,9 @@ Per una casa con più dispositivi in modo stabile conviene una **macchina sempre
 | POST | `/api/gym/aggiorna` | Riscarica subito i video del GYM, aspettando la rete |
 | GET | `/api/cinema` | Cinema: le locandine dei film del momento sulle piattaforme di streaming (serve la copia in cache, riprova in sottofondo; `manca` spiega se serve la chiave TMDB) |
 | POST | `/api/cinema/aggiorna` | Riscarica subito i film (pulsante «Aggiorna»), aspettando la rete |
+| POST | `/api/cinema/preferiti` | Segna o toglie un film dai preferiti `{film}`: salva la scheda intera, così il preferito resta anche quando il film esce dal giro del momento |
+| POST | `/api/cinema/nascondi` | Nasconde un film dalla sezione `{id}` |
+| POST | `/api/cinema/ripristina` | Rimette in circolazione i film nascosti |
 
 Oltre al pulsante "Scarica una copia dei dati", il server ne prende **una al giorno in automatico** (le ultime sette, in `copie/<casa>/`): una copia che si deve ricordare di chiedere è una copia che non c'è nel momento in cui serve. Il Profilo dice quante ce ne sono e quando è stata presa l'ultima.
 
@@ -516,7 +561,11 @@ allergens.py        # riconoscimento di allergeni e intolleranze
 seed.py             # ricettario di partenza
 magazzino.py        # magazzino: cose di casa che non si mangiano
 calendario.py       # calendario degli impegni e promemoria
-tv.py               # sezione TV: video della playlist e notizie
+tv.py               # sezione TV: video della playlist, notizie, quiz, GYM e giochi
+cinema.py           # sezione Cinema (scheda Film): locandine dei film del momento (TMDB) e preferiti
+dispensa.py         # suggerimenti dalla dispensa (cosa si può cucinare con quello che c'è)
+copie.py            # copie automatiche giornaliere dei dati
+comprensione.py     # comprensione facoltativa dei comandi con un modello
 schema.sql          # schema SQLite
 test_cucina.py      # test
 avvia.sh            # avvio dell'app (dipendenze, seed, server)

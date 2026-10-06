@@ -5183,6 +5183,53 @@ def test_un_asset_versionato_resta_in_memoria_a_lungo(client):
     assert "immutable" in r.headers.get("Cache-Control", "")
 
 
+def test_le_intestazioni_di_sicurezza_ci_sono_su_tutte_le_risposte(client, anon):
+    """Le intestazioni di sicurezza non stanno nel ramo della cache, che per gli
+    asset versionati esce presto: devono esserci **sempre**, anche su un 404 e su
+    un asset. Senza, una pagina sola basterebbe per un clickjacking."""
+    for r in (client.get("/"), client.get("/api/meta"),
+              client.get("/static/app.js?v=1"), anon.get("/pagina-che-non-esiste")):
+        assert r.headers.get("X-Content-Type-Options") == "nosniff"
+        assert r.headers.get("X-Frame-Options") == "SAMEORIGIN"
+        assert r.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        assert "microphone=(self)" in r.headers.get("Permissions-Policy", "")
+        assert "Content-Security-Policy" in r.headers
+
+
+def test_la_csp_consente_solo_il_necessario(client):
+    """La CSP deve permettere esattamente cio' che l'app usa e niente di piu':
+    gli iframe dei video, le locandine di TMDB, l'audio blob della voce. E non
+    deve contenere `'unsafe-inline'` per gli script, che vanificherebbe la
+    difesa contro uno script iniettato."""
+    csp = client.get("/").headers["Content-Security-Policy"]
+    assert "frame-src https://www.youtube-nocookie.com" in csp
+    assert "img-src 'self' data: https://image.tmdb.org" in csp
+    assert "media-src 'self' blob: data:" in csp
+    assert "object-src 'none'" in csp
+    assert "frame-ancestors 'self'" in csp
+    # il punto che conta: `script-src` non ha `'unsafe-inline'`
+    script_src = csp.split("script-src", 1)[1].split(";", 1)[0]
+    assert "'unsafe-inline'" not in script_src
+
+
+def test_gli_script_inline_portano_il_nonce_e_gli_altri_no(client):
+    """Gli unici script inline (tema e service worker) prendono un nonce per
+    pagina, e il nonce e' quello annunciato nella CSP: senza, il browser non li
+    esegue e il tema scuro non si applica prima del disegno."""
+    r = client.get("/")
+    html = r.get_data(as_text=True)
+    csp = r.headers["Content-Security-Policy"]
+    nonce = re.search(r"'nonce-([^']+)'", csp).group(1)
+    # ogni script inline ha il nonce, nessuno resta senza
+    assert html.count(f'<script nonce="{nonce}">') == 2
+    assert "<script>" not in html
+    # gli script con `src` sono coperti da `'self'` e non portano il nonce
+    assert f'<script src="/static/app.js' in html
+    # il nonce cambia a ogni pagina: se fosse fisso, un iniettore lo leggerebbe
+    altro = re.search(r"'nonce-([^']+)'", client.get("/").headers["Content-Security-Policy"]).group(1)
+    assert altro != nonce
+
+
 def test_il_service_worker_si_serve_dalla_radice_e_senza_accesso(anon):
     """Il service worker controlla solo il percorso da cui e' servito: da
     `/static/` non potrebbe mostrare la pagina `/` senza rete. E non chiede
@@ -8733,7 +8780,8 @@ String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN
 encodeURIComponent decodeURIComponent fetch setTimeout clearTimeout setInterval
 clearInterval confirm alert console requestAnimationFrame cancelAnimationFrame
 AudioContext webkitAudioContext MediaRecorder URL URLSearchParams FormData btoa
-atob structuredClone queueMicrotask crypto getComputedStyle MutationObserver""".split())
+atob structuredClone queueMicrotask crypto getComputedStyle MutationObserver
+Notification localStorage sessionStorage navigator document window""".split())
     return sorted(set(c for c in chiamate
                       if c not in parole and c not in defs
                       and c not in params and c not in browser))
@@ -9263,6 +9311,88 @@ def test_la_cache_del_quiz_non_si_svuota_col_guasto(client, monkeypatch):
     _niente_rete(monkeypatch)
     tv.aggiorna_quiz(db, forse=False)
     assert len(tv.quiz(db)) == 1
+
+
+def _quiz_in_cache(db, testi):
+    """Riempie la copia del quiz con domande finte (una per testo)."""
+    tv._scrivi(db, "quiz", [
+        {"testo": t, "risposte": [{"testo": "A", "giusta": True},
+                                  {"testo": "B", "giusta": False}],
+         "categoria": "Test", "difficolta": "medio"}
+        for t in testi])
+
+
+def test_indovinare_toglie_la_domanda_e_ne_mette_una_nuova(client, monkeypatch):
+    """`rispondi` e' quello che fa cambiare domanda a ogni risposta esatta: la
+    domanda indovinata esce (non si rivede) e al suo posto ne arriva una nuova,
+    cosi' il quiz resta lungo uguale. Si esegue la funzione vera, non si legge
+    il codice."""
+    db = app_module.get_db()
+    _quiz_in_cache(db, ["Prima?", "Seconda?"])
+    finta_tv(monkeypatch, {tv._url_quiz(1): _quiz_finto(domanda="Nuova?")})
+    esito = tv.rispondi(db, 0)
+    assert esito is not None
+    testi = [d["testo"] for d in tv.quiz(db)]
+    assert "Prima?" not in testi, "la domanda indovinata deve uscire"
+    assert "Seconda?" in testi, "le altre restano"
+    assert len(testi) == 2, "una esce, una entra: la lunghezza non cambia"
+    assert esito["risposta"]["testo"] == "Prima?"
+
+
+def test_se_la_rete_non_risponde_la_domanda_indovinata_esce_lo_stesso(client, monkeypatch):
+    """La domanda nuova e' un di piu': senza rete si toglie quella indovinata e
+    basta. Ripetere una domanda a cui si e' appena risposto e' peggio di averne
+    una in meno."""
+    db = app_module.get_db()
+    _quiz_in_cache(db, ["Prima?", "Seconda?"])
+    _niente_rete(monkeypatch)
+    esito = tv.rispondi(db, 0)
+    assert esito is not None
+    assert [d["testo"] for d in tv.quiz(db)] == ["Seconda?"]
+
+
+def test_rispondi_a_un_indice_inesistente_e_un_errore(client):
+    """Un indice fuori elenco non deve toccare la copia: e' la difesa contro un
+    client che manda la domanda sbagliata."""
+    db = app_module.get_db()
+    _quiz_in_cache(db, ["Prima?"])
+    assert tv.rispondi(db, 5) is None
+    assert tv.rispondi(db, "x") is None
+    assert len(tv.quiz(db)) == 1
+
+
+def test_l_endpoint_del_quiz_cambia_domanda_a_ogni_risposta_esatta(client, monkeypatch):
+    """`POST /api/quiz/rispondi` e' quello che il client chiama quando si
+    indovina: risponde col quiz aggiornato e la domanda indovinata, e richiede
+    l'accesso come tutte le altre rotte."""
+    db = app_module.get_db()
+    _quiz_in_cache(db, ["Prima?", "Seconda?"])
+    finta_tv(monkeypatch, {tv._url_quiz(1): _quiz_finto(domanda="Nuova?")})
+    r = client.post("/api/quiz/rispondi", json={"indice": 0})
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["risposta"]["testo"] == "Prima?"
+    assert "Prima?" not in [q["testo"] for q in d["quiz"]]
+    assert r.get_json()["aggiornato"]["quiz"]
+    # indice storto: 400, non un guasto
+    assert client.post("/api/quiz/rispondi", json={"indice": 99}).status_code == 400
+
+
+def test_l_endpoint_del_quiz_richiede_l_accesso(anon):
+    assert anon.post("/api/quiz/rispondi", json={"indice": 0}).status_code == 401
+
+
+def test_il_client_chiama_il_quiz_solo_quando_si_indovina(client):
+    """La domanda deve cambiare **solo** indovinando: rispondendo male il quiz
+    resta, altrimenti non si capirebbe mai la risposta giusta. Si guarda che il
+    client chiami la rotta solo nel ramo `giusta`."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "/api/quiz/rispondi" in js
+    assert "disegnaQuiz" in js
+    # il ritorno anticipato sul ramo sbagliato e' prima della chiamata
+    i_sbagliata = js.index("if (!giusta) return;")
+    i_chiamata = js.index("/api/quiz/rispondi")
+    assert i_sbagliata < i_chiamata, "rispondendo male non si cambia domanda"
 
 
 def test_la_sezione_tv_mostra_il_quiz(client):
@@ -10972,6 +11102,78 @@ def test_il_calendario_meta_ha_categorie_promemoria_e_mesi(client):
     assert m["category_colors"]["salute"].startswith("--")
     assert m["reminders"][0]["giorni"] == 0
     assert len(m["months"]) == 12
+
+
+def test_il_calendario_ha_il_pulsante_dei_promemoria(client):
+    """Il permesso per le notifiche si chiede da un tocco, quindi ci vuole un
+    pulsante. Se non c'e', i promemoria restano solo dentro l'app — che e' il
+    difetto che questa funzione esiste per togliere."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="cal-notifiche"' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    for nome in ("controllaPromemoria", "avviaPromemoria", "mostraPulsanteNotifiche"):
+        assert f"function {nome}" in js, f"manca {nome}"
+
+
+def test_i_promemoria_avvisano_una_volta_sola_al_giorno():
+    """`controllaPromemoria` eseguita davvero con node: con un permesso concesso
+    e un impegno che avvisa, parte **una** notifica; richiamata subito dopo, non
+    ne parte una seconda (la memoria di oggi sta in `localStorage`). Senza la
+    memoria, il controllo periodico ripeterebbe lo stesso avviso ogni mezz'ora."""
+    js = open(os.path.join(BASE_APP, "static", "app.js"), encoding="utf-8").read()
+    corpo = (_estrai_funzione_js(js, "notificheAttive")
+             + _estrai_funzione_js(js, "avvisiGia_")
+             + _estrai_funzione_js(js, "segnaAvvisato")
+             + _estrai_funzione_js(js, "controllaPromemoria"))
+    prova = """
+const store = {};
+const localStorage = {
+  getItem: (k) => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = v; },
+};
+const inviate = [];
+class Notification { constructor(t, o) { inviate.push([t, o.body]); } }
+Notification.permission = 'granted';
+function iso() { return '2026-10-05'; }
+const api = async () => ({ prossimi: [
+  { id: 7, title: 'Dentista', when_date: '2026-10-05', time: '09:00', quando_detto: 'oggi' }] });
+""" + corpo + """
+(async () => {
+  await controllaPromemoria();
+  await controllaPromemoria();   // seconda volta: non deve ripetere
+  console.log(JSON.stringify({ inviate, chiavi: JSON.parse(store.promemoriaAvvisati).chiavi }));
+})();
+"""
+    d = _esegui_node(prova)
+    assert len(d["inviate"]) == 1, d
+    assert d["inviate"][0][0] == "📆 Dentista"
+    assert d["chiavi"] == ["7|2026-10-05"], d
+
+
+def test_senza_permesso_non_parte_nessuna_notifica():
+    """Se il permesso non c'e' (o e' stato negato), il controllo non fa nulla:
+    chiedere il permesso senza un gesto lo farebbe bloccare dal browser, e una
+    notifica negata non si recupera. Il pulsante e' l'unico modo per concederlo."""
+    js = open(os.path.join(BASE_APP, "static", "app.js"), encoding="utf-8").read()
+    corpo = (_estrai_funzione_js(js, "notificheAttive")
+             + _estrai_funzione_js(js, "controllaPromemoria"))
+    prova = """
+const inviate = [];
+class Notification { constructor() { inviate.push(1); } }
+Notification.permission = 'default';
+const localStorage = { getItem: () => null, setItem: () => {} };
+function iso() { return '2026-10-05'; }
+let chiamateApi = 0;
+const api = async () => { chiamateApi++; return { prossimi: [{ id: 1, title: 'X', when_date: '2026-10-05' }] }; };
+""" + corpo + """
+(async () => {
+  await controllaPromemoria();
+  console.log(JSON.stringify({ inviate, chiamateApi }));
+})();
+"""
+    d = _esegui_node(prova)
+    assert d["inviate"] == [], d
+    assert d["chiamateApi"] == 0, "senza permesso non si chiama nemmeno il server"
 
 
 def test_il_database_vecchio_riceve_la_tabella_del_calendario(client):
