@@ -941,7 +941,8 @@ def test_le_illustrazioni_della_home_sono_acquerello(client):
     for n in range(1, 9):
         blocco = html[html.index(f'id="doodle-aq-{n}"'):]
         blocco = blocco[:blocco.index("</symbol>")]
-        forme = blocco.count("<path") + blocco.count("<circle")
+        forme = sum(blocco.count(t) for t in
+                    ("<path", "<circle", "<ellipse", "<rect", "<line", "<polygon"))
         assert forme >= 3, f"il collage {n} ha solo {forme} forme: e' una forma sola"
     # in home le macchie sono `<svg>` a se' (non `<use>` di primo livello):
     # solo cosi' il posizionamento assoluto ha effetto
