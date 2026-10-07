@@ -140,6 +140,19 @@ def init_registro(percorso=None):
                 chiave TEXT PRIMARY KEY,
                 valore TEXT NOT NULL
             );
+            -- Il **segnaposto** della cassaforte: per ogni casa dice se e' stata
+            -- creata, come si chiama il promemoria e dopo quanto si richiude da
+            -- sola. I dati cifrati **non** stanno qui: stanno nel database della
+            -- casa (`cassaforte`), insieme a quello che proteggono, cosi' una
+            -- copia della casa si porta dietro anche la cassaforte. Questo
+            -- registro serve solo a leggere lo stato **prima** di aprire la
+            -- cassaforte, senza toccare il database della casa.
+            CREATE TABLE IF NOT EXISTS cassaforte_registro (
+                slug       TEXT PRIMARY KEY,
+                promemoria TEXT NOT NULL DEFAULT '',
+                chiusura_minuti INTEGER NOT NULL DEFAULT 15,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
         db.commit()
 
@@ -155,6 +168,46 @@ def secret_key(percorso=None):
             db.commit()
             return valore
         return riga["valore"]
+
+
+def cassaforte_meta(slug, percorso=None):
+    """Il segnaposto della cassaforte: promemoria e chiusura automatica.
+
+    Non contiene segreti, per questo sta nel registro e non nel database della
+    casa: serve a leggere lo **stato** della cassaforte (esiste? come si chiama
+    il promemoria? dopo quanto si richiude?) senza aprire il database della casa.
+    Restituisce None se la cassaforte di quella casa non e' mai stata creata.
+    """
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        riga = db.execute(
+            "SELECT promemoria, chiusura_minuti FROM cassaforte_registro WHERE slug = ?",
+            (slug,)).fetchone()
+    if riga is None:
+        return None
+    return {"promemoria": riga["promemoria"], "chiusura_minuti": riga["chiusura_minuti"]}
+
+
+def cassaforte_registra(slug, promemoria="", chiusura_minuti=15, percorso=None):
+    """Crea o aggiorna il segnaposto della cassaforte per la casa."""
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        db.execute(
+            """INSERT INTO cassaforte_registro (slug, promemoria, chiusura_minuti)
+               VALUES (?, ?, ?)
+               ON CONFLICT(slug) DO UPDATE SET
+                 promemoria = excluded.promemoria,
+                 chiusura_minuti = excluded.chiusura_minuti""",
+            (slug, promemoria or "", max(1, int(chiusura_minuti or 15))))
+        db.commit()
+
+
+def cassaforte_dimentica(slug, percorso=None):
+    """Toglie il segnaposto. Si usa quando la casa viene eliminata."""
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        db.execute("DELETE FROM cassaforte_registro WHERE slug = ?", (slug,))
+        db.commit()
 
 
 def slugify(nome):
@@ -404,4 +457,5 @@ def elimina(slug, percorso=None):
     """
     with closing(_connect_registro(percorso)) as db:
         db.execute("DELETE FROM houses WHERE slug = ?", (slug,))
+        db.execute("DELETE FROM cassaforte_registro WHERE slug = ?", (slug,))
         db.commit()

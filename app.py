@@ -3,6 +3,7 @@ import io
 import base64
 import binascii
 import hashlib
+import json
 import logging
 import secrets
 import re
@@ -18,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 
 import allergens
 import calendario
+import cassaforte
 import cinema
 import comprensione
 import copie
@@ -3829,6 +3831,298 @@ def faq_modify(fid):
     return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
 
 
+# ----------------------------------------------------------------- cassaforte
+# I dati riservati (password, codici, PIN), cifrati con una password **della
+# cassaforte**. La password non viaggia mai nel database ne' in un log: arriva
+# nella richiesta, apre la scatola in memoria e resta li' finche' la cassaforte
+# e' aperta. La chiave aperta vive nella sessione firmata (server-side), non nel
+# client.
+#
+# La cassaforte non si apre da sola con l'accesso all'app: **entrare nella casa
+# non basta a leggere i segreti**. E' il senso dell'avere una password diversa.
+
+
+def _cassaforte_stato(db):
+    """Lo stato della cassaforte: esiste? aperta? quando si richiude?"""
+    esiste = one(db.execute("SELECT 1 FROM cassaforte WHERE id = 1")) is not None
+    registro = houses.cassaforte_meta(casa_attiva())
+    aperta = bool(session.get("cassaforte_password")) and esiste
+    resta = None
+    if aperta:
+        resta = _cassaforte_secondi_rimasti()
+    return {
+        "esiste": esiste,
+        "aperta": aperta,
+        "promemoria": registro["promemoria"] if registro else "",
+        "chiusura_minuti": registro["chiusura_minuti"] if registro else 15,
+        "secondi_rimasti": resta,
+    }
+
+
+def _cassaforte_scade():
+    """Quando la cassaforte si e' aperta, per richiuderla da sola.
+
+    Si ricorda **quando** e' stata aperta e per quanto vale l'apertura: senza
+    scadenza la cassaforte resterebbe aperta per sempre, e chi passa davanti a un
+    dispositivo gia' sbloccato leggerebbe tutto. Il valore sta in sessione, cosi'
+    la chiusura automatica e' del server e non dipende dal browser.
+    """
+    return session.get("cassaforte_scade")
+
+
+def _cassaforte_secondi_rimasti():
+    scade = _cassaforte_scade()
+    if not scade:
+        return 0
+    return max(0, int(scade - time.time()))
+
+
+def _cassaforte_chiusa_se_scaduta():
+    """Chiude la cassaforte se il tempo e' passato. Restituisce True se chiusa."""
+    if session.get("cassaforte_password") and _cassaforte_secondi_rimasti() <= 0:
+        _cassaforte_dimentica()
+        return True
+    return False
+
+
+def _cassaforte_dimentica():
+    session.pop("cassaforte_password", None)
+    session.pop("cassaforte_scade", None)
+
+
+def _cassaforte_apri(password):
+    """Tiene la password in sessione per il tempo scelto, o la dimentica.
+
+    La password **non** viene salvata in chiaro nel database: vive solo nella
+    sessione firmata del server, e si butta via da sola. E' l'unica cosa che puo'
+    decifrare la scatola, quindi non deve restare.
+    """
+    minuti = (houses.cassaforte_meta(casa_attiva()) or {}).get("chiusura_minuti", 15)
+    session["cassaforte_password"] = password
+    session["cassaforte_scade"] = time.time() + max(1, minuti) * 60
+
+
+def _cassaforte_voci(db):
+    """Le voci in chiaro, se la cassaforte e' aperta. Altrimenti solleva."""
+    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
+    if riga is None:
+        raise cassaforte.CassaforteErrore("La cassaforte non e' stata creata")
+    password = session.get("cassaforte_password")
+    if not password:
+        raise cassaforte.CassaforteErrore("La cassaforte e' chiusa")
+    chiaro = cassaforte.decifra(riga["dati"], password)
+    try:
+        return json.loads(chiaro.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise cassaforte.CassaforteErrore("Contenuto della cassaforte non leggibile")
+
+
+def _cassaforte_salva(db, voci):
+    """Riscrive la scatola con le voci date, cifrandole con la password aperta."""
+    password = session.get("cassaforte_password")
+    if not password:
+        raise cassaforte.CassaforteErrore("La cassaforte e' chiusa")
+    blob = cassaforte.cifra(json.dumps(voci, ensure_ascii=False).encode("utf-8"),
+                            password)
+    db.execute("""INSERT INTO cassaforte (id, dati, updated_at)
+                  VALUES (1, ?, datetime('now'))
+                  ON CONFLICT(id) DO UPDATE SET
+                    dati = excluded.dati, updated_at = excluded.updated_at""", (blob,))
+    db.commit()
+
+
+def _cassaforte_voce_o_404(voci, vid):
+    for v in voci:
+        if v.get("id") == vid:
+            return v
+    return None
+
+
+@app.route("/api/cassaforte/stato")
+def cassaforte_stato():
+    """Aperta o chiusa? Serve al client per sapere se chiedere la password."""
+    _cassaforte_chiusa_se_scaduta()
+    return jsonify(_cassaforte_stato(get_db()))
+
+
+@app.route("/api/cassaforte/crea", methods=["POST"])
+def cassaforte_crea():
+    """Crea la cassaforte con una password (che puo' essere quella dell'app).
+
+    Da qui in poi i segreti stanno solo dentro la scatola cifrata. La creazione
+    la fa chi ha gia' accesso alla casa: non serve una conferma in piu', perche'
+    senza cassaforte non c'e' niente da proteggere.
+    """
+    db = get_db()
+    if one(db.execute("SELECT 1 FROM cassaforte WHERE id = 1")):
+        return bad_request("La cassaforte esiste già")
+    data = request.get_json(force=True) or {}
+    password = (data.get("password") or "").strip()
+    if len(password) < 4:
+        return bad_request("La password della cassaforte deve avere almeno 4 caratteri")
+    # L'ordine conta: prima si registra la scadenza (cosi' `_cassaforte_apri` la
+    # trova), poi si apre — `_cassaforte_salva` cifra con la password aperta —
+    # e infine si scrive la scatola vuota.
+    houses.cassaforte_registra(
+        casa_attiva(),
+        promemoria=(data.get("promemoria") or "").strip(),
+        chiusura_minuti=int(data.get("chiusura_minuti") or 15))
+    _cassaforte_apri(password)
+    _cassaforte_salva(db, [])
+    return jsonify({"ok": True, **_cassaforte_stato(db)}), 201
+
+
+@app.route("/api/cassaforte/apri", methods=["POST"])
+def cassaforte_apri():
+    """La password della cassaforte. Se non torna, la cassaforte resta chiusa."""
+    db = get_db()
+    if session.get("cassaforte_password"):
+        return jsonify({"ok": True, **_cassaforte_stato(db)})
+    data = request.get_json(force=True) or {}
+    password = data.get("password") or ""
+    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
+    if riga is None:
+        return bad_request("La cassaforte non è stata creata", 404)
+    if not cassaforte.password_giusta(riga["dati"], password):
+        return bad_request("Password della cassaforte non corretta", 401)
+    _cassaforte_apri(password)
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
+@app.route("/api/cassaforte/chiudi", methods=["POST"])
+def cassaforte_chiudi():
+    _cassaforte_dimentica()
+    return jsonify({"ok": True, **_cassaforte_stato(get_db())})
+
+
+@app.route("/api/cassaforte/password", methods=["PUT"])
+def cassaforte_cambia_password():
+    """Cambia la password della cassaforte, riscrivendo la scatola con quella nuova.
+
+    Serve la vecchia: senza, chi trova un dispositivo sbloccato cambierebbe la
+    password e chiuderebbe fuori gli altri. La nuova puo' essere diversa da
+    quella dell'app.
+    """
+    db = get_db()
+    _cassaforte_chiusa_se_scaduta()
+    data = request.get_json(force=True) or {}
+    vecchia = data.get("attuale") or ""
+    nuova = (data.get("nuova") or "").strip()
+    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
+    if riga is None:
+        return bad_request("La cassaforte non è stata creata", 404)
+    if not cassaforte.password_giusta(riga["dati"], vecchia):
+        return bad_request("La password attuale non è corretta", 401)
+    if len(nuova) < 4:
+        return bad_request("La nuova password deve avere almeno 4 caratteri")
+    # si decifra con la vecchia e si ricifra con la nuova: e' l'unico modo di
+    # ruotare la password senza perdere le voci
+    voci = _cassaforte_voci_con(vecchia, riga["dati"])
+    blob = cassaforte.cifra(json.dumps(voci, ensure_ascii=False).encode("utf-8"), nuova)
+    db.execute("UPDATE cassaforte SET dati = ?, updated_at = datetime('now') WHERE id = 1",
+               (blob,))
+    db.commit()
+    _cassaforte_apri(nuova)
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
+def _cassaforte_voci_con(password, blob):
+    return json.loads(cassaforte.decifra(blob, password).decode("utf-8"))
+
+
+@app.route("/api/cassaforte/voci", methods=["GET"])
+def cassaforte_voci():
+    """Le voci in chiaro. Solo a cassaforte aperta: chiusa, un 401 e basta."""
+    db = get_db()
+    if _cassaforte_chiusa_se_scaduta():
+        return bad_request("La cassaforte è chiusa", 401)
+    try:
+        voci = _cassaforte_voci(db)
+    except cassaforte.CassaforteErrore as e:
+        return bad_request(str(e), 401)
+    return jsonify({"voci": voci, "totale": len(voci), **_cassaforte_stato(db)})
+
+
+def _cassaforte_campi(data, esistente=None):
+    campi = {}
+    if esistente is None or "question" in data:
+        domanda = (data.get("question") or "").strip()
+        if not domanda:
+            return None, bad_request("Il titolo è obbligatorio")
+        campi["question"] = domanda
+    if esistente is None or "answer" in data:
+        campi["answer"] = (data.get("answer") or "").strip()
+    for chiave in ("category", "notes"):
+        if chiave in data:
+            campi[chiave] = data.get(chiave)
+    if "pinned" in data:
+        campi["pinned"] = bool(data["pinned"])
+    return campi, None
+
+
+@app.route("/api/cassaforte/voci", methods=["POST"])
+def cassaforte_voce_nuova():
+    db = get_db()
+    if _cassaforte_chiusa_se_scaduta():
+        return bad_request("La cassaforte è chiusa", 401)
+    data = request.get_json(force=True) or {}
+    campi, errore = _cassaforte_campi(data)
+    if errore:
+        return errore
+    try:
+        voci = _cassaforte_voci(db)
+    except cassaforte.CassaforteErrore as e:
+        return bad_request(str(e), 401)
+    nuovo_id = max([v.get("id", 0) for v in voci] + [0]) + 1
+    voce = {
+        "id": nuovo_id,
+        "question": campi["question"],
+        "answer": campi.get("answer", ""),
+        "category": campi.get("category") or faq.CATEGORIA_DEFAULT,
+        "notes": campi.get("notes") or "",
+        "pinned": bool(campi.get("pinned", False)),
+    }
+    voci.append(voce)
+    _cassaforte_salva(db, voci)
+    return jsonify(voce), 201
+
+
+@app.route("/api/cassaforte/voci/<int:vid>", methods=["PUT", "DELETE"])
+def cassaforte_voce_modifica(vid):
+    db = get_db()
+    if _cassaforte_chiusa_se_scaduta():
+        return bad_request("La cassaforte è chiusa", 401)
+    try:
+        voci = _cassaforte_voci(db)
+    except cassaforte.CassaforteErrore as e:
+        return bad_request(str(e), 401)
+    voce = _cassaforte_voce_o_404(voci, vid)
+    if voce is None:
+        return bad_request("Voce non trovata", 404)
+    if request.method == "DELETE":
+        voci = [v for v in voci if v.get("id") != vid]
+        _cassaforte_salva(db, voci)
+        return jsonify({"ok": True})
+    data = request.get_json(force=True) or {}
+    campi, errore = _cassaforte_campi(data, esistente=voce)
+    if errore:
+        return errore
+    voce.update(campi)
+    _cassaforte_salva(db, voci)
+    return jsonify(voce)
+
+
+@app.route("/api/cassaforte/frase", methods=["PUT"])
+def cassaforte_frase():
+    """Il promemoria e la chiusura automatica: non sono segreti, ma comodi."""
+    data = request.get_json(force=True) or {}
+    houses.cassaforte_registra(
+        casa_attiva(),
+        promemoria=(data.get("promemoria") or "").strip(),
+        chiusura_minuti=int(data.get("chiusura_minuti") or 15))
+    return jsonify(_cassaforte_stato(get_db()))
+
+
 @app.route("/api/houses/password", methods=["PUT"])
 def api_house_password():
     """Cambia la password della casa collegata."""
@@ -3852,7 +4146,7 @@ def _database_ha_dati(percorso):
     """
     tabelle = ("recipes", "pantry", "shopping_items", "faq", "storage",
                "projects", "meal_plan", "favorites", "chore_log", "ingredients",
-               "profile", "cinema_preferiti", "cinema_nascosti")
+               "profile", "cinema_preferiti", "cinema_nascosti", "cassaforte")
     try:
         with closing(sqlite3.connect(f"file:{percorso}?mode=ro", uri=True)) as db:
             for tabella in tabelle:

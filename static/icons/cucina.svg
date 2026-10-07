@@ -1,23 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cucina">
-<!-- La pentola sul fuoco, col vapore che sale: e' l'icona della Cucina.
+<!-- Il cappello da chef (la toque), col suo bordo: e' l'icona della Cucina.
      Disegno piatto su fondo **trasparente**, come le emoji delle altre schede
-     (Appunti, FAQ, TV, GYM, Igiene): un simbolo, non una tessera. Prima aveva
-     un riquadro di fondo colorato, e in mezzo alle emoji sembrava il logo
-     dell'app incollato sulla scheda: quella era l'incoerenza. Senza fondo,
-     l'icona si posa come le altre. -->
-<!-- il vapore: tre fili che salgono dal coperchio, in azzurro tenue -->
-<g transform="translate(0,3)">
-<g fill="none" stroke="#8fb4c4" stroke-width="2.6" stroke-linecap="round">
-  <path d="M24 17c-2.5-3 2.5-5 0-8"/>
-  <path d="M32 15c-2.5-3 2.5-5 0-8"/>
-  <path d="M40 17c-2.5-3 2.5-5 0-8"/>
+     (Appunti, FAQ, TV, GYM, Igiene): un simbolo, non una tessera. La corona e'
+     chiara, il bordo e' ambra: il bordo da' il contorno che serve perche' il
+     cappello si veda anche sul fondo chiaro, senza bisogno di un riquadro. -->
+<!-- la corona: tre bozze che, dello stesso colore e senza contorno, si fondono
+     in un'unica sagoma morbida -->
+<g fill="#f2ecdc">
+  <circle cx="20" cy="27" r="10"/>
+  <circle cx="32" cy="22" r="12"/>
+  <circle cx="44" cy="27" r="10"/>
+  <rect x="18" y="30" width="28" height="13" rx="3"/>
 </g>
-<!-- i manici -->
-<rect x="9" y="31" width="8" height="5" rx="2.5" fill="#8f2f08"/>
-<rect x="47" y="31" width="8" height="5" rx="2.5" fill="#8f2f08"/>
-<!-- la pentola: si restringe verso il fondo, come una pentola vera -->
-<path d="M16 29h32l-2.6 20a4.5 4.5 0 0 1-4.4 4H23a4.5 4.5 0 0 1-4.4-4z" fill="#c1440e"/>
-<!-- il bordo, piu' scuro, chiude la pentola in alto -->
-<rect x="14" y="26" width="36" height="6" rx="3" fill="#8f2f08"/>
-</g>
+<!-- il bordo, raccolto: e' la fascia della toque -->
+<rect x="16" y="40" width="32" height="12" rx="4" fill="#d9b877"/>
+<rect x="16" y="40" width="32" height="4" rx="2" fill="#c99f52"/>
 </svg>

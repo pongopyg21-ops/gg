@@ -33,6 +33,8 @@ import allergens  # noqa: E402
 
 import calendario  # noqa: E402
 
+import cassaforte  # noqa: E402
+
 import cinema  # noqa: E402
 
 import comprensione  # noqa: E402
@@ -109,6 +111,7 @@ __all__ = [
     "app_module",
     "base64",
     "calendario",
+    "cassaforte",
     "cinema",
     "closing",
     "comprensione",

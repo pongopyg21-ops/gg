@@ -800,17 +800,17 @@ Conseguenze pratiche per chi mette mano al codice:
   home, nella barra, nel menu di benvenuto e nel riepilogo «Oggi», così la
   sezione si riconosce a colpo d'occhio ovunque (vedi
   `test_l_icona_dell_igiene_sono_le_bollicine`).
-  La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, una pentola
-  sul fuoco col vapore): prima usava il logo dell'app, quindi non si
-  distingueva. Il disegno era un cappello da chef ed è stato cambiato su
-  richiesta dell'utente. **Il disegno è piatto e su fondo trasparente**, come le
-  emoji delle altre schede (Appunti, FAQ, TV, GYM, Igiene): la prima versione
-  aveva un riquadro di fondo colorato a tutta tela, e in mezzo ai simboli piatti
-  sembrava il logo dell'app incollato sulla scheda — quella era l'incoerenza. Il
-  colore della pentola (`#c1440e`) distingue il nuovo dal vecchio, così un
-  ritorno al cappello non passa inosservato (`test_la_cucina_ha_la_sua_icona`,
-  che verifica anche l'assenza del riquadro di fondo). Le altre schede tengono la
-  loro emoji.
+  La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`): ora è il
+  **cappello da chef** (la toque, corona chiara e bordo ambra). Prima era il
+  logo dell'app, poi una pentola sul fuoco col vapore, e il cappello è stato
+  rimesso su richiesta dell'utente. **Il disegno è piatto e su fondo
+  trasparente**, come le emoji delle altre schede (Appunti, FAQ, TV, GYM,
+  Igiene): la prima versione aveva un riquadro di fondo colorato a tutta tela, e
+  in mezzo ai simboli piatti sembrava il logo dell'app incollato sulla scheda —
+  quella era l'incoerenza. Il bordo del cappello (`#d9b877`) distingue il nuovo
+  dal vecchio, così un ritorno alla pentola non passa inosservato
+  (`test_la_cucina_ha_la_sua_icona`, che verifica anche l'assenza del riquadro di
+  fondo). Le altre schede tengono la loro emoji.
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e «Apri →» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
@@ -1229,6 +1229,42 @@ Conseguenze pratiche per chi mette mano al codice:
   `tel:`/`mailto:` — solo se sono quello e non se lo contengono: un testo lungo
   con un numero dentro resta testo. La ricerca è lato client e guarda anche il
   nome della categoria, così non serve indovinare dove sta una voce.
+- **La cassaforte** (`cassaforte.py`) sono i dati riservati — password, codici,
+  PIN — cifrati con una **password della cassaforte**, diversa da quella della
+  casa. La sezione FAQ ha due viste, **Rubrica** (in chiaro) e **Cassaforte**
+  (cifrata): sono due livelli di riservatezza e separarli è tutto il punto. La
+  vista vive in memoria (`cassVista`), come le schede dell'Igiene.
+  Tre scelte che contano:
+  - **Il testo in chiaro non lascia mai il server a cassaforte chiusa.** Non è
+    un nascondiglio nel client: `/api/cassaforte/voci` risponde **401** finché
+    non si è aperta col PIN, quindi un segreto che il browser non riceve non può
+    essere letto dagli strumenti di sviluppo. Dire «cifrato» e poi mandare il
+    valore al client sarebbe la peggiore delle due cose. Un test guarda il
+    **file `.db` grezzo** (`test_cassaforte_il_testo_non_finisce_in_chiaro_nel_database`),
+    non l'API: è l'unica prova che il requisito è rispettato.
+  - **La password della cassaforte non si salva mai.** Vive solo in sessione
+    (firmata dal segreto di `houses.db`), con una **scadenza** (`chiusura_minuti`,
+    default 15): entrare nell'app **non** apre la cassaforte, e dopo il tempo
+    scelto si richiude da sola. Se la si dimentica i dati **non si recuperano** —
+    è il prezzo di cifrare davvero, e l'interfaccia lo dice prima della creazione.
+  - **Cifratura autenticata, scritta a mano sulla stdlib.** `cifra`/`decifra`
+    usano PBKDF2-HMAC-SHA256 (200000 iterazioni, sale nuovo a ogni scrittura) per
+    la chiave, un flusso HMAC-SHA256 come keystream e un **HMAC di firma**
+    (Encrypt-then-MAC): una password sbagliata o un byte manomesso non producono
+    un errore oscuro ma `CassaforteErrore`. La firma copre **anche** iterazioni e
+    sale, così abbassarle per indovinare la password invalida il file
+    (`test_cassaforte_una_firma_non_si_riusa_su_altre_iterazioni`). Niente
+    `cryptography`/`pyca`: una dipendenza in più con binari nativi per un
+    requisito di casa non vale il costo.
+  - **Coerente con le case separate.** La chiave della cassaforte sta **solo in
+    sessione**, e i dati in una tabella (`cassaforte`, riga id=1 con il blob) del
+    database della casa. Eliminando una casa, `houses.elimina()` ne cancella
+    anche la riga; il blob è in chiaro-solo-cifrato, quindi la tabella `faq` non
+    c'entra. La tabella è nell'elenco delle tabelle di `/api/backup` (`_ha_dati`).
+  - **Il campo `secret` delle FAQ non è la cassaforte.** Nasconde il valore a
+    schermo, ma il valore viaggia lo stesso in `/api/faq`: serve a non tenere una
+    password sul monitor, non a proteggerla. Chi vuole protezione usa la
+    cassaforte, e l'AGENTS lo dice chiaro perché è la confusione più facile.
 - Nelle sezioni la barra mostra solo le schede dell'area aperta (`data-section`
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione

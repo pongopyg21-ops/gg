@@ -157,6 +157,24 @@ CREATE TABLE IF NOT EXISTS faq (
 
 CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
 
+-- ------------------------------------------------------------- cassaforte
+-- I dati **riservati** della casa (password, codici, PIN), cifrati con una
+-- password della cassaforte. Non stanno nella tabella `faq` perche' sono un'altra
+-- cosa: le FAQ sono una rubrica in chiaro, e mescolare i due livelli di
+-- riservatezza e' il modo piu' facile di sbagliare. Qui la riservatezza e' vera:
+-- il testo delle voci non e' mai in chiaro nel file, e non esce dall'API finche'
+-- la cassaforte non e' aperta.
+--
+-- La tabella contiene la **scatola**: un solo `dati` cifrato con tutte le voci
+-- dentro, e i parametri che servono ad aprirla. Non una riga per voce: cifrare
+-- ogni voce separatamente moltiplicherebbe i PBKDF2 (uno per voce), e la cassaforte
+-- e' piccola e si legge tutta insieme.
+CREATE TABLE IF NOT EXISTS cassaforte (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    dati       TEXT NOT NULL,                 -- il blob cifrato (JSON)
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ---------------------------------------------------------------- progetti
 -- Lavori in corso e idee, tenuti fuori dalla cucina. `priority` e' una scelta
 -- dell'utente da 1 a 5; le date sono quelle del piano di lavoro, non un

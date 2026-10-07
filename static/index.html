@@ -586,14 +586,46 @@
        Non e' un manuale ma un promemoria: la ricerca sta in cima perche' si apre
        questa pagina per trovare una cosa precisa, non per leggerla tutta. -->
   <section id="tab-faq" class="tab">
-    <div class="toolbar">
-      <input id="faq-search" type="search" placeholder="Cerca: wifi, idraulico, cancello...">
-      <select id="faq-filter"></select>
-      <span class="spacer"></span>
-      <button id="faq-new" class="primary">+ Nuova voce</button>
+    <!-- Due viste: la **rubrica** in chiaro (Wi-Fi, idraulico, indirizzi) e la
+         **cassaforte**, per i dati che devono restare riservati. Sono due cose
+         diverse — l'una si consulta, l'altra si protegge — e separarle e' il
+         motivo per cui la cassaforte esiste: mescolarle abbasserebbe la guardia
+         su cio' che va protetto. -->
+    <div class="faq-viste" role="tablist" aria-label="Vista delle informazioni">
+      <button id="faq-vista-rubrica" class="faq-vista-btn attivo" type="button"
+              role="tab" aria-selected="true">📌 Rubrica</button>
+      <button id="faq-vista-cassaforte" class="faq-vista-btn" type="button"
+              role="tab" aria-selected="false">🔒 Cassaforte</button>
     </div>
-    <div id="faq-count" class="faq-count"></div>
-    <div id="faq-list"></div>
+
+    <div id="faq-pannello-rubrica">
+      <div class="toolbar">
+        <input id="faq-search" type="search" placeholder="Cerca: wifi, idraulico, cancello...">
+        <select id="faq-filter"></select>
+        <span class="spacer"></span>
+        <button id="faq-new" class="primary">+ Nuova voce</button>
+      </div>
+      <div id="faq-count" class="faq-count"></div>
+      <div id="faq-list"></div>
+    </div>
+
+    <!-- La cassaforte. Prima di essere creata invita a crearla; chiusa chiede la
+         password; aperta mostra le voci. Il testo dei segreti **non** viene mai
+         mandato al browser se la cassaforte e' chiusa: e' il server a deciderlo,
+         non un nascondiglio nel client. -->
+    <div id="faq-pannello-cassaforte" hidden>
+      <div id="cass-stato" class="cass-stato"></div>
+      <div id="cass-blocco" class="cass-blocco"></div>
+      <div id="cass-contenuto" hidden>
+        <div class="toolbar">
+          <input id="cass-search" type="search" placeholder="Cerca nella cassaforte...">
+          <span class="spacer"></span>
+          <button id="cass-chiudi" class="ghost" type="button">🔒 Chiudi</button>
+          <button id="cass-new" class="primary">+ Nuova voce</button>
+        </div>
+        <div id="cass-list"></div>
+      </div>
+    </div>
   </section>
 
   <!-- TV: un'area, cinque schede.

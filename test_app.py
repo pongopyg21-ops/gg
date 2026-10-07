@@ -699,7 +699,7 @@ def test_l_intestazione_della_home_e_centrata(client):
     assert "text-align: center" in blocco
 
 def test_la_cucina_ha_la_sua_icona(client):
-    """La scheda Cucina ha un'icona sua (la pentola sul fuoco), non il logo
+    """La scheda Cucina ha un'icona sua (il cappello da chef), non il logo
     dell'app: prima erano lo stesso disegno, quindi la scheda non si
     distingueva. L'icona e' un file vero, e la sezione la usa. Il disegno e'
     **piatto e su fondo trasparente**, come le emoji delle altre schede: senza,
@@ -710,10 +710,14 @@ def test_la_cucina_ha_la_sua_icona(client):
     percorso = os.path.join(radice, "static", "icons", "cucina.svg")
     assert os.path.isfile(percorso), "l'icona della Cucina deve esistere su disco"
     disegno = open(percorso, encoding="utf-8").read()
-    # la pentola e' il disegno nuovo: il cappello aveva il fondo #f7e58a e il
-    # contorno ambra, che qui non ci sono piu'
-    assert "#c1440e" in disegno, "la Cucina mostra la pentola, non il cappello"
-    assert "#f7e58a" not in disegno, "il vecchio cappello non deve restare"
+    # il cappello da chef e' il disegno nuovo (la toque col suo bordo ambra):
+    # la pentola di prima era rossa (#c1440e), che qui non c'e' piu'
+    assert "#d9b877" in disegno or "#c99f52" in disegno, \
+        "la Cucina mostra il cappello da chef (il bordo ambra), non la pentola"
+    assert "#c1440e" not in disegno, "la vecchia pentola non deve restare"
+    # la corona e' chiara e senza contorno, cosi' le tre bozze si fondono in una
+    # sola sagoma: un cappello coi bordi staccati sembrerebbe un trifoglio
+    assert "#f2ecdc" in disegno, "il cappello ha la corona chiara"
     # il fondo trasparente e' quello che la rende coerente con le emoji: un
     # `<rect>` di fondo a tutta tela era il riquadro che la staccava dalle altre
     assert 'width="64" height="64" rx="14"' not in disegno, \

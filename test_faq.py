@@ -97,3 +97,38 @@ def test_faq_valori_booleani_normalizzati(client):
     assert voce["secret"] == 0 and voce["pinned"] == 0
     dopo = client.put(f"/api/faq/{voce['id']}", json={"secret": True, "pinned": True}).get_json()
     assert dopo["secret"] == 1 and dopo["pinned"] == 1
+
+
+def test_faq_ha_due_viste_rubrica_e_cassaforte(client):
+    """La sezione FAQ separa la rubrica (in chiaro) dalla cassaforte (cifrata):
+    sono due livelli di riservatezza diversi e mescolarli abbasserebbe la
+    guardia."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="faq-vista-rubrica"' in html
+    assert 'id="faq-vista-cassaforte"' in html
+    assert 'id="faq-pannello-rubrica"' in html
+    assert 'id="faq-pannello-cassaforte"' in html
+    # il pannello cassaforte nasce nascosto
+    assert 'id="faq-pannello-cassaforte" hidden' in html
+    js = client.get("/static/app.js").get_data(as_text=True)
+    for pezzo in ("cambiaVistaFaq", "/api/cassaforte/stato", "/api/cassaforte/apri",
+                  "/api/cassaforte/voci", "cassRiga", "creaCassaforte"):
+        assert pezzo in js, f"manca {pezzo} in app.js"
+
+
+def test_faq_la_cassaforte_non_si_confonde_con_le_voci_della_rubrica(client):
+    """Le due liste sono separate: una voce della cassaforte non compare nella
+    rubrica e viceversa."""
+    client.post("/api/faq", json={"question": "Rubrica X", "answer": "in chiaro"})
+    # la cassaforte prima va creata e aperta
+    client.post("/api/cassaforte/crea", json={"password": "aprisicuro"})
+    client.post("/api/cassaforte/voci", json={"question": "Segreto Y", "answer": "999"})
+    rubrica = client.get("/api/faq").get_json()["voci"]
+    nomi = [v["question"] for v in rubrica]
+    assert "Rubrica X" in nomi
+    assert "Segreto Y" not in nomi
+    cass = client.get("/api/cassaforte/voci").get_json()["voci"]
+    assert [v["question"] for v in cass] == ["Segreto Y"]
+    # e la rubrica non ha piu' il campo "riservate" come unica nota di sicurezza:
+    # il conteggio resta, ma le voci secret della rubrica non sono la cassaforte
+    assert client.get("/api/faq").get_json()["riservate"] == 0
