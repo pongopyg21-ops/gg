@@ -910,71 +910,93 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
     assert m2 and int(m2.group(1)) >= 30, "il gradiente deve scorrere lentamente"
 
 
-def test_le_illustrazioni_della_home_sono_acquerello(client):
-    """La home ha delle illustrazioni ad **acquerello**: macchie astratte
-    pastello sparse fra le schede, e una macchia d'angolo in ogni scheda
-    categoria. Ogni macchia e' un **collage** di piu' forme (campiture, tratti,
-    anelli, punti): e' la composizione a renderla complessa, non una forma sola.
-    Il tema e' la casa e la sua gestione: niente pesci ne' onde, solo colore
-    morbido. Devono restare **decorative e discrete**: colore dal tema (non
-    fisso), dietro al contenuto e con `pointer-events: none`, cosi' non coprono
-    mai un testo ne' rubano un tocco.
+def test_le_illustrazioni_della_home_sono_forme_geometriche(client):
+    """La home ha figure **geometriche mid-century** (cerchi pieni, semicerchi,
+    archi annidati, barre), come un poster di scuola Bauhaus: niente pesci ne'
+    onde ne' macchie informi. Le figure stanno **dietro** le schede (livello
+    `.home-doodle`) e dentro ogni scheda come **sfondo** (`.home-card-figura`),
+    sotto un velo di carta, cosi' non rubano l'occhio al testo.
 
-    Il difetto che il test tiene fuori: le illustrazioni erano `<use>` dentro un
-    unico SVG, ma `position` **non si applica ai figli di un SVG** — finivano in
-    flow, non posizionate. Ogni macchia e' quindi un `<svg>` a se'."""
-    import re
+    Sono campiture nette, non acquerello: *non* c'e' il filtro di sfocatura che
+    c'era prima. Il colore viene dal tema (`--sh-*`), non e' fisso, e ogni figura
+    e' un `<svg>` a se' (non una `<use>` di primo livello): `position` non si
+    applica ai figli di un SVG."""
     html = client.get("/").get_data(as_text=True)
     css = client.get("/static/style.css").get_data(as_text=True)
 
-    # Lo sprite (i `<symbol>`) e il livello che li mostra in home.
-    assert 'class="sprite-doodle"' in html, "manca lo sprite delle macchie"
-    assert 'class="home-doodle"' in html, "mancano le macchie della home"
-    for n in range(1, 7):
-        assert f'id="doodle-aq-{n}"' in html, f"manca la macchia acquerello {n}"
-    # e' acquerello, non disegni di oggetti: il filtro c'e' e ammorbidisce i bordi
-    assert 'filter id="acquerello"' in html, "manca il filtro acquerello"
-    assert "feGaussianBlur" in html, "l'acquerello vuole un bordo morbido"
-    # ogni macchia e' un **collage**: piu' forme sovrapposte, non una sola.
-    # Una forma singola e' un simbolo, non una pennellata: la complessita' e'
-    # quello che la fa leggere come acquerello invece che come icona.
+    # Lo sprite (i `<symbol>`) e i due livelli in home.
+    assert 'class="sprite-doodle"' in html, "manca lo sprite delle figure"
+    assert 'class="home-doodle"' in html, "manca il livello delle figure di fondo"
+    for n in range(1, 9):
+        assert f'id="doodle-aq-{n}"' in html, f"manca la figura geometrica {n}"
+    # geometria, non acquerello: nessuna sfocatura
+    assert "feGaussianBlur" not in html, "le figure sono campiture nette, non acquerello"
+    # ogni figura compone piu' forme (un cerchio solo non e' una composizione)
     for n in range(1, 9):
         blocco = html[html.index(f'id="doodle-aq-{n}"'):]
         blocco = blocco[:blocco.index("</symbol>")]
         forme = sum(blocco.count(t) for t in
                     ("<path", "<circle", "<ellipse", "<rect", "<line", "<polygon"))
-        assert forme >= 3, f"il collage {n} ha solo {forme} forme: e' una forma sola"
-    # in home le macchie sono `<svg>` a se' (non `<use>` di primo livello):
+        assert forme >= 3, f"la figura {n} ha solo {forme} forme: e' una forma sola"
+    # le figure del fondo sono `<svg>` a se' (non `<use>` di primo livello):
     # solo cosi' il posizionamento assoluto ha effetto
     blocco_home = html[html.index('<div class="home-doodle"'):html.index('class="home-voice"')]
-    assert blocco_home.count("<svg") >= 8, "le macchie devono essere <svg>, non <use>"
-    # decorativi: nessuno finisce nella lettura per schermo
+    assert blocco_home.count("<svg") >= 8, "le figure devono essere <svg>, non <use>"
     assert 'class="home-doodle" aria-hidden="true"' in html
 
-    # e ogni scheda categoria ha la sua macchia d'angolo
-    assert html.count('class="home-card-doodle"') == 6, \
-        "ogni scheda categoria deve avere la sua macchia"
+    # ogni scheda categoria ha lo sfondo geometrico
+    assert html.count('class="home-card-figura"') == 6, \
+        "ogni scheda categoria deve avere il suo sfondo geometrico"
+    assert html.count('class="home-card-doodle"') == 0, \
+        "la vecchia macchia d'angolo non deve piu' esistere"
 
-    # il CSS: colore dal tema, dietro al contenuto, niente tocchi
+    # CSS: figure dietro al contenuto, niente tocchi, colore dal tema
     assert ".sprite-doodle { position: absolute; width: 0; height: 0; overflow: hidden; }" in css
     blocco = css[css.index(".home-doodle {"):css.index(".home-hero { margin-bottom")]
-    assert "z-index: -1" in blocco, "le macchie devono stare dietro alle schede"
-    assert "pointer-events: none" in blocco, "una macchia non deve rubare un tocco"
-    assert "var(--wc-" in blocco, "il colore deve venire dal tema"
-    assert "fill: currentColor" in blocco, "l'acquerello e' una campitura, non un tratto"
-    assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
-    blocco_card = css[css.index(".home-card-doodle {"):css.index(".home-card-doodle svg {")]
-    assert "var(--wc-" in blocco_card
-    blocco_card_svg = css[css.index(".home-card-doodle svg {"):
-                            css.index(".home-card:hover .home-card-doodle svg")]
-    assert "fill: currentColor" in blocco_card_svg
+    assert "z-index: -1" in blocco, "le figure devono stare dietro alle schede"
+    assert "pointer-events: none" in blocco, "una figura non deve rubare un tocco"
+    assert "var(--sh-" in blocco, "il colore deve venire dal tema"
+    blocco_fig = css[css.index(".home-card-figura {"):css.index(".home-card:hover .home-card-figura {")]
+    assert "position: absolute" in blocco_fig and "inset: 0" in blocco_fig
+    assert "pointer-events: none" in blocco_fig
+    assert "overflow: hidden" in blocco_fig
+    assert "var(--surface-velo)" in blocco_fig, "lo sfondo va velato sotto il testo"
 
-    # le sei tinte sono definite in entrambi i temi (di notte non spariscono)
+    # le tinte sono definite in entrambi i temi (di notte non spariscono)
     chiaro = css.split('html[data-tema="scuro"]')[0]
     scuro = css.split('html[data-tema="scuro"]', 1)[1]
-    for v in ("--wc-1", "--wc-2", "--wc-3", "--wc-4", "--wc-5", "--wc-6"):
+    for v in ("--sh-ink", "--sh-ochre", "--sh-clay", "--sh-beige"):
         assert f"{v}:" in chiaro, f"{v} manca nel tema chiaro"
         assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
+
+    # Il velo tiene il testo leggibile: la figura piu' scura (inchiostro) sotto
+    # il velo chiaro resta molto piu' chiara dell'inchiostro del testo.
+    def rgb(hexstr):
+        h = hexstr.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def lum(c):
+        def f(v):
+            v /= 255
+            return v / 12.92 if v <= .03928 else ((v + .055) / 1.055) ** 2.4
+        r, g, b = c
+        return .2126 * f(r) + .7152 * f(g) + .0722 * f(b)
+
+    def contrast(a, b):
+        la, lb = lum(a), lum(b)
+        hi, lo = max(la, lb), min(la, lb)
+        return (hi + .05) / (lo + .05)
+
+    import re as _re
+    velo = _re.search(r"--surface-velo:\s*rgba\(\s*255,\s*255,\s*255,\s*([\d.]+)\s*\)", chiaro)
+    assert velo, "manca il velo chiaro"
+    alfa = float(velo.group(1))
+    fondo = rgb("#ffffff")
+    ink_figura = rgb(_re.search(r"--sh-ink:\s*(#[0-9a-fA-F]{6})", chiaro).group(1))
+    composto = tuple(int(round(alfa * f + (1 - alfa) * c)) for f, c in zip(fondo, ink_figura))
+    ink_testo = rgb(_re.search(r"--ink:\s*(#[0-9a-fA-F]{6})", chiaro).group(1))
+    assert contrast(ink_testo, composto) >= 4.5, \
+        f"col velo il testo non resta leggibile: contrasto {contrast(ink_testo, composto):.2f}"
 
 
 def test_l_icona_dell_igiene_sono_le_bollicine(client):

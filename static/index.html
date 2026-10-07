@@ -31,80 +31,62 @@
 </script>
 </head>
 <body>
-<!-- Le illustrazioni "acquerello" della home: **macchie astratte**, non
-     disegni di oggetti. Il tema e' la casa e la sua gestione, quindi niente
-     pesci ne' onde: solo campiture morbide e pastello, come pennellate
-     lasciate asciugare. Sono `<symbol>` richiamati con `<use>`: un disegno si
-     corregge in un punto solo. `aria-hidden` (decorativi), colore da
-     `currentColor` (decide il tema, vedi `--acq-*`). Il filtro `acquerello`
-     ammorbidisce i bordi — e' quello che li fa sembrare pittura invece di
-     forme piene. `overflow:visible` perche' la sfocatura puo' sporgere. -->
+<!-- Le figure geometriche della home: **forme mid-century** (cerchi pieni,
+     semicerchi, archi annidati, barre) come in un poster di scuola Bauhaus, non
+     disegni di oggetti. Ogni scheda le porta come **sfondo**, in filigrana; il
+     fondo pagina ne ripete alcune, piu' grandi e piu' tenui. Sono `<symbol>`
+     richiamati con `<use>` (un disegno si corregge in un punto solo), decorativi
+     e con i colori dal tema (`--sh-*`), cosi' di notte si schiariscono da soli. -->
 <svg class="sprite-doodle" width="0" height="0" aria-hidden="true" focusable="false">
   <defs>
-    <filter id="acquerello" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="1.6"/>
-    </filter>
-    <symbol id="doodle-aq-1" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="currentColor" d="M34 9c5 9 11 15 11 22a11 11 0 0 1-22 0c0-7 6-13 11-22Z"/>
-        <path fill="currentColor" d="M21 31c3 5 6 9 6 13a6 6 0 0 1-12 0c0-4 3-8 6-13Z"/>
-        <circle cx="47" cy="44" r="4"/>
-        <circle cx="45" cy="19" r="2.6"/>
-      </g>
+    <symbol id="doodle-aq-1" viewBox="0 0 100 76" overflow="visible">
+      <circle style="fill:var(--sh-beige)" cx="66" cy="40" r="34"/>
+        <path style="fill:var(--sh-ink)" d="M32 40a34 34 0 0 1 68 0Z"/>
+        <rect style="fill:var(--sh-ochre)" x="10" y="62" width="42" height="9" rx="4.5"/>
+        <circle style="fill:var(--sh-clay)" cx="24" cy="26" r="10"/>
     </symbol>
-    <symbol id="doodle-aq-2" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" d="M8 24c12-14 30-14 42 2 4 6 3 12-2 16"/>
-        <path fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" d="M13 47c11-8 27-6 35 4"/>
-        <circle cx="49" cy="14" r="3"/>
-      </g>
+    <symbol id="doodle-aq-2" viewBox="0 0 100 76" overflow="visible">
+      <path style="fill:var(--sh-beige)" d="M20 68V40a30 30 0 0 1 60 0v28Z"/>
+        <path style="fill:var(--sh-ochre)" d="M34 68V44a16 16 0 0 1 32 0v24Z"/>
+        <path style="fill:var(--sh-ink)" d="M44 68V47a6 6 0 0 1 12 0v21Z"/>
+        <rect style="fill:var(--sh-ink)" x="72" y="22" width="18" height="18" rx="4"/>
     </symbol>
-    <symbol id="doodle-aq-3" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" d="M32 11c2 7 2 13 0 19"/>
-        <path fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" d="M51 21c-6 3-10 8-12 15"/>
-        <path fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" d="M13 21c6 3 10 8 12 15"/>
-        <path fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" d="M52 44c-6-1-12-4-16-9"/>
-        <path fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" d="M12 44c6-1 12-4 16-9"/>
-        <circle cx="32" cy="34" r="3.4"/>
-      </g>
+    <symbol id="doodle-aq-3" viewBox="0 0 100 76" overflow="visible">
+      <path style="fill:var(--sh-ink)" d="M8 66a26 26 0 0 1 52 0Z"/>
+        <path style="fill:var(--sh-clay)" d="M60 66a20 20 0 0 1 40 0Z"/>
+        <path style="fill:var(--sh-ochre)" d="M62 22a18 18 0 0 1 0 36Z"/>
+        <circle style="fill:var(--sh-beige)" cx="30" cy="24" r="12"/>
     </symbol>
-    <symbol id="doodle-aq-4" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M13 45a23 23 0 0 1 34-28"/>
-        <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M20 48a17 17 0 0 1 24-21"/>
-        <circle cx="47" cy="43" r="4.2"/>
-        <circle cx="18" cy="19" r="2.8"/>
-      </g>
+    <symbol id="doodle-aq-4" viewBox="0 0 100 76" overflow="visible">
+      <circle style="fill:var(--sh-ochre)" cx="60" cy="40" r="32"/>
+        <circle style="fill:var(--sh-ink)" cx="60" cy="40" r="19"/>
+        <circle style="fill:var(--sh-beige)" cx="60" cy="40" r="8"/>
+        <rect style="fill:var(--sh-clay)" x="10" y="26" width="9" height="44" rx="4.5"/>
     </symbol>
-    <symbol id="doodle-aq-5" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" d="M47 12C31 14 18 24 18 34s10 13 20 10"/>
-        <path fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" d="M13 47c9-6 21-6 31 2"/>
-        <circle cx="49" cy="46" r="3.2"/>
-      </g>
+    <symbol id="doodle-aq-5" viewBox="0 0 100 76" overflow="visible">
+      <rect style="fill:var(--sh-beige)" x="16" y="18" width="36" height="36" rx="7"
+              transform="rotate(-12 34 36)"/>
+        <circle style="fill:var(--sh-ink)" cx="66" cy="46" r="24"/>
+        <path style="fill:none;stroke:var(--sh-ochre);stroke-width:7;stroke-linecap:round" d="M10 72c20 0 40-8 52-22"/>
     </symbol>
-    <symbol id="doodle-aq-6" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M33 32c2-11 11-17 19-14"/>
-        <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M32 34c-11 1-18 8-17 17"/>
-        <path fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" d="M30 30c-8 3-11 12-6 19"/>
-        <circle cx="32" cy="32" r="4.2"/>
-      </g>
+    <symbol id="doodle-aq-6" viewBox="0 0 100 76" overflow="visible">
+      <path style="fill:var(--sh-ochre)" d="M22 68a26 26 0 0 1 52 0Z"/>
+        <path style="fill:var(--sh-ink)" d="M33 68a15 15 0 0 1 30 0Z"/>
+        <circle style="fill:var(--sh-clay)" cx="80" cy="22" r="9"/>
+        <circle style="fill:var(--sh-beige)" cx="16" cy="26" r="13"/>
+        <rect style="fill:var(--sh-ink)" x="60" y="60" width="32" height="8" rx="4"/>
     </symbol>
-    <symbol id="doodle-aq-7" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="currentColor" d="M32 20c6-6 14-4 15 4 1 7-5 12-12 12 3 6-1 12-8 11-6-1-9-7-6-12-7-1-9-9-4-14 4-4 11-4 15-1Z"/>
-        <circle cx="16" cy="15" r="3.1"/><circle cx="49" cy="18" r="2.6"/>
-        <circle cx="51" cy="45" r="3.4"/><circle cx="17" cy="51" r="2.4"/>
-      </g>
+    <symbol id="doodle-aq-7" viewBox="0 0 100 76" overflow="visible">
+      <path style="fill:var(--sh-beige)" d="M12 68a40 40 0 0 1 40-40v40Z"/>
+        <path style="fill:var(--sh-ink)" d="M12 68a24 24 0 0 1 24-24v24Z"/>
+        <circle style="fill:var(--sh-ochre)" cx="70" cy="28" r="14"/>
+        <circle style="fill:var(--sh-clay)" cx="86" cy="54" r="7"/>
     </symbol>
-    <symbol id="doodle-aq-8" viewBox="6 6 52 52" overflow="visible">
-      <g filter="url(#acquerello)">
-        <path fill="currentColor" d="M40 10a22 22 0 1 0 6 42A26 26 0 0 1 40 10Z"/>
-        <circle cx="18" cy="17" r="3.4"/><circle cx="13" cy="40" r="2.6"/>
-        <circle cx="50" cy="29" r="2.4"/>
-      </g>
+    <symbol id="doodle-aq-8" viewBox="0 0 100 76" overflow="visible">
+      <path style="fill:var(--sh-ink)" d="M46 68a30 30 0 0 1 60 0Z"/>
+        <rect style="fill:var(--sh-ochre)" x="10" y="22" width="46" height="10" rx="5"/>
+        <rect style="fill:var(--sh-clay)" x="10" y="40" width="30" height="10" rx="5"/>
+        <circle style="fill:var(--sh-beige)" cx="22" cy="60" r="9"/>
     </symbol>
   </defs>
 </svg>
@@ -179,16 +161,16 @@
        poteva posizionare. Un `<svg>` esterno e' invece una scatola come le
        altre, e il posizionamento assoluto funziona. -->
   <div class="home-doodle" aria-hidden="true">
-    <svg class="dd dd-1" viewBox="0 0 48 48"><use href="#doodle-aq-1"/></svg>
-    <svg class="dd dd-2" viewBox="0 0 48 48"><use href="#doodle-aq-6"/></svg>
-    <svg class="dd dd-3" viewBox="0 0 48 48"><use href="#doodle-aq-4"/></svg>
-    <svg class="dd dd-4" viewBox="0 0 48 48"><use href="#doodle-aq-2"/></svg>
-    <svg class="dd dd-5" viewBox="0 0 48 48"><use href="#doodle-aq-7"/></svg>
-    <svg class="dd dd-6" viewBox="0 0 48 48"><use href="#doodle-aq-5"/></svg>
-    <svg class="dd dd-7" viewBox="0 0 48 48"><use href="#doodle-aq-3"/></svg>
-    <svg class="dd dd-8" viewBox="0 0 48 48"><use href="#doodle-aq-8"/></svg>
-    <svg class="dd dd-9" viewBox="0 0 48 48"><use href="#doodle-aq-6"/></svg>
-    <svg class="dd dd-10" viewBox="0 0 48 48"><use href="#doodle-aq-4"/></svg>
+    <svg class="dd dd-1" viewBox="0 0 100 76"><use href="#doodle-aq-4"/></svg>
+    <svg class="dd dd-2" viewBox="0 0 100 76"><use href="#doodle-aq-2"/></svg>
+    <svg class="dd dd-3" viewBox="0 0 100 76"><use href="#doodle-aq-7"/></svg>
+    <svg class="dd dd-4" viewBox="0 0 100 76"><use href="#doodle-aq-8"/></svg>
+    <svg class="dd dd-5" viewBox="0 0 100 76"><use href="#doodle-aq-6"/></svg>
+    <svg class="dd dd-6" viewBox="0 0 100 76"><use href="#doodle-aq-3"/></svg>
+    <svg class="dd dd-7" viewBox="0 0 100 76"><use href="#doodle-aq-1"/></svg>
+    <svg class="dd dd-8" viewBox="0 0 100 76"><use href="#doodle-aq-5"/></svg>
+    <svg class="dd dd-9" viewBox="0 0 100 76"><use href="#doodle-aq-4"/></svg>
+    <svg class="dd dd-10" viewBox="0 0 100 76"><use href="#doodle-aq-7"/></svg>
   </div>
   <div class="home-voice">
     <button id="home-mic" class="home-mic" type="button" title="Parla al maggiordomo" aria-label="Parla al maggiordomo">
@@ -204,7 +186,7 @@
     <button class="home-card" data-section="cucina">
       <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/cucina.svg" alt=""></span>
       <span class="home-name">Cucina</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-1"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-1"/></svg></div>
       <span class="home-desc">Piano pasti, ricette, dispensa e lista della spesa,
         con i comandi vocali per quando hai le mani occupate.</span>
       <span class="home-go">Apri →</span>
@@ -212,7 +194,7 @@
     <button class="home-card" data-section="progetti">
       <span class="home-emoji">📋</span>
       <span class="home-name">Appunti</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-2"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-2"/></svg></div>
       <span class="home-desc">Lavori in corso, idee e cose da fare, con il
         calendario degli impegni e il magazzino di casa.</span>
       <span class="home-go">Apri →</span>
@@ -220,7 +202,7 @@
     <button class="home-card" data-section="igiene">
       <span class="home-emoji">🫧</span>
       <span class="home-name">Igiene</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-6"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-6"/></svg></div>
       <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
         da ricordare.</span>
       <span class="home-go">Apri →</span>
@@ -228,7 +210,7 @@
     <button class="home-card" data-section="gym">
       <span class="home-emoji">🏋️</span>
       <span class="home-name">GYM</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-5"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-5"/></svg></div>
       <span class="home-desc">La playlist degli esercizi, per allenarsi in casa
         seguendo i video senza uscire dall'app.</span>
       <span class="home-go">Apri →</span>
@@ -236,7 +218,7 @@
     <button class="home-card" data-section="tv">
       <span class="home-emoji">📺</span>
       <span class="home-name">TV</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-4"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-4"/></svg></div>
       <span class="home-desc">Intrattenimento: la playlist di casa, le notizie
         dall'Italia e dal mondo e le locandine dei film del momento.</span>
       <span class="home-go">Apri →</span>
@@ -244,7 +226,7 @@
     <button class="home-card" data-section="faq">
       <span class="home-emoji">📌</span>
       <span class="home-name">FAQ</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-3"/></svg></span>
+      <div class="home-card-figura" aria-hidden="true"><svg viewBox="0 0 100 76" preserveAspectRatio="xMidYMid slice"><use href="#doodle-aq-3"/></svg></div>
       <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
         contatti e codici, senza doverli cercare ogni volta.</span>
       <span class="home-go">Apri →</span>
