@@ -3350,24 +3350,20 @@ function apriStorageForm(v) {
 
 $('#st-new').addEventListener('click', () => apriStorageForm(null));
 
-/* ---------- FAQ (protette dalla cassaforte) ----------
-   Informazioni utili da consultare — Wi-Fi, indirizzi, contatti, codici — **e**
-   dati riservati (password, PIN). Tutto il modulo e' protetto: le voci vivono
-   cifrate nel database e si vedono solo dopo aver aperto la cassaforte con la
-   sua password (che puo' essere diversa da quella dell'app). Non c'e' una
-   seconda scheda nel menu: c'e' una sola lista, e sopra il riquadro che crea,
-   apre o chiude la cassaforte.
+/* ---------- FAQ (si aprono col sensore) ----------
+   Informazioni utili da consultare — Wi-Fi, indirizzi, contatti, codici — che
+   possono contenere dati riservati (password, PIN). Le voci vivono **cifrate**
+   nel database e non arrivano al browser finche' il modulo non e' aperto. Non
+   c'e' nessuna password da ricordare: si apre con il **controllo biometrico**,
+   e si richiude da solo.
 
-   Il testo dei valori **non** arriva al browser se la cassaforte e' chiusa: e' il
-   server a negarlo. Non c'e' niente da nascondere nel client — e non si deve
-   provare a farlo, perche' un valore mandato al browser e' gia' stato letto. */
-let faqDati = { voci: [], totale: 0, riservate: 0 };
+   Il testo dei valori **non** arriva al browser a modulo chiuso: e' il server a
+   negarlo. Non c'e' niente da nascondere nel client — e non si deve provare a
+   farlo, perche' un valore mandato al browser e' gia' stato letto. */
+let faqDati = { voci: [], totale: 0 };
 let faqMeta = { categories: [], default_category: 'generale' };
-let cassStato = { esiste: false, aperta: false, promemoria: '', chiusura_minuti: 15 };
+let cassStato = { aperta: false, biometria: false, chiusura_minuti: 15 };
 let cassScadenza = null;        // timer della chiusura automatica
-
-// quali valori sono stati mostrati: vivono in memoria, non salvati, così
-// tornando sulla pagina una password e' di nuovo nascosta
 const faqSvelate = new Set();
 
 /* Il valore di una voce: un numero di telefono o un accesso si copiano, un
@@ -3410,24 +3406,18 @@ function faqRiga(v) {
       </div>
     </div>`;
 }
-
-/* ---------- biometria (la chiave custodita dal dispositivo) ----------
-   L'impronta digitale non e' un segreto: e' un permesso. Il sensore non produce
-   nessuna chiave, dice soltanto "sei tu". Se la cassaforte si aprisse col solo
-   "sì", chi sblocca il telefono (o il volto di chi passa) leggerebbe i segreti:
-   sarebbe un accesso **senza** cassaforte, non con la cassaforte.
-
-   Quindi la biometria non sostituisce la password: custodisce una **chiave
-   casuale**, e il server la usa per cifrare la password della cassaforte. Il
-   sensore sblocca la chiave, la chiave apre la cassaforte. Se il sensore non
-   c'e' o non e' disponibile, si apre con la password come sempre.
+/* ---------- biometria (il sensore che apre le FAQ) ----------
+   L'impronta digitale non e' un segreto: e' un permesso. Il sensore dice solo
+   "sei tu". La chiave del dispositivo e' quella che autorizza il server, e il
+   client la custodisce: alla prima apertura si deposita da sola, poi la stessa
+   chiave deve aprire il timbro. Se il sensore non c'e', il modulo resta chiuso:
+   non c'e' una password di riserva, perche' l'utente l'ha tolta apposta.
 
    Dove vive la chiave, detto onestamente: qui in `localStorage`, perche' l'app
    e' una pagina web e non ha accesso al Portachiavi del sistema. `localStorage`
    non e' una cassaforte di sistema, quindi sul web la biometria e' **piu'
    comoda**, non piu' sicura di una password ricordata. Su un'app nativa la
-   chiave starebbe nel Portachiavi protetto da Face ID / impronta, e li' la
-   differenza sarebbe vera. */
+   chiave starebbe nel Portachiavi protetto da Face ID / impronta. */
 const BIO_STORE = 'cassBiometria';
 
 function bioDisponibile() {
@@ -3448,7 +3438,7 @@ async function bioVerifica() {
   await navigator.credentials.create({ publicKey: {
     challenge: sfida,
     rp: { name: 'Il Maggiordomo' },
-    user: { id: sfida, name: 'cassaforte', displayName: 'Cassaforte' },
+    user: { id: sfida, name: 'faq', displayName: 'FAQ' },
     pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
     authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
     timeout: 60000,
@@ -3460,138 +3450,70 @@ function bioNuovaChiave() {
   return [...byte].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function bioAttiva() {
+/* Apre le FAQ: sensore, poi la chiave al server. La chiave si crea alla prima
+   apertura su questo dispositivo e da allora resta qui. */
+async function apriFaqConSensore() {
   if (!bioDisponibile()) { toast('Questo dispositivo non ha un sensore'); return; }
   try {
     await bioVerifica();
     let chiave = bioChiave();
     if (!chiave) { chiave = bioNuovaChiave(); localStorage.setItem(BIO_STORE, chiave); }
-    await api('/api/cassaforte/biometria', { method: 'PUT', body: { chiave } });
-    toast('Biometria attivata');
-    renderCassaforte();
+    await api('/api/faq/apri-biometria', { method: 'POST', body: { chiave } });
+    renderFaq();
   } catch (err) {
-    toast(err.message || 'Biometria non riuscita');
+    toast(err.message || 'Non riconosciuto');
   }
 }
 
-async function bioApri() {
-  const chiave = bioChiave();
-  if (!chiave) { toast('Biometria non attivata su questo dispositivo'); return; }
+/* Aggiorna lo stato e disegna il riquadro giusto: l'invito ad aprire col
+   sensore, oppure l'elenco delle voci. */
+async function renderFaq() {
   try {
-    await bioVerifica();
-    await api('/api/cassaforte/apri-biometria', { method: 'POST', body: { chiave } });
-    renderCassaforte();
-  } catch (err) {
-    toast(err.message || 'Biometria non riconosciuta');
-  }
-}
-
-async function bioTogli() {
-  try { await api('/api/cassaforte/biometria', { method: 'DELETE' }); } catch (_e) { /* niente */ }
-  try { localStorage.removeItem(BIO_STORE); } catch (_e) { /* niente */ }
-  toast('Biometria disattivata');
-  renderCassaforte();
-}
-
-/* Aggiorna lo stato della cassaforte e disegna il riquadro giusto: l'invito a
-   crearla, la richiesta della password, oppure l'apertura con la lista. */
-async function renderCassaforte() {
-  try {
-    cassStato = await api('/api/cassaforte/stato');
+    cassStato = await api('/api/faq/stato');
   } catch (err) { toast(err.message); return; }
-  // il timer della chiusura automatica si rinnova a ogni lettura: il server sa
-  // quando scade, qui si aspetta quel tempo e poi si ridisegna
   if (cassScadenza) { clearTimeout(cassScadenza); cassScadenza = null; }
   if (cassStato.aperta && cassStato.secondi_rimasti > 0) {
-    cassScadenza = setTimeout(() => renderCassaforte(),
+    cassScadenza = setTimeout(() => renderFaq(),
       Math.min(cassStato.secondi_rimasti * 1000 + 500, 3600000));
   }
   const stato = $('#cass-stato');
   const blocco = $('#cass-blocco');
   const contenuto = $('#cass-contenuto');
   contenuto.hidden = true;
-  if (!cassStato.esiste) {
-    stato.innerHTML = '';
-    blocco.innerHTML = `
-      <div class="cass-invito">
-        <p class="cass-titolo">🔒 Proteggi le informazioni della casa</p>
-        <p class="hint">Questa sezione raccoglie anche dati riservati — password,
-          codici, PIN — e per questo e' <strong>cifrata</strong>. Scegli una
-          <strong>password della cassaforte</strong>: diversa da quella della
-          casa, serve a decifrare i dati. Se la dimentichi, i dati
-          <strong>non si recuperano</strong>.</p>
-        <div class="field"><label for="cass-nuova-pw">Password della cassaforte</label>
-          <input id="cass-nuova-pw" type="password" autocomplete="new-password"></div>
-        <div class="field"><label for="cass-nuova-pw2">Ripeti la password</label>
-          <input id="cass-nuova-pw2" type="password" autocomplete="new-password"></div>
-        <div class="field"><label for="cass-frase">Promemoria (facoltativo)</label>
-          <input id="cass-frase" placeholder="Una frase che ti fa ricordare la password"></div>
-        <div class="row">
-          <button id="cass-crea" class="primary">Crea la cassaforte</button>
-          <span id="cass-crea-esito" class="faq-note" role="status" aria-live="polite"></span>
-        </div>
-      </div>`;
-    $('#cass-crea').addEventListener('click', creaCassaforte);
-    return;
-  }
   if (!cassStato.aperta) {
-    const conSensore = cassStato.biometria && bioChiave() && bioDisponibile();
-    // il pulsante del sensore si compone fuori dal template: una graffa con
-    // backtick dentro un altro template confonderebbe i lettori (e i controlli)
-    const bottoneBio = conSensore
-      ? '<div class="row"><button id="cass-bio-apri" class="primary" type="button">🔒 Apri con l\'impronta</button></div>'
-      : '';
     stato.innerHTML = '';
+    const puo = bioDisponibile();
     blocco.innerHTML = `
       <div class="cass-chiusa">
-        <p class="cass-titolo">🔒 Cassaforte chiusa</p>
-        ${cassStato.promemoria ? `<p class="cass-promemoria">Promemoria: ${esc(cassStato.promemoria)}</p>` : ''}
-        <p class="hint">Le informazioni sono al sicuro. Inserisci la password della
-          cassaforte per consultarle o modificarle.</p>
-        ${bottoneBio}
-        <div class="field"><label for="cass-pw">Password della cassaforte</label>
-          <input id="cass-pw" type="password" autocomplete="current-password"></div>
+        <p class="cass-titolo">🔒 Informazioni protette</p>
+        <p class="hint">Qui ci sono anche dati riservati — password, codici, PIN.
+          Si aprono con <strong>Face ID o l'impronta</strong>, e si richiudono da
+          soli dopo ${cassStato.chiusura_minuti} minut${cassStato.chiusura_minuti === 1 ? 'o' : 'i'}.</p>
         <div class="row">
-          <button id="cass-apri" class="primary">Apri</button>
-          <span id="cass-apri-esito" class="faq-note" role="status" aria-live="polite"></span>
+          <button id="cass-bio-apri" class="primary" type="button"${puo ? '' : ' disabled'}>🔒 Sblocca con Face ID / impronta</button>
         </div>
-        <p class="hint">Si richiude da sola dopo ${cassStato.chiusura_minuti} minut${cassStato.chiusura_minuti === 1 ? 'o' : 'i'}.
-          <a href="#" id="cass-frase-link">Cambia promemoria o chiusura</a></p>
+        ${puo ? '' : '<p class="faq-note">Questo dispositivo non ha un sensore. Apri l\'app da un dispositivo con Face ID o impronta per consultare le informazioni.</p>'}
+        <p class="hint"><a href="#" id="cass-frase-link">Promemoria e chiusura</a></p>
       </div>`;
-    $('#cass-apri').addEventListener('click', apriCassaforte);
-    $('#cass-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') apriCassaforte(); });
-    if ($('#cass-bio-apri')) $('#cass-bio-apri').addEventListener('click', bioApri);
-    $('#cass-pw').focus();
+    if (puo) $('#cass-bio-apri').addEventListener('click', apriFaqConSensore);
     $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
     return;
   }
-  // aperta: si mostra l'apertura e si caricano le voci
-  const puoAttivare = bioDisponibile();
-  const bioAttiva = cassStato.biometria && bioChiave();
-  let bottoneBio = '';
-  if (puoAttivare) {
-    bottoneBio = bioAttiva
-      ? '<button id="cass-bio-togli" class="ghost" type="button">Togli l\'impronta</button>'
-      : '<button id="cass-bio-attiva" class="ghost" type="button">🔒 Apri con l\'impronta</button>';
-  }
   stato.innerHTML = `
     <div class="cass-aperta">
-      <span>🔓 Cassaforte aperta</span>
+      <span>🔓 FAQ aperte</span>
       <button id="cass-chiudi" class="ghost" type="button">🔒 Chiudi</button>
       <a href="#" id="cass-frase-link">Promemoria e chiusura</a>
-      ${bottoneBio}
     </div>`;
   $('#cass-chiudi').addEventListener('click', chiudiCassaforte);
   $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
-  if ($('#cass-bio-attiva')) $('#cass-bio-attiva').addEventListener('click', bioAttiva);
-  if ($('#cass-bio-togli')) $('#cass-bio-togli').addEventListener('click', bioTogli);
   blocco.innerHTML = '';
   contenuto.hidden = false;
   await renderFaqElenco();
 }
 
-/* L'elenco delle voci, con i filtri. Si carica solo a cassaforte aperta: a
-   cassaforte chiusa il server non manda nemmeno i titoli. */
+/* L'elenco delle voci, con i filtri. Si carica solo a modulo aperto: a modulo
+   chiuso il server non manda nemmeno i titoli. */
 async function renderFaqElenco() {
   [faqMeta, faqDati] = await Promise.all([api('/api/faq/meta'), api('/api/faq')]);
   const sel = $('#faq-filter');
@@ -3602,11 +3524,36 @@ async function renderFaqElenco() {
   disegnaFaq();
 }
 
-/* Il punto d'ingresso del modulo: lo chiama l'apertura della scheda FAQ. */
-function renderFaq() {
-  return renderCassaforte();
+async function chiudiCassaforte() {
+  try { await api('/api/faq/chiudi', { method: 'POST' }); } catch (_e) { /* niente */ }
+  faqSvelate.clear();
+  renderFaq();
 }
 
+function apriFraseCassaforte() {
+  showModal('Promemoria e chiusura', `
+    <div class="field"><label for="cs-frase">Promemoria</label>
+      <input id="cs-frase" value="${esc(cassStato.promemoria || '')}"
+             placeholder="Una frase che ti fa ricordare cosa c'e' qui"></div>
+    <div class="field"><label for="cs-min">Si richiude da solo dopo (minuti)</label>
+      <input id="cs-min" type="number" min="1" value="${cassStato.chiusura_minuti || 15}"></div>
+    <div class="modal-foot">
+      <button id="cs-save" class="primary">Salva</button>
+      <button id="cs-cancel">Annulla</button>
+    </div>`);
+  $('#cs-cancel').addEventListener('click', hideModal);
+  $('#cs-save').addEventListener('click', async () => {
+    try {
+      await api('/api/faq/frase', { method: 'PUT', body: {
+        chiave: bioChiave(),
+        promemoria: $('#cs-frase').value.trim(),
+        chiusura_minuti: Number($('#cs-min').value) || 15,
+      } });
+      hideModal();
+      renderFaq();
+    } catch (err) { toast(err.message); }
+  });
+}
 function disegnaFaq() {
   const q = ($('#faq-search').value || '').trim().toLowerCase();
   const cat = $('#faq-filter').value || '';
@@ -3711,8 +3658,8 @@ function apriFaqForm(v) {
       <input id="fq-notes" value="${esc(v ? v.notes || '' : '')}" placeholder="Dove serve, quando scade..."></div>
     <label class="toggle"><input type="checkbox" id="fq-pin"${v && v.pinned ? ' checked' : ''}>
       In evidenza in cima alla categoria</label>
-    <p class="faq-note">Il valore viene <strong>cifrato</strong> con la password della
-      cassaforte e resta leggibile solo a cassaforte aperta.</p>
+    <p class="faq-note">Il valore viene <strong>cifrato</strong> nel database e
+      si vede solo con le FAQ aperte.</p>
     <div class="modal-foot">
       <button id="fq-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
       <button id="fq-cancel">Annulla</button>
@@ -3743,62 +3690,6 @@ function apriFaqForm(v) {
 
 $('#faq-new').addEventListener('click', () => apriFaqForm(null));
 
-/* ---------- creazione, apertura, chiusura ---------- */
-async function creaCassaforte() {
-  const pw = $('#cass-nuova-pw').value;
-  const pw2 = $('#cass-nuova-pw2').value;
-  const esito = $('#cass-crea-esito');
-  esito.textContent = '';
-  if (pw.length < 4) { esito.textContent = 'Almeno 4 caratteri.'; return; }
-  if (pw !== pw2) { esito.textContent = 'Le due password non coincidono.'; return; }
-  try {
-    await api('/api/cassaforte/crea', {
-      method: 'POST',
-      body: { password: pw, promemoria: $('#cass-frase').value.trim() },
-    });
-    toast('Cassaforte creata');
-    renderCassaforte();
-  } catch (err) { esito.textContent = err.message; }
-}
-
-async function apriCassaforte() {
-  const esito = $('#cass-apri-esito');
-  esito.textContent = '';
-  try {
-    await api('/api/cassaforte/apri', { method: 'POST', body: { password: $('#cass-pw').value } });
-    renderCassaforte();
-  } catch (err) { esito.textContent = err.message; }
-}
-
-async function chiudiCassaforte() {
-  try { await api('/api/cassaforte/chiudi', { method: 'POST' }); } catch (_e) { /* niente */ }
-  faqSvelate.clear();
-  renderCassaforte();
-}
-
-function apriFraseCassaforte() {
-  showModal('Promemoria e chiusura', `
-    <div class="field"><label for="cs-frase">Promemoria</label>
-      <input id="cs-frase" value="${esc(cassStato.promemoria || '')}"
-             placeholder="Una frase che ti fa ricordare la password"></div>
-    <div class="field"><label for="cs-min">Si richiude da sola dopo (minuti)</label>
-      <input id="cs-min" type="number" min="1" value="${cassStato.chiusura_minuti || 15}"></div>
-    <div class="modal-foot">
-      <button id="cs-save" class="primary">Salva</button>
-      <button id="cs-cancel">Annulla</button>
-    </div>`);
-  $('#cs-cancel').addEventListener('click', hideModal);
-  $('#cs-save').addEventListener('click', async () => {
-    try {
-      await api('/api/cassaforte/frase', { method: 'PUT', body: {
-        promemoria: $('#cs-frase').value.trim(),
-        chiusura_minuti: Number($('#cs-min').value) || 15,
-      } });
-      hideModal();
-      renderCassaforte();
-    } catch (err) { toast(err.message); }
-  });
-}
 /* ---------- PASSWORD DELLA CASA ----------
    Cambiarla e' un'operazione rara e delicata: si chiede la vecchia, e la nuova
    va ripetuta perche' un refuso in un campo password non si vede e

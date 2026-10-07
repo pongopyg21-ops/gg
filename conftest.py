@@ -22,6 +22,10 @@ def percorsi_dei_dati():
     # i tentativi falliti hanno un contatore per casa e per indirizzo: azzerarlo
     # qui evita che un test faccia aspettare il successivo
     houses.dimentica_tentativi()
+    # l'apertura delle FAQ vive in memoria di processo e non scade fra un test e
+    # l'altro: senza azzerarla, un test che apre il modulo lo lascerebbe aperto a
+    # quello successivo, e l'esito dipenderebbe dall'ordine di esecuzione
+    app_module._faq_dimentica()
     yield
 
 @pytest.fixture()

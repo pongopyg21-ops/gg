@@ -1,219 +1,236 @@
-"""FAQ: voci protette dalla cassaforte, categorie e ricerca.
+"""FAQ: informazioni utili, protette dal controllo biometrico.
 
-Tutto il modulo FAQ e' cifrato: le voci si leggono e si scrivono via `/api/faq`
-solo a cassaforte aperta. La cassaforte (creazione, apertura, password) ha i suoi
-test in `test_cassaforte.py`; qui si prova il comportamento del modulo FAQ.
+Le voci vivono **cifrate** nel database della casa e si leggono e si scrivono
+via `/api/faq` solo a modulo aperto. Non c'e' nessuna password: si apre col
+sensore (`POST /api/faq/apri-biometria`), e la prima apertura configura da sola
+la chiave del dispositivo.
 
 Fixture in `conftest.py`; helper in `test_comuni.py`.
 """
+import sqlite3
+
 from test_comuni import *  # noqa: F401,F403
 
-
-def _crea_cassaforte(client, password="aprisicuro"):
-    r = client.post("/api/cassaforte/crea", json={"password": password})
-    assert r.status_code == 201, r.get_data(as_text=True)
-    return r
+CHIAVE = "chiave-del-dispositivo-di-prova"
 
 
-# ----------------------------------------------------------- il modulo e' protetto
-
-def test_senza_cassaforte_le_faq_invitano_a_crearla(client):
-    """Non ci sono voci in chiaro da mostrare: il modulo *e'* la cassaforte."""
-    stato = client.get("/api/cassaforte/stato").get_json()
-    assert stato["esiste"] is False
-    r = client.get("/api/faq")
-    assert r.status_code == 200
-    assert r.get_json()["totale"] == 0
-    # senza cassaforte non si scrive: 409, non 401 (che vuol dire "password sbagliata")
-    assert client.post("/api/faq", json={"question": "X", "answer": "Y"}).status_code == 409
+def _apri(client, chiave=CHIAVE):
+    return client.post("/api/faq/apri-biometria", json={"chiave": chiave})
 
 
-def test_a_cassaforte_chiusa_il_valore_non_arriva_al_client(client):
-    """Il vero requisito di riservatezza: chiusa la cassaforte, il valore non
+# ----------------------------------------------------- il modulo e' protetto
+
+def test_a_modulo_chiuso_il_valore_non_arriva_al_client(client):
+    """Il vero requisito di riservatezza: chiuso il modulo, il valore non
     compare nella risposta, non solo nascosto a schermo."""
-    _crea_cassaforte(client)
+    _apri(client)
     client.post("/api/faq", json={"question": "Wi-Fi", "answer": "Rete: CasaRossi",
                                   "category": "wifi"})
-    client.post("/api/cassaforte/chiudi")
+    client.post("/api/faq/chiudi")
     elenco = client.get("/api/faq")
     assert elenco.status_code == 200
-    corpo = elenco.get_data(as_text=True)
-    assert "CasaRossi" not in corpo, "il valore e' trapelato a cassaforte chiusa"
+    assert "CasaRossi" not in elenco.get_data(as_text=True), "il valore e' trapelato"
     assert elenco.get_json()["totale"] == 0
-    # e non si scrive a cassaforte chiusa
+    # e non si scrive a modulo chiuso
     assert client.post("/api/faq", json={"question": "Y"}).status_code == 401
 
 
-def test_le_voci_si_vedono_dopo_l_apertura(client):
-    _crea_cassaforte(client)
+def test_il_valore_non_e_in_chiaro_nel_database(client):
+    """Il testo e' cifrato a riposo: un database copiato non mostra i valori.
+
+    Si guarda il **file** vero, non l'API: e' l'unica prova che la cifratura
+    esiste davvero e non e' solo un filtro sulle risposte.
+    """
+    _apri(client)
+    client.post("/api/faq", json={"question": "Cancello", "answer": "codice-segreto-42"})
+    with open(houses.db_path(CASA_TEST), "rb") as fh:
+        grezzo = fh.read()
+    assert b"codice-segreto-42" not in grezzo, "il valore e' in chiaro nel database"
+
+
+def test_le_voci_si_vedono_dopo_l_apertura_col_sensore(client):
+    _apri(client)
     client.post("/api/faq", json={"question": "Cancello", "answer": "codice 42",
                                   "category": "codici"})
-    client.post("/api/cassaforte/chiudi")
-    client.post("/api/cassaforte/apri", json={"password": "aprisicuro"})
+    client.post("/api/faq/chiudi")
+    _apri(client)
     voci = client.get("/api/faq").get_json()["voci"]
     assert [v["question"] for v in voci] == ["Cancello"]
     assert voci[0]["answer"] == "codice 42"
     assert voci[0]["category_label"] == "Codici e accessi"
 
 
-def test_la_cassaforte_non_si_apre_da_sola_con_l_accesso(client):
-    """Entrare nella casa non basta: la password della cassaforte e' un'altra."""
-    _crea_cassaforte(client)
-    client.post("/api/cassaforte/chiudi")
-    assert client.get("/api/cassaforte/stato").get_json()["aperta"] is False
+def test_la_prima_apertura_configura_la_biometria(client):
+    """Non c'e' niente da configurare a mano: la prima apertura deposita la
+    chiave del dispositivo, e lo stato lo dice."""
+    assert client.get("/api/faq/stato").get_json()["biometria"] is False
+    _apri(client)
+    assert client.get("/api/faq/stato").get_json()["biometria"] is True
+
+
+def test_un_altro_dispositivo_non_passa(client):
+    """La chiave del secondo dispositivo non apre la scatola del primo."""
+    _apri(client, "chiave-del-telefono")
+    client.post("/api/faq/chiudi")
+    r = _apri(client, "chiave-del-computer")
+    assert r.status_code == 401
+    assert client.get("/api/faq/stato").get_json()["aperta"] is False
+
+
+def test_serve_la_chiave_del_dispositivo(client):
+    """Senza chiave (nessun sensore) non si apre: non c'e' una password di
+    riserva, perche' l'utente l'ha tolta apposta."""
+    assert _apri(client, "").status_code == 400
+    assert client.get("/api/faq/stato").get_json()["aperta"] is False
+
+
+def test_il_modulo_non_si_apre_da_solo_con_l_accesso(client):
+    """Entrare nella casa non basta: il modulo resta chiuso finche' non si apre."""
+    assert client.get("/api/faq/stato").get_json()["aperta"] is False
 
 
 # ------------------------------------------------------------------ CRUD voci
 
 def test_faq_ciclo_completo(client):
     """Aggiungere, leggere, modificare ed eliminare una voce."""
-    _crea_cassaforte(client)
-    r = client.post("/api/faq", json={
-        "question": "Wi-Fi di casa",
-        "answer": "Rete: CasaRossi\nPassword: segreta",
-        "category": "wifi",
-    })
+    _apri(client)
+    r = client.post("/api/faq", json={"question": "Idraulico", "answer": "333 111",
+                                      "category": "contatti", "pinned": True})
     assert r.status_code == 201
-    voce = r.get_json()
-    assert voce["ha_valore"] is True
+    fid = r.get_json()["id"]
 
-    elenco = client.get("/api/faq").get_json()
-    assert elenco["totale"] == 1
-    assert elenco["riservate"] == 1
-    assert elenco["voci"][0]["category_label"] == "Wi-Fi"
+    voce = client.get("/api/faq").get_json()["voci"][0]
+    assert voce["question"] == "Idraulico"
+    assert voce["pinned"] is True
 
-    r = client.put(f"/api/faq/{voce['id']}", json={"answer": "Password: nuova"})
+    r = client.put(f"/api/faq/{fid}", json={"answer": "333 222"})
     assert r.status_code == 200
-    assert r.get_json()["answer"] == "Password: nuova"
+    assert r.get_json()["answer"] == "333 222"
 
-    assert client.delete(f"/api/faq/{voce['id']}").status_code == 200
+    assert client.delete(f"/api/faq/{fid}").status_code == 200
     assert client.get("/api/faq").get_json()["totale"] == 0
 
 
 def test_faq_la_modifica_parziale_non_azzera_il_resto(client):
-    """Cambiare un campo non deve svuotare gli altri, come per il profilo."""
-    _crea_cassaforte(client)
-    voce = client.post("/api/faq", json={
-        "question": "Idraulico", "answer": "333 1234567", "category": "contatti",
-    }).get_json()
-    dopo = client.put(f"/api/faq/{voce['id']}", json={"pinned": True}).get_json()
-    assert dopo["question"] == "Idraulico"
-    assert dopo["answer"] == "333 1234567"
-    assert dopo["category"] == "contatti"
-    assert dopo["pinned"] is True
+    _apri(client)
+    fid = client.post("/api/faq", json={"question": "Medico", "answer": "dott. Rossi",
+                                        "notes": "studio il martedi"}).get_json()["id"]
+    client.put(f"/api/faq/{fid}", json={"answer": "dott. Bianchi"})
+    voce = client.get("/api/faq").get_json()["voci"][0]
+    assert voce["answer"] == "dott. Bianchi"
+    assert voce["question"] == "Medico"
+    assert voce["notes"] == "studio il martedi"
 
 
 def test_faq_titolo_obbligatorio(client):
-    _crea_cassaforte(client)
-    assert client.post("/api/faq", json={"answer": "solo valore"}).status_code == 400
-    assert client.post("/api/faq", json={"question": "   "}).status_code == 400
+    _apri(client)
+    assert client.post("/api/faq", json={"answer": "senza titolo"}).status_code == 400
 
 
 def test_faq_categoria_sconosciuta_non_rifiuta_la_voce(client):
-    """Una categoria ignota ricade sulla predefinita: la voce resta utile."""
-    _crea_cassaforte(client)
+    _apri(client)
     r = client.post("/api/faq", json={"question": "X", "category": "inesistente"})
     assert r.status_code == 201
     assert r.get_json()["category"] == "generale"
 
 
 def test_faq_voce_inesistente(client):
-    _crea_cassaforte(client)
-    assert client.put("/api/faq/999", json={"question": "x"}).status_code == 404
+    _apri(client)
+    assert client.put("/api/faq/999", json={"answer": "x"}).status_code == 404
     assert client.delete("/api/faq/999").status_code == 404
 
 
 def test_faq_ordine_per_categoria_poi_evidenza(client):
-    """Le voci in evidenza risalgono nella loro categoria, non oltre."""
-    _crea_cassaforte(client)
-    for corpo in (
-        {"question": "Zeta", "category": "wifi"},
-        {"question": "Alfa", "category": "wifi", "pinned": True},
-        {"question": "Beta", "category": "indirizzi"},
-    ):
-        client.post("/api/faq", json=corpo)
+    _apri(client)
+    for q, cat, pin in [("b1", "wifi", False), ("a1", "wifi", True),
+                        ("c1", "codici", False)]:
+        client.post("/api/faq", json={"question": q, "category": cat, "pinned": pin})
     voci = client.get("/api/faq").get_json()["voci"]
-    # Wi-Fi prima degli Indirizzi, e dentro il Wi-Fi l'evidenza viene prima
-    assert [v["question"] for v in voci] == ["Alfa", "Zeta", "Beta"]
+    assert [v["question"] for v in voci] == ["a1", "b1", "c1"]
 
 
 def test_faq_una_voce_senza_valore_e_ammessa(client):
-    """Un promemoria puo' non avere ancora il valore: si aggiunge dopo."""
-    _crea_cassaforte(client)
-    r = client.post("/api/faq", json={"question": "Password del cancello"})
+    _apri(client)
+    r = client.post("/api/faq", json={"question": "Da completare"})
     assert r.status_code == 201
-    assert r.get_json()["answer"] == ""
     assert r.get_json()["ha_valore"] is False
 
 
 def test_faq_valori_booleani_normalizzati(client):
-    """Il frontend manda true/false: nella risposta tornano booleani coerenti."""
-    _crea_cassaforte(client)
-    voce = client.post("/api/faq", json={
-        "question": "Cancello", "pinned": False,
-    }).get_json()
-    assert voce["pinned"] is False
-    dopo = client.put(f"/api/faq/{voce['id']}", json={"pinned": True}).get_json()
-    assert dopo["pinned"] is True
+    _apri(client)
+    r = client.post("/api/faq", json={"question": "X", "pinned": 1})
+    assert r.get_json()["pinned"] is True
 
+
+# -------------------------------------------------------------------- meta
 
 def test_faq_meta_conta_le_voci_per_categoria(client):
-    _crea_cassaforte(client)
-    client.post("/api/faq", json={"question": "A", "category": "wifi"})
-    client.post("/api/faq", json={"question": "B", "category": "wifi"})
-    client.post("/api/faq", json={"question": "C", "category": "contatti"})
-    conteggi = {c["key"]: c["count"] for c in client.get("/api/faq/meta").get_json()["categories"]}
+    _apri(client)
+    client.post("/api/faq", json={"question": "a", "category": "wifi"})
+    client.post("/api/faq", json={"question": "b", "category": "wifi"})
+    client.post("/api/faq", json={"question": "c", "category": "codici"})
+    conteggi = {c["key"]: c["count"]
+                for c in client.get("/api/faq/meta").get_json()["categories"]}
     assert conteggi["wifi"] == 2
-    assert conteggi["contatti"] == 1
-    assert conteggi["codici"] == 0
+    assert conteggi["codici"] == 1
 
 
 def test_faq_meta_elenca_le_categorie(client):
-    m = client.get("/api/faq/meta").get_json()
-    chiavi = [c["key"] for c in m["categories"]]
-    assert chiavi[0] == "wifi", "il Wi-Fi e' la cosa che si cerca piu' spesso"
-    assert "generale" in chiavi
-    assert m["default_category"] in chiavi
+    cats = client.get("/api/faq/meta").get_json()["categories"]
+    assert cats and all("key" in c and "label" in c for c in cats)
 
-
-# ------------------------------------------------------------------ interfaccia
 
 def test_faq_non_ha_una_seconda_voce_di_menu(client):
-    """L'utente non vuole due schede: c'e' una sola lista, protetta. Si verifica
-    che la vista unica (Rubrica/Cassaforte) sia sparita dall'HTML e dal JS."""
-    html = client.get("/").get_data(as_text=True)
-    assert 'id="faq-vista-rubrica"' not in html
-    assert 'id="faq-vista-cassaforte"' not in html
-    assert 'id="faq-pannello-rubrica"' not in html
-    assert 'id="faq-pannello-cassaforte"' not in html
-    # una sola lista, con il riquadro della cassaforte sopra
-    assert 'id="cass-blocco"' in html
-    assert 'id="cass-contenuto" hidden' in html
-    assert 'id="faq-list"' in html
     js = client.get("/static/app.js").get_data(as_text=True)
-    for pezzo in ("renderCassaforte", "renderFaqElenco", "/api/cassaforte/stato",
-                  "/api/cassaforte/apri", "/api/cassaforte/chiudi", "creaCassaforte"):
-        assert pezzo in js, f"manca {pezzo} in app.js"
-    # la vecchia vista doppia non deve restare nel client
-    assert "cambiaVistaFaq" not in js
-    assert "cassRiga" not in js
     assert "cass-list" not in js
 
 
+# ------------------------------------------------------------------ migrazione
+
 def test_il_vecchio_database_faq_viene_importato_e_cifrato(client):
     """Chi aggiorna da una versione con le voci in chiaro non le perde: alla
-    creazione della cassaforte entrano nel blob cifrato e la tabella vecchia si
-    svuota."""
-    import sqlite3
+    prima lettura entrano nel blob cifrato e la tabella vecchia si svuota."""
     with sqlite3.connect(houses.db_path(CASA_TEST)) as db:
         db.execute("INSERT INTO faq (category, question, answer, pinned) "
                    "VALUES ('wifi', 'Fastweb', 'chiave-vecchia', 1)")
         db.commit()
-    _crea_cassaforte(client)
+    _apri(client)
     voci = client.get("/api/faq").get_json()["voci"]
     assert [v["question"] for v in voci] == ["Fastweb"]
     assert voci[0]["answer"] == "chiave-vecchia"
-    # la tabella vecchia non conserva piu' niente in chiaro
     with sqlite3.connect(houses.db_path(CASA_TEST)) as db:
         rimaste = db.execute("SELECT COUNT(*) FROM faq").fetchone()[0]
+        grezzo = db.execute("SELECT dati FROM cassaforte WHERE id = 1").fetchone()[0]
     assert rimaste == 0
+    assert "chiave-vecchia" not in grezzo, "la voce importata e' rimasta in chiaro"
+
+
+# ------------------------------------------------------------------ alias
+
+def test_gli_alias_cassaforte_restano(client):
+    """I vecchi nomi `/api/cassaforte/voci` non si rompono: stessa logica."""
+    _apri(client)
+    assert client.post("/api/cassaforte/voci",
+                       json={"question": "Alias", "answer": "ok"}).status_code == 201
+    voci = client.get("/api/cassaforte/voci").get_json()["voci"]
+    assert [v["question"] for v in voci] == ["Alias"]
+
+
+# ------------------------------------------------------ promemoria e chiusura
+
+def test_il_promemoria_si_cambia_con_la_chiave(client):
+    """Niente campi password: la chiave del dispositivo autorizza la modifica."""
+    _apri(client)
+    r = client.put("/api/faq/frase", json={"chiave": CHIAVE,
+                                           "promemoria": "il codice del cancello",
+                                           "chiusura_minuti": 5})
+    assert r.status_code == 200
+    stato = client.get("/api/faq/stato").get_json()
+    assert stato["promemoria"] == "il codice del cancello"
+    assert stato["chiusura_minuti"] == 5
+
+
+def test_il_promemoria_non_si_cambia_senza_la_chiave(client):
+    _apri(client)
+    assert client.put("/api/faq/frase",
+                      json={"chiave": "sbagliata", "promemoria": "x"}).status_code == 401

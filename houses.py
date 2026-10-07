@@ -140,24 +140,20 @@ def init_registro(percorso=None):
                 chiave TEXT PRIMARY KEY,
                 valore TEXT NOT NULL
             );
-            -- Il **segnaposto** della cassaforte: per ogni casa dice se e' stata
-            -- creata, come si chiama il promemoria, dopo quanto si richiude da
-            -- sola e con quale **impronta** verificare la password. I dati
+            -- Il **segnaposto** del modulo FAQ: per ogni casa dice come si
+            -- chiama il promemoria e dopo quanto si richiude da solo. I dati
             -- cifrati **non** stanno qui: stanno nel database della casa
             -- (`cassaforte`), insieme a quello che proteggono, cosi' una copia
-            -- della casa si porta dietro anche la cassaforte. Questo registro
-            -- serve solo a leggere lo stato e a controllare la password
-            -- **prima** di aprire il database della casa.
+            -- della casa si porta dietro anche le FAQ. Questo registro serve
+            -- solo a leggere lo stato senza aprire il database della casa.
             CREATE TABLE IF NOT EXISTS cassaforte_registro (
                 slug       TEXT PRIMARY KEY,
                 promemoria TEXT NOT NULL DEFAULT '',
                 chiusura_minuti INTEGER NOT NULL DEFAULT 15,
-                -- PBKDF2 della password della cassaforte. La password in chiaro
-                -- **non** entra mai nella sessione (finirebbe nel biscotto, che
-                -- il client puo' leggere): la sessione tiene solo questa
-                -- impronta, che basta a verificare l'apertura ma non a decifrare
-                -- niente. E' la stessa scelta dell'accesso alla casa, che tiene
-                -- l'impronta in `houses.password`.
+                -- Colonna storica: custodiva l'impronta PBKDF2 della password
+                -- della cassaforte. La password non esiste piu' (si apre col
+                -- sensore), quindi la colonna resta solo per non rompere i
+                -- registri gia' creati, ed e' sempre vuota.
                 impronta   TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -187,13 +183,11 @@ def secret_key(percorso=None):
 
 
 def cassaforte_meta(slug, percorso=None):
-    """Il segnaposto della cassaforte: promemoria, chiusura e impronta.
+    """Il segnaposto del modulo FAQ: promemoria e chiusura automatica.
 
-    Non contiene segreti utili a decifrare: l'**impronta** serve solo a
-    verificare che la password sia giusta, e sta nel registro perche' lo stato
-    della cassaforte (esiste? qual e' il promemoria? dopo quanto si richiude?)
-    deve leggersi senza aprire il database della casa. Restituisce None se la
-    cassaforte di quella casa non e' mai stata creata.
+    Non contiene segreti: serve a leggere lo stato (il promemoria, dopo quanto
+    si richiude) senza aprire il database della casa. Restituisce None se per
+    quella casa non e' mai stato scritto niente.
     """
     init_registro(percorso)
     with closing(_connect_registro(percorso)) as db:
@@ -209,10 +203,10 @@ def cassaforte_meta(slug, percorso=None):
 
 def cassaforte_registra(slug, promemoria="", chiusura_minuti=15,
                         impronta=None, percorso=None):
-    """Crea o aggiorna il segnaposto della cassaforte per la casa.
+    """Crea o aggiorna il segnaposto del modulo FAQ per la casa.
 
-    `impronta=None` lascia quella esistente com'e': cambiare promemoria o
-    chiusura non deve ricalcolare l'impronta, che e' legata alla password.
+    `impronta` resta accettata per compatibilita' col registro storico, ma non
+    viene piu' usata: la password della cassaforte non esiste piu'.
     """
     init_registro(percorso)
     with closing(_connect_registro(percorso)) as db:

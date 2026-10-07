@@ -143,9 +143,9 @@ CREATE INDEX IF NOT EXISTS idx_chores_freq ON chores(frequency, month);
 -- essere lungo: un indirizzo completo, gli orari di un ambulatorio).
 --
 -- La tabella non e' piu' usata dal modulo FAQ: le voci vivono **cifrate** nella
--- `cassaforte` (riga sotto), e al primo aprire della cassaforte quelle gia'
--- presenti qui vengono importate. La tabella resta solo perche' un database
--- vecchio la porta con se' e la migrazione la legge una volta.
+-- `cassaforte` (riga sotto), e alla prima lettura quelle gia' presenti qui
+-- vengono importate. La tabella resta solo perche' un database vecchio la porta
+-- con se' e la migrazione la legge una volta.
 CREATE TABLE IF NOT EXISTS faq (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     category   TEXT NOT NULL DEFAULT 'generale',
@@ -159,24 +159,24 @@ CREATE TABLE IF NOT EXISTS faq (
 CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
 
 -- ------------------------------------------------------------- cassaforte
--- Tutte le voci delle FAQ, **cifrate** con una password della cassaforte. La
--- riservatezza e' vera: il testo non e' mai in chiaro nel file, e non esce
--- dall'API finche' la cassaforte non e' aperta. La password della cassaforte non
--- e' quella dell'app (puo' coincidere, ma non e' detto): entrare nella casa non
--- basta a leggere questi dati.
+-- Tutte le voci delle FAQ, **cifrate** con la chiave della casa
+-- (`houses.secret_key`, in `houses.db`). Il testo non e' mai in chiaro nel file
+-- e non esce dall'API finche' il modulo non e' aperto col controllo biometrico.
+-- Entrare nella casa non basta a leggere questi dati, ma la chiave della casa
+-- il server la conosce sempre: la cifratura protegge il **file** (un database
+-- copiato, una copia di backup), il sensore protegge l'**accesso**.
 --
 -- La tabella contiene la **scatola**: un solo `dati` cifrato con tutte le voci
--- dentro, e i parametri che servono ad aprirla. Non una riga per voce: cifrare
--- ogni voce separatamente moltiplicherebbe i PBKDF2 (uno per voce), e la cassaforte
--- e' piccola e si legge tutta insieme.
+-- dentro, piu' il timbro del dispositivo. Non una riga per voce: cifrare ogni
+-- voce separatamente moltiplicherebbe i PBKDF2 (uno per voce), e il modulo e'
+-- piccolo e si legge tutto insieme.
 CREATE TABLE IF NOT EXISTS cassaforte (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
-    dati       TEXT NOT NULL,                 -- il blob cifrato (JSON)
-    -- La **scatola per la biometria**: le stesse voci, ma cifrate con la
-    -- chiave che il dispositivo custodisce dietro il sensore. Vuota = la
-    -- biometria non e' attiva. E' una seconda scatola, non un secondo
-    -- segnaposto: si apre senza la password, quindi la password da sola non
-    -- deve poterla leggere.
+    dati       TEXT NOT NULL DEFAULT '',      -- il blob cifrato (JSON)
+    -- Il **timbro del dispositivo**: la chiave che il client custodisce dietro
+    -- il sensore, cifrata con se stessa. Vuoto = la biometria non e' ancora
+    -- configurata. Alla prima apertura si deposita da sola; poi la stessa chiave
+    -- deve aprirla, altrimenti un altro dispositivo non passa.
     bio        TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

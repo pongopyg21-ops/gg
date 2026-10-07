@@ -580,17 +580,16 @@
   </section>
 
   <!-- FAQ — informazioni utili da consultare: Wi-Fi, indirizzi, contatti,
-       codici **e** dati riservati (password, PIN). Tutto il modulo e' protetto
-       dalla **cassaforte**: le voci vivono cifrate nel database e si vedono
-       dopo averla aperta con la sua password. Non c'e' una seconda scheda nel
-       menu (l'utente non ne vuole una): c'e' una sola lista, e sopra il
-       riquadro che crea/apre chiude la cassaforte. La ricerca sta in cima
+       codici. Possono contenere dati riservati (password, PIN), quindi le voci
+       vivono cifrate nel database e si vedono dopo aver aperto il modulo col
+       **controllo biometrico** (niente password da ricordare). Non c'e' una
+       seconda scheda nel menu (l'utente non ne vuole una): c'e' una sola lista,
+       e sopra il riquadro che apre/chiude il modulo. La ricerca sta in cima
        perche' si apre questa pagina per trovare una cosa precisa. -->
   <section id="tab-faq" class="tab">
-    <!-- Il riquadro della cassaforte: invito a crearla, richiesta della
-         password, oppure l'apertura con il pulsante per chiudere. Il testo dei
-         valori **non** viene mai mandato al browser se la cassaforte e' chiusa:
-         e' il server a negarlo, non un nascondiglio nel client. -->
+    <!-- Il riquadro che apre il modulo col sensore, oppure la lista delle voci.
+         Il testo dei valori **non** viene mai mandato al browser a modulo
+         chiuso: e' il server a negarlo, non un nascondiglio nel client. -->
     <div id="cass-stato" class="cass-stato"></div>
     <div id="cass-blocco" class="cass-blocco"></div>
 
