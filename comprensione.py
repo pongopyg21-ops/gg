@@ -28,6 +28,7 @@ import json
 import os
 import re
 import urllib.request
+from datetime import date
 from urllib.parse import urlparse
 
 # L'endpoint e' quello compatibile con OpenAI. Il predefinito e' il **modello di
@@ -73,7 +74,7 @@ def timeout() -> float:
 INTENTI = {
     "pantry_add", "pantry_remove", "pantry_consume",
     "shopping_add", "shopping_remove", "shopping_check",
-    "storage_add", "term_add",
+    "storage_add", "term_add", "event_add",
     "recipe_search", "recipe_add", "recipe_cooked",
     "domanda", "unknown",
 }
@@ -99,6 +100,7 @@ Intenti possibili e campi:
 - "shopping_check": spunta in lista quello che si e' comprato. Campi: name.
 - "storage_add": aggiunge al magazzino (cose che non si mangiano: detersivi, attrezzi). Campi: name, quantity, unit, place, category.
 - "term_add": allergie/intolleranze/restrizioni. Campi: terms (elenco di stringhe).
+- "event_add": un impegno con una data (appuntamento, scadenza, promemoria). Campi: name (titolo), when_date (data ISO YYYY-MM-DD), time (ora HH:MM, o vuoto), category (lavoro, casa, salute, famiglia, altro), reminder_days (quanti giorni prima avvisare).
 - "recipe_search": cerca fra le ricette. Campo: query.
 - "recipe_add": vuole creare/nuova ricetta. Campi: name, items (elenco di {name, quantity, unit}).
 - "recipe_cooked": "ho cucinato/ho fatto". Campo: name.
@@ -110,6 +112,7 @@ Regole importanti:
   destinazione o quantita' e' chiacchiera: rispondi "unknown".
 - "metti", "aggiungi", "segna" senza destinazione esplicita = spesa.
 - Un alimento va in dispensa o spesa; un detersivo o un attrezzo nel magazzino.
+- Un "ricordami"/"segnami" con una data o un'ora e' "event_add", non una spesa.
 - Le domande ("che cosa c'e'", "quanto", "dove", "hai") sono "domanda": NON
   eseguirle come ordini.
 - L'unita' deve essere una di: g, kg, ml, l, cucchiaio, cucchiaino, pz, confezione, fetta.
@@ -311,6 +314,15 @@ def messaggio_stato() -> str:
             f"(ollama pull {modello_atteso}). Senza, l'app usa le regole.")
 
 
+def _giorni_promemoria(valore) -> int:
+    """Quanti giorni prima avvisare, entro i limiti. Zero e' il giorno stesso."""
+    try:
+        n = int(valore)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(365, n))
+
+
 def _ripulisci(dati: dict) -> dict:
     """Tiene solo un comando che il parser saprebbe eseguire.
 
@@ -385,6 +397,24 @@ def _ripulisci(dati: dict) -> dict:
         comando["items"] = items
         if not comando["name"] and not items:
             return {"intent": "unknown"}
+    elif intento == "event_add":
+        nome = testo(dati.get("name"))
+        if not nome:
+            return {"intent": "unknown"}
+        comando["name"] = nome
+        # la data dev'essere una data vera: una inventata farebbe un impegno nel
+        # giorno sbagliato, che e' peggio di un impegno mancato. Il modello la
+        # rende in ISO; se non ci riesce, si prova il parser a regole piu' sotto.
+        quando = testo(dati.get("when_date"))[:10]
+        try:
+            date.fromisoformat(quando)
+        except ValueError:
+            return {"intent": "unknown"}
+        comando["when_date"] = quando
+        ora = testo(dati.get("time"))
+        comando["time"] = ora[:5] if re.match(r"^\d{1,2}:\d{2}$", ora) else ""
+        comando["category"] = testo(dati.get("category")) or None
+        comando["reminder_days"] = _giorni_promemoria(dati.get("reminder_days"))
     elif intento == "domanda":
         area = testo(dati.get("area")).lower()
         if area not in AREE:

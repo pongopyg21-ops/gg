@@ -4847,6 +4847,7 @@ async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
         if (tab === 'shopping') renderShopping();
         if (tab === 'profile') renderProfile();
         if (tab === 'magazzino') renderMagazzino();
+        if (tab === 'calendario' && typeof renderCalendario === 'function') renderCalendario();
       }
       if (res.reload && res.reload.length) switchTab(res.reload[0]);
       loadIngredientsDatalist();
@@ -5686,6 +5687,11 @@ const VERBI_COMANDO = [
   'mostra', 'dimmi', 'quanto', 'quale', 'che', 'come', 'quando', 'dove',
   'posso', 'serve', 'manca', 'ci', 'sono', 'mangio', 'bevo', 'pulisci',
   'pulito', 'lava', 'lavare', 'cambia', 'modifica', 'aggiorna', 'porta',
+  // gli impegni con data e promemoria: "ricordami il dentista domani",
+  // "fissami la visita giovedì". Sono comandi a tutti gli effetti e senza
+  // queste voci la finestra dopo "Sì." li scarterebbe in silenzio.
+  'ricordami', 'ricorda', 'fissami', 'fissa', 'programma', 'programmami',
+  'appunta', 'appuntami', 'annotami', 'promemoria',
   // il femminile e il plurale della domanda sulla quantita': "quante ricette ho",
   // "quanti grammi sono rimasti" sono comandi come "quanto sale ho", e il parser
   // le capisce (intento `domanda`). Senza, la domanda piu' naturale in cucina

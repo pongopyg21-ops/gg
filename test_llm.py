@@ -431,3 +431,30 @@ async function avviaAccesso() { log.push('avviaAccesso'); }
     assert e["anonimo"] == ["avviaAccesso"], e
     assert e["init-giu"] == ["registra", "mostraErroreApp"], e
     assert e["collegato"] == ["init-ok"], e
+
+
+# ---------------------------------------------------------------- impegni col modello
+
+def test_il_modello_puo_programmare_un_impegno(client, monkeypatch):
+    """Con l'interruttore acceso, un impegno detto a voce col modello viene creato."""
+    domani = (date.today() + timedelta(days=1)).isoformat()
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
+    client.put("/api/voce/llm", json={"abilitato": True})
+    monkeypatch.setattr(comprensione, "chiama", lambda t: {
+        "intent": "event_add", "name": "dentista", "when_date": domani,
+        "time": "15:00", "category": "salute", "reminder_days": 1})
+    r = client.post("/api/voice", json={"text": "ricordami il dentista domani alle 15"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "event_add"
+    giorno = client.get(f"/api/appointments?giorno={domani}").get_json()
+    voce = next(a for a in giorno["appointments"] if a["title"] == "dentista")
+    assert voce["reminder_days"] == 1
+
+
+def test_l_impegno_del_modello_con_data_inventata_non_parte(client, monkeypatch):
+    """Una data storta dal modello non diventa un impegno nel giorno sbagliato:
+    si scarta, e il parser a regole prova la sua."""
+    cmd = comprensione._ripulisci({"intent": "event_add", "name": "dentista",
+                                   "when_date": "non-una-data"})
+    assert cmd["intent"] == "unknown"

@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **764 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **774 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -993,12 +993,35 @@ Conseguenze pratiche per chi mette mano al codice:
   dettare testo (o a registrare l'audio, vedi sotto) e a mandarlo a
   `POST /api/voice`, così la comprensione è testabile senza microfono. `parse()`
   riconosce gli intenti `pantry_add`, `shopping_add`, `storage_add`, `term_add`,
-  `recipe_search`, `recipe_add` e restituisce `unknown` quando non capisce. Le unità
+  `event_add`, `recipe_search`, `recipe_add` e restituisce `unknown` quando non
+  capisce. Le unità
   si aggiungono in `_UNIT_TOKENS`, le parole di comando in `_COMMAND_VERBS`, le
   destinazioni in `_find_destination`. Una frase senza verbo, destinazione o
   quantità è rumore di fondo e deve restare `unknown`: il microfono sente anche i
   discorsi in cucina e le voci inventate in lista sono peggio di un comando non
   capito.
+- **Gli impegni si programmano a voce** (`event_add`). "ricordami il dentista
+  domani alle 15" crea un impegno nel Calendario, con data, ora, categoria e
+  promemoria: è l'unica capacità vocale che *scrive* nel calendario, ed è nata
+  perché programmare un promemoria è esattamente il momento in cui si hanno le
+  mani occupate. La comprensione sta in `voice.py`; l'esecuzione in
+  `app._esegui_impegno`, che riusa `calendario` (categoria che ricade, ora
+  tollerante, `promemoria_giorni`) e risponde con "domani/fra N giorni" e se
+  avvisa. Tre guardie, tutte per non trasformare chiacchiera in appuntamenti:
+  serve **una data vera oppure un'ora** (senza, non c'è niente da programmare);
+  i verbi di promemoria si dividono in **forti** (`ricordami`, `fissami`,
+  `programma`) e **deboli** (`segnami`, `segna`, che valgono solo con una data o
+  con la parola "impegno"); e i verbi di comando della spesa/dispensa vincono
+  ("metti il latte domani" resta una voce di lista). I verbi forti vanno tolti
+  dal controllo generico `_COMMAND_VERBS`, altrimenti "ricordami il dentista
+  domani" resterebbe una spesa. Le date dette si leggono in `_data_detta`
+  ("domani"/"dopodomani", giorno della settimana, "25 dicembre", `12/03`), le ore
+  in `_ora_detta` ("alle 18", "di sera"), il promemoria in `_promemoria_detto`
+  ("una settimana prima"). Nel percorso col modello, `comprensione._ripulisci`
+  **valida la data ISO**: una data inventata scarta l'impegno invece di
+  programmarlo nel giorno sbagliato. Nel client i verbi forti sono in
+  `VERBI_COMANDO` (la finestra dopo "Sì." li accetta) e `reload: ["calendario"]`
+  apre la scheda del Calendario, dove `renderCalendario()` lo mostra.
 - **Le parole di comando non sono alimenti.** Lo stesso guasto delle domande, per
   un'altra strada: "fammi la spesa" non dice *cosa* comprare, e senza guardia il
   verbo "fammi" finiva in lista come articolo. I verbi (`fai`, `fammi`, `vedere`,
@@ -2686,6 +2709,13 @@ che ricade, i limiti del promemoria e l'ora tollerante — tutte funzioni pure �
 poi le rotte per ciò che aggiungono: persistenza, validazione, `done` isolato,
 gli avvisi che sono solo i promemoria scattati, il 401 senza accesso e la tabella
 `appointments` che arriva anche a un database vecchio.
+
+**Gli impegni si possono dettare a voce** (`event_add`, vedi la sezione sui
+comandi vocali): "ricordami il dentista domani alle 15" crea la riga in
+`appointments` senza toccare lo schermo. È l'unica capacità vocale che scrive nel
+calendario, e l'esecuzione (`app._esegui_impegno`) riusa `calendario` — categoria
+che ricade, ora tollerante, `promemoria_giorni` — così una frase detta e una
+scheda compilata a mano danno lo stesso risultato.
 
 ### I promemoria del sistema (Notification API)
 

@@ -15,6 +15,7 @@ Esempi di frasi riconosciute:
 """
 import re
 import unicodedata
+from datetime import date, timedelta
 
 import allergens
 
@@ -786,13 +787,201 @@ def _categoria_deducibile(tokens):
     return None
 
 
+# ---------------------------------------------------------------- impegni
+# Un impegno e' una cosa con un **giorno** (e a volte un'ora): appuntamenti,
+# scadenze, ricorrenze. Si riconosce dalla parola "impegno" o da un verbo di
+# promemoria ("ricordami", "segnami") insieme a una **data** o a un'**ora**:
+# senza ne' data ne' ora non c'e' niente da programmare, ed e' chiacchiera.
+_IMPEGNO_NOMI = {"impegno", "impegni", "appuntamento", "appuntamenti"}
+
+# Verbi che introducono un promemoria. "segnami" e' anche un verbo di comando
+# della dispensa ("segnami il latte"), quindi da solo non basta. Si distinguono
+# due livelli: quelli **forti** ("ricordami", "fissami") indicano un impegno
+# anche con la sola ora, quelli **deboli** ("segnami", "segna") sono neutri e
+# diventano impegno solo con una data vera o la parola "impegno".
+_IMPEGNO_VERBS_FORTI = {"ricordami", "ricordarmi", "ricorda", "ricordare",
+                        "promemoria", "promememoria", "appunta", "appuntami",
+                        "fissami", "fissa", "programma", "programmami"}
+_IMPEGNO_VERBS_DEBOLI = {"segnami", "segna", "segnare", "annotami", "annota"}
+_IMPEGNO_VERBS = _IMPEGNO_VERBS_FORTI | _IMPEGNO_VERBS_DEBOLI
+
+# Categorie degli impegni, dedotte dalle parole della frase. Sono un di piu':
+# senza indizi si usa "altro", che e' la predefinita del calendario.
+_IMPEGNO_CATEGORIE = {
+    "lavoro": {"lavoro", "ufficio", "riunione", "meeting", "colloquio",
+               "consegna", "scadenza", "cliente", "clienti", "turno"},
+    "salute": {"dottore", "medico", "dentista", "visita", "analisi", "esame",
+               "farmacia", "ospedale", "vaccino", "terapia", "fisioterapia"},
+    "famiglia": {"famiglia", "nonna", "nonno", "mamma", "papà", "papa",
+                 "figlio", "figlia", "compleanno", "cena"},
+    "casa": {"casa", "bolletta", "bollette", "affitto", "mutuo", "condominio",
+             "manutenzione", "idraulico", "elettricista"},
+}
+
+# Parole che non fanno parte del titolo di un impegno.
+_IMPEGNO_STOPWORDS = {
+    "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "a", "da",
+    "in", "con", "su", "per", "tra", "fra", "e", "che", "del", "dello", "della",
+    "dei", "degli", "delle", "al", "allo", "alla", "ai", "agli", "alle",
+    "dal", "dallo", "dalla", "dai", "dagli", "dalle",
+    "mi", "ti", "si", "ci", "vi", "lo", "ne", "me", "te", "se",
+}
+
+_MESI_NOMI = {
+    "gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4, "maggio": 5,
+    "giugno": 6, "luglio": 7, "agosto": 8, "settembre": 9, "ottobre": 10,
+    "novembre": 11, "dicembre": 12,
+}
+
+_GIORNI_ITALIANI = {
+    "lunedi": 0, "lunedi'": 0, "martedi": 1, "martedi'": 1,
+    "mercoledi": 2, "mercoledi'": 2, "giovedi": 3, "giovedi'": 3,
+    "venerdi": 4, "venerdi'": 4, "sabato": 5, "domenica": 6,
+}
+
+
+def categoria_impegno(tokens):
+    """La categoria dell'impegno dedotta dalle parole, o None se non si capisce."""
+    parole = set(tokens)
+    for chiave, indizi in _IMPEGNO_CATEGORIE.items():
+        if indizi & parole:
+            return chiave
+    return None
+
+
+def _prossimo_giorno_settimana(oggi, target):
+    """Il giorno della settimana `target` (0=lunedi') che viene dopo oggi."""
+    avanti = (target - oggi.weekday()) % 7
+    if avanti == 0:
+        avanti = 7
+    return oggi + timedelta(days=avanti)
+
+
+def _data_detta(normalized, oggi, tokens):
+    """La data ISO detta nella frase, e l'indice dei token che la compongono.
+
+    Riconosce i modi in cui si dice un giorno parlando: "domani", "dopodomani",
+    "stasera/stamattina" (oggi), un giorno della settimana ("giovedi"), una data
+    ("25 dicembre", "12/03", "2026-12-25"). Non indovina niente: quello che non
+    riconosce non e' una data, e la frase resta senza.
+    """
+    # date esplicite con i numeri
+    m = re.search(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", normalized)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat(), set()
+        except ValueError:
+            pass
+    m = re.search(r"\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b", normalized)
+    if m:
+        giorno, mese = int(m.group(1)), int(m.group(2))
+        anno = m.group(3)
+        anno = oggi.year if not anno else (2000 + int(anno) if len(anno) == 2 else int(anno))
+        try:
+            d = date(anno, mese, giorno)
+            return d.isoformat(), set()
+        except ValueError:
+            pass
+    # "25 dicembre", "25 di dicembre"
+    m = re.search(r"\b(\d{1,2})\s+(?:di\s+)?([a-zà-ù]+)\b", normalized)
+    if m and m.group(2).rstrip("'") in _MESI_NOMI:
+        giorno = int(m.group(1))
+        mese = _MESI_NOMI[m.group(2).rstrip("'")]
+        anno = oggi.year
+        try:
+            d = date(anno, mese, giorno)
+            if d < oggi:
+                d = date(anno + 1, mese, giorno)
+            return d.isoformat(), set()
+        except ValueError:
+            pass
+
+    # parole
+    parole = normalized.split()
+    skip = set()
+    for i, tok in enumerate(parole):
+        if tok == "domani":
+            return (oggi + timedelta(days=1)).isoformat(), {i}
+        if tok == "dopodomani":
+            return (oggi + timedelta(days=2)).isoformat(), {i}
+        if tok in ("oggi", "stasera", "stamattina", "stamane", "pomeriggio"):
+            return oggi.isoformat(), {i}
+        if tok in _GIORNI_ITALIANI:
+            return _prossimo_giorno_settimana(oggi, _GIORNI_ITALIANI[tok]).isoformat(), {i}
+    return "", skip
+
+
+def _ora_detta(normalized):
+    """L'ora HH:MM detta nella frase, o stringa vuota.
+
+    Riconosce "alle 18", "alle 18:30", "alle 18 e mezza", "alle 7 di sera".
+    """
+    m = re.search(r"\b(?:alle?|ore|verso)\s+(\d{1,2})(?::(\d{2}))?\b", normalized)
+    if not m:
+        return ""
+    ora = int(m.group(1))
+    minuti = int(m.group(2) or 0)
+    if "mezza" in normalized:
+        minuti = 30
+    elif "un quarto" in normalized or "quarto" in normalized:
+        minuti = 15
+    # "di sera", "di pomeriggio": 7 diventa 19
+    if re.search(r"\b(?:di\s+)?(?:sera|pomeriggio|sveglia)\b", normalized) and ora < 12:
+        ora += 12
+    if 0 <= ora <= 23 and 0 <= minuti <= 59:
+        return f"{ora:02d}:{minuti:02d}"
+    return ""
+
+
+def _promemoria_detto(normalized):
+    """Quanti giorni prima avvisare, o 0 (il giorno stesso)."""
+    if "un giorno prima" in normalized or "il giorno prima" in normalized:
+        return 1
+    if "due giorni prima" in normalized:
+        return 2
+    if "tre giorni prima" in normalized:
+        return 3
+    m = re.search(r"\buna?\s+settimana\s+prima\b", normalized)
+    if m:
+        return 7
+    m = re.search(r"\b(\d{1,3})\s+giorni?\s+prima\b", normalized)
+    if m:
+        return int(m.group(1))
+    return 0
+
+
+def _nome_impegno(tokens, skip_data_ora):
+    """Il titolo dell'impegno: la frase senza i verbi, le date e le ore."""
+    scarto = set(_IMPEGNO_STOPWORDS) | set(_IMPEGNO_VERBS) | set(_IMPEGNO_NOMI)
+    # altri verbi di comando che si usano per introdurre un promemoria
+    scarto |= {"metti", "mettere", "aggiungi", "aggiungere", "aggiungimi",
+               "inserisci", "inserire", "crea", "creare", "voglio", "vorrei",
+               "devo", "dobbiamo", "dovrei", "promemoria", "promememoria"}
+    scarto |= {"alle", "ore", "verso", "di", "del", "della", "un", "una", "il",
+               "prima", "giorno", "giorni", "settimana", "mezza", "quarto",
+               "sera", "mattina", "pomeriggio", "stasera", "stamattina",
+               "ricordarmelo", "ricordamelo", "avvisami", "avvisa"}
+    scarto |= set(_MESI_NOMI) | set(_GIORNI_ITALIANI)
+    parole = []
+    for i, t in enumerate(tokens):
+        if i in skip_data_ora or t in scarto:
+            continue
+        # i numeri che restano sono date o orari (il titolo non li contiene):
+        # "fissami il dentista il 25 dicembre alle 15" -> "dentista"
+        if t.replace(":", "").replace("/", "").replace(".", "").replace("-", "").isdigit():
+            continue
+        parole.append(t)
+    return " ".join(parole).strip()
+
+
 def parse(text):
     """Comando strutturato ricavato dalla frase dettata.
 
     Ritorna un dizionario con `intent` fra:
     `pantry_add`, `pantry_remove`, `pantry_consume`, `shopping_add`,
     `shopping_remove`, `shopping_check`, `storage_add`, `term_add`,
-    `recipe_search`, `recipe_add`, `recipe_cooked`, `domanda`, `unknown`.
+    `event_add`, `recipe_search`, `recipe_add`, `recipe_cooked`, `domanda`,
+    `unknown`.
     """
     raw = str(text or "").strip()
     # L'ascolto continuo detta la sveglia insieme al comando: qui si toglie una
@@ -847,6 +1036,37 @@ def parse(text):
         ingredienti = (_ingredienti_da_dettato(tokens_frase[inizio_ingredienti:])
                        if inizio_ingredienti is not None else [])
         return {**base, "intent": "recipe_add", "name": nome, "items": ingredienti}
+
+    # Impegno con data e promemoria: "ricordami il dentista domani alle 15".
+    # Prima della ricerca e degli ingredienti: "segnami" e' anche un verbo della
+    # dispensa ("segnami il latte"), quindi da solo non basta. Serve la parola
+    # "impegno" **oppure** un verbo di promemoria **e** una data o un'ora: senza
+    # niente da programmare la frase resta quello che era.
+    tokens_imp = normalized.split()
+    data_imp, skip_data = _data_detta(normalized, date.today(), tokens_imp)
+    ora_imp = _ora_detta(normalized)
+    if data_imp or ora_imp:
+        ha_nome_impegno = bool(_IMPEGNO_NOMI & set(tokens_imp))
+        ha_verbo_forte = bool(_IMPEGNO_VERBS_FORTI & set(tokens_imp))
+        # Un verbo generico della dispensa/spesa non basta: "metti il latte
+        # domani" o "aggiungi la farina alle 5" restano comandi della lista.
+        # I verbi di promemoria ("ricordami", "segnami") sono in `_COMMAND_VERBS`
+        # per la spesa, quindi qui si tolgono dal controllo generico: altrimenti
+        # "ricordami il dentista domani" resterebbe una voce di spesa.
+        verbo_gen = bool((_COMMAND_VERBS - _IMPEGNO_VERBS) & set(tokens_imp))
+        _, _, explicit_imp, _ = _find_destination(tokens_imp)
+        # Una data da sola (senza verbo, senza "impegno", senza ora) e' troppo
+        # poco: "il latte domani" non e' un appuntamento.
+        segnale = ha_nome_impegno or ha_verbo_forte or (data_imp and ora_imp)
+        if (segnale and not explicit_imp and (ha_nome_impegno or not verbo_gen)):
+            nome_imp = _nome_impegno(tokens_imp, skip_data)
+            if nome_imp:
+                # "ricordami il dentista alle 15", senza giorno: e' oggi
+                quando = data_imp or date.today().isoformat()
+                return {**base, "intent": "event_add", "name": nome_imp,
+                        "when_date": quando, "time": ora_imp,
+                        "category": categoria_impegno(tokens_imp),
+                        "reminder_days": _promemoria_detto(normalized)}
 
     # ricerca fra le ricette
     match = re.search(r"\b(cerca|cercami|cercare|mostrami|trova)\b", normalized)

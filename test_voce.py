@@ -2521,3 +2521,92 @@ console.log(JSON.stringify({ righe, conteggio, testo, orario: /\\d\\d:\\d\\d:\\d
     assert d["righe"] == 60, "il registro non deve crescere all'infinito"
     assert d["conteggio"] == "(60)"
     assert "passo 69" in d["testo"]
+
+
+# ---------------------------------------------------------------- impegni
+
+def test_voce_programma_un_impegno_con_data_e_ora(client):
+    """Un dettato con data e ora crea un impegno vero, non una voce di spesa."""
+    domani = (date.today() + timedelta(days=1)).isoformat()
+    cmd = voice.parse("ricordami il dentista domani alle 15")
+    assert cmd["intent"] == "event_add"
+    assert cmd["name"] == "dentista"
+    assert cmd["when_date"] == domani
+    assert cmd["time"] == "15:00"
+    assert cmd["category"] == "salute"
+
+    r = client.post("/api/voice", json={"text": "ricordami il dentista domani alle 15"})
+    assert r.status_code == 200
+    dati = r.get_json()
+    assert dati["intent"] == "event_add"
+    assert "calendario" in dati["reload"]
+
+    giorno = client.get(f"/api/appointments?giorno={domani}").get_json()
+    titoli = [a["title"] for a in giorno["appointments"]]
+    assert "dentista" in titoli
+
+
+def test_voce_impegno_con_promemoria(client):
+    """Il promemoria si dice a voce: "una settimana prima" vale sette giorni."""
+    futura = (date.today() + timedelta(days=40)).isoformat()
+    cmd = voice.parse(f"ricordami la visita una settimana prima il {futura}")
+    assert cmd["intent"] == "event_add"
+    assert cmd["reminder_days"] == 7
+    assert cmd["when_date"] == futura
+
+    r = client.post("/api/voice",
+                    json={"text": f"ricordami la visita una settimana prima il {futura}"})
+    assert r.status_code == 200
+    giorno = client.get(f"/api/appointments?giorno={futura}").get_json()
+    voce = next(a for a in giorno["appointments"] if a["title"] == "visita")
+    assert voce["reminder_days"] == 7
+
+
+def test_voce_impegno_deduce_la_categoria(client):
+    """Le parole della frase scelgono la categoria, senza doverla dire."""
+    assert voice.parse("fissami la riunione di lavoro domani")["category"] == "lavoro"
+    assert voice.parse("ricordami il compleanno di mia figlia domani")["category"] == "famiglia"
+    assert voice.parse("ricordami la bolletta domani")["category"] == "casa"
+    assert voice.parse("ricordami una cosa qualsiasi domani")["category"] is None
+
+
+def test_voce_impegno_detto_col_giorno_della_settimana(client):
+    """Un giorno della settimana vale il prossimo, non quello passato."""
+    cmd = voice.parse("ricordami la riunione giovedì alle 9")
+    assert cmd["intent"] == "event_add"
+    atteso = voice._prossimo_giorno_settimana(date.today(), 3)
+    assert cmd["when_date"] == atteso.isoformat()
+    assert cmd["time"] == "09:00"
+
+
+def test_voce_impegno_non_confonde_dispensa_e_spesa(client):
+    """Senza una data vera, "segnami"/"ricordami" restano comandi di sempre."""
+    assert voice.parse("segnami il latte")["intent"] == "shopping_add"
+    assert voice.parse("ricordami il latte")["intent"] == "shopping_add"
+    assert voice.parse("metti il latte domani")["intent"] == "shopping_add"
+    assert voice.parse("aggiungi la farina alle 5")["intent"] == "shopping_add"
+    # e senza data ne' ora non c'e' niente da programmare
+    assert voice.parse("ricordami di chiamare la nonna")["intent"] != "event_add"
+
+
+def test_voce_impegno_richiede_una_data(client):
+    """Una frase senza data non crea un impegno: meglio non capire."""
+    for frase in ("ricordami il dentista", "segnami un impegno", "fissami la visita"):
+        assert voice.parse(frase)["intent"] != "event_add"
+
+
+def test_voce_impegno_data_esplicita_con_mese(client):
+    """Il "25 dicembre" diventa una data ISO, anche se cade l'anno prossimo."""
+    cmd = voice.parse("ricordami di pagare la bolletta il 25 dicembre")
+    assert cmd["intent"] == "event_add"
+    assert cmd["when_date"][5:] == "12-25"
+    assert cmd["category"] == "casa"
+
+
+def test_la_risposta_di_un_impegno_dice_quando_e_se_avvisa(client):
+    """Chi ha parlato deve sapere quando e' stato messo e se il promemoria c'e'."""
+    dati = client.post("/api/voice",
+                       json={"text": "ricordami il dentista domani"}).get_json()
+    assert "domani" in dati["message"]
+    assert "Ti avviso" in dati["message"]
+    assert dati["appointment_id"] is not None

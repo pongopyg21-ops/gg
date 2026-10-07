@@ -2790,6 +2790,41 @@ def _comprendi(testo, db):
     return {**a_regole, **cmd}
 
 
+def _esegui_impegno(db, cmd):
+    """Crea un impegno dal comando dettato, senza passare per le mani.
+
+    Il promemoria si ricava dalla data: `reminder_days` dice quanti giorni prima
+    avvisare, e `stato_impegno` accende l'avviso quando quel giorno arriva. La
+    risposta dice quando e' stato messo e se avvisa, cosi' chi ha parlato sa se
+    l'ha preso.
+    """
+    titolo = (cmd.get("name") or "").strip()
+    quando = (cmd.get("when_date") or "").strip()[:10]
+    giorno = calendario._data(quando)
+    if not titolo or giorno is None:
+        return jsonify({**cmd, "message": "Non ho capito la data dell'impegno. Riprova."}), 422
+
+    categoria = calendario.categoria_valida(cmd.get("category"))
+    ora = calendario._ora(cmd.get("time"))
+    promemoria = calendario.promemoria_giorni(cmd.get("reminder_days"))
+    cur = db.execute(
+        """INSERT INTO appointments
+           (title, when_date, time, category, notes, reminder_days)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (titolo, quando, ora, categoria, "", promemoria),
+    )
+    db.commit()
+
+    frase = calendario.quando_detto(
+        calendario.stato_impegno(quando, oggi=datetime.date.today().isoformat(),
+                                 promemoria=promemoria))
+    aggiunta = f" alle {ora}" if ora else ""
+    avviso = (f" Ti avviso {promemoria} giorni prima."
+              if promemoria else " Ti avviso il giorno stesso.")
+    return jsonify({**cmd, "message": f"Fatto. {titolo.capitalize()}, {frase}{aggiunta}.{avviso}",
+                    "appointment_id": cur.lastrowid, "reload": ["calendario"]})
+
+
 @app.route("/api/voice", methods=["POST"])
 def voice_command():
     """Comprende una frase dettata ed esegue il comando.
@@ -2887,6 +2922,9 @@ def voice_command():
 
     if cmd["intent"] == "recipe_cooked":
         return _esegui_cucinato(db, cmd)
+
+    if cmd["intent"] == "event_add":
+        return _esegui_impegno(db, cmd)
 
     if cmd["intent"] == "domanda":
         return _rispondi_domanda(db, cmd)
