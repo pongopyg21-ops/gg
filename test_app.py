@@ -913,10 +913,12 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
 def test_le_illustrazioni_della_home_sono_acquerello(client):
     """La home ha delle illustrazioni ad **acquerello**: macchie astratte
     pastello sparse fra le schede, e una macchia d'angolo in ogni scheda
-    categoria. Il tema e' la casa e la sua gestione: niente pesci ne' onde, solo
-    colore morbido. Devono restare **decorative e discrete**: colore dal tema
-    (non fisso), dietro al contenuto e con `pointer-events: none`, cosi' non
-    coprono mai un testo ne' rubano un tocco.
+    categoria. Ogni macchia e' un **collage** di piu' forme (campiture, tratti,
+    anelli, punti): e' la composizione a renderla complessa, non una forma sola.
+    Il tema e' la casa e la sua gestione: niente pesci ne' onde, solo colore
+    morbido. Devono restare **decorative e discrete**: colore dal tema (non
+    fisso), dietro al contenuto e con `pointer-events: none`, cosi' non coprono
+    mai un testo ne' rubano un tocco.
 
     Il difetto che il test tiene fuori: le illustrazioni erano `<use>` dentro un
     unico SVG, ma `position` **non si applica ai figli di un SVG** — finivano in
@@ -933,6 +935,14 @@ def test_le_illustrazioni_della_home_sono_acquerello(client):
     # e' acquerello, non disegni di oggetti: il filtro c'e' e ammorbidisce i bordi
     assert 'filter id="acquerello"' in html, "manca il filtro acquerello"
     assert "feGaussianBlur" in html, "l'acquerello vuole un bordo morbido"
+    # ogni macchia e' un **collage**: piu' forme sovrapposte, non una sola.
+    # Una forma singola e' un simbolo, non una pennellata: la complessita' e'
+    # quello che la fa leggere come acquerello invece che come icona.
+    for n in range(1, 9):
+        blocco = html[html.index(f'id="doodle-aq-{n}"'):]
+        blocco = blocco[:blocco.index("</symbol>")]
+        forme = blocco.count("<path") + blocco.count("<circle")
+        assert forme >= 3, f"il collage {n} ha solo {forme} forme: e' una forma sola"
     # in home le macchie sono `<svg>` a se' (non `<use>` di primo livello):
     # solo cosi' il posizionamento assoluto ha effetto
     blocco_home = html[html.index('<div class="home-doodle"'):html.index('class="home-voice"')]
