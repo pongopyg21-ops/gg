@@ -128,7 +128,7 @@ def test_il_gioco_e_nella_scocca_e_versionato(client):
     la copia vecchia dopo un aggiornamento."""
     sw = client.get("/static/sw.js").get_data(as_text=True)
     assert "/static/snake.js" in sw, "il gioco deve stare nella scocca"
-    assert "maggiordomo-scocca-v8" in sw, "alzare la versione sfratta le copie vecchie"
+    assert "maggiordomo-scocca-v9" in sw, "alzare la versione sfratta le copie vecchie"
     html = client.get("/").get_data(as_text=True)
     import re
     assert re.search(r'/static/snake\.js\?v=', html), "manca la versione nell'indirizzo"

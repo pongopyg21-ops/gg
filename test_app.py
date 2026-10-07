@@ -888,6 +888,57 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
     # e la regola del movimento ridotto lo spegne (vale per ogni ::before)
     assert "animation: none !important" in css
 
+
+def test_le_illustrazioni_della_home_sono_doodle_del_tema(client):
+    """La home ha delle illustrazioni "doodle" (un pesce, un'onda, un gabbiano,
+    un'ancora...) sparse fra le schede, e un piccolo disegno nell'angolo di ogni
+    scheda categoria. Devono restare **decorative e discrete**: disegni a
+    inchiostro del tema (non colori fissi), dietro al contenuto e con
+    `pointer-events: none`, cosi' non coprono mai un testo ne' rubano un tocco.
+
+    Il difetto che il test tiene fuori: le illustrazioni erano `<use>` dentro un
+    unico SVG, ma `position` **non si applica ai figli di un SVG** — finivano in
+    flow, non posizionate. Ogni disegno e' quindi un `<svg>` a se'."""
+    import re
+    html = client.get("/").get_data(as_text=True)
+    css = client.get("/static/style.css").get_data(as_text=True)
+
+    # Lo sprite dei disegni (i `<symbol>`) e il livello che li mostra in home.
+    assert 'class="sprite-doodle"' in html, "manca lo sprite dei disegni"
+    assert 'class="home-doodle"' in html, "mancano le illustrazioni della home"
+    for nome in ("pesce", "onda", "gabbiano", "ancora", "barca", "sole",
+                 "conchiglia", "stella"):
+        assert f'id="doodle-{nome}"' in html, f"manca il disegno «{nome}»"
+    # in home i disegni sono `<svg>` a se' (non `<use>` di primo livello):
+    # solo cosi' il posizionamento assoluto ha effetto
+    blocco_home = html[html.index('<div class="home-doodle"'):html.index('class="home-voice"')]
+    assert blocco_home.count("<svg") >= 8, "i doodle devono essere <svg>, non <use>"
+    # decorativi: nessuno finisce nella lettura per schermo
+    assert 'class="home-doodle" aria-hidden="true"' in html
+
+    # e ogni scheda categoria ha il suo doodle d'angolo
+    assert html.count('class="home-card-doodle"') == 6, \
+        "ogni scheda categoria deve avere il suo disegno"
+
+    # il CSS: inchiostro del tema, dietro al contenuto, niente tocchi
+    assert ".sprite-doodle { position: absolute; width: 0; height: 0; overflow: hidden; }" in css
+    blocco = css[css.index(".home-doodle {"):css.index(".home-hero { margin-bottom")]
+    assert "z-index: -1" in blocco, "i doodle devono stare dietro alle schede"
+    assert "pointer-events: none" in blocco, "un disegno non deve rubare un tocco"
+    assert "var(--doodle-inchiostro)" in blocco, "il colore deve venire dal tema"
+    assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
+    blocco_card = css[css.index(".home-card-doodle {"):css.index(".home-card-doodle svg {")]
+    assert "var(--doodle-inchiostro)" in blocco_card
+
+    # le variabili sono definite in entrambi i temi (di notte non spariscono)
+    chiaro = css.split('html[data-tema="scuro"]')[0]
+    scuro = css.split('html[data-tema="scuro"]', 1)[1]
+    for v in ("--doodle-inchiostro", "--doodle-corallo"):
+        assert f"{v}:" in chiaro, f"{v} manca nel tema chiaro"
+        assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
+
+
+
 def test_l_icona_dell_igiene_e_la_scopa(client):
     """La sezione Igiene si riconosce dalla scopa, non piu' dalla spugna: la
     spugna era un oggetto della cucina e non diceva «pulizie di casa»."""

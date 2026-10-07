@@ -31,6 +31,58 @@
 </script>
 </head>
 <body>
+<!-- Le illustrazioni "doodle" della home: disegni a inchiostro fatti a mano,
+     nella direzione del mare (un pesce, un'onda, un gabbiano, un'ancora...).
+     Stanno qui come `<symbol>` e si richiamano con `<use>`: il codice della
+     pagina resta pulito e un disegno si corregge in un punto solo. Sono
+     `aria-hidden` (decorativi) e usano `currentColor`, quindi il colore lo
+     decide il tema (vedi `--doodle-inchiostro`). `overflow:visible` perche'
+     tratti con `stroke-linecap:round` possono sporgere di poco dal riquadro. -->
+<svg class="sprite-doodle" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="doodle-pesce" viewBox="0 0 48 48" overflow="visible">
+      <path d="M9 24c6-8 15-11 23-7l6 3-6 3c-8 4-17 1-23-7Z"/>
+      <path d="M9 24c-2-2-5-5-7-6 1 4 1 8 0 12 2-1 5-4 7-6Z"/>
+      <path d="M21 16c2 5 2 11 0 16"/>
+      <circle cx="16" cy="21" r="1.3"/>
+    </symbol>
+    <symbol id="doodle-onda" viewBox="0 0 48 48" overflow="visible">
+      <path d="M4 19c4-5 8-5 12 0s8 5 12 0 8-5 12 0"/>
+      <path d="M4 31c4-5 8-5 12 0s8 5 12 0 8-5 12 0"/>
+    </symbol>
+    <symbol id="doodle-gabbiano" viewBox="0 0 48 48" overflow="visible">
+      <path d="M7 23c6-8 12-8 17-1 5-7 11-7 17 1"/>
+      <path d="M20 33c3-4 6-4 9 0"/>
+    </symbol>
+    <symbol id="doodle-ancora" viewBox="0 0 48 48" overflow="visible">
+      <circle cx="24" cy="8.5" r="3.5"/>
+      <path d="M24 12v26"/>
+      <path d="M16 18h16"/>
+      <path d="M11 29c0 8 6 12 13 12s13-4 13-12"/>
+      <path d="M11 29l-3-5M37 29l3-5"/>
+    </symbol>
+    <symbol id="doodle-barca" viewBox="0 0 48 48" overflow="visible">
+      <path d="M23 7v24"/>
+      <path d="M24 9l14 22H24Z"/>
+      <path d="M22 13L11 31h11"/>
+      <path d="M7 35h34l-5 8H12Z"/>
+    </symbol>
+    <symbol id="doodle-sole" viewBox="0 0 48 48" overflow="visible">
+      <circle cx="24" cy="24" r="8.5"/>
+      <path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.5 10.5l4 4M33.5 33.5l4 4M37.5 10.5l-4 4M14.5 33.5l-4 4"/>
+    </symbol>
+    <symbol id="doodle-conchiglia" viewBox="0 0 48 48" overflow="visible">
+      <path d="M24 41c-10 0-18-7-18-16S14 8 24 8s18 8 18 17-8 16-18 16Z"/>
+      <path d="M24 41V8M24 41c-3-9-5-17-6-24M24 41c3-9 5-17 6-24"/>
+    </symbol>
+    <symbol id="doodle-stella" viewBox="0 0 48 48" overflow="visible">
+      <path d="M24 7l5 12 13 1-10 9 3 13-11-7-11 7 3-13-10-9 13-1Z"/>
+      <circle cx="24" cy="23" r="1.1"/><circle cx="19" cy="30" r="1.1"/>
+      <circle cx="29" cy="30" r="1.1"/>
+    </symbol>
+  </defs>
+</svg>
+
 <!-- Accesso: la prima cosa che si vede quando non si e' collegati. Ogni casa
      ha la sua password e i suoi dati, quindi finche' non si entra non si
      carica niente: le API rispondono 401 e la pagina resta qui. -->
@@ -91,6 +143,27 @@
      funzioni di ciascuno vivono dentro la propria sezione: qui non c'e' nessuna
      scheda, solo la scelta. -->
 <section id="home" class="home hidden">
+  <!-- Le illustrazioni del fondo: disegni a inchiostro sparsi fra le schede,
+       come scarabocchi su un quaderno. Sono **decorative** (`aria-hidden`) e
+       stanno dietro a tutto (`z-index: -1`), quindi non toccano ne' il testo ne'
+       i pulsanti. Il colore arriva dal tema (`--doodle-inchiostro`), cosi' di
+       notte diventano segni chiari invece di sparire.
+       Ogni disegno e' un `<svg>` a se', non una `<use>` dentro un unico SVG:
+       `position` non si applica ai figli di un SVG, quindi la `<use>` non si
+       poteva posizionare. Un `<svg>` esterno e' invece una scatola come le
+       altre, e il posizionamento assoluto funziona. -->
+  <div class="home-doodle" aria-hidden="true">
+    <svg class="dd dd-1" viewBox="0 0 48 48"><use href="#doodle-pesce"/></svg>
+    <svg class="dd dd-2" viewBox="0 0 48 48"><use href="#doodle-onda"/></svg>
+    <svg class="dd dd-3" viewBox="0 0 48 48"><use href="#doodle-gabbiano"/></svg>
+    <svg class="dd dd-4" viewBox="0 0 48 48"><use href="#doodle-ancora"/></svg>
+    <svg class="dd dd-5" viewBox="0 0 48 48"><use href="#doodle-barca"/></svg>
+    <svg class="dd dd-6" viewBox="0 0 48 48"><use href="#doodle-sole"/></svg>
+    <svg class="dd dd-7" viewBox="0 0 48 48"><use href="#doodle-conchiglia"/></svg>
+    <svg class="dd dd-8" viewBox="0 0 48 48"><use href="#doodle-stella"/></svg>
+    <svg class="dd dd-9" viewBox="0 0 48 48"><use href="#doodle-onda"/></svg>
+    <svg class="dd dd-10" viewBox="0 0 48 48"><use href="#doodle-gabbiano"/></svg>
+  </div>
   <div class="home-voice">
     <button id="home-mic" class="home-mic" type="button" title="Parla al maggiordomo" aria-label="Parla al maggiordomo">
       <span class="mic-icon">🎙</span>
@@ -105,6 +178,7 @@
     <button class="home-card" data-section="cucina">
       <span class="home-emoji icona-sezione" aria-hidden="true"><img src="/static/icons/cucina.svg" alt=""></span>
       <span class="home-name">Cucina</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-pesce"/></svg></span>
       <span class="home-desc">Piano pasti, ricette, dispensa e lista della spesa,
         con i comandi vocali per quando hai le mani occupate.</span>
       <span class="home-go">Apri →</span>
@@ -112,6 +186,7 @@
     <button class="home-card" data-section="progetti">
       <span class="home-emoji">📋</span>
       <span class="home-name">Appunti</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-ancora"/></svg></span>
       <span class="home-desc">Lavori in corso, idee e cose da fare, con il
         calendario degli impegni e il magazzino di casa.</span>
       <span class="home-go">Apri →</span>
@@ -119,6 +194,7 @@
     <button class="home-card" data-section="faq">
       <span class="home-emoji">📌</span>
       <span class="home-name">FAQ</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-conchiglia"/></svg></span>
       <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
         contatti e codici, senza doverli cercare ogni volta.</span>
       <span class="home-go">Apri →</span>
@@ -126,6 +202,7 @@
     <button class="home-card" data-section="tv">
       <span class="home-emoji">📺</span>
       <span class="home-name">TV</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-gabbiano"/></svg></span>
       <span class="home-desc">Intrattenimento: la playlist di casa, le notizie
         dall'Italia e dal mondo e le locandine dei film del momento.</span>
       <span class="home-go">Apri →</span>
@@ -133,6 +210,7 @@
     <button class="home-card" data-section="gym">
       <span class="home-emoji">🏋️</span>
       <span class="home-name">GYM</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-sole"/></svg></span>
       <span class="home-desc">La playlist degli esercizi, per allenarsi in casa
         seguendo i video senza uscire dall'app.</span>
       <span class="home-go">Apri →</span>
@@ -140,6 +218,7 @@
     <button class="home-card" data-section="igiene">
       <span class="home-emoji">🧹</span>
       <span class="home-name">Igiene</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-onda"/></svg></span>
       <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
         da ricordare.</span>
       <span class="home-go">Apri →</span>
