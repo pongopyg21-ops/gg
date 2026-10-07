@@ -237,13 +237,14 @@ def test_avvia_bat_annuncia_il_modello(client):
     bat = open(f"{BASE_APP}/windows/avvia.bat", encoding="utf-8").read()
     assert "modello.ps1" in bat, "avvia.bat non annuncia lo stato del modello"
 
-def test_verifica_modello_guarda_le_tre_cause(client):
-    """`verifica-modello.bat` separa le tre cause che danno lo stesso sintomo.
+def test_verifica_modello_guarda_le_due_cause(client):
+    """`verifica-modello.bat` separa le due cause che danno lo stesso sintomo.
 
-    Deve guardare: se Ollama risponde, se il modello che l'app si aspetta e'
-    scaricato, e — quando tutto e' pronto — che resta l'interruttore. La
-    configurazione si chiede all'app (`comprensione`), non si riscrive nello
-    script: due copie della stessa regola divergono, e allora lo stato mente."""
+    Deve guardare: se Ollama risponde e se il modello che l'app si aspetta e'
+    scaricato. La terza causa di un tempo — l'interruttore in Profilo — non
+    esiste piu': la comprensione col modello e' sempre attiva. La configurazione
+    si chiede all'app (`comprensione`), non si riscrive nello script: due copie
+    della stessa regola divergono, e allora lo stato mente."""
     bat = open(f"{BASE_APP}/windows/verifica-modello.bat", encoding="utf-8").read()
     ps1 = open(f"{BASE_APP}/windows/modello.ps1", encoding="utf-8").read()
     # il .bat non fa il lavoro: chiama il .ps1 accanto a se'
@@ -253,8 +254,8 @@ def test_verifica_modello_guarda_le_tre_cause(client):
     # 2. il modello atteso: chiesto all'app, non scritto a mano qui
     assert "import comprensione" in ps1
     assert "c.modello()" in ps1
-    # 3. l'interruttore, che e' la causa piu' frequente del "non capisce"
-    assert "Capire i comandi" in ps1
+    # l'interruttore non esiste piu': lo script non deve piu' nominarlo
+    assert "Capire i comandi" not in ps1
     # e l'invito a scaricare il modello giusto, quando manca
     assert "ollama pull" in ps1
 

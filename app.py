@@ -2752,27 +2752,21 @@ def storage_photo(sid):
 
 
 # ---------------------------------------------------------------- voce
-def _llm_abilitato(db):
-    """La casa ha acceso la comprensione col modello? (0 di default)."""
-    riga = one(db.execute("SELECT abilitato FROM llm_prefs WHERE id = 1"))
-    return bool(riga and riga["abilitato"])
-
-
-def imposta_llm(db, abilitato):
-    db.execute(
-        "INSERT INTO llm_prefs (id, abilitato) VALUES (1, ?) "
-        "ON CONFLICT(id) DO UPDATE SET abilitato = excluded.abilitato",
-        (1 if abilitato else 0,))
-    db.commit()
+# La comprensione col modello non ha piu' un interruttore: e' **sempre attiva**
+# quando il modello e' configurato. `_comprendi` prova prima il modello e ricade
+# sul parser a regole se non risponde, quindi non serve una preferenza da
+# accendere — e la vecchia tabella `llm_prefs` resta nel database senza essere
+# letta (non la si cancella: e' un dato, e toglierla non porta niente).
 
 
 def _comprendi(testo, db):
     """Il comando della frase dettata: prima il modello, poi le regole.
 
-    Il modello si usa **solo** se la casa l'ha acceso e la chiave c'e'. Quando
-    risponde `unknown` — o non risponde affatto, perche' manca la rete o la
-    chiave — si usa il risultato del parser a regole. E' il motivo per cui questa
-    funzione non puo' peggiorare niente: o capisce di piu', o resta com'era.
+    Il modello si usa quando e' configurato. Non c'e' piu' una preferenza da
+    accendere: la comprensione col modello e' **sempre attiva**. Quando risponde
+    `unknown` — o non risponde affatto, perche' manca la rete il modello — si usa
+    il risultato del parser a regole. E' il motivo per cui questa funzione non
+    puo' peggiorare niente: o capisce di piu', o resta com'era.
 
     Si preferisce il modello anche quando il parser **crede** di aver capito:
     proprio li' stanno gli errori che il modello corregge ("metti via il vino in
@@ -2780,7 +2774,7 @@ def _comprendi(testo, db):
     rete di sicurezza, non la prima scelta.
     """
     a_regole = voice.parse(testo)
-    if not comprensione.configurato() or not _llm_abilitato(db):
+    if not comprensione.configurato():
         return a_regole
     cmd = comprensione.chiama(testo)
     if not cmd or cmd.get("intent") == "unknown":
@@ -3305,37 +3299,34 @@ def voce_config():
         "max_caratteri": voce_cloud.MAX_CARATTERI,
         # `disponibile` dice che la configurazione c'e'; `pronto` che il modello
         # risponde **adesso**. Un endpoint locale c'e' sempre (il predefinito),
-        # anche a Ollama spento: senza la seconda, l'interruttore si accendeva a
-        # vuoto e ogni comando finiva in silenzio sulle regole.
+        # anche a Ollama spento: senza la seconda, si crederebbe pronto un
+        # modello che non risponde, e ogni comando finirebbe in silenzio sulle
+        # regole. `llm_abilitato` resta per compatibilita': non c'e' piu' un
+        # interruttore, la comprensione col modello e' sempre attiva.
         "llm_disponibile": comprensione.configurato(),
         "llm_pronto": comprensione.raggiungibile(),
         "llm_manca": comprensione.messaggio_stato(),
-        "llm_abilitato": _llm_abilitato(db),
+        "llm_abilitato": True,
     })
 
 
 @app.route("/api/voce/llm", methods=["PUT"])
 def voce_llm():
-    """Accende o spegne la comprensione col modello per la casa collegata.
+    """Non c'e' piu' niente da accendere: la comprensione col modello e' sempre
+    attiva quando il modello e' configurato.
 
-    La chiave non si tocca da qui: entra solo dall'ambiente o da un file, prima
-    dell'avvio, come quella di Azure. Questa rotta cambia **solo** se usarla.
-    Si accende solo se il modello **risponde**: una configurazione che c'e' ma
-    non risponde (Ollama spento) e' il caso che faceva credere di aver capito i
-    comandi mentre ogni frase finiva in silenzio sulle regole. Se non risponde si
-    risponde 400 dicendo cosa manca: accendere una cosa che non c'e' confonderebbe.
+    La rotta resta per non rompere chi la chiamava, e risponde con lo stato. Se
+    il modello non risponde **adesso** lo dice con un 400 e la causa: un comando
+    in quel momento ricadrebbe sulle regole, e tacerlo farebbe credere che il
+    modello stia capendo.
     """
-    db = get_db()
-    data = request.get_json(force=True) or {}
-    abilitato = bool(data.get("abilitato"))
-    if abilitato and not comprensione.raggiungibile():
+    if not comprensione.raggiungibile():
         return jsonify({"error": comprensione.messaggio_stato()
                                  or "Nessun modello raggiungibile. Avvialo e riprova."}), 400
-    imposta_llm(db, abilitato)
     return jsonify({"llm_disponibile": comprensione.configurato(),
-                    "llm_pronto": comprensione.raggiungibile(),
-                    "llm_manca": comprensione.messaggio_stato(),
-                    "llm_abilitato": _llm_abilitato(db)})
+                    "llm_pronto": True,
+                    "llm_manca": "",
+                    "llm_abilitato": True})
 
 
 @app.route("/api/voce/parla", methods=["POST"])

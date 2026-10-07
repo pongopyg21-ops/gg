@@ -226,9 +226,9 @@ def test_comprensione_ripiega_in_silenzio_se_il_modello_non_risponde(monkeypatch
     monkeypatch.setattr(comprensione.urllib.request, "urlopen", esplode)
     assert comprensione.chiama("aggiungi il latte alla spesa") is None
 
-def test_senza_modello_l_interruttore_non_si_accende(client, monkeypatch):
-    """Accendere una cosa che non c'e' confonderebbe: si risponde 400 dicendo
-    quale variabile registrare."""
+def test_senza_modello_la_rotta_dice_cosa_manca(client, monkeypatch):
+    """Non c'e' piu' un interruttore da accendere, ma la rotta di stato resta:
+    senza modello risponde 400 dicendo quale variabile registrare."""
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.setenv("LLM_BASE_URL", "https://esempio.invalid/v1")
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
@@ -236,11 +236,9 @@ def test_senza_modello_l_interruttore_non_si_accende(client, monkeypatch):
     assert r.status_code == 400
     assert "LLM_API_KEY" in r.get_json()["error"]
 
-def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
-    """La scelta e' dell'utente e resta; e la chiave non compare mai nella risposta.
-
-    Il modello e' finto ma **risponde**: da quando l'interruttore si accende solo
-    se risponde, una chiave da sola non basta piu'."""
+def test_la_comprensione_col_modello_e_sempre_attiva(client, monkeypatch):
+    """Non c'e' niente da accendere: col modello che risponde, la rotta conferma
+    lo stato, e la chiave non compare mai nella risposta."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
     monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
     r = client.put("/api/voce/llm", json={"abilitato": True})
@@ -248,16 +246,15 @@ def test_interruttore_del_modello_si_salva_per_casa(client, monkeypatch):
     cfg = client.get("/api/voce/config").get_json()
     assert cfg["llm_disponibile"] is True and cfg["llm_abilitato"] is True
     assert "chiave-llm-di-prova" not in json.dumps(cfg)
-    # e si puo' spegnere
-    assert client.put("/api/voce/llm", json={"abilitato": False}).get_json()["llm_abilitato"] is False
 
-def test_con_l_interruttore_spento_la_comprensione_resta_a_regole(client, monkeypatch):
-    """Con l'interruttore spento (o la chiave assente) non si chiama nessuno:
-    la comprensione e' quella del parser, identica a prima."""
+def test_senza_modello_configurato_la_comprensione_resta_a_regole(client, monkeypatch):
+    """Senza modello configurato non si chiama nessuno: la comprensione e' quella
+    del parser, identica a prima. Nessun interruttore, nessuna preferenza."""
     def non_chiamare(*a, **k):
         raise AssertionError("il modello non deve essere chiamato")
 
     monkeypatch.setattr(comprensione, "chiama", non_chiamare)
+    monkeypatch.setattr(comprensione, "configurato", lambda: False)
     r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
     assert r.status_code == 200
     assert r.get_json()["intent"] == "shopping_add"
@@ -270,7 +267,6 @@ def test_la_comprensione_col_modello_corregge_la_frase_che_il_parser_sbaglia(cli
     su quella del parser e finisca davvero nel database."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
     monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
-    client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {
         "intent": "storage_add", "name": "vino", "quantity": None, "unit": None,
         "place": "Cantina", "category": None})
@@ -288,20 +284,23 @@ def test_se_il_modello_non_capisce_si_usa_il_parser(client, monkeypatch):
     """`unknown` dal modello non cancella quello che il parser sapeva gia' fare."""
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
     monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
-    client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {"intent": "unknown"})
     r = client.post("/api/voice", json={"text": "aggiungi il latte alla spesa"})
     assert r.get_json()["intent"] == "shopping_add"
 
-def test_la_comprensione_e_disattiva_di_partenza(client):
-    """Nessuna chiamata a consumo senza che l'utente l'abbia accesa."""
-    assert client.get("/api/voce/config").get_json()["llm_abilitato"] is False
+def test_la_comprensione_col_modello_e_attiva_di_partenza(client, monkeypatch):
+    """Non c'e' piu' nulla da accendere: la comprensione col modello e' sempre
+    attiva quando e' configurata, e la configurazione lo dice."""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
+    cfg = client.get("/api/voce/config").get_json()
+    assert cfg["llm_abilitato"] is True
 
-def test_non_si_accende_l_interruttore_se_il_modello_non_risponde(client, monkeypatch):
-    """L'endpoint locale predefinito c'e' sempre, anche a Ollama spento: senza
-    questa guardia l'interruttore si accendeva e ogni comando finiva in silenzio
-    sulle regole. Ora la rotta chiede che il modello **risponda**, e se no dice
-    la causa (Ollama spento / modello non scaricato), non "manca la chiave"."""
+def test_la_rotta_dice_la_causa_se_il_modello_non_risponde(client, monkeypatch):
+    """L'endpoint locale predefinito c'e' sempre, anche a Ollama spento: la rotta
+    di stato lo dice con un 400 e la causa vera (Ollama spento / modello non
+    scaricato), non "manca la chiave". E lo stato resta `pronto: False`."""
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("LLM_BASE_URL", raising=False)
     monkeypatch.setattr(comprensione, "_letto", {"fatto": True})
@@ -311,7 +310,7 @@ def test_non_si_accende_l_interruttore_se_il_modello_non_risponde(client, monkey
     assert r.status_code == 400
     assert "Ollama non risponde" in r.get_json()["error"]
     cfg = client.get("/api/voce/config").get_json()
-    assert cfg["llm_pronto"] is False and cfg["llm_abilitato"] is False
+    assert cfg["llm_pronto"] is False and cfg["llm_abilitato"] is True
 
 def test_lo_stato_distingue_configurato_da_raggiungibile(client, monkeypatch):
     """`/api/voce/config` espone le due cose separatamente: `disponibile` (c'e'
@@ -436,11 +435,10 @@ async function avviaAccesso() { log.push('avviaAccesso'); }
 # ---------------------------------------------------------------- impegni col modello
 
 def test_il_modello_puo_programmare_un_impegno(client, monkeypatch):
-    """Con l'interruttore acceso, un impegno detto a voce col modello viene creato."""
+    """Col modello configurato, un impegno detto a voce col modello viene creato."""
     domani = (date.today() + timedelta(days=1)).isoformat()
     monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
     monkeypatch.setattr(comprensione.urllib.request, "urlopen", _ModelloFinto())
-    client.put("/api/voce/llm", json={"abilitato": True})
     monkeypatch.setattr(comprensione, "chiama", lambda t: {
         "intent": "event_add", "name": "dentista", "when_date": domani,
         "time": "15:00", "category": "salute", "reminder_days": 1})

@@ -1,11 +1,11 @@
 # Dice se il modello di casa (Ollama) e' pronto: se risponde, se il modello che
 # l'app si aspetta e' stato scaricato, e cosa fare se no.
 #
-# Il guasto che questo file rende visibile: Ollama installato e il modello
-# scaricato, ma l'app continua a usare le regole perche' l'interruttore in
-# **Profilo > Capire i comandi** e' spento — e nessuno lo dice. Le tre cause
-# (Ollama spento, modello diverso, interruttore spento) si confondono fra loro e
-# danno lo stesso sintomo: "il modello non capisce".
+# Da quando la comprensione col modello e' **sempre attiva** (non c'e' piu' un
+# interruttore), le cause del "il modello non capisce" sono due e si confondono
+# fra loro: Ollama spento e modello diverso da quello atteso. Questo file le
+# separa. Prima ce n'era una terza — l'interruttore in Profilo > Capire i
+# comandi — che non esiste piu'.
 #
 # Perche' un .ps1 e non dentro avvia.bat: dentro un .bat virgolette e caratteri
 # speciali si sbagliano facilmente e l'errore non si vedrebbe. E la
@@ -87,9 +87,12 @@ function Riga-Modello {
     }
     if (-not $Locale) {
         # Servizio in rete compatibile OpenAI: non e' Ollama, quindi non c'e' un
-        # elenco dei modelli da controllare. Si dice solo che e' configurato.
+        # elenco dei modelli da controllare. Si dice solo che e' configurato: la
+        # comprensione col modello e' attiva, quindi se non capisce e' il
+        # servizio a non rispondere o a rispondere male, non una preferenza.
         Scrivi "  Modello: servizio in rete configurato ($Modello)."
-        Scrivi "           Se non capisce, controlla l'interruttore in Profilo > Capire i comandi."
+        Scrivi "           La comprensione col modello e' attiva: se non capisce,"
+        Scrivi "           controlla che il servizio risponda su $Base."
         return 0
     }
 
@@ -127,10 +130,10 @@ function Riga-Modello {
         return 1
     }
 
-    # Ollama pronto **e** modello presente: resta l'interruttore, che e' spento
-    # di partenza ed e' la causa piu' frequente del "non capisce".
+    # Ollama pronto **e** modello presente: la comprensione col modello e' attiva
+    # (non c'e' piu' un interruttore da accendere).
     Scrivi "  Modello: Ollama pronto, '$Modello' c'e'."
-    Scrivi "           Per usarlo: Profilo > Capire i comandi > accendi l'interruttore."
+    Scrivi "           La comprensione col modello e' attiva."
     return 0
 }
 
@@ -143,8 +146,9 @@ if ($Dettaglio) {
     $esito = Riga-Modello
     Scrivi ""
     if ($esito -eq 0) {
-        Scrivi "   Il modello e' pronto. Se l'app non capisce le frasi, l'unica"
-        Scrivi "   cosa che resta e' l'interruttore: Profilo > Capire i comandi."
+        Scrivi "   Il modello e' pronto e attivo. Se l'app non capisce una frase,"
+        Scrivi "   il modello non l'ha compresa: il parser a regole resta la rete"
+        Scrivi "   di sicurezza, quindi la frase viene comunque interpretata."
     } elseif ($esito -eq 2) {
         Scrivi "   Nessun modello: l'app funziona lo stesso, con le regole."
         Scrivi "   Per accenderlo, vedi 'Il modello in casa, con Ollama' in LEGGIMI.md."

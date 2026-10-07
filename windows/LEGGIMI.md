@@ -486,7 +486,8 @@ Non è obbligatorio: se non lo configuri, l'app funziona esattamente come prima.
 
 Ollama fa girare un modello **dentro il tuo computer**: e' gratuito, non serve una
 chiave, non serve internet, e quello che dici non esce di casa. **L'app e' gia'
-impostata per usarlo**: non c'e' niente da configurare, bastano due cose.
+impostata per usarlo, e la comprensione col modello e' sempre attiva**: non c'e'
+niente da configurare ne' da accendere, bastano due cose.
 
 1. Scarica Ollama da <https://ollama.com/download/windows> e installalo. Si avvia
    da solo e resta nella tray.
@@ -500,21 +501,23 @@ impostata per usarlo**: non c'e' niente da configurare, bastano due cose.
    Serve circa 5 GB di spazio e un computer con 16 GB di memoria. Con 8 GB di
    memoria usa `qwen2.5:3b-instruct`: e' piu' leggero e meno preciso, e allora
    va detto anche all'app (vedi come cambiare modello in fondo).
-3. Apri l'app con `avvia.bat`, vai in **Profilo → «Capire i comandi»** e accendi
-   l'interruttore. Fatto.
+
+Fatto. Non c'e' nessun interruttore da accendere: appena il modello risponde,
+l'app lo usa da solo. Il parser a regole resta come rete di sicurezza, quindi se
+il modello non risponde (Ollama spento, modello assente) l'app continua a capire
+le frasi previste come prima.
 
 Il primo comando e' lento (il modello si sta caricando in memoria, anche mezzo
 minuto); dal secondo in poi risponde in pochi secondi.
 
 Dimenticato come si chiama il modello scaricato? `ollama list` lo elenca.
 
-All'avvio `avvia.bat` dice da solo a che punto sei: se Ollama risponde, se il
-modello c'e', e — quando tutto e' pronto — che resta da accendere l'interruttore
-in **Profilo → «Capire i comandi»**. Per il controllo completo apri
+All'avvio `avvia.bat` dice da solo a che punto sei: se Ollama risponde e se il
+modello c'e'. Per il controllo completo apri
 `windows\verifica-modello.bat`: guarda le stesse cose e, se manca qualcosa, dice
-cosa fare. Serve proprio perche' le tre cause (Ollama spento, modello non
-scaricato, interruttore spento) danno lo stesso sintomo — «il modello non
-capisce» — e senza il controllo si confondono fra loro.
+cosa fare. Serve proprio perche' le due cause (Ollama spento, modello non
+scaricato) danno lo stesso sintomo — «il modello non capisce» — e senza il
+controllo si confondono fra loro.
 
 ### Se vuoi cambiare modello o usare un servizio in rete
 
@@ -539,14 +542,17 @@ chiave non va mai in `avvia.bat`: sta nel `segreto.bat`, che e' escluso da git.
 
 ### Se il modello «non capisce niente»
 
-Quasi sempre è una delle tre cose, in quest'ordine:
+Quasi sempre è una delle due cose, in quest'ordine:
 
 1. **Ollama non è in esecuzione.** Deve esserci la sua icona nella tray. Riapri
    Ollama e riprova; non c'è niente da reinstallare.
 2. **Il modello non è quello che l'app si aspetta.** L'app usa
    `qwen2.5:7b-instruct`: controlla con `ollama list`. Se ne hai un altro, o lo
    scarichi, o lo dici all'app (vedi sopra «cambiare modello»).
-3. **L'interruttore è spento.** Controlla **Voce → «Capire i comandi»**.
+
+Non c'è nessun interruttore da controllare: la comprensione col modello è sempre
+attiva. Se nessuna delle due cause vale e il modello sbaglia lo stesso, è il
+modello (uno piccolo in casa è meno preciso): l'app usa comunque le regole.
 
 Se dopo questo resta lento o sbaglia spesso, è il modello: un modello piccolo in
 casa è meno preciso di uno grande in internet. Non c'è niente di rotto — e quando
@@ -620,9 +626,10 @@ Il database è finito nella cartella sbagliata. Guarda dove hai messo il file
 computer, con `localhost`, funziona.
 
 **Ho acceso la comprensione col modello, ma non capisce lo stesso.**
-Vai alla sezione **Capire i comandi con un modello**: quasi sempre è Ollama spento,
-il modello non è `qwen2.5:7b-instruct`, o l'interruttore in **Voce → «Capire i
-comandi»** da riaccendere. Non è un guasto dell'app.
+Vai alla sezione **Capire i comandi con un modello**: quasi sempre è Ollama spento
+o il modello diverso da `qwen2.5:7b-instruct`. Non c'è nessun interruttore da
+riaccendere, la comprensione col modello è sempre attiva. Non è un guasto
+dell'app.
 
 **Voglio salvare i dati su un disco esterno.**
 In `avvia.bat` c'è una riga `REM set "MAGGIORDOMO_DATA=..."`: togli `REM`, metti

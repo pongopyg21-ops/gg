@@ -113,9 +113,9 @@ if not "%IP%"=="" echo   Dal telefono:   http://%IP%:12000
 echo.
 
 REM Il modello di casa (Ollama) si annuncia da solo: il sintomo "non capisce" ha
-REM tre cause (Ollama spento, modello diverso, interruttore spento) e l'app le
-REM confonde in silenzio. Il controllo sta in modello.ps1, come per l'indirizzo:
-REM dentro un .bat virgolette e caratteri speciali si sbagliano facilmente.
+REM due cause (Ollama spento, modello diverso) e l'app le confonde in silenzio.
+REM Il controllo sta in modello.ps1, come per l'indirizzo: dentro un .bat
+REM virgolette e caratteri speciali si sbagliano facilmente.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0modello.ps1" -Python "%PY%"
 
 echo   Per fermare l'app: chiudi questa finestra.

@@ -357,16 +357,15 @@ cose con gli strumenti di Windows.
   proxy non dichiarato) si confondono fra loro, e il tunnel resta attivo anche
   ad app spenta.
 - `windows\verifica-modello.bat` (+ `windows\modello.ps1`) — controlla se il
-  modello di casa (Ollama) e' pronto: se risponde, se il modello che l'app si
-  aspetta e' scaricato, e — quando tutto c'e' — che resta da accendere
-  l'interruttore in **Profilo > Capire i comandi**. `avvia.bat` lo chiama a ogni
-  avvio (poche righe, senza fermare la finestra). La configurazione si **chiede
-  all'app** (`import comprensione`), non si riscrive nello script: due copie
+  modello di casa (Ollama) e' pronto: se risponde e se il modello che l'app si
+  aspetta e' scaricato. `avvia.bat` lo chiama a ogni avvio (poche righe, senza
+  fermare la finestra). La configurazione si **chiede all'app**
+  (`import comprensione`), non si riscrive nello script: due copie
   della stessa regola divergono, e allora lo stato all'avvio mente — la stessa
   scelta di `avvia.sh` per la voce Azure. Serve perche' il sintomo «il modello
-  non capisce» ha tre cause (Ollama spento, modello non scaricato, interruttore
-  spento) che danno lo stesso effetto, e l'interruttore spento — il piu'
-  frequente, perche' parte a `0` — non produce nessun avviso.
+  non capisce» ha due cause (Ollama spento, modello non scaricato) che danno lo
+  stesso effetto. L'interruttore in Profilo non esiste piu': la comprensione col
+  modello e' sempre attiva, quindi non e' piu' una causa del sintomo.
 
 Cose che sembrano dettagli e non lo sono:
 
@@ -1104,8 +1103,8 @@ Conseguenze pratiche per chi mette mano al codice:
   neurale e suono non hanno piu' un pannello. Le preferenze restano in
   `localStorage` col loro comportamento predefinito, e il codice che le legge e'
   null-safe o centralizzato (`confermaVoce()`). Anche l'interruttore della
-  comprensione col modello non c'e' piu': e' stato tolto dal Profilo (vedi
-  «Capire i comandi»). La voce
+  comprensione col modello non c'e' piu': e' stato tolto dal Profilo e la
+  comprensione e' ora **sempre attiva** (vedi «Capire i comandi»). La voce
   naturale Azure resta attiva quando il server ha la chiave (`cloudAttivo()` =
   `voceCloud.disponibile`): si spegne togliendo la chiave, non da una casella.
   **Attenzione alle chiamate che restano.** Togliendo la scheda era stata rimossa
@@ -1399,17 +1398,17 @@ le locandine, `youtube-nocookie.com` per gli embed. `object-src 'none'` e
 relativi). Aggiungendo un contenuto esterno nuovo, va aggiunto il suo dominio
 **qui**, altrimenti resta invisibile e sembra un guasto della sezione.
 
-## Capire i comandi con un modello (facoltativo)
+## Capire i comandi con un modello (sempre attivo)
 
-> **Stato attuale: la funzione esiste sul server, ma non ha piu' un pannello.**
-> L'interruttore «Capire i comandi» e' stato tolto dal Profilo su richiesta
-> dell'utente: `#voice-llm`, `#voice-llm-block`, `#voice-llm-avviso`,
-> `popolaLlm()` e il suo ascoltatore non esistono piu'. La rotta
-> `PUT /api/voce/llm` e `comprensione.py` restano, quindi riaccendere la
-> funzione e' una scelta di prodotto (un interruttore nuovo) e non un lavoro da
-> rifare: il codice della comprensione e' intatto. Con `llm_prefs.abilitato` a
-> `0` l'app usa il parser a regole, come sempre. Il capitolo resta perche' spiega
-> come funziona la parte server.
+> **Stato attuale: la comprensione col modello e' sempre attiva.** Non c'e' piu'
+> un pannello ne' una preferenza da accendere: `_comprendi` prova **sempre** il
+> modello quando e' configurato e ricade sul parser a regole se non risponde.
+> L'interruttore «Capire i comandi» e' stato tolto dal Profilo, e in un secondo
+> momento e' stata tolta anche la preferenza per casa (`llm_prefs.abilitato`):
+> la tabella resta nel database ma non viene piu' letta. La rotta
+> `PUT /api/voce/llm` sopravvive come **stato** (risponde 400 con la causa se il
+> modello non risponde), senza piu' accendere niente. Il capitolo spiega come
+> funziona la parte server.
 
 Il parser a regole di `voice.py` capisce le frasi previste e lascia fuori le
 altre: «dammi la lista della spesa», «fammi vedere la dispensa», «metti via il
@@ -1418,10 +1417,10 @@ buona — e' che le regole sono una grammatica scritta a mano, e la lingua parla
 non ci sta dentro. `comprensione.py` fa la stessa comprensione con un modello
 linguistico.
 
-**Fallisce in modo aperto**, ed e' la proprieta' che rende sicuro accenderlo. Il
-parser diventa cosi': si prova il modello, e se risponde `unknown` o non risponde
-(manca la chiave, manca la rete, risposta storta) si usa il risultato di
-`voice.parse`. Quindi o capisce di piu', o non cambia niente:
+**Fallisce in modo aperto**, ed e' la proprieta' che rende sicuro averlo attivo.
+Il parser diventa cosi': si prova il modello, e se risponde `unknown` o non
+risponde (manca la rete, il modello e' spento, risposta storta) si usa il
+risultato di `voice.parse`. Quindi o capisce di piu', o non cambia niente:
 
 ```
 cmd = comprensione.chiama(testo)
@@ -1434,34 +1433,41 @@ promessa. Il modello si preferisce **anche** quando il parser crede di aver
 capito, perche' proprio li' stanno gli errori da correggere («metti via il vino
 in cantina» diventava un articolo in magazzino chiamato «via il vino»).
 
-Le tre scelte che contano:
+**Perche' sempre attivo e non un interruttore.** Un interruttore acceso a `0`
+di partenza significa che la funzione *esiste* ma non fa niente finche' qualcuno
+non sa che c'e'. Il costo (nessuna chiamata quando il modello non c'e') e' gia'
+coperto da `configurato()`: se non c'e' un endpoint non si chiama nessuno. Averlo
+sempre attivo toglie la causa piu' silenziosa del «non capisce» — la preferenza
+spenta — e non peggiora niente grazie al ripiego. In questo ambiente il modello
+di casa e' Ollama: se e' spento, `chiama()` fallisce e si usano le regole.
+
+Le scelte che contano:
 
 - **Il modello non inventa intenti.** La risposta viene ripulita con
   `_ripulisci()`: un intento fuori da `INTENTI`, un'unita' fuori da `UNITA`, una
   quantita' non numerica vengono scartati. Se resta poco, il comando vale
   `unknown`. Una comprensione sbagliata deve restare una frase, non un'azione:
   meglio «non ho capito» di una voce sbagliata in dispensa per sempre.
-- **Niente funziona senza che la casa l'abbia acceso.** `llm_prefs.abilitato`
-  (una riga sola, nel database **della casa**) parte a `0`: nessuna chiamata a
-  consumo se non la si accende dalla scheda **Profilo** («Capire i comandi»).
-  E' una scelta dell'utente, non del dispositivo, per questo sta nella casa e non
-  in `localStorage`.
-- **L'interruttore non accende una cosa che non c'e'.** `PUT /api/voce/llm` con
-  `abilitato: true` e nessun modello **raggiungibile** risponde **400** dicendo
-  cosa manca: per un servizio in rete il nome della variabile (`LLM_API_KEY`),
-  per un modello di casa la causa vera (Ollama spento / modello non scaricato).
-  L'alternativa — accettare e non fare niente — e' peggio di un rifiuto: l'utente
-  crederebbe di aver acceso qualcosa.
-- **`configurato()` non e' `raggiungibile()`.** Sono due cose diverse, e
-  confonderle faceva mentire il pannello: un endpoint locale c'e' **sempre** (e'
-  il predefinito), quindi `configurato()` era vero anche a Ollama spento.
-  `/api/voce/config` espone `llm_disponibile` (c'e' la configurazione),
-  `llm_pronto` (il modello risponde **adesso**) e `llm_manca` (la causa, se
-  manca). L'interruttore si mostra — e si accende — solo se `llm_pronto`, che e'
-  una verifica di rete breve (`raggiungibile()`, `TIMEOUT_VERIFICA` 1.5 s) contro
-  l'elenco dei modelli: `/api/tags` per Ollama (porta 11434), `/models` per un
-  servizio in rete. Un guasto di rete qui non e' un errore, e' "non pronto": si
-  resta sulle regole senza rompere niente.
+- **Si usa quando e' configurato, non quando e' "acceso".** Non c'e' piu' una
+  preferenza di casa da leggere: `_comprendi` guarda solo `configurato()`. Se non
+  c'e' un endpoint (ne' locale predefinito ne' chiave per un servizio in rete) non
+  si chiama nessuno. Se c'e', si chiama: il modello di casa predefinito e' Ollama,
+  che e' sempre "configurato" per via dell'endpoint locale, ma se e' spento
+  `chiama()` fallisce e si ricade sulle regole senza che l'utente debba saperlo.
+- **La rotta di stato non accende piu' niente.** `PUT /api/voce/llm` e' rimasta
+  per compatibilita' e risponde con lo stato; se il modello non e'
+  **raggiungibile** risponde **400** dicendo cosa manca (per un servizio in rete
+  il nome della variabile `LLM_API_KEY`, per un modello di casa la causa vera:
+  Ollama spento / modello non scaricato). Tacerlo farebbe credere che il modello
+  stia capendo mentre ogni frase finisce sulle regole.
+- **`configurato()` non e' `raggiungibile()`.** Sono due cose diverse: un endpoint
+  locale c'e' **sempre** (e' il predefinito), quindi `configurato()` e' vero anche
+  a Ollama spento. `/api/voce/config` espone `llm_disponibile` (c'e' la
+  configurazione), `llm_pronto` (il modello risponde **adesso**) e `llm_manca` (la
+  causa, se manca). `raggiungibile()` e' una verifica di rete breve
+  (`TIMEOUT_VERIFICA` 1.5 s) contro l'elenco dei modelli: `/api/tags` per Ollama
+  (porta 11434), `/models` per un servizio in rete. Un guasto di rete qui non e'
+  un errore, e' "non pronto": si resta sulle regole senza rompere niente.
 
 La chiave entra **solo** dall'ambiente o da un file accanto all'app
 (`_leggi_file`), prima dell'avvio, come quella di Azure: non c'e' una rotta che
@@ -1480,7 +1486,8 @@ Ollama acceso e il modello `qwen2.5:7b-instruct` scaricato
 chiamata a `comprensione.chiama("aggiungi il latte alla spesa")` restituisce
 `{"intent": "shopping_add", "name": "latte", "quantity": 1.0, "unit": "pz"}`.
 Se `raggiungibile()` e' falso, `messaggio_stato()` dice la causa (Ollama spento
-o modello non scaricato) e l'interruttore resta spento.
+o modello non scaricato); la comprensione resta attiva ma ricade sulle regole
+finche' il modello non torna.
 **Modelli di ragionamento e modelli locali: due trappole, entrambe misurate.**
 
 - I modelli di ragionamento spendono lo stesso budget di token prima di scrivere

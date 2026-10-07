@@ -42,8 +42,8 @@ REM  ("dammi la lista della spesa", "fammi vedere la dispensa").
 REM
 REM  NON serve fare niente per Ollama: l'app usa gia' qwen2.5:7b-instruct su
 REM  http://127.0.0.1:11434/v1. Basta che Ollama sia avviato e che il modello
-REM  sia scaricato (`ollama pull qwen2.5:7b-instruct`), poi si accende
-REM  l'interruttore in Voce -> "Capire i comandi".
+REM  sia scaricato (`ollama pull qwen2.5:7b-instruct`); la comprensione col
+REM  modello e' sempre attiva, non c'e' nessun interruttore da accendere.
 REM
 REM  Queste righe servono solo per CAMBIARE modello o indirizzo: togli il REM.
 REM  Per un servizio in rete (OpenAI o simile) servono anche LLM_API_KEY e
