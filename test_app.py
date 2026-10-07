@@ -889,60 +889,60 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
     assert "animation: none !important" in css
 
 
-def test_le_illustrazioni_della_home_sono_doodle_del_tema(client):
-    """La home ha delle illustrazioni "doodle" (un pesce, un'onda, un gabbiano,
-    un'ancora...) sparse fra le schede, e un piccolo disegno nell'angolo di ogni
-    scheda categoria. Devono restare **decorative e discrete**: disegni a
-    inchiostro del tema (non colori fissi), dietro al contenuto e con
-    `pointer-events: none`, cosi' non coprono mai un testo ne' rubano un tocco.
+def test_le_illustrazioni_della_home_sono_acquerello(client):
+    """La home ha delle illustrazioni ad **acquerello**: macchie astratte
+    pastello sparse fra le schede, e una macchia d'angolo in ogni scheda
+    categoria. Il tema e' la casa e la sua gestione: niente pesci ne' onde, solo
+    colore morbido. Devono restare **decorative e discrete**: colore dal tema
+    (non fisso), dietro al contenuto e con `pointer-events: none`, cosi' non
+    coprono mai un testo ne' rubano un tocco.
 
     Il difetto che il test tiene fuori: le illustrazioni erano `<use>` dentro un
     unico SVG, ma `position` **non si applica ai figli di un SVG** — finivano in
-    flow, non posizionate. Ogni disegno e' quindi un `<svg>` a se'."""
+    flow, non posizionate. Ogni macchia e' quindi un `<svg>` a se'."""
     import re
     html = client.get("/").get_data(as_text=True)
     css = client.get("/static/style.css").get_data(as_text=True)
 
-    # Lo sprite dei disegni (i `<symbol>`) e il livello che li mostra in home.
-    assert 'class="sprite-doodle"' in html, "manca lo sprite dei disegni"
-    assert 'class="home-doodle"' in html, "mancano le illustrazioni della home"
-    for nome in ("pesce", "onda", "gabbiano", "ancora", "barca", "sole",
-                 "conchiglia", "stella"):
-        assert f'id="doodle-{nome}"' in html, f"manca il disegno «{nome}»"
-    # in home i disegni sono `<svg>` a se' (non `<use>` di primo livello):
+    # Lo sprite (i `<symbol>`) e il livello che li mostra in home.
+    assert 'class="sprite-doodle"' in html, "manca lo sprite delle macchie"
+    assert 'class="home-doodle"' in html, "mancano le macchie della home"
+    for n in range(1, 7):
+        assert f'id="doodle-aq-{n}"' in html, f"manca la macchia acquerello {n}"
+    # e' acquerello, non disegni di oggetti: il filtro c'e' e ammorbidisce i bordi
+    assert 'filter id="acquerello"' in html, "manca il filtro acquerello"
+    assert "feGaussianBlur" in html, "l'acquerello vuole un bordo morbido"
+    # in home le macchie sono `<svg>` a se' (non `<use>` di primo livello):
     # solo cosi' il posizionamento assoluto ha effetto
     blocco_home = html[html.index('<div class="home-doodle"'):html.index('class="home-voice"')]
-    assert blocco_home.count("<svg") >= 8, "i doodle devono essere <svg>, non <use>"
+    assert blocco_home.count("<svg") >= 8, "le macchie devono essere <svg>, non <use>"
     # decorativi: nessuno finisce nella lettura per schermo
     assert 'class="home-doodle" aria-hidden="true"' in html
 
-    # e ogni scheda categoria ha il suo doodle d'angolo
+    # e ogni scheda categoria ha la sua macchia d'angolo
     assert html.count('class="home-card-doodle"') == 6, \
-        "ogni scheda categoria deve avere il suo disegno"
+        "ogni scheda categoria deve avere la sua macchia"
 
-    # il CSS: inchiostro del tema, dietro al contenuto, niente tocchi
+    # il CSS: colore dal tema, dietro al contenuto, niente tocchi
     assert ".sprite-doodle { position: absolute; width: 0; height: 0; overflow: hidden; }" in css
     blocco = css[css.index(".home-doodle {"):css.index(".home-hero { margin-bottom")]
-    assert "z-index: -1" in blocco, "i doodle devono stare dietro alle schede"
-    assert "pointer-events: none" in blocco, "un disegno non deve rubare un tocco"
-    assert "var(--doodle-inchiostro)" in blocco, "il colore deve venire dal tema"
+    assert "z-index: -1" in blocco, "le macchie devono stare dietro alle schede"
+    assert "pointer-events: none" in blocco, "una macchia non deve rubare un tocco"
+    assert "var(--wc-" in blocco, "il colore deve venire dal tema"
+    assert "fill: currentColor" in blocco, "l'acquerello e' una campitura, non un tratto"
     assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
-    # ma non **troppo** discreti: al 10% il contrasto reale era 14/255 e i disegni
-    # non si vedevano affatto (riferito dall'utente). Almeno il 20%.
-    opacita = [float(x) for x in re.findall(r"opacity:\s*\.?(\d+)", blocco)]
-    assert opacita and min(opacita) >= 20, "un doodle sotto al 20% non si vede"
     blocco_card = css[css.index(".home-card-doodle {"):css.index(".home-card-doodle svg {")]
-    assert "var(--doodle-inchiostro)" in blocco_card
-    op_card = [float(x) for x in re.findall(r"opacity:\s*\.?(\d+)", blocco_card)]
-    assert op_card and min(op_card) >= 20, "il doodle della scheda non si vede"
+    assert "var(--wc-" in blocco_card
+    blocco_card_svg = css[css.index(".home-card-doodle svg {"):
+                            css.index(".home-card:hover .home-card-doodle svg")]
+    assert "fill: currentColor" in blocco_card_svg
 
-    # le variabili sono definite in entrambi i temi (di notte non spariscono)
+    # le sei tinte sono definite in entrambi i temi (di notte non spariscono)
     chiaro = css.split('html[data-tema="scuro"]')[0]
     scuro = css.split('html[data-tema="scuro"]', 1)[1]
-    for v in ("--doodle-inchiostro", "--doodle-corallo"):
+    for v in ("--wc-1", "--wc-2", "--wc-3", "--wc-4", "--wc-5", "--wc-6"):
         assert f"{v}:" in chiaro, f"{v} manca nel tema chiaro"
         assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
-
 
 
 def test_l_icona_dell_igiene_e_la_scopa(client):

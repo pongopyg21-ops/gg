@@ -86,14 +86,12 @@
   --home-alone-1: rgba(11, 110, 143, .12);
   --home-alone-2: rgba(23, 121, 107, .10);
   --home-alone-3: rgba(176, 118, 28, .07);
-  /* Le illustrazioni "doodle" della home: disegni a inchiostro sparsi dietro
-     le schede (un pesce, un'onda, un'ancora, un gabbiano...) e un piccolo
-     monello nell'angolo di ogni scheda. Sono **inchiostro del tema**, non un
-     colore fisso, e stanno al 6-10% di opacita': suggeriscono il mare senza
-     mai competere col testo, che resta su riquadri opachi. I coralli sono
-     l'unico tocco caldo, e solo dentro i disegni (le stelle hanno `--sand`). */
-  --doodle-inchiostro: #0b6e8f;
-  --doodle-corallo: #d98a5f;
+  /* I pastello dell'acquerello della home: sei tinte tenui, una per
+     pennellata. Non sono del tema "mare" (pesci, onde): il tema e' la casa
+     e la sua gestione, quindi solo colore morbido. Restano accenti grafici:
+     il disegno non deve mai rubare l'occhio al testo. */
+  --wc-1: #f2a894;  --wc-2: #a9cbe8;  --wc-3: #b8dda3;
+  --wc-4: #f0c97e;  --wc-5: #d3b3e0;  --wc-6: #eda9b8;
 }
 
 /* Tema scuro: la stessa palette «mare», ma di notte. Non e' un negativo
@@ -158,8 +156,11 @@ html[data-tema="scuro"] {
   /* I doodle di notte: inchiostro chiaro, corallo schiarito. Restano il 6-10%
      di opacita': sul fondo profondo si vedono come segni di gesso, senza
      accendere la pagina. */
-  --doodle-inchiostro: #7fc4e6;
-  --doodle-corallo: #e0a37e;
+  /* Di notte il pastello resta pastello ma trasparente: sul fondo scuro un
+     tono pieno sarebbe una macchia chiara che acceca, cosi' invece e' velo. */
+  --wc-1: rgba(242, 168, 148, .45);  --wc-2: rgba(169, 203, 232, .45);
+  --wc-3: rgba(184, 221, 163, .45);  --wc-4: rgba(240, 201, 126, .45);
+  --wc-5: rgba(211, 179, 224, .45);  --wc-6: rgba(237, 169, 184, .45);
 
   color-scheme: dark;
 }
@@ -222,45 +223,48 @@ body {
 .sprite-doodle { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 
-/* I doodle: disegni a inchiostro sparsi fra le schede, come scarabocchi su un
-   quaderno. Stanno dentro un solo `<svg>` (che non occupa spazio, e' solo un
-   contenitore) e ognuno e' posizionato in percentuale, cosi' seguono la pagina
-   a qualunque larghezza. Il colore e' `--doodle-inchiostro`; l'opacita' e'
-   bassa apposta — un disegno che si nota piu' del testo ha sbagliato mestiere.
-   `z-index: -1` li tiene **dietro** alle schede, che sono opache: non coprono
-   mai ne' una parola ne' un pulsante, e non intercettano i tocchi. */
+/* L'acquerello della home: macchie astratte pastello sparse fra le schede,
+   come pennellate lasciate asciugare. Stanno dentro un `<svg>` che non occupa
+   spazio (solo un contenitore); ogni macchia e' posizionata in percentuale,
+   cosi' segue la pagina a qualunque larghezza. Il colore e' uno dei `--wc-*`,
+   deciso dal tema. `z-index: -1` le tiene **dietro** alle schede, opache: non
+   coprono mai una parola ne' un pulsante, e non intercettano i tocchi. La
+   filigrana e' bassa apposta — una macchia che si nota piu' del testo ha
+   sbagliato mestiere. */
 .home-doodle {
   position: absolute; inset: 0; z-index: -1; pointer-events: none;
   width: 100%; height: 100%;
 }
 .home-doodle .dd {
-  position: absolute; color: var(--doodle-inchiostro);
-  width: 56px; height: 56px; opacity: .26;
-  fill: none; stroke: currentColor;
-  stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  position: absolute; color: var(--wc-2);
+  width: 70px; height: 70px; opacity: .85;
+  fill: currentColor;
 }
-/* Un paio di doodle prendono il corallo (i pesci, le stelle): e' l'unico tocco
-   caldo, e solo dentro il disegno. */
-.home-doodle .dd-1, .home-doodle .dd-6 { color: var(--doodle-corallo); opacity: .30; }
+/* sei macchie colorate, il resto ripete le tinte: un acquerello non e' un
+   arcobaleno ordinato, ma nemmeno un monocromo */
+.home-doodle .dd-2  { color: var(--wc-1); }
+.home-doodle .dd-3  { color: var(--wc-3); }
+.home-doodle .dd-4  { color: var(--wc-4); }
+.home-doodle .dd-5  { color: var(--wc-5); }
+.home-doodle .dd-6  { color: var(--wc-6); }
+.home-doodle .dd-7  { color: var(--wc-2); }
+.home-doodle .dd-8  { color: var(--wc-3); }
+.home-doodle .dd-9  { color: var(--wc-1); }
+.home-doodle .dd-10 { color: var(--wc-5); }
 /* Le posizioni stanno nelle **fasce libere** della home: la fascia alta (sopra
-   le schede, dove il blocco vocale e' centrato e ai lati resta vuoto) e quella
-   bassa (dopo le schede). Non si usano le zone in mezzo: li' il contenuto varia
-   — pasti, calendario, notizie — e un disegno finirebbe dietro una scheda
-   opaca, cioe' invisibile. Verticale in px (le fasce sono fisse), orizzontale
-   in percentuale (la pagina si allarga). */
-.home-doodle .dd-1  { left: 1.5%;  top: 10px;  transform: rotate(-12deg); }
-.home-doodle .dd-2  { left: 41%;   top: 8px;   width: 84px; height: 46px; transform: rotate(4deg); }
-.home-doodle .dd-3  { right: 1.5%; top: 6px;   transform: rotate(-6deg); }
-.home-doodle .dd-4  { left: 3%;    bottom: 12px; transform: rotate(12deg); }
-.home-doodle .dd-5  { right: 2.5%; bottom: 10px; transform: rotate(-8deg); }
-.home-doodle .dd-6  { left: 44%;   bottom: 8px;  width: 46px; height: 46px; transform: rotate(10deg); }
-/* Le due "ai margini": nella fascia alta, ai lati del blocco vocale, dove
-   resta spazio anche quando sotto il contenuto e' pieno. Piu' tenui, perche'
-   li' sono piu' vicine alla riga di testo dell'invito. */
-.home-doodle .dd-7  { left: 2%;    top: 96px;  width: 44px; height: 44px; opacity: .20; transform: rotate(8deg); }
-.home-doodle .dd-8  { right: 2%;   top: 90px;  width: 48px; height: 48px; opacity: .20; transform: rotate(-10deg); }
-.home-doodle .dd-9  { left: 12%;   top: 150px; width: 46px; height: 34px; opacity: .20; transform: rotate(-3deg); }
-.home-doodle .dd-10 { right: 13%;  top: 144px; width: 44px; height: 40px; opacity: .20; transform: rotate(6deg); }
+   le schede, ai lati del blocco vocale) e quella bassa (dopo le schede). Le
+   macchie grandi sono intorno al blocco vocale; quelle in mezzo ai contenuti
+   sono piu' piccole e tenui, per non disturbare la lettura. */
+.home-doodle .dd-1  { left: 3%;    top: 16px;  width: 104px; height: 104px; transform: rotate(-14deg); }
+.home-doodle .dd-2  { left: 40%;   top: 2px;   width: 118px; height: 116px; transform: rotate(8deg); }
+.home-doodle .dd-3  { right: 3%;   top: 10px;  width: 98px;  height: 98px;  transform: rotate(-6deg); }
+.home-doodle .dd-4  { left: 1.5%;  top: 130px; width: 62px;  height: 62px;  transform: rotate(12deg); }
+.home-doodle .dd-5  { right: 2%;   top: 122px; width: 66px;  height: 66px;  transform: rotate(-8deg); }
+.home-doodle .dd-6  { left: 47%;   top: 158px; width: 50px;  height: 50px;  opacity: .6; transform: rotate(10deg); }
+.home-doodle .dd-7  { left: 18%;   top: 86px;  width: 46px;  height: 46px;  opacity: .6; transform: rotate(8deg); }
+.home-doodle .dd-8  { right: 17%;  top: 80px;  width: 52px;  height: 52px;  opacity: .6; transform: rotate(-10deg); }
+.home-doodle .dd-9  { left: 4%;    bottom: 16px; width: 108px; height: 104px; transform: rotate(-10deg); }
+.home-doodle .dd-10 { right: 4%;   bottom: 12px; width: 100px; height: 100px; transform: rotate(14deg); }
 
 .home-hero { margin-bottom: 34px; }
 /* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non
@@ -460,23 +464,28 @@ body {
   border-color: var(--accent); box-shadow: var(--shadow); transform: translateY(-2px);
 }
 .home-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* Il doodle d'angolo di ogni scheda: un disegno diverso per sezione (pesce per
-   la Cucina, ancora per gli Appunti...), in filigrana nell'angolo in alto a
-   destra. E' decorativo e non intercetta i tocchi; parla la stessa lingua dello
-   sfondo, ma piu' vicino — e' il "marchio" della scheda. Al passaggio si
-   solleva insieme all'emoji, cosi' la scheda sembra viva. */
+/* La macchia d'angolo di ogni scheda: una pennellata pastello diversa per
+   sezione, nell'angolo in alto a destra. E' decorativa e non intercetta i
+   tocchi; parla la stessa lingua dello sfondo, ma piu' vicina — e' il "marchio"
+   della scheda. Al passaggio si solleva insieme all'emoji, cosi' sembra viva. */
 .home-card-doodle {
   position: absolute; top: 14px; right: 14px;
-  width: 50px; height: 50px; pointer-events: none;
-  color: var(--doodle-inchiostro); opacity: .40;
+  width: 54px; height: 54px; pointer-events: none;
+  color: var(--wc-2); opacity: .85;
 }
 .home-card-doodle svg {
   width: 100%; height: 100%;
-  fill: none; stroke: currentColor;
-  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+  fill: currentColor;
   transition: transform .25s cubic-bezier(.2, .8, .25, 1);
 }
-.home-card:nth-child(1) .home-card-doodle { color: var(--doodle-corallo); opacity: .44; }
+/* ogni scheda ha la sua tinta: cucina pesca, igiene verde, appunti azzurro,
+   faq giallo, tv lilla, cinema rosa */
+.home-card:nth-child(1) .home-card-doodle { color: var(--wc-1); }
+.home-card:nth-child(2) .home-card-doodle { color: var(--wc-3); }
+.home-card:nth-child(3) .home-card-doodle { color: var(--wc-2); }
+.home-card:nth-child(4) .home-card-doodle { color: var(--wc-4); }
+.home-card:nth-child(5) .home-card-doodle { color: var(--wc-5); }
+.home-card:nth-child(6) .home-card-doodle { color: var(--wc-6); }
 .home-card:hover .home-card-doodle svg { transform: translateY(-3px) rotate(8deg); }
 
 .home-emoji { font-size: 30px; line-height: 1; }
