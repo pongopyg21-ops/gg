@@ -161,6 +161,7 @@ html[data-tema="scuro"] {
   --sh-ink: rgba(238, 238, 228, .5);   --sh-ochre: rgba(224, 173, 96, .5);
   --sh-clay: rgba(226, 148, 120, .5);  --sh-beige: rgba(222, 213, 194, .32);
   --surface-velo: rgba(20, 28, 36, .8);
+  --emoji-lum: 1.65;
 
   color-scheme: dark;
 }
@@ -525,7 +526,26 @@ body {
 .home-card:hover .home-card-figura svg { transition: transform .25s cubic-bezier(.2, .8, .25, 1); transform: rotate(4deg) scale(1.05); }
 
 .home-card > span { position: relative; z-index: 1; }
+/* Le emoji delle schede parlano la stessa lingua delle figure astratte: non piu'
+   a colori pieni, ma una **tinta piatta** presa dalla stessa tavolozza. Il
+   colore di un'emoji non si cambia con `color` (non e' testo): la si porta a
+   silhouette con `grayscale`+`brightness`, la si tinge con `sepia`+`saturate` e
+   la si sposta sulla tinta della scheda con `hue-rotate`. Ogni scheda ha la sua
+   (ocra o argilla, le due tinte calde delle forme), cosi' le schede si
+   distinguono come le figure. Vale anche per l'icona della Cucina, che e' un
+   `<img>`: la tinta la unifica alle altre. Di notte la luminanza sale, perche'
+   una silhouette scura sparirebbe sul fondo profondo. */
 .home-emoji { font-size: 30px; line-height: 1; }
+.home-emoji {
+  filter: grayscale(1) brightness(var(--emoji-lum, 1.5)) sepia(1)
+          saturate(var(--emoji-sat, 2.8)) hue-rotate(var(--tinta, 0deg));
+}
+.home-card[data-section="cucina"] .home-emoji  { --tinta: -6deg; }
+.home-card[data-section="progetti"] .home-emoji { --tinta: -4deg; }
+.home-card[data-section="igiene"] .home-emoji  { --tinta: -24deg; }
+.home-card[data-section="gym"] .home-emoji     { --tinta: -8deg; }
+.home-card[data-section="tv"] .home-emoji      { --tinta: -22deg; }
+.home-card[data-section="faq"] .home-emoji     { --tinta: -2deg; }
 .home-name {
   font-family: var(--font-display); font-size: 21px; font-weight: 700;
   letter-spacing: -.02em;

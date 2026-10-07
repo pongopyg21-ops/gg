@@ -999,6 +999,29 @@ def test_le_illustrazioni_della_home_sono_forme_geometriche(client):
         f"col velo il testo non resta leggibile: contrasto {contrast(ink_testo, composto):.2f}"
 
 
+
+def test_le_emoji_delle_schede_prendono_la_tinta_delle_forme(client):
+    """Le emoji delle schede non restano a colori pieni: sono tinte con la stessa
+    tavolozza delle figure astratte. Il colore di un'emoji non si cambia con
+    `color` (non e' testo): la si porta a silhouette e la si tinge con i filtri
+    CSS. Ogni scheda ha la sua tinta, e di notte la silhouette schiarisce."""
+    css = client.get("/static/style.css").get_data(as_text=True)
+    blocco = css[css.index(".home-emoji {"):css.index(".home-card:hover .home-emoji")]
+    assert "grayscale(1)" in blocco, "l'emoji va prima portata a silhouette"
+    assert "sepia(1)" in blocco, "la tinta si costruisce con sepia"
+    assert "hue-rotate(var(--tinta" in blocco, "la tinta deve venire da una variabile"
+    assert "brightness(var(--emoji-lum" in blocco
+    # ogni scheda categoria ha la sua tinta, dentro la regola delle emoji
+    for sezione in ("cucina", "progetti", "igiene", "gym", "tv", "faq"):
+        assert f'[data-section="{sezione}"] .home-emoji' in css, \
+            f"manca la tinta della scheda {sezione}"
+    # di notte la luminanza sale: una silhouette scura sparirebbe sul fondo scuro
+    chiaro = css.split('html[data-tema="scuro"]')[0]
+    scuro = css.split('html[data-tema="scuro"]', 1)[1]
+    assert "--emoji-lum:" not in chiaro, "la luminanza chiara e' il predefinito"
+    assert "--emoji-lum:" in scuro, "il tema scuro deve schiarire le emoji"
+
+
 def test_l_icona_dell_igiene_sono_le_bollicine(client):
     """La sezione Igiene si riconosce dalle **bollicine** (fresco, pulito), non
     piu' dalla scopa: la scopa diceva «sto spazzando», non «e' pulito». E' la
