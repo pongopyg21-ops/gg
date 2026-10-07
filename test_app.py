@@ -896,6 +896,12 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
     assert "var(--home-alone-1)" in velo and "var(--home-alone-2)" in velo
     assert not re.search(r"#[0-9a-fA-F]{3,6}", velo), "colore fisso fuori dalla palette"
     assert "z-index: -1" in velo and "pointer-events: none" in velo
+    # **Resta dentro la sezione**: un `inset` negativo lo farebbe sporgere oltre
+    # l'ultimo riquadro, allungando la pagina — la home scorrerebbe oltre
+    # l'intestazione «Il Maggiordomo». Il movimento lo danno `background-size` e
+    # `background-position`, non `inset`.
+    assert "inset: 0" in velo, "il velo deve restare dentro la sezione (inset: 0)"
+    assert not re.search(r"inset:\s*-", velo), "il velo non deve sporgere (niente inset negativo)"
     m2 = re.search(r"animation: home-gradiente (\d+)s", velo)
     assert m2 and int(m2.group(1)) >= 30, "il gradiente deve scorrere lentamente"
 

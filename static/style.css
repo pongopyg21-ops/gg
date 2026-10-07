@@ -222,11 +222,13 @@ body {
    movimento **di passaggio** invece che di respiro, cosi' l'occhio lo coglie
    appena. Il gradiente si costruisce **solo** con le tinte del tema
    (`--home-alone-*`), quindi non introduce nessun colore nuovo: cambia il
-   disegno, non la tavolozza. `inset` lo fa sporgere oltre il riquadro, cosi' le
-   punte del gradiente restano fuori schermo mentre scorre. */
+   disegno, non la tavolozza. **Resta dentro la sezione** (`inset: 0`): sporgere
+   oltre l'ultimo riquadro allungherebbe la pagina e la home scorrerebbe oltre
+   l'intestazione «Il Maggiordomo». Il movimento lo danno `background-size` e
+   `background-position`, non la dimensione del riquadro. */
 .home::after {
   content: "";
-  position: absolute; inset: -30% -12%; z-index: -1; pointer-events: none;
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background: linear-gradient(115deg,
     transparent 0%,
     var(--home-alone-1) 32%,
