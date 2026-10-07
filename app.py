@@ -3727,203 +3727,115 @@ def chores_summary():
 
 
 # ---------------------------------------------------------------------- faq
-# Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le
-# categorie stanno in `faq.py`, le voci nella tabella `faq`.
+# Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici **e**
+# dati riservati (password, PIN). Tutto il modulo e' protetto: le voci vivono
+# **solo** dentro la cassaforte cifrata del database della casa, e si vedono
+# dopo aver aperto la cassaforte con la sua password.
 #
-# La ricerca e' lato client, come per le ricette: l'elenco e' piccolo e filtrare
-# in locale e' immediato, senza una richiesta a ogni lettera digitata.
-
-
-def _faq_o_404(db, fid):
-    row = one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,)))
-    if row is None:
-        return None, bad_request("Voce non trovata", 404)
-    return row, None
-
-
-def _faq_campi(data, row=None):
-    """I campi validati per un inserimento o una modifica.
-
-    Restituisce (campi, errore). In modifica si toccano solo i campi presenti,
-    come per il profilo: un salvataggio parziale non deve azzerare il resto.
-    """
-    campi = {}
-    if row is None or "question" in data:
-        domanda = (data.get("question") or "").strip()
-        if not domanda:
-            return None, bad_request("Il titolo è obbligatorio")
-        campi["question"] = domanda
-    if row is None or "answer" in data:
-        campi["answer"] = (data.get("answer") or "").strip()
-    if "category" in data:
-        campi["category"] = faq.categoria_valida(data.get("category"))
-    for chiave in ("secret", "pinned"):
-        if chiave in data:
-            campi[chiave] = 1 if data[chiave] else 0
-    return campi, None
-
-
-@app.route("/api/faq/meta")
-def faq_meta():
-    """Le scelte fisse della sezione: le categorie, con quante voci hanno."""
-    db = get_db()
-    conteggi = {r["category"]: r["n"] for r in db.execute(
-        "SELECT category, COUNT(*) AS n FROM faq GROUP BY category")}
-    return jsonify({
-        "categories": [{**c, "count": conteggi.get(c["key"], 0)} for c in faq.categorie()],
-        "default_category": faq.CATEGORIA_DEFAULT,
-    })
-
-
-@app.route("/api/faq", methods=["GET"])
-def faq_list():
-    """Tutte le voci, ordinate: in evidenza, poi per categoria, poi per titolo."""
-    db = get_db()
-    voci = rows(db.execute("SELECT * FROM faq"))
-    for v in voci:
-        # l'etichetta della categoria arriva dal server: il frontend non deve
-        # avere una seconda copia della mappa, che si disallineerebbe
-        v["category_label"] = faq.etichetta(v["category"])
-    return jsonify({
-        "voci": faq.ordina(voci),
-        "totale": len(voci),
-        "riservate": sum(1 for v in voci if v["secret"]),
-    })
-
-
-@app.route("/api/faq", methods=["POST"])
-def faq_add():
-    db = get_db()
-    data = request.get_json(force=True) or {}
-    campi, errore = _faq_campi(data)
-    if errore:
-        return errore
-    cur = db.execute(
-        """INSERT INTO faq (category, question, answer, secret, pinned)
-           VALUES (?, ?, ?, ?, ?)""",
-        (campi.get("category", faq.CATEGORIA_DEFAULT), campi["question"],
-         campi.get("answer", ""), campi.get("secret", 0), campi.get("pinned", 0)))
-    db.commit()
-    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (cur.lastrowid,)))), 201
-
-
-@app.route("/api/faq/<int:fid>", methods=["PUT", "DELETE"])
-def faq_modify(fid):
-    db = get_db()
-    _row, errore = _faq_o_404(db, fid)
-    if errore:
-        return errore
-    if request.method == "DELETE":
-        db.execute("DELETE FROM faq WHERE id = ?", (fid,))
-        db.commit()
-        return jsonify({"ok": True})
-
-    data = request.get_json(force=True) or {}
-    campi, errore = _faq_campi(data, row=_row)
-    if errore:
-        return errore
-    if not campi:
-        return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
-
-    assignments = ", ".join(f"{k} = ?" for k in campi)
-    db.execute(f"UPDATE faq SET {assignments} WHERE id = ?", [*campi.values(), fid])
-    db.commit()
-    return jsonify(one(db.execute("SELECT * FROM faq WHERE id = ?", (fid,))))
-
-
-# ----------------------------------------------------------------- cassaforte
-# I dati riservati (password, codici, PIN), cifrati con una password **della
-# cassaforte**. La password non viaggia mai nel database ne' in un log: arriva
-# nella richiesta, apre la scatola in memoria e resta li' finche' la cassaforte
-# e' aperta. La chiave aperta vive nella sessione firmata (server-side), non nel
-# client.
+# Perche' tutto e non le sole voci "riservate": l'utente ha chiesto che l'intero
+# modulo contenga informazioni sensibili da proteggere. Un flag `secret` delle
+# FAQ classiche proteggeva solo a schermo - il valore viaggiava comunque in
+# chiaro nella risposta dell'API - e un flag che sembra sicurezza senza esserlo
+# fa abbassare la guardia. Qui invece il testo non arriva al client se la
+# cassaforte e' chiusa: e' il server a negarlo, non un nascondiglio nel browser.
 #
-# La cassaforte non si apre da sola con l'accesso all'app: **entrare nella casa
-# non basta a leggere i segreti**. E' il senso dell'avere una password diversa.
+# La password della cassaforte **non** sta nella sessione (finirebbe nel
+# biscotto, che il client puo' leggere): la sessione tiene solo l'**impronta**
+# PBKDF2 (`cassaforte_registro.impronta`), che verifica l'apertura ma non
+# decifra nulla. Il testo in chiaro serve a decifrare: vive in una mappa di
+# processo (`_CASSAFORTE_APERTE`), per il tempo dell'apertura, e non esce mai
+# dal server.
+
+# Per quanto tempo la cassaforte resta aperta: non e' un segreto, e' la comodita'
+# di non ridigitare la password a ogni riga. Si richiude da sola.
+CASSAFORTE_MINUTI = 15
+
+# slug della casa -> {"password": testo, "scade": istante}. Solo in memoria: un
+# riavvio del server richiude tutte le casseforti, che e' la cosa giusta da fare
+# quando il processo nuovo non sa piu' chi aveva aperto cosa.
+_CASSAFORTE_APERTE = {}
+_CASSAFORTE_LUCCHETTO = threading.Lock()
 
 
-def _cassaforte_stato(db):
-    """Lo stato della cassaforte: esiste? aperta? quando si richiude?"""
-    esiste = one(db.execute("SELECT 1 FROM cassaforte WHERE id = 1")) is not None
-    registro = houses.cassaforte_meta(casa_attiva())
-    aperta = bool(session.get("cassaforte_password")) and esiste
-    resta = None
-    if aperta:
-        resta = _cassaforte_secondi_rimasti()
-    return {
-        "esiste": esiste,
-        "aperta": aperta,
-        "promemoria": registro["promemoria"] if registro else "",
-        "chiusura_minuti": registro["chiusura_minuti"] if registro else 15,
-        "secondi_rimasti": resta,
-    }
+def _cassaforte_aperta(slug):
+    """True se c'e' un'apertura valida in memoria per questa casa.
 
-
-def _cassaforte_scade():
-    """Quando la cassaforte si e' aperta, per richiuderla da sola.
-
-    Si ricorda **quando** e' stata aperta e per quanto vale l'apertura: senza
-    scadenza la cassaforte resterebbe aperta per sempre, e chi passa davanti a un
-    dispositivo gia' sbloccato leggerebbe tutto. Il valore sta in sessione, cosi'
-    la chiusura automatica e' del server e non dipende dal browser.
+    Scade da sola: scaduta, si toglie e si dice di no. Cosi' una cassaforte
+    lasciata aperta non resta aperta per sempre su un dispositivo incustodito.
     """
-    return session.get("cassaforte_scade")
-
-
-def _cassaforte_secondi_rimasti():
-    scade = _cassaforte_scade()
-    if not scade:
-        return 0
-    return max(0, int(scade - time.time()))
-
-
-def _cassaforte_chiusa_se_scaduta():
-    """Chiude la cassaforte se il tempo e' passato. Restituisce True se chiusa."""
-    if session.get("cassaforte_password") and _cassaforte_secondi_rimasti() <= 0:
-        _cassaforte_dimentica()
+    with _CASSAFORTE_LUCCHETTO:
+        apertura = _CASSAFORTE_APERTE.get(slug)
+        if not apertura:
+            return False
+        if time.time() >= apertura["scade"]:
+            _CASSAFORTE_APERTE.pop(slug, None)
+            return False
         return True
-    return False
 
 
-def _cassaforte_dimentica():
-    session.pop("cassaforte_password", None)
-    session.pop("cassaforte_scade", None)
+def _cassaforte_apri(slug, password):
+    """Tiene la password in memoria per il tempo scelto, o la dimentica.
 
-
-def _cassaforte_apri(password):
-    """Tiene la password in sessione per il tempo scelto, o la dimentica.
-
-    La password **non** viene salvata in chiaro nel database: vive solo nella
-    sessione firmata del server, e si butta via da sola. E' l'unica cosa che puo'
-    decifrare la scatola, quindi non deve restare.
+    La scadenza si rinnova a ogni apertura; passata, `_cassaforte_aperta` la
+    lascia cadere da sola. La password vive solo qui, mai nel biscotto.
     """
-    minuti = (houses.cassaforte_meta(casa_attiva()) or {}).get("chiusura_minuti", 15)
-    session["cassaforte_password"] = password
-    session["cassaforte_scade"] = time.time() + max(1, minuti) * 60
+    minuti = (houses.cassaforte_meta(slug) or {}).get("chiusura_minuti", CASSAFORTE_MINUTI)
+    with _CASSAFORTE_LUCCHETTO:
+        _CASSAFORTE_APERTE[slug] = {
+            "password": password,
+            "scade": time.time() + max(1, minuti) * 60,
+        }
 
 
-def _cassaforte_voci(db):
-    """Le voci in chiaro, se la cassaforte e' aperta. Altrimenti solleva."""
-    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
+def _cassaforte_dimentica(slug=None):
+    """Chiude la cassaforte: dimentica l'apertura della casa data, o tutte."""
+    with _CASSAFORTE_LUCCHETTO:
+        if slug is None:
+            _CASSAFORTE_APERTE.clear()
+        else:
+            _CASSAFORTE_APERTE.pop(slug, None)
+
+
+def _cassaforte_secondi_rimasti(slug):
+    with _CASSAFORTE_LUCCHETTO:
+        apertura = _CASSAFORTE_APERTE.get(slug)
+        if not apertura:
+            return 0
+        return max(0, int(apertura["scade"] - time.time()))
+
+
+def _cassaforte_pw_aperta():
+    """La password in chiaro della cassaforte aperta, o None se e' chiusa."""
+    slug = casa_attiva()
+    if _cassaforte_aperta(slug):
+        return _CASSAFORTE_APERTE[slug]["password"]
+    return None
+
+
+def _cassaforte_voci_di(slug, password):
+    """Le voci in chiaro dal blob cifrato, con la password data."""
+    riga = one(get_db().execute("SELECT dati FROM cassaforte WHERE id = 1"))
     if riga is None:
-        raise cassaforte.CassaforteErrore("La cassaforte non e' stata creata")
-    password = session.get("cassaforte_password")
-    if not password:
-        raise cassaforte.CassaforteErrore("La cassaforte e' chiusa")
-    chiaro = cassaforte.decifra(riga["dati"], password)
+        raise cassaforte.CassaforteErrore("La cassaforte non è stata creata")
     try:
-        return json.loads(chiaro.decode("utf-8"))
+        return json.loads(cassaforte.decifra(riga["dati"], password).decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         raise cassaforte.CassaforteErrore("Contenuto della cassaforte non leggibile")
 
 
-def _cassaforte_salva(db, voci):
+def _cassaforte_voci():
+    """Le voci in chiaro della cassaforte aperta. Solleva se e' chiusa."""
+    password = _cassaforte_pw_aperta()
+    if password is None:
+        raise cassaforte.CassaforteErrore("La cassaforte è chiusa")
+    return _cassaforte_voci_di(casa_attiva(), password)
+
+
+def _cassaforte_salva(slug, password, voci):
     """Riscrive la scatola con le voci date, cifrandole con la password aperta."""
-    password = session.get("cassaforte_password")
-    if not password:
-        raise cassaforte.CassaforteErrore("La cassaforte e' chiusa")
-    blob = cassaforte.cifra(json.dumps(voci, ensure_ascii=False).encode("utf-8"),
-                            password)
+    blob = cassaforte.cifra(
+        json.dumps(voci, ensure_ascii=False).encode("utf-8"), password)
+    db = get_db()
     db.execute("""INSERT INTO cassaforte (id, dati, updated_at)
                   VALUES (1, ?, datetime('now'))
                   ON CONFLICT(id) DO UPDATE SET
@@ -3938,139 +3850,173 @@ def _cassaforte_voce_o_404(voci, vid):
     return None
 
 
-@app.route("/api/cassaforte/stato")
-def cassaforte_stato():
-    """Aperta o chiusa? Serve al client per sapere se chiedere la password."""
-    _cassaforte_chiusa_se_scaduta()
-    return jsonify(_cassaforte_stato(get_db()))
+def _cassaforte_esiste(db):
+    return one(db.execute("SELECT 1 FROM cassaforte WHERE id = 1")) is not None
 
 
-@app.route("/api/cassaforte/crea", methods=["POST"])
-def cassaforte_crea():
-    """Crea la cassaforte con una password (che puo' essere quella dell'app).
+def _cassaforte_importa_vecchie():
+    """Travasa le voci della vecchia tabella `faq` nella cassaforte.
 
-    Da qui in poi i segreti stanno solo dentro la scatola cifrata. La creazione
-    la fa chi ha gia' accesso alla casa: non serve una conferma in piu', perche'
-    senza cassaforte non c'e' niente da proteggere.
+    Le installazioni precedenti avevano le voci in chiaro nella tabella `faq`.
+    Alla prima apertura della cassaforte (o alla creazione) si importano, cosi'
+    chi aggiorna non perde niente: da quel momento vivono solo cifrate, e la
+    tabella vecchia si svuota. Non solleva mai: se la tabella non c'e' o e' gia'
+    vuota non c'e' nulla da fare.
     """
     db = get_db()
-    if one(db.execute("SELECT 1 FROM cassaforte WHERE id = 1")):
-        return bad_request("La cassaforte esiste già")
-    data = request.get_json(force=True) or {}
-    password = (data.get("password") or "").strip()
-    if len(password) < 4:
-        return bad_request("La password della cassaforte deve avere almeno 4 caratteri")
-    # L'ordine conta: prima si registra la scadenza (cosi' `_cassaforte_apri` la
-    # trova), poi si apre — `_cassaforte_salva` cifra con la password aperta —
-    # e infine si scrive la scatola vuota.
-    houses.cassaforte_registra(
-        casa_attiva(),
-        promemoria=(data.get("promemoria") or "").strip(),
-        chiusura_minuti=int(data.get("chiusura_minuti") or 15))
-    _cassaforte_apri(password)
-    _cassaforte_salva(db, [])
-    return jsonify({"ok": True, **_cassaforte_stato(db)}), 201
-
-
-@app.route("/api/cassaforte/apri", methods=["POST"])
-def cassaforte_apri():
-    """La password della cassaforte. Se non torna, la cassaforte resta chiusa."""
-    db = get_db()
-    if session.get("cassaforte_password"):
-        return jsonify({"ok": True, **_cassaforte_stato(db)})
-    data = request.get_json(force=True) or {}
-    password = data.get("password") or ""
-    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
-    if riga is None:
-        return bad_request("La cassaforte non è stata creata", 404)
-    if not cassaforte.password_giusta(riga["dati"], password):
-        return bad_request("Password della cassaforte non corretta", 401)
-    _cassaforte_apri(password)
-    return jsonify({"ok": True, **_cassaforte_stato(db)})
-
-
-@app.route("/api/cassaforte/chiudi", methods=["POST"])
-def cassaforte_chiudi():
-    _cassaforte_dimentica()
-    return jsonify({"ok": True, **_cassaforte_stato(get_db())})
-
-
-@app.route("/api/cassaforte/password", methods=["PUT"])
-def cassaforte_cambia_password():
-    """Cambia la password della cassaforte, riscrivendo la scatola con quella nuova.
-
-    Serve la vecchia: senza, chi trova un dispositivo sbloccato cambierebbe la
-    password e chiuderebbe fuori gli altri. La nuova puo' essere diversa da
-    quella dell'app.
-    """
-    db = get_db()
-    _cassaforte_chiusa_se_scaduta()
-    data = request.get_json(force=True) or {}
-    vecchia = data.get("attuale") or ""
-    nuova = (data.get("nuova") or "").strip()
-    riga = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))
-    if riga is None:
-        return bad_request("La cassaforte non è stata creata", 404)
-    if not cassaforte.password_giusta(riga["dati"], vecchia):
-        return bad_request("La password attuale non è corretta", 401)
-    if len(nuova) < 4:
-        return bad_request("La nuova password deve avere almeno 4 caratteri")
-    # si decifra con la vecchia e si ricifra con la nuova: e' l'unico modo di
-    # ruotare la password senza perdere le voci
-    voci = _cassaforte_voci_con(vecchia, riga["dati"])
-    blob = cassaforte.cifra(json.dumps(voci, ensure_ascii=False).encode("utf-8"), nuova)
-    db.execute("UPDATE cassaforte SET dati = ?, updated_at = datetime('now') WHERE id = 1",
-               (blob,))
-    db.commit()
-    _cassaforte_apri(nuova)
-    return jsonify({"ok": True, **_cassaforte_stato(db)})
-
-
-def _cassaforte_voci_con(password, blob):
-    return json.loads(cassaforte.decifra(blob, password).decode("utf-8"))
-
-
-@app.route("/api/cassaforte/voci", methods=["GET"])
-def cassaforte_voci():
-    """Le voci in chiaro. Solo a cassaforte aperta: chiusa, un 401 e basta."""
-    db = get_db()
-    if _cassaforte_chiusa_se_scaduta():
-        return bad_request("La cassaforte è chiusa", 401)
     try:
-        voci = _cassaforte_voci(db)
-    except cassaforte.CassaforteErrore as e:
-        return bad_request(str(e), 401)
-    return jsonify({"voci": voci, "totale": len(voci), **_cassaforte_stato(db)})
+        righe = rows(db.execute("SELECT * FROM faq"))
+    except sqlite3.Error:
+        return 0
+    if not righe:
+        return 0
+    voci = _cassaforte_voci()
+    # i titoli sono la chiave di confronto: una voce gia' importata non si
+    # duplica se l'apertura avviene piu' di una volta
+    presenti = {v.get("question", "").strip().lower() for v in voci}
+    nuovo_id = max([v.get("id", 0) for v in voci] + [0])
+    importate = []
+    for r in righe:
+        if r["question"].strip().lower() in presenti:
+            continue
+        nuovo_id += 1
+        importate.append({
+            "id": nuovo_id,
+            "question": r["question"],
+            "answer": r["answer"],
+            "category": faq.categoria_valida(r["category"]),
+            "notes": "",
+            "pinned": bool(r["pinned"]),
+        })
+    if importate:
+        _cassaforte_salva(casa_attiva(), _cassaforte_pw_aperta(), voci + importate)
+    db.execute("DELETE FROM faq")
+    db.commit()
+    return len(importate)
 
 
-def _cassaforte_campi(data, esistente=None):
+def _faq_mascherato(v):
+    """La voce senza il valore: quello che il client riceve a cassaforte chiusa.
+
+    Titolo, categoria e nota restano (servono a sapere che cosa c'e' dentro e a
+    cercarlo); il **valore** no. `ha_valore` dice se c'e' qualcosa da mostrare una
+    volta aperta, cosi' l'interfaccia non promette un contenuto che non esiste.
+    """
+    categoria = v.get("category", faq.CATEGORIA_DEFAULT)
+    return {
+        "id": v.get("id"),
+        "question": v.get("question", ""),
+        "category": categoria,
+        "category_label": faq.etichetta(categoria),
+        "notes": v.get("notes", ""),
+        "pinned": bool(v.get("pinned")),
+        "secret": True,
+        "ha_valore": bool((v.get("answer") or "").strip()),
+    }
+
+
+def _faq_voce_pubblica(v):
+    """Una voce completa, con l'etichetta della categoria e i flag del client."""
+    categoria = v.get("category", faq.CATEGORIA_DEFAULT)
+    return {**v, "category": categoria, "category_label": faq.etichetta(categoria),
+            "secret": True, "ha_valore": bool((v.get("answer") or "").strip())}
+
+
+def _cassaforte_stato(db):
+    """Lo stato della cassaforte: esiste? aperta? quando si richiude?"""
+    esiste = _cassaforte_esiste(db)
+    registro = houses.cassaforte_meta(casa_attiva())
+    aperta = esiste and _cassaforte_aperta(casa_attiva())
+    return {
+        "esiste": esiste,
+        "aperta": aperta,
+        "promemoria": registro["promemoria"] if registro else "",
+        "chiusura_minuti": registro["chiusura_minuti"] if registro else CASSAFORTE_MINUTI,
+        "secondi_rimasti": _cassaforte_secondi_rimasti(casa_attiva()) if aperta else None,
+    }
+
+
+def _faq_campi(data, voce=None):
+    """I campi validati per un inserimento o una modifica.
+
+    Restituisce (campi, errore). In modifica si toccano solo i campi presenti,
+    come per il profilo: un salvataggio parziale non deve azzerare il resto.
+    """
     campi = {}
-    if esistente is None or "question" in data:
+    if voce is None or "question" in data:
         domanda = (data.get("question") or "").strip()
         if not domanda:
             return None, bad_request("Il titolo è obbligatorio")
         campi["question"] = domanda
-    if esistente is None or "answer" in data:
+    if voce is None or "answer" in data:
         campi["answer"] = (data.get("answer") or "").strip()
-    for chiave in ("category", "notes"):
-        if chiave in data:
-            campi[chiave] = data.get(chiave)
+    if "category" in data:
+        campi["category"] = faq.categoria_valida(data.get("category"))
+    if "notes" in data:
+        campi["notes"] = (data.get("notes") or "").strip()
     if "pinned" in data:
         campi["pinned"] = bool(data["pinned"])
     return campi, None
 
 
-@app.route("/api/cassaforte/voci", methods=["POST"])
-def cassaforte_voce_nuova():
+@app.route("/api/faq/meta")
+def faq_meta():
+    """Le scelte fisse della sezione: le categorie, con quante voci hanno.
+
+    Il conteggio e' dell'intero modulo, cassaforte compresa. A cassaforte chiusa
+    non si decifra niente per contare, quindi i conteggi restano a zero e il
+    client mostra lo stato "chiusa" invece dell'elenco: non e' un dato riservato,
+    ma non si puo' avere senza la password.
+    """
+    conteggi = {c["key"]: 0 for c in faq.categorie()}
     db = get_db()
-    if _cassaforte_chiusa_se_scaduta():
+    if _cassaforte_esiste(db) and _cassaforte_aperta(casa_attiva()):
+        try:
+            for v in _cassaforte_voci():
+                conteggi[faq.categoria_valida(v.get("category"))] += 1
+        except cassaforte.CassaforteErrore:
+            pass
+    return jsonify({
+        "categories": [{**c, "count": conteggi.get(c["key"], 0)} for c in faq.categorie()],
+        "default_category": faq.CATEGORIA_DEFAULT,
+    })
+
+
+@app.route("/api/faq")
+def faq_list():
+    """Le voci, ordinate. A cassaforte chiusa manca il **valore**: restano solo
+    titolo, categoria e nota; il testo si vede solo dopo l'apertura."""
+    db = get_db()
+    if not _cassaforte_esiste(db):
+        return jsonify({"voci": [], "totale": 0, "riservate": 0,
+                        **_cassaforte_stato(db)})
+    if _cassaforte_aperta(casa_attiva()):
+        ordinate = [_faq_voce_pubblica(v) for v in faq.ordina(_cassaforte_voci())]
+    else:
+        # il blob e' cifrato: qui non si decifra, quindi non si mostra niente
+        # oltre ai titoli, che stanno... nel blob. Per poter comunque elencare i
+        # titoli a cassaforte chiusa si decifra con la password solo per
+        # mascherarli: senza password non si ha nemmeno il titolo.
+        try:
+            ordinate = [_faq_mascherato(v) for v in faq.ordina(_cassaforte_voci())]
+        except cassaforte.CassaforteErrore:
+            ordinate = []
+    return jsonify({"voci": ordinate, "totale": len(ordinate),
+                    "riservate": len(ordinate), **_cassaforte_stato(db)})
+
+
+@app.route("/api/faq", methods=["POST"])
+def faq_add():
+    if not _cassaforte_esiste(get_db()):
+        return bad_request("La cassaforte non è stata creata", 409)
+    if not _cassaforte_aperta(casa_attiva()):
         return bad_request("La cassaforte è chiusa", 401)
     data = request.get_json(force=True) or {}
-    campi, errore = _cassaforte_campi(data)
+    campi, errore = _faq_campi(data)
     if errore:
         return errore
     try:
-        voci = _cassaforte_voci(db)
+        voci = _cassaforte_voci()
     except cassaforte.CassaforteErrore as e:
         return bad_request(str(e), 401)
     nuovo_id = max([v.get("id", 0) for v in voci] + [0]) + 1
@@ -4078,49 +4024,187 @@ def cassaforte_voce_nuova():
         "id": nuovo_id,
         "question": campi["question"],
         "answer": campi.get("answer", ""),
-        "category": campi.get("category") or faq.CATEGORIA_DEFAULT,
-        "notes": campi.get("notes") or "",
+        "category": campi.get("category", faq.CATEGORIA_DEFAULT),
+        "notes": campi.get("notes", ""),
         "pinned": bool(campi.get("pinned", False)),
     }
     voci.append(voce)
-    _cassaforte_salva(db, voci)
-    return jsonify(voce), 201
+    _cassaforte_salva(casa_attiva(), _cassaforte_pw_aperta(), voci)
+    return jsonify(_faq_voce_pubblica(voce)), 201
 
 
-@app.route("/api/cassaforte/voci/<int:vid>", methods=["PUT", "DELETE"])
-def cassaforte_voce_modifica(vid):
-    db = get_db()
-    if _cassaforte_chiusa_se_scaduta():
+@app.route("/api/faq/<int:fid>", methods=["PUT", "DELETE"])
+def faq_modify(fid):
+    if not _cassaforte_esiste(get_db()):
+        return bad_request("La cassaforte non è stata creata", 409)
+    if not _cassaforte_aperta(casa_attiva()):
         return bad_request("La cassaforte è chiusa", 401)
     try:
-        voci = _cassaforte_voci(db)
+        voci = _cassaforte_voci()
     except cassaforte.CassaforteErrore as e:
         return bad_request(str(e), 401)
-    voce = _cassaforte_voce_o_404(voci, vid)
+    voce = _cassaforte_voce_o_404(voci, fid)
     if voce is None:
         return bad_request("Voce non trovata", 404)
     if request.method == "DELETE":
-        voci = [v for v in voci if v.get("id") != vid]
-        _cassaforte_salva(db, voci)
+        voci = [v for v in voci if v.get("id") != fid]
+        _cassaforte_salva(casa_attiva(), _cassaforte_pw_aperta(), voci)
         return jsonify({"ok": True})
     data = request.get_json(force=True) or {}
-    campi, errore = _cassaforte_campi(data, esistente=voce)
+    campi, errore = _faq_campi(data, voce=voce)
     if errore:
         return errore
     voce.update(campi)
-    _cassaforte_salva(db, voci)
-    return jsonify(voce)
+    _cassaforte_salva(casa_attiva(), _cassaforte_pw_aperta(), voci)
+    return jsonify(_faq_voce_pubblica(voce))
+# ----------------------------------------------------------------- cassaforte
+# Le rotte della **cassaforte**. Il modulo FAQ intero vive qui dentro: queste
+# rotte ne aprono e chiudono l'accesso, ne gestiscono la password e ne cambiano i
+# parametri. Il contenuto delle voci si legge e si scrive da `/api/faq` (e, per
+# compatibilita', dagli alias `/api/cassaforte/voci` piu' sotto), ma sempre solo
+# a cassaforte aperta.
+#
+# La cassaforte non si apre da sola con l'accesso all'app: **entrare nella casa
+# non basta a leggere i dati**. E' il senso di avere una password a parte, che
+# puo' essere la stessa o una diversa.
+
+
+def _cassaforte_impronta_registro(slug):
+    """L'impronta salvata nel registro, o '' se la cassaforte non esiste."""
+    meta = houses.cassaforte_meta(slug)
+    return (meta or {}).get("impronta", "") or ""
+
+
+@app.route("/api/cassaforte/stato")
+def cassaforte_stato():
+    """Aperta o chiusa? Serve al client per sapere se chiedere la password."""
+    return jsonify(_cassaforte_stato(get_db()))
+
+
+@app.route("/api/cassaforte/crea", methods=["POST"])
+def cassaforte_crea():
+    """Crea la cassaforte con una password (che puo' essere quella dell'app).
+
+    Da qui in poi le voci delle FAQ stanno solo dentro la scatola cifrata. La
+    creazione la fa chi ha gia' accesso alla casa: non serve una conferma in
+    piu', perche' senza cassaforte non c'e' niente da proteggere.
+    """
+    db = get_db()
+    if _cassaforte_esiste(db):
+        return bad_request("La cassaforte esiste già")
+    data = request.get_json(force=True) or {}
+    password = (data.get("password") or "").strip()
+    if len(password) < 4:
+        return bad_request("La password della cassaforte deve avere almeno 4 caratteri")
+    houses.cassaforte_registra(
+        casa_attiva(),
+        promemoria=(data.get("promemoria") or "").strip(),
+        chiusura_minuti=int(data.get("chiusura_minuti") or CASSAFORTE_MINUTI),
+        impronta=cassaforte.impronta(password))
+    _cassaforte_apri(casa_attiva(), password)
+    _cassaforte_salva(casa_attiva(), password, [])
+    # le voci della vecchia tabella `faq` (installazioni precedenti) entrano
+    # nella cassaforte alla creazione, cosi' chi aggiorna non perde niente
+    _cassaforte_importa_vecchie()
+    return jsonify({"ok": True, **_cassaforte_stato(db)}), 201
+
+
+@app.route("/api/cassaforte/apri", methods=["POST"])
+def cassaforte_apri():
+    """La password della cassaforte. Se non torna, la cassaforte resta chiusa."""
+    db = get_db()
+    slug = casa_attiva()
+    if _cassaforte_aperta(slug):
+        return jsonify({"ok": True, **_cassaforte_stato(db)})
+    if not _cassaforte_esiste(db):
+        return bad_request("La cassaforte non è stata creata", 404)
+    data = request.get_json(force=True) or {}
+    password = data.get("password") or ""
+    impronta = _cassaforte_impronta_registro(slug)
+    if impronta:
+        giusta = cassaforte.impronta_giusta(impronta, password)
+    else:
+        # cassaforte creata prima che si registrasse l'impronta: si verifica
+        # provando ad aprire il blob, e se riesce si fissa l'impronta per il
+        # futuro. E' una migrazione, non un percorso normale.
+        blob = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))["dati"]
+        giusta = cassaforte.password_giusta(blob, password)
+        if giusta:
+            houses.cassaforte_registra(slug, impronta=cassaforte.impronta(password))
+    if not giusta:
+        return bad_request("Password della cassaforte non corretta", 401)
+    _cassaforte_apri(slug, password)
+    _cassaforte_importa_vecchie()
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
+@app.route("/api/cassaforte/chiudi", methods=["POST"])
+def cassaforte_chiudi():
+    _cassaforte_dimentica(casa_attiva())
+    return jsonify({"ok": True, **_cassaforte_stato(get_db())})
+
+
+@app.route("/api/cassaforte/password", methods=["PUT"])
+def cassaforte_cambia_password():
+    """Cambia la password, riscrivendo la scatola con quella nuova.
+
+    Serve la vecchia: senza, chi trova un dispositivo sbloccato cambierebbe la
+    password e chiuderebbe fuori gli altri. La nuova puo' essere diversa da quella
+    dell'app. Si decifra con la vecchia e si ricifra con la nuova: e' l'unico modo
+    di ruotare la password senza perdere le voci.
+    """
+    db = get_db()
+    slug = casa_attiva()
+    if not _cassaforte_esiste(db):
+        return bad_request("La cassaforte non è stata creata", 404)
+    data = request.get_json(force=True) or {}
+    vecchia = data.get("attuale") or ""
+    nuova = (data.get("nuova") or "").strip()
+    impronta = _cassaforte_impronta_registro(slug)
+    if impronta:
+        giusta = cassaforte.impronta_giusta(impronta, vecchia)
+    else:
+        blob = one(db.execute("SELECT dati FROM cassaforte WHERE id = 1"))["dati"]
+        giusta = cassaforte.password_giusta(blob, vecchia)
+    if not giusta:
+        return bad_request("La password attuale non è corretta", 401)
+    if len(nuova) < 4:
+        return bad_request("La nuova password deve avere almeno 4 caratteri")
+    voci = _cassaforte_voci_di(slug, vecchia)
+    _cassaforte_salva(slug, nuova, voci)
+    houses.cassaforte_registra(slug, impronta=cassaforte.impronta(nuova))
+    _cassaforte_apri(slug, nuova)
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
 
 
 @app.route("/api/cassaforte/frase", methods=["PUT"])
 def cassaforte_frase():
     """Il promemoria e la chiusura automatica: non sono segreti, ma comodi."""
     data = request.get_json(force=True) or {}
+    # l'impronta non si tocca: e' legata alla password, non a questi parametri
     houses.cassaforte_registra(
         casa_attiva(),
         promemoria=(data.get("promemoria") or "").strip(),
-        chiusura_minuti=int(data.get("chiusura_minuti") or 15))
+        chiusura_minuti=int(data.get("chiusura_minuti") or CASSAFORTE_MINUTI))
     return jsonify(_cassaforte_stato(get_db()))
+
+
+# Gli alias dei contenuti: la stessa cosa di `/api/faq`, con il nome storico.
+# Servono a non rompere chi chiamava `/api/cassaforte/voci`; la logica resta una
+# sola, quella dei gestori di `/api/faq`.
+@app.route("/api/cassaforte/voci", methods=["GET"])
+def cassaforte_voci():
+    return faq_list()
+
+
+@app.route("/api/cassaforte/voci", methods=["POST"])
+def cassaforte_voce_nuova():
+    return faq_add()
+
+
+@app.route("/api/cassaforte/voci/<int:vid>", methods=["PUT", "DELETE"])
+def cassaforte_voce_modifica(vid):
+    return faq_modify(vid)
 
 
 @app.route("/api/houses/password", methods=["PUT"])

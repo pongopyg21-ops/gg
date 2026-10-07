@@ -3350,15 +3350,24 @@ function apriStorageForm(v) {
 
 $('#st-new').addEventListener('click', () => apriStorageForm(null));
 
-/* ---------- FAQ ----------
-   Informazioni utili da consultare: Wi-Fi, indirizzi, contatti, codici. Le voci
-   si raggruppano per categoria e si cercano in locale: l'elenco e' piccolo e
-   filtrare senza passare dal server e' immediato a ogni lettera. */
+/* ---------- FAQ (protette dalla cassaforte) ----------
+   Informazioni utili da consultare — Wi-Fi, indirizzi, contatti, codici — **e**
+   dati riservati (password, PIN). Tutto il modulo e' protetto: le voci vivono
+   cifrate nel database e si vedono solo dopo aver aperto la cassaforte con la
+   sua password (che puo' essere diversa da quella dell'app). Non c'e' una
+   seconda scheda nel menu: c'e' una sola lista, e sopra il riquadro che crea,
+   apre o chiude la cassaforte.
+
+   Il testo dei valori **non** arriva al browser se la cassaforte e' chiusa: e' il
+   server a negarlo. Non c'e' niente da nascondere nel client — e non si deve
+   provare a farlo, perche' un valore mandato al browser e' gia' stato letto. */
 let faqDati = { voci: [], totale: 0, riservate: 0 };
 let faqMeta = { categories: [], default_category: 'generale' };
+let cassStato = { esiste: false, aperta: false, promemoria: '', chiusura_minuti: 15 };
+let cassScadenza = null;        // timer della chiusura automatica
 
-// quali valori riservati sono stati mostrati: vivono in memoria, non salvati,
-// così tornando sulla pagina una password e' di nuovo nascosta
+// quali valori sono stati mostrati: vivono in memoria, non salvati, così
+// tornando sulla pagina una password e' di nuovo nascosta
 const faqSvelate = new Set();
 
 /* Il valore di una voce: un numero di telefono o un accesso si copiano, un
@@ -3381,7 +3390,7 @@ function faqValore(v) {
 }
 
 function faqRiga(v) {
-  const nascosta = v.secret && !faqSvelate.has(v.id);
+  const nascosta = !faqSvelate.has(v.id);
   return `
     <div class="faq-item${nascosta ? ' hidden-value' : ''}" data-faq="${v.id}">
       <div class="faq-item-head">
@@ -3392,6 +3401,7 @@ function faqRiga(v) {
         ? `<span class="faq-secret">••••••••</span>
            <button class="faq-reveal ghost" data-reveal="${v.id}">Mostra</button>`
         : faqValore(v)}</div>
+      ${v.notes ? `<p class="hint">${esc(v.notes)}</p>` : ''}
       <div class="faq-tools">
         ${!nascosta && v.answer ? `<button class="ghost" data-copy="${v.id}">Copia</button>` : ''}
         <button class="ghost" data-faq-pin="${v.id}">${v.pinned ? 'Togli da evidenza' : 'In evidenza'}</button>
@@ -3401,15 +3411,99 @@ function faqRiga(v) {
     </div>`;
 }
 
-async function renderFaq() {
+/* Aggiorna lo stato della cassaforte e disegna il riquadro giusto: l'invito a
+   crearla, la richiesta della password, oppure l'apertura con la lista. */
+async function renderCassaforte() {
+  try {
+    cassStato = await api('/api/cassaforte/stato');
+  } catch (err) { toast(err.message); return; }
+  // il timer della chiusura automatica si rinnova a ogni lettura: il server sa
+  // quando scade, qui si aspetta quel tempo e poi si ridisegna
+  if (cassScadenza) { clearTimeout(cassScadenza); cassScadenza = null; }
+  if (cassStato.aperta && cassStato.secondi_rimasti > 0) {
+    cassScadenza = setTimeout(() => renderCassaforte(),
+      Math.min(cassStato.secondi_rimasti * 1000 + 500, 3600000));
+  }
+  const stato = $('#cass-stato');
+  const blocco = $('#cass-blocco');
+  const contenuto = $('#cass-contenuto');
+  contenuto.hidden = true;
+  if (!cassStato.esiste) {
+    stato.innerHTML = '';
+    blocco.innerHTML = `
+      <div class="cass-invito">
+        <p class="cass-titolo">🔒 Proteggi le informazioni della casa</p>
+        <p class="hint">Questa sezione raccoglie anche dati riservati — password,
+          codici, PIN — e per questo e' <strong>cifrata</strong>. Scegli una
+          <strong>password della cassaforte</strong>: diversa da quella della
+          casa, serve a decifrare i dati. Se la dimentichi, i dati
+          <strong>non si recuperano</strong>.</p>
+        <div class="field"><label for="cass-nuova-pw">Password della cassaforte</label>
+          <input id="cass-nuova-pw" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="cass-nuova-pw2">Ripeti la password</label>
+          <input id="cass-nuova-pw2" type="password" autocomplete="new-password"></div>
+        <div class="field"><label for="cass-frase">Promemoria (facoltativo)</label>
+          <input id="cass-frase" placeholder="Una frase che ti fa ricordare la password"></div>
+        <div class="row">
+          <button id="cass-crea" class="primary">Crea la cassaforte</button>
+          <span id="cass-crea-esito" class="faq-note" role="status" aria-live="polite"></span>
+        </div>
+      </div>`;
+    $('#cass-crea').addEventListener('click', creaCassaforte);
+    return;
+  }
+  if (!cassStato.aperta) {
+    stato.innerHTML = '';
+    blocco.innerHTML = `
+      <div class="cass-chiusa">
+        <p class="cass-titolo">🔒 Cassaforte chiusa</p>
+        ${cassStato.promemoria ? `<p class="cass-promemoria">Promemoria: ${esc(cassStato.promemoria)}</p>` : ''}
+        <p class="hint">Le informazioni sono al sicuro. Inserisci la password della
+          cassaforte per consultarle o modificarle.</p>
+        <div class="field"><label for="cass-pw">Password della cassaforte</label>
+          <input id="cass-pw" type="password" autocomplete="current-password"></div>
+        <div class="row">
+          <button id="cass-apri" class="primary">Apri</button>
+          <span id="cass-apri-esito" class="faq-note" role="status" aria-live="polite"></span>
+        </div>
+        <p class="hint">Si richiude da sola dopo ${cassStato.chiusura_minuti} minut${cassStato.chiusura_minuti === 1 ? 'o' : 'i'}.
+          <a href="#" id="cass-frase-link">Cambia promemoria o chiusura</a></p>
+      </div>`;
+    $('#cass-apri').addEventListener('click', apriCassaforte);
+    $('#cass-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') apriCassaforte(); });
+    $('#cass-pw').focus();
+    $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
+    return;
+  }
+  // aperta: si mostra l'apertura e si caricano le voci
+  stato.innerHTML = `
+    <div class="cass-aperta">
+      <span>🔓 Cassaforte aperta</span>
+      <button id="cass-chiudi" class="ghost" type="button">🔒 Chiudi</button>
+      <a href="#" id="cass-frase-link">Promemoria e chiusura</a>
+    </div>`;
+  $('#cass-chiudi').addEventListener('click', chiudiCassaforte);
+  $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
+  blocco.innerHTML = '';
+  contenuto.hidden = false;
+  await renderFaqElenco();
+}
+
+/* L'elenco delle voci, con i filtri. Si carica solo a cassaforte aperta: a
+   cassaforte chiusa il server non manda nemmeno i titoli. */
+async function renderFaqElenco() {
   [faqMeta, faqDati] = await Promise.all([api('/api/faq/meta'), api('/api/faq')]);
-  // il filtro per categoria si costruisce una volta sola, con i conteggi
   const sel = $('#faq-filter');
   if (!sel.options.length) {
     sel.innerHTML = '<option value="">Tutte le categorie</option>'
       + faqMeta.categories.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
   }
   disegnaFaq();
+}
+
+/* Il punto d'ingresso del modulo: lo chiama l'apertura della scheda FAQ. */
+function renderFaq() {
+  return renderCassaforte();
 }
 
 function disegnaFaq() {
@@ -3420,7 +3514,7 @@ function disegnaFaq() {
     if (!q) return true;
     // anche il nome della categoria entra nella ricerca: chi cerca "idraulico"
     // non sa in quale categoria sta, e non deve indovinarlo
-    return `${v.question} ${v.answer} ${v.category_label || ''}`.toLowerCase().includes(q);
+    return `${v.question} ${v.answer} ${v.notes || ''} ${v.category_label || ''}`.toLowerCase().includes(q);
   });
 
   $('#faq-count').textContent = visibili.length === faqDati.totale
@@ -3433,7 +3527,8 @@ function disegnaFaq() {
         <span class="empty-emoji">📌</span>
         <h2>Ancora nessuna voce</h2>
         <p>Aggiungi le informazioni che non ricordi mai: la password del Wi-Fi,
-          gli indirizzi che cerchi spesso, i numeri utili, i codici d'accesso.</p>
+          gli indirizzi che cerchi spesso, i numeri utili, i codici d'accesso.
+          Restano cifrate: le vedi solo a cassaforte aperta.</p>
       </div>`;
     return;
   }
@@ -3483,9 +3578,9 @@ $('#faq-list').addEventListener('click', async (e) => {
   const pin = e.target.closest('[data-faq-pin]');
   if (pin) {
     const v = faqDati.voci.find((x) => x.id === Number(pin.dataset.faqPin));
-    await api(`/api/faq/${v.id}`, { method: 'PUT', body: { pinned: v.pinned ? 0 : 1 } });
+    await api(`/api/faq/${v.id}`, { method: 'PUT', body: { pinned: !v.pinned } });
     toast(v.pinned ? 'Tolta dall\'evidenza' : 'Messa in evidenza');
-    return renderFaq();
+    return renderFaqElenco();
   }
   const mod = e.target.closest('[data-faq-edit]');
   if (mod) {
@@ -3497,7 +3592,7 @@ $('#faq-list').addEventListener('click', async (e) => {
     if (!confirm(`Eliminare "${v.question}"?`)) return;
     await api(`/api/faq/${v.id}`, { method: 'DELETE' });
     toast('Voce eliminata');
-    return renderFaq();
+    return renderFaqElenco();
   }
 });
 
@@ -3511,12 +3606,12 @@ function apriFaqForm(v) {
         `<option value="${c.key}"${cat === c.key ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
     <div class="field"><label>Valore</label>
       <textarea id="fq-a" placeholder="Es. Rete: CasaRossi&#10;Password: ...">${esc(v ? v.answer : '')}</textarea></div>
-    <label class="toggle"><input type="checkbox" id="fq-secret"${v && v.secret ? ' checked' : ''}>
-      Nascondi il valore finché non lo apro</label>
-    <p class="faq-note">Serve a non tenere una password sullo schermo, ma non è una
-      protezione: chi consulta questa pagina può comunque vederla.</p>
+    <div class="field"><label>Nota (facoltativa)</label>
+      <input id="fq-notes" value="${esc(v ? v.notes || '' : '')}" placeholder="Dove serve, quando scade..."></div>
     <label class="toggle"><input type="checkbox" id="fq-pin"${v && v.pinned ? ' checked' : ''}>
       In evidenza in cima alla categoria</label>
+    <p class="faq-note">Il valore viene <strong>cifrato</strong> con la password della
+      cassaforte e resta leggibile solo a cassaforte aperta.</p>
     <div class="modal-foot">
       <button id="fq-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
       <button id="fq-cancel">Annulla</button>
@@ -3529,7 +3624,7 @@ function apriFaqForm(v) {
       question: $('#fq-q').value.trim(),
       answer: $('#fq-a').value,
       category: $('#fq-cat').value,
-      secret: $('#fq-secret').checked,
+      notes: $('#fq-notes').value.trim(),
       pinned: $('#fq-pin').checked,
     };
     if (!corpo.question) return toast('Inserisci il titolo');
@@ -3540,110 +3635,14 @@ function apriFaqForm(v) {
       toast(v ? 'Voce salvata' : 'Voce aggiunta');
       // una voce nuova non deve nascere gia' svelata per via di un id riusato
       if (!v) faqSvelate.clear();
-      renderFaq();
+      renderFaqElenco();
     } catch (err) { toast(err.message); }
   });
 }
 
 $('#faq-new').addEventListener('click', () => apriFaqForm(null));
 
-/* ---------- CASSAFORTE ----------
-   I dati riservati (password, codici, PIN), cifrati sul server con una password
-   **della cassaforte**, che puo' essere diversa da quella dell'app. Qui c'e' solo
-   l'interfaccia: il testo dei segreti non arriva al browser finche' la cassaforte
-   non e' aperta, perche' e' il server a negare le voci quando e' chiusa. Non c'e'
-   niente da nascondere nel client — e non si deve provare a farlo, perche' un
-   segreto mandato al browser e' gia' stato letto.
-
-   La vista scelta (rubrica o cassaforte) vive in memoria, come le schede
-   dell'Igiene: riaprendo l'app si torna alla rubrica. */
-let cassStato = { esiste: false, aperta: false, promemoria: '', chiusura_minuti: 15 };
-let cassVoci = [];
-let cassVista = 'rubrica';      // 'rubrica' | 'cassaforte'
-let cassScadenza = null;        // timer della chiusura automatica
-
-function cambiaVistaFaq(vista) {
-  cassVista = vista === 'cassaforte' ? 'cassaforte' : 'rubrica';
-  const cass = cassVista === 'cassaforte';
-  $('#faq-pannello-rubrica').hidden = cass;
-  $('#faq-pannello-cassaforte').hidden = !cass;
-  const btnR = $('#faq-vista-rubrica');
-  const btnC = $('#faq-vista-cassaforte');
-  if (btnR) { btnR.classList.toggle('attivo', !cass); btnR.setAttribute('aria-selected', String(!cass)); }
-  if (btnC) { btnC.classList.toggle('attivo', cass); btnC.setAttribute('aria-selected', String(cass)); }
-  if (cass) renderCassaforte();
-}
-
-$('#faq-vista-rubrica').addEventListener('click', () => cambiaVistaFaq('rubrica'));
-$('#faq-vista-cassaforte').addEventListener('click', () => cambiaVistaFaq('cassaforte'));
-
-/** Aggiorna lo stato dal server e disegna il riquadro giusto. */
-async function renderCassaforte() {
-  try {
-    cassStato = await api('/api/cassaforte/stato');
-  } catch (err) { toast(err.message); return; }
-  // il timer della chiusura automatica si rinnova a ogni lettura
-  if (cassScadenza) { clearTimeout(cassScadenza); cassScadenza = null; }
-  if (cassStato.aperta && cassStato.secondi_rimasti > 0) {
-    // il server sa quando scade: qui si aspetta quel tempo e poi si ridisegna,
-    // cosi' l'interfaccia non mostra voci oltre la scadenza
-    cassScadenza = setTimeout(() => renderCassaforte(),
-      Math.min(cassStato.secondi_rimasti * 1000 + 500, 3600000));
-  }
-  const blocco = $('#cass-blocco');
-  const contenuto = $('#cass-contenuto');
-  if (!cassStato.esiste) {
-    contenuto.hidden = true;
-    blocco.innerHTML = `
-      <div class="cass-invito">
-        <p class="cass-titolo">🔒 La cassaforte non è ancora stata creata</p>
-        <p class="hint">Per le informazioni riservate — password, codici, PIN — che
-          non devono restare in chiaro. Scegli una <strong>password della
-          cassaforte</strong>: diversa da quella della casa, serve a decifrare i
-          dati. Se la dimentichi, i dati <strong>non si recuperano</strong>.</p>
-        <div class="field"><label for="cass-nuova-pw">Password della cassaforte</label>
-          <input id="cass-nuova-pw" type="password" autocomplete="new-password"></div>
-        <div class="field"><label for="cass-nuova-pw2">Ripeti la password</label>
-          <input id="cass-nuova-pw2" type="password" autocomplete="new-password"></div>
-        <div class="field"><label for="cass-frase">Promemoria (facoltativo)</label>
-          <input id="cass-frase" placeholder="Una frase che ti fa ricordare la password"></div>
-        <div class="row">
-          <button id="cass-crea" class="primary">Crea la cassaforte</button>
-          <span id="cass-crea-esito" class="faq-note" role="status" aria-live="polite"></span>
-        </div>
-      </div>`;
-    $('#cass-crea').addEventListener('click', creaCassaforte);
-    return;
-  }
-  blocco.innerHTML = cassStato.aperta ? '' : `
-    <div class="cass-chiusa">
-      <p class="cass-titolo">🔒 Cassaforte chiusa</p>
-      ${cassStato.promemoria ? `<p class="cass-promemoria">Promemoria: ${esc(cassStato.promemoria)}</p>` : ''}
-      <div class="field"><label for="cass-pw">Password della cassaforte</label>
-        <input id="cass-pw" type="password" autocomplete="current-password"></div>
-      <div class="row">
-        <button id="cass-apri" class="primary">Apri</button>
-        <span id="cass-apri-esito" class="faq-note" role="status" aria-live="polite"></span>
-      </div>
-      <p class="hint">Si richiude da sola dopo ${cassStato.chiusura_minuti} minut${cassStato.chiusura_minuti === 1 ? 'o' : 'i'}.
-        <a href="#" id="cass-frase-link">Cambia promemoria o chiusura</a></p>
-    </div>`;
-  if (!cassStato.aperta) {
-    $('#cass-apri').addEventListener('click', apriCassaforte);
-    const invio = (e) => { if (e.key === 'Enter') apriCassaforte(); };
-    $('#cass-pw').addEventListener('keydown', invio);
-    $('#cass-pw').focus();
-    $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
-    contenuto.hidden = true;
-    return;
-  }
-  contenuto.hidden = false;
-  try {
-    cassVoci = (await api('/api/cassaforte/voci')).voci;
-  } catch (err) { toast(err.message); return; }
-  disegnaCassaforte();
-}
-
+/* ---------- creazione, apertura, chiusura ---------- */
 async function creaCassaforte() {
   const pw = $('#cass-nuova-pw').value;
   const pw2 = $('#cass-nuova-pw2').value;
@@ -3672,12 +3671,9 @@ async function apriCassaforte() {
 
 async function chiudiCassaforte() {
   try { await api('/api/cassaforte/chiudi', { method: 'POST' }); } catch (_e) { /* niente */ }
-  cassVoci = [];
+  faqSvelate.clear();
   renderCassaforte();
 }
-$('#cass-chiudi').addEventListener('click', chiudiCassaforte);
-$('#cass-new').addEventListener('click', () => apriCassVoceForm(null));
-$('#cass-search').addEventListener('input', disegnaCassaforte);
 
 function apriFraseCassaforte() {
   showModal('Promemoria e chiusura', `
@@ -3702,134 +3698,6 @@ function apriFraseCassaforte() {
     } catch (err) { toast(err.message); }
   });
 }
-
-/** L'elenco delle voci, raggruppate per categoria come la rubrica. */
-function disegnaCassaforte() {
-  const q = ($('#cass-search').value || '').trim().toLowerCase();
-  const visibili = cassVoci.filter((v) =>
-    !q || (v.question || '').toLowerCase().includes(q)
-       || (v.answer || '').toLowerCase().includes(q)
-       || (v.notes || '').toLowerCase().includes(q));
-  if (!visibili.length) {
-    $('#cass-list').innerHTML = cassVoci.length
-      ? '<p class="faq-none">Nessuna voce corrisponde alla ricerca.</p>'
-      : `<p class="faq-none">Ancora nessuna voce. Aggiungi una password o un codice
-         con «+ Nuova voce»: da qui in poi resta cifrata.</p>`;
-    return;
-  }
-  // raggruppate per categoria, nell'ordine di `faqMeta` (le categorie sono le
-  // stesse della rubrica: due liste di etichette divergerebbero)
-  let html = '';
-  const categorie = ['wifi', 'indirizzi', 'contatti', 'codici', 'generale'];
-  const etichette = {};
-  (faqMeta.categories || []).forEach((c) => { etichette[c.key] = c.label; });
-  categorie.forEach((cat) => {
-    const gruppo = visibili.filter((v) => (v.category || 'generale') === cat);
-    if (!gruppo.length) return;
-    gruppo.sort((a, b) => (Number(b.pinned) - Number(a.pinned))
-      || (a.question || '').localeCompare(b.question || ''));
-    html += `<h3 class="faq-cat-titolo">${esc(etichette[cat] || cat)}
-      <span class="faq-n">${gruppo.length}</span></h3>`;
-    gruppo.forEach((v) => { html += cassRiga(v); });
-  });
-  $('#cass-list').innerHTML = html;
-}
-
-/* Una voce della cassaforte: il valore è sempre da aprire — è la differenza da
-   una voce della rubrica contrassegnata `secret`, che nasconde solo a schermo. */
-function cassRiga(v) {
-  const nascosta = !faqSvelate.has('c' + v.id);
-  return `
-    <div class="faq-item cass-item" data-cass="${v.id}">
-      <div class="faq-item-head">
-        <span class="faq-q">${v.pinned ? '<span class="faq-pin" title="In evidenza">★</span>' : ''}${esc(v.question)}</span>
-        <span class="faq-cat">${esc((faqMeta.categories.find((c) => c.key === v.category) || {}).label || '')}</span>
-      </div>
-      <div class="faq-a">${nascosta
-        ? `<span class="faq-secret">••••••••</span>
-           <button class="faq-reveal ghost" data-cass-reveal="${v.id}">Mostra</button>`
-        : faqValore(v)}</div>
-      ${v.notes ? `<p class="hint">${esc(v.notes)}</p>` : ''}
-      <div class="faq-tools">
-        ${nascosta ? '' : `<button class="ghost" data-cass-copy="${v.id}">Copia</button>`}
-        <button class="ghost" data-cass-pin="${v.id}">${v.pinned ? 'Togli da evidenza' : 'In evidenza'}</button>
-        <button class="ghost" data-cass-edit="${v.id}">Modifica</button>
-        <button class="ghost" data-cass-del="${v.id}">Elimina</button>
-      </div>
-    </div>`;
-}
-
-// l'elenco dei valori svelati è lo stesso della rubrica (`faqSvelate`), ma le
-// chiavi della cassaforte sono prefissate con 'c' per non collidere con gli id
-// delle FAQ: due tabelle con id uguali non devono confondersi
-$('#cass-list').addEventListener('click', async (e) => {
-  const svela = e.target.closest('[data-cass-reveal]');
-  if (svela) { faqSvelate.add('c' + Number(svela.dataset.cassReveal)); return disegnaCassaforte(); }
-  const copia = e.target.closest('[data-cass-copy]');
-  if (copia) {
-    const v = cassVoci.find((x) => x.id === Number(copia.dataset.cassCopy));
-    try { await navigator.clipboard.writeText(v.answer || ''); toast('Valore copiato'); }
-    catch (_e) { toast('Non riesco a copiare: selezionalo a mano'); }
-    return;
-  }
-  const pin = e.target.closest('[data-cass-pin]');
-  if (pin) {
-    const v = cassVoci.find((x) => x.id === Number(pin.dataset.cassPin));
-    await api(`/api/cassaforte/voci/${v.id}`, { method: 'PUT', body: { pinned: !v.pinned } });
-    return renderCassaforte();
-  }
-  const mod = e.target.closest('[data-cass-edit]');
-  if (mod) return apriCassVoceForm(cassVoci.find((x) => x.id === Number(mod.dataset.cassEdit)));
-  const del = e.target.closest('[data-cass-del]');
-  if (del) {
-    const v = cassVoci.find((x) => x.id === Number(del.dataset.cassDel));
-    if (!confirm(`Eliminare «${v.question}»?`)) return;
-    await api(`/api/cassaforte/voci/${v.id}`, { method: 'DELETE' });
-    return renderCassaforte();
-  }
-});
-
-function apriCassVoceForm(v) {
-  const cat = (v && v.category) || faqMeta.default_category;
-  showModal(v ? 'Modifica voce riservata' : 'Nuova voce riservata', `
-    <div class="field"><label>Informazione</label>
-      <input id="cv-q" value="${esc(v ? v.question : '')}" placeholder="Es. Password banca, PIN cancello"></div>
-    <div class="field"><label>Categoria</label>
-      <select id="cv-cat">${faqMeta.categories.map((c) =>
-        `<option value="${c.key}"${cat === c.key ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
-    <div class="field"><label>Valore riservato</label>
-      <textarea id="cv-a" placeholder="Es. utente e password, il PIN...">${esc(v ? v.answer : '')}</textarea></div>
-    <div class="field"><label>Nota (facoltativa)</label>
-      <input id="cv-notes" value="${esc(v ? v.notes || '' : '')}" placeholder="Dove serve, quando scade..."></div>
-    <label class="toggle"><input type="checkbox" id="cv-pin"${v && v.pinned ? ' checked' : ''}>
-      In evidenza in cima alla categoria</label>
-    <p class="faq-note">Il valore viene <strong>cifrato</strong> con la password della
-      cassaforte e resta leggibile solo a cassaforte aperta.</p>
-    <div class="modal-foot">
-      <button id="cv-save" class="primary">${v ? 'Salva' : 'Aggiungi'}</button>
-      <button id="cv-cancel">Annulla</button>
-    </div>`);
-  $('#cv-cancel').addEventListener('click', hideModal);
-  $('#cv-q').focus();
-  $('#cv-save').addEventListener('click', async () => {
-    const corpo = {
-      question: $('#cv-q').value.trim(),
-      answer: $('#cv-a').value,
-      category: $('#cv-cat').value,
-      notes: $('#cv-notes').value.trim(),
-      pinned: $('#cv-pin').checked,
-    };
-    if (!corpo.question) return toast('Inserisci il titolo');
-    try {
-      if (v) await api(`/api/cassaforte/voci/${v.id}`, { method: 'PUT', body: corpo });
-      else await api('/api/cassaforte/voci', { method: 'POST', body: corpo });
-      hideModal();
-      toast(v ? 'Voce salvata' : 'Voce aggiunta');
-      renderCassaforte();
-    } catch (err) { toast(err.message); }
-  });
-}
-
 /* ---------- PASSWORD DELLA CASA ----------
    Cambiarla e' un'operazione rara e delicata: si chiede la vecchia, e la nuova
    va ripetuta perche' un refuso in un campo password non si vede e

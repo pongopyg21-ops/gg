@@ -1816,21 +1816,16 @@ button { transition: transform .12s ease; }
 }
 
 /* -------------------------------------------------- cassaforte (dentro FAQ)
-   Due viste: la rubrica in chiaro e la cassaforte. Il selettore è lo stesso
-   schema del Cinema (`-viste`/`-vista-btn`), perché sono due viste dello stesso
-   posto e devono leggersi allo stesso modo. */
-.faq-viste {
-  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 18px;
-}
-.faq-vista-btn {
-  padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px;
-  background: transparent; color: inherit; cursor: pointer; font-size: 14px;
-  min-height: 42px;
-}
-.faq-vista-btn.attivo { background: var(--accent); color: #fff; border-color: var(--accent); }
+   Tutto il modulo FAQ e' protetto: una sola lista, e sopra il riquadro che crea,
+   apre o chiude la cassaforte. Non ci sono due schede (l'utente non le vuole). */
+.cass-stato { margin-bottom: 10px; }
+.cass-blocco { margin-bottom: 14px; }
 
-.cass-stato { margin-bottom: 12px; }
-.cass-blocco { max-width: 520px; }
+.cass-aperta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+}
+.cass-aperta > span { font-weight: 600; }
+
 .cass-invito, .cass-chiusa {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 14px; padding: 18px 18px 6px;
@@ -1841,7 +1836,6 @@ button { transition: transform .12s ease; }
   border-radius: 10px; padding: 9px 12px; font-size: 14px; margin: 0 0 14px;
 }
 .cass-invito .field:first-of-type { margin-top: 12px; }
-.cass-item .faq-q::before { content: "🔒 "; font-size: 12px; }
 
 .faq-cat-titolo {
   font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em;

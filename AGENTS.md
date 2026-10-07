@@ -1210,43 +1210,49 @@ Conseguenze pratiche per chi mette mano al codice:
   `meal_clause(db)` sono l'unico modo per sapere quali pasti contano: riducendo i
   pasti restano righe vecchie in `meal_plan`, e senza quel filtro continuerebbero a
   pesare sulla lista della spesa pur non essendo più visibili.
-- **FAQ**: le voci stanno nella tabella `faq` e si gestiscono dall'interfaccia,
-  non in `seed.py` — sono informazioni dell'utente (la sua password, i suoi
-  contatti), non un catalogo di partenza. Le **categorie** invece stanno in
+- **FAQ**: le voci vivono **cifrate** nella cassaforte (vedi sotto), non più in
+  chiaro nella tabella `faq`: l'utente ha chiesto che l'intero modulo sia
+  protetto, perché raccoglie anche dati riservati. La tabella `faq` resta in
+  `schema.sql` solo per la **migrazione**: le voci in chiaro che ci fossero
+  vengono importate nella cassaforte alla creazione/alla prima apertura e poi
+  cancellate (`_cassaforte_importa_vecchie`). Le **categorie** stanno in
   `faq.py`: sono la struttura della sezione, come gli ambienti per le pulizie.
   `categoria_valida()` fa ricadere una chiave ignota sulla predefinita invece di
   rifiutare la voce: un'etichetta sbagliata non deve far perdere un numero di
   telefono. L'ordine è **categoria → evidenza → titolo**: le voci in evidenza
   risalgono dentro la propria categoria, non in cima all'elenco, perché
   raggruppate per categoria saltare il gruppo le staccherebbe dalle voci affini.
-  `secret` fa nascondere il valore finché non lo si apre, ma **non è una
-  protezione**: il valore viaggia comunque in `/api/faq` e chi apre gli strumenti
-  del browser lo vede. Serve a non tenere una password sullo schermo, e dirla
-  chiara è l'unico modo perché non faccia abbassare la guardia; la nota nel form
-  lo ripete all'utente. Il testo di `answer` può essere lungo (un indirizzo con
-  citofono e scale), quindi nel form è un'area di testo e a schermo i ritorni a
-  capo diventano `<br>`. I valori che **sono** un telefono o un'email diventano
-  `tel:`/`mailto:` — solo se sono quello e non se lo contengono: un testo lungo
-  con un numero dentro resta testo. La ricerca è lato client e guarda anche il
-  nome della categoria, così non serve indovinare dove sta una voce.
-- **La cassaforte** (`cassaforte.py`) sono i dati riservati — password, codici,
-  PIN — cifrati con una **password della cassaforte**, diversa da quella della
-  casa. La sezione FAQ ha due viste, **Rubrica** (in chiaro) e **Cassaforte**
-  (cifrata): sono due livelli di riservatezza e separarli è tutto il punto. La
-  vista vive in memoria (`cassVista`), come le schede dell'Igiene.
+  Il testo di `answer` può essere lungo (un indirizzo con citofono e scale),
+  quindi nel form è un'area di testo e a schermo i ritorni a capo diventano
+  `<br>`. I valori che **sono** un telefono o un'email diventano `tel:`/`mailto:`
+  — solo se sono quello e non se lo contengono: un testo lungo con un numero
+  dentro resta testo. La ricerca è lato client e guarda anche il nome della
+  categoria, così non serve indovinare dove sta una voce.
+- **La sezione FAQ non ha due viste.** L'utente non le vuole: c'è **una sola
+  lista**, e sopra il riquadro che crea, apre o chiude la cassaforte
+  (`cass-stato`/`cass-blocco`/`cass-contenuto`). Prima c'erano Rubrica (in
+  chiaro) e Cassaforte (cifrata) come due schede: ora tutto il modulo è protetto,
+  quindi una scheda aggiuntiva sarebbe solo un passaggio in più. I test
+  `test_faq_non_ha_una_seconda_voce_di_menu` e i test della cassaforte tengono
+  ferme entrambe le cose.
+- **La cassaforte** (`cassaforte.py`) custodisce **tutte le voci delle FAQ**,
+  cifrate con una **password della cassaforte**, diversa da quella della casa.
   Tre scelte che contano:
   - **Il testo in chiaro non lascia mai il server a cassaforte chiusa.** Non è
-    un nascondiglio nel client: `/api/cassaforte/voci` risponde **401** finché
-    non si è aperta col PIN, quindi un segreto che il browser non riceve non può
-    essere letto dagli strumenti di sviluppo. Dire «cifrato» e poi mandare il
-    valore al client sarebbe la peggiore delle due cose. Un test guarda il
-    **file `.db` grezzo** (`test_cassaforte_il_testo_non_finisce_in_chiaro_nel_database`),
-    non l'API: è l'unica prova che il requisito è rispettato.
-  - **La password della cassaforte non si salva mai.** Vive solo in sessione
-    (firmata dal segreto di `houses.db`), con una **scadenza** (`chiusura_minuti`,
-    default 15): entrare nell'app **non** apre la cassaforte, e dopo il tempo
-    scelto si richiude da sola. Se la si dimentica i dati **non si recuperano** —
-    è il prezzo di cifrare davvero, e l'interfaccia lo dice prima della creazione.
+    un nascondiglio nel client: `/api/faq` (e l'alias `/api/cassaforte/voci`)
+    **non contengono il valore** finché non si è aperta, e si scrive solo a
+    cassaforte aperta (401 altrimenti). Dire «cifrato» e poi mandare il valore al
+    client sarebbe la peggiore delle due cose. Un test guarda il **file `.db`
+    grezzo** (`test_cassaforte_il_testo_non_finisce_in_chiaro_nel_database`), non
+    l'API: è l'unica prova che il requisito è rispettato.
+  - **La password della cassaforte NON entra nella sessione.** La sessione è un
+    biscotto che il client può leggere: la password ci finirebbe in chiaro. Al suo
+    posto si salva nel registro (`cassaforte_registro.impronta`) un'**impronta**
+    PBKDF2 (`cassaforte.impronta`/`impronta_giusta`), che verifica l'apertura ma
+    non decifra nulla; la password in chiaro vive solo in una **mappa di
+    processo** (`_CASSAFORTE_APERTE`) per il tempo dell'apertura. `_CASSAFORTE_*`,
+    `_faq_*` in `app.py`. Un test decodifica il biscotto e pretende che la
+    password non compaia. (Prima la password stava in `session` — era il difetto.)
   - **Cifratura autenticata, scritta a mano sulla stdlib.** `cifra`/`decifra`
     usano PBKDF2-HMAC-SHA256 (200000 iterazioni, sale nuovo a ogni scrittura) per
     la chiave, un flusso HMAC-SHA256 come keystream e un **HMAC di firma**
@@ -1256,15 +1262,19 @@ Conseguenze pratiche per chi mette mano al codice:
     (`test_cassaforte_una_firma_non_si_riusa_su_altre_iterazioni`). Niente
     `cryptography`/`pyca`: una dipendenza in più con binari nativi per un
     requisito di casa non vale il costo.
-  - **Coerente con le case separate.** La chiave della cassaforte sta **solo in
-    sessione**, e i dati in una tabella (`cassaforte`, riga id=1 con il blob) del
-    database della casa. Eliminando una casa, `houses.elimina()` ne cancella
-    anche la riga; il blob è in chiaro-solo-cifrato, quindi la tabella `faq` non
-    c'entra. La tabella è nell'elenco delle tabelle di `/api/backup` (`_ha_dati`).
-  - **Il campo `secret` delle FAQ non è la cassaforte.** Nasconde il valore a
-    schermo, ma il valore viaggia lo stesso in `/api/faq`: serve a non tenere una
-    password sul monitor, non a proteggerla. Chi vuole protezione usa la
-    cassaforte, e l'AGENTS lo dice chiaro perché è la confusione più facile.
+  - **La chiusura automatica vive nel processo, non nel biscotto.** L'apertura
+    ha una **scadenza** (`chiusura_minuti`, default 15): entrare nell'app **non**
+    apre la cassaforte, e dopo il tempo scelto `_cassaforte_aperta` la lascia
+    cadere. Se la password si dimentica i dati **non si recuperano** — è il prezzo
+    di cifrare davvero, e l'interfaccia lo dice prima della creazione.
+  - **Coerente con le case separate.** La chiave di firma delle sessioni sta in
+    `houses.db`; l'impronta nel registro (`cassaforte_registro`, una riga per
+    casa), i dati nel database della casa (`cassaforte`, riga id=1 col blob).
+    Eliminando una casa, `houses.elimina()` ne cancella anche la riga. La tabella
+    è nell'elenco delle tabelle di `/api/backup` (`_ha_dati`).
+  - **Migrazione del registro.** Se un registro esistente non ha la colonna
+    `impronta`, `init_registro()` la aggiunge con `ALTER TABLE`: `CREATE TABLE IF
+    NOT EXISTS` non la tocca, e ogni lettura fallirebbe con "no such column".
 - Nelle sezioni la barra mostra solo le schede dell'area aperta (`data-section`
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione

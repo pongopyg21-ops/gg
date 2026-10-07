@@ -141,19 +141,35 @@ def init_registro(percorso=None):
                 valore TEXT NOT NULL
             );
             -- Il **segnaposto** della cassaforte: per ogni casa dice se e' stata
-            -- creata, come si chiama il promemoria e dopo quanto si richiude da
-            -- sola. I dati cifrati **non** stanno qui: stanno nel database della
-            -- casa (`cassaforte`), insieme a quello che proteggono, cosi' una
-            -- copia della casa si porta dietro anche la cassaforte. Questo
-            -- registro serve solo a leggere lo stato **prima** di aprire la
-            -- cassaforte, senza toccare il database della casa.
+            -- creata, come si chiama il promemoria, dopo quanto si richiude da
+            -- sola e con quale **impronta** verificare la password. I dati
+            -- cifrati **non** stanno qui: stanno nel database della casa
+            -- (`cassaforte`), insieme a quello che proteggono, cosi' una copia
+            -- della casa si porta dietro anche la cassaforte. Questo registro
+            -- serve solo a leggere lo stato e a controllare la password
+            -- **prima** di aprire il database della casa.
             CREATE TABLE IF NOT EXISTS cassaforte_registro (
                 slug       TEXT PRIMARY KEY,
                 promemoria TEXT NOT NULL DEFAULT '',
                 chiusura_minuti INTEGER NOT NULL DEFAULT 15,
+                -- PBKDF2 della password della cassaforte. La password in chiaro
+                -- **non** entra mai nella sessione (finirebbe nel biscotto, che
+                -- il client puo' leggere): la sessione tiene solo questa
+                -- impronta, che basta a verificare l'apertura ma non a decifrare
+                -- niente. E' la stessa scelta dell'accesso alla casa, che tiene
+                -- l'impronta in `houses.password`.
+                impronta   TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
         """)
+        # `CREATE TABLE IF NOT EXISTS` non tocca una tabella che esiste gia':
+        # un registro creato prima dell'impronta non la riceve da solo, e ogni
+        # lettura fallirebbe con "no such column: impronta". La colonna va
+        # aggiunta a mano (come in `migrate()` per il database della casa).
+        colonne = [r[1] for r in db.execute("PRAGMA table_info(cassaforte_registro)")]
+        if "impronta" not in colonne:
+            db.execute("ALTER TABLE cassaforte_registro "
+                       "ADD COLUMN impronta TEXT NOT NULL DEFAULT ''")
         db.commit()
 
 
@@ -171,34 +187,48 @@ def secret_key(percorso=None):
 
 
 def cassaforte_meta(slug, percorso=None):
-    """Il segnaposto della cassaforte: promemoria e chiusura automatica.
+    """Il segnaposto della cassaforte: promemoria, chiusura e impronta.
 
-    Non contiene segreti, per questo sta nel registro e non nel database della
-    casa: serve a leggere lo **stato** della cassaforte (esiste? come si chiama
-    il promemoria? dopo quanto si richiude?) senza aprire il database della casa.
-    Restituisce None se la cassaforte di quella casa non e' mai stata creata.
+    Non contiene segreti utili a decifrare: l'**impronta** serve solo a
+    verificare che la password sia giusta, e sta nel registro perche' lo stato
+    della cassaforte (esiste? qual e' il promemoria? dopo quanto si richiude?)
+    deve leggersi senza aprire il database della casa. Restituisce None se la
+    cassaforte di quella casa non e' mai stata creata.
     """
     init_registro(percorso)
     with closing(_connect_registro(percorso)) as db:
         riga = db.execute(
-            "SELECT promemoria, chiusura_minuti FROM cassaforte_registro WHERE slug = ?",
-            (slug,)).fetchone()
+            "SELECT promemoria, chiusura_minuti, impronta FROM cassaforte_registro "
+            "WHERE slug = ?", (slug,)).fetchone()
     if riga is None:
         return None
-    return {"promemoria": riga["promemoria"], "chiusura_minuti": riga["chiusura_minuti"]}
+    return {"promemoria": riga["promemoria"],
+            "chiusura_minuti": riga["chiusura_minuti"],
+            "impronta": riga["impronta"]}
 
 
-def cassaforte_registra(slug, promemoria="", chiusura_minuti=15, percorso=None):
-    """Crea o aggiorna il segnaposto della cassaforte per la casa."""
+def cassaforte_registra(slug, promemoria="", chiusura_minuti=15,
+                        impronta=None, percorso=None):
+    """Crea o aggiorna il segnaposto della cassaforte per la casa.
+
+    `impronta=None` lascia quella esistente com'e': cambiare promemoria o
+    chiusura non deve ricalcolare l'impronta, che e' legata alla password.
+    """
     init_registro(percorso)
     with closing(_connect_registro(percorso)) as db:
+        esistente = db.execute(
+            "SELECT impronta FROM cassaforte_registro WHERE slug = ?", (slug,)).fetchone()
+        if impronta is None:
+            impronta = esistente["impronta"] if esistente else ""
         db.execute(
-            """INSERT INTO cassaforte_registro (slug, promemoria, chiusura_minuti)
-               VALUES (?, ?, ?)
+            """INSERT INTO cassaforte_registro
+                 (slug, promemoria, chiusura_minuti, impronta)
+               VALUES (?, ?, ?, ?)
                ON CONFLICT(slug) DO UPDATE SET
                  promemoria = excluded.promemoria,
-                 chiusura_minuti = excluded.chiusura_minuti""",
-            (slug, promemoria or "", max(1, int(chiusura_minuti or 15))))
+                 chiusura_minuti = excluded.chiusura_minuti,
+                 impronta = excluded.impronta""",
+            (slug, promemoria or "", max(1, int(chiusura_minuti or 15)), impronta))
         db.commit()
 
 

@@ -142,9 +142,10 @@ CREATE INDEX IF NOT EXISTS idx_chores_freq ON chores(frequency, month);
 -- dell'utente. `question` e' l'etichetta (breve) e `answer` il valore (puo'
 -- essere lungo: un indirizzo completo, gli orari di un ambulatorio).
 --
--- `secret` fa nascondere il valore finche' non lo si tocca. NON e' una
--- protezione: il valore viaggia comunque nella risposta dell'API. Serve a non
--- tenere una password sullo schermo quando qualcuno passa dietro la scrivania.
+-- La tabella non e' piu' usata dal modulo FAQ: le voci vivono **cifrate** nella
+-- `cassaforte` (riga sotto), e al primo aprire della cassaforte quelle gia'
+-- presenti qui vengono importate. La tabella resta solo perche' un database
+-- vecchio la porta con se' e la migrazione la legge una volta.
 CREATE TABLE IF NOT EXISTS faq (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     category   TEXT NOT NULL DEFAULT 'generale',
@@ -158,12 +159,11 @@ CREATE TABLE IF NOT EXISTS faq (
 CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
 
 -- ------------------------------------------------------------- cassaforte
--- I dati **riservati** della casa (password, codici, PIN), cifrati con una
--- password della cassaforte. Non stanno nella tabella `faq` perche' sono un'altra
--- cosa: le FAQ sono una rubrica in chiaro, e mescolare i due livelli di
--- riservatezza e' il modo piu' facile di sbagliare. Qui la riservatezza e' vera:
--- il testo delle voci non e' mai in chiaro nel file, e non esce dall'API finche'
--- la cassaforte non e' aperta.
+-- Tutte le voci delle FAQ, **cifrate** con una password della cassaforte. La
+-- riservatezza e' vera: il testo non e' mai in chiaro nel file, e non esce
+-- dall'API finche' la cassaforte non e' aperta. La password della cassaforte non
+-- e' quella dell'app (puo' coincidere, ma non e' detto): entrare nella casa non
+-- basta a leggere questi dati.
 --
 -- La tabella contiene la **scatola**: un solo `dati` cifrato con tutte le voci
 -- dentro, e i parametri che servono ad aprirla. Non una riga per voce: cifrare

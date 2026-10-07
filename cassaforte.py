@@ -189,3 +189,44 @@ def password_giusta(file_cifrato: str, password: str) -> bool:
         return True
     except CassaforteErrore:
         return False
+
+
+# --------------------------------------------------------- impronta della pw
+# La password della cassaforte **non** entra nella sessione: la sessione e' un
+# biscotto che il client puo' leggere, quindi ci finirebbe in chiaro (senza
+# chiave, cifrarla o firmarla non basta: il client la vedrebbe comunque). Si
+# tiene invece l'**impronta** PBKDF2: serve a verificare che la password sia
+# giusta, ma non a decifrare la scatola — per quella serve il testo in chiaro,
+# che vive solo sul server, in memoria, per il tempo dell'apertura.
+
+IMPRONTA_ITERAZIONI = 200_000
+_IMPRONTA_ALGORITMO = "psha256"
+
+
+def impronta(password: str, iterazioni: int = IMPRONTA_ITERAZIONI) -> str:
+    """L'impronta della password, nel formato `psha256$<iterazioni>$<sale>$<hash>`.
+
+    Il sale e' nuovo a ogni calcolo. Non e' un segreto (sta nel registro): serve
+    solo a evitare che due case con la stessa password abbiano la stessa impronta.
+    """
+    if not password:
+        raise CassaforteErrore("Serve una password per la cassaforte")
+    sale = os.urandom(_LUNGHEZZA_SALE)
+    derivata = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), sale, iterazioni)
+    return "$".join((_IMPRONTA_ALGORITMO, str(iterazioni), _b64(sale), _b64(derivata)))
+
+
+def impronta_giusta(impronta_salvata: str, password: str) -> bool:
+    """La password corrisponde all'impronta? Non solleva: un'impronta assente o
+    malformata non e' un guasto, e' 'non ancora creata'."""
+    if not impronta_salvata or not password:
+        return False
+    try:
+        algoritmo, iterazioni, sale, attesa = impronta_salvata.split("$")
+        if algoritmo != _IMPRONTA_ALGORITMO:
+            return False
+        derivata = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), _da_b64(sale), int(iterazioni))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(_b64(derivata), attesa)
