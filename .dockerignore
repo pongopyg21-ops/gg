@@ -40,3 +40,8 @@ README.md
 windows/
 Dockerfile
 .dockerignore
+
+# i test non fanno parte dell'immagine
+test_*.py
+conftest.py
+.pytest_cache/

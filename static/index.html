@@ -352,6 +352,50 @@
       e si rimette al suo posto senza rinominarlo: dentro c'è la spiegazione.</p>
       <p class="hint" id="pf-copie"></p>
     </div>
+
+    <!-- Le impostazioni di servizio stanno qui, non nella FAQ: la FAQ raccoglie
+         cose da **consultare** (il Wi-Fi, l'idraulico), queste si **cambiano**.
+         Erano in FAQ solo perche' non c'era un posto migliore; ora il Profilo
+         c'e' ed e' il suo posto naturale — le FAQ tornano a essere solo la
+         rubrica. -->
+    <h3 class="section-title">Password della casa</h3>
+    <div class="panel">
+      <p class="hint">La password serve a entrare nell'app da questo nome di
+        casa. Si cambia qui quando la si vuole diversa.</p>
+      <div class="field">
+        <label for="pw-attuale">Password attuale</label>
+        <input id="pw-attuale" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="pw-nuova">Nuova password</label>
+        <input id="pw-nuova" type="password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label for="pw-ripeti">Ripeti la nuova password</label>
+        <input id="pw-ripeti" type="password" autocomplete="new-password">
+      </div>
+      <div class="row">
+        <button id="pw-salva" class="primary">Cambia password</button>
+        <span id="pw-esito" class="faq-note" role="status" aria-live="polite"></span>
+      </div>
+    </div>
+
+    <!-- Il tema e' una preferenza del **dispositivo**, non della casa (chi entra
+         dal telefono la sera la vuole scura, e il computer di giorno no). -->
+    <h3 class="section-title">Aspetto</h3>
+    <div class="panel">
+      <p class="hint">Il tema cambia i colori dell'app. Quello scuro riposa gli
+        occhi la sera: si sceglie per questo dispositivo, e resta anche dopo aver
+        chiuso l'app.</p>
+      <div class="row">
+        <button id="tema-chiaro" class="tema-scelta active" type="button">
+          <span class="tema-pallino tema-pallino-chiaro" aria-hidden="true">◐</span> Chiaro
+        </button>
+        <button id="tema-scuro" class="tema-scelta" type="button">
+          <span class="tema-pallino tema-pallino-scuro" aria-hidden="true">◑</span> Scuro
+        </button>
+      </div>
+    </div>
   </section>
 
   <!-- IGIENE — pulizie di casa e della cucina. Il metodo e' quello del calendario
@@ -460,50 +504,6 @@
     </div>
     <div id="faq-count" class="faq-count"></div>
     <div id="faq-list"></div>
-
-    <!-- La password della casa non e' una voce della FAQ (non si consulta, si
-         cambia) ma sta qui: e' un'informazione «di servizio», e chi la cerca la
-         cerca dove sta tutto il resto che non si ricorda. -->
-    <h3 class="section-title">Password della casa</h3>
-    <div class="panel">
-      <p class="hint">La password serve a entrare nell'app da questo nome di
-        casa. Si cambia qui quando la si vuole diversa.</p>
-      <div class="field">
-        <label for="pw-attuale">Password attuale</label>
-        <input id="pw-attuale" type="password" autocomplete="current-password">
-      </div>
-      <div class="field">
-        <label for="pw-nuova">Nuova password</label>
-        <input id="pw-nuova" type="password" autocomplete="new-password">
-      </div>
-      <div class="field">
-        <label for="pw-ripeti">Ripeti la nuova password</label>
-        <input id="pw-ripeti" type="password" autocomplete="new-password">
-      </div>
-      <div class="row">
-        <button id="pw-salva" class="primary">Cambia password</button>
-        <span id="pw-esito" class="faq-note" role="status" aria-live="polite"></span>
-      </div>
-    </div>
-
-    <!-- Il tema e' una preferenza del **dispositivo**, non della casa (chi entra
-         dal telefono la sera la vuole scura, e il computer di giorno no): sta
-         qui perche' e' la stessa specie della password, un'impostazione di
-         servizio che non si consulta ma si cambia. -->
-    <h3 class="section-title">Aspetto</h3>
-    <div class="panel">
-      <p class="hint">Il tema cambia i colori dell'app. Quello scuro riposa gli
-        occhi la sera: si sceglie per questo dispositivo, e resta anche dopo aver
-        chiuso l'app.</p>
-      <div class="row">
-        <button id="tema-chiaro" class="tema-scelta active" type="button">
-          <span class="tema-pallino tema-pallino-chiaro" aria-hidden="true">◐</span> Chiaro
-        </button>
-        <button id="tema-scuro" class="tema-scelta" type="button">
-          <span class="tema-pallino tema-pallino-scuro" aria-hidden="true">◑</span> Scuro
-        </button>
-      </div>
-    </div>
   </section>
 
   <!-- TV: un'area, cinque schede.

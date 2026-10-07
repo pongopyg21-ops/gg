@@ -8,7 +8,7 @@ niente, serve **continuare**. Prima di tutto:
 1. Avvia: `./avvia.sh` (all'inizio di ogni conversazione il server **non** è
    attivo: il container viene ricreato, è normale). Avvia anche la sorveglianza,
    quindi non serve più lanciare `./sorveglia.sh` a parte.
-2. Test: `./avvia.sh test` → attesi **662 verdi**. Se non lo sono, fermati e dillo.
+2. Test: `./avvia.sh test` → attesi **764 verdi**. Se non lo sono, fermati e dillo.
 3. Il branch è **`main`** (definitivo; il vecchio `gg` è stato cancellato locale e
    remoto). Push: `./avvia.sh pubblica` (si autentica da solo: chiave SSH in
    `/workspace/ssh` o `GITHUB_TOKEN`).
@@ -605,9 +605,17 @@ Conseguenze pratiche per chi mette mano al codice:
   Il controllo è sicuro perché lì il registro è vuoto per costruzione: per
   svuotare il database servirebbe una casa, e una casa lo renderebbe non vuoto.
 - **Nei test** il registro e la cartella delle case sono deviati su una cartella
-  temporanea (`houses.REGISTRY_PATH`, `houses.CASE_DIR` in `test_cucina.py`), così i
+  temporanea (`houses.REGISTRY_PATH`, `houses.CASE_DIR` in `conftest.py`), così i
   test non toccano il `houses.db` vero. La fixture `client` collega la casa di prova
   e la `anon` no: i test dell'accesso usano `anon`.
+- **I test sono spezzati per modulo**: un tempo erano un solo `test_cucina.py` da
+  quasi 12.000 righe, ora sono `test_*.py` (uno per area: `test_cinema.py`,
+  `test_voce.py`, `test_igiene.py`…). Le **fixture** (percorsi dei dati, `client`,
+  `casa_test`, `anon`) stanno in `conftest.py`, dove pytest le scopre da sola;
+  gli **helper** e le costanti condivise in `test_comuni.py`, che ogni file importa
+  con `from test_comuni import *`. Aggiungendo un test si usa il file dell'area;
+  aggiungendo un helper condiviso, `test_comuni.py`. `./avvia.sh test` esegue
+  `pytest -q` (tutta la cartella), non un file: i file sono più d'uno.
 
 ## Convenzioni
 
@@ -2396,6 +2404,15 @@ lucchetto, stessa regola «quello che si è scaricato resta». Le differenze:
   dall'ambiente o da un file `segreto.*` accanto all'app (stessa regola di
   `voce_cloud` e `comprensione`, con l'etichetta `tmdb:`), **non si salva mai
   dall'app** e non compare nella risposta.
+  **La stessa trappola dei segreti della voce vale qui.** Il sistema inietta il
+  segreto solo per i comandi in cui compare il **nome esatto** `TMDB_API_KEY`:
+  `./avvia.sh` da solo non basta e il server riparte **senza** la chiave — la
+  sezione dice «Cinema non ancora acceso», che sembra un guasto mentre è una
+  variabile non passata. Per riavviare con i film attivi:
+  `TMDB_API_KEY="$TMDB_API_KEY" ./avvia.sh restart`. Il segno che è andata bene:
+  `avvia.sh` stampa `cinema: chiave TMDB attiva` (`stato_cinema()`, accanto a
+  `stato_voce()`). Verificato su tutte le case (2026-10-05): con la chiave
+  nominata nel comando, `cinema.configurato()` è `True` e le case si riempiono.
 - **La regione** (`CINEMA_REGION`, predefinita `IT`) decide **quali** piattaforme
   compaiono: il catalogo Netflix italiano non è quello americano.
 - **La copia vive in `tv_cache`**, chiave `cinema`, non in una tabella a parte:

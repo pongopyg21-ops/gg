@@ -94,6 +94,33 @@ stato_voce() {
   fi
 }
 
+# --- cinema (chiave TMDB) ----------------------------------------------------
+# Stessa lezione della voce, per un'altra chiave: entra dall'ambiente o da un
+# file, e il **nome esatto** (`TMDB_API_KEY`) deve comparire nel comando che
+# avvia il server, altrimenti il segreto non viene iniettato e la sezione dice
+# "Cinema non ancora acceso" — che sembra un guasto dell'app mentre e' una
+# variabile non passata. Dire subito se la chiave c'e' fa risparmiare la caccia.
+
+stato_cinema() {
+  local py="$VENV_PYTHON" esito chiave regione
+  [ -x "$py" ] || py="$SYS_PYTHON"
+  esito="$(cd "$BASE_DIR" && "$py" -c \
+    'import cinema as c; print(c.chiave()); print(c.regione())' 2>/dev/null)"
+  chiave="$(printf '%s\n' "$esito" | sed -n '1p')"
+  regione="$(printf '%s\n' "$esito" | sed -n '2p')"
+  # l'interprete non ha risposto: si guarda l'ambiente, che e' la seconda fonte
+  [ -n "$chiave" ] || chiave="${TMDB_API_KEY:-}"
+
+  if [ -n "$chiave" ]; then
+    verde "  cinema: chiave TMDB attiva (regione ${regione:-IT})"
+  else
+    giallo "  cinema: spento (per i film serve TMDB_API_KEY)"
+    echo "        Registra la chiave fra i segreti della conversazione, col nome"
+    echo "        esatto TMDB_API_KEY, e riavvia nominandola nel comando:"
+    echo "        TMDB_API_KEY=\"\$TMDB_API_KEY\" ./avvia.sh restart"
+  fi
+}
+
 rosso()  { printf '\033[31m%s\033[0m\n' "$*"; }
 verde()  { printf '\033[32m%s\033[0m\n' "$*"; }
 giallo() { printf '\033[33m%s\033[0m\n' "$*"; }
@@ -336,6 +363,7 @@ avvia() {
     # subito se e' stata letta evita di cercare un problema nell'app quando la
     # causa e' una variabile d'ambiente non passata al server
     stato_voce
+    stato_cinema
     avvia_sorveglianza
     return 0
   fi
@@ -361,6 +389,7 @@ stato() {
       giallo "  sorveglianza: non attiva — './avvia.sh sorveglianza' per accenderla"
     fi
     stato_voce
+    stato_cinema
     return 0
   fi
   giallo "Processo presente (pid $pid) ma non risponde: prova './avvia.sh restart'."
@@ -554,7 +583,9 @@ testa() {
     giallo "pytest non c'è: lo installo."
     "$PYTHON" -m pip install -q pytest || return 1
   fi
-  (cd "$BASE_DIR" && "$PYTHON" -m pytest test_cucina.py -q)
+  # I test sono spezzati per modulo (`test_*.py`), con fixture e helper in
+  # `test_comuni.py`: pytest li raccoglie tutti dalla cartella.
+  (cd "$BASE_DIR" && "$PYTHON" -m pytest -q)
 }
 
 case "${1:-avvia}" in
