@@ -927,8 +927,14 @@ def test_le_illustrazioni_della_home_sono_doodle_del_tema(client):
     assert "pointer-events: none" in blocco, "un disegno non deve rubare un tocco"
     assert "var(--doodle-inchiostro)" in blocco, "il colore deve venire dal tema"
     assert not re.search(r"#[0-9a-fA-F]{3,6}", blocco), "colore fisso fuori dalla palette"
+    # ma non **troppo** discreti: al 10% il contrasto reale era 14/255 e i disegni
+    # non si vedevano affatto (riferito dall'utente). Almeno il 20%.
+    opacita = [float(x) for x in re.findall(r"opacity:\s*\.?(\d+)", blocco)]
+    assert opacita and min(opacita) >= 20, "un doodle sotto al 20% non si vede"
     blocco_card = css[css.index(".home-card-doodle {"):css.index(".home-card-doodle svg {")]
     assert "var(--doodle-inchiostro)" in blocco_card
+    op_card = [float(x) for x in re.findall(r"opacity:\s*\.?(\d+)", blocco_card)]
+    assert op_card and min(op_card) >= 20, "il doodle della scheda non si vede"
 
     # le variabili sono definite in entrambi i temi (di notte non spariscono)
     chiaro = css.split('html[data-tema="scuro"]')[0]

@@ -235,13 +235,13 @@ body {
 }
 .home-doodle .dd {
   position: absolute; color: var(--doodle-inchiostro);
-  width: 56px; height: 56px; opacity: .10;
+  width: 56px; height: 56px; opacity: .26;
   fill: none; stroke: currentColor;
-  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+  stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
 }
 /* Un paio di doodle prendono il corallo (i pesci, le stelle): e' l'unico tocco
    caldo, e solo dentro il disegno. */
-.home-doodle .dd-1, .home-doodle .dd-6 { color: var(--doodle-corallo); opacity: .12; }
+.home-doodle .dd-1, .home-doodle .dd-6 { color: var(--doodle-corallo); opacity: .30; }
 /* Le posizioni stanno nelle **fasce libere** della home: la fascia alta (sopra
    le schede, dove il blocco vocale e' centrato e ai lati resta vuoto) e quella
    bassa (dopo le schede). Non si usano le zone in mezzo: li' il contenuto varia
@@ -257,10 +257,10 @@ body {
 /* Le due "ai margini": nella fascia alta, ai lati del blocco vocale, dove
    resta spazio anche quando sotto il contenuto e' pieno. Piu' tenui, perche'
    li' sono piu' vicine alla riga di testo dell'invito. */
-.home-doodle .dd-7  { left: 2%;    top: 96px;  width: 44px; height: 44px; opacity: .08; transform: rotate(8deg); }
-.home-doodle .dd-8  { right: 2%;   top: 90px;  width: 48px; height: 48px; opacity: .08; transform: rotate(-10deg); }
-.home-doodle .dd-9  { left: 12%;   top: 150px; width: 46px; height: 34px; opacity: .07; transform: rotate(-3deg); }
-.home-doodle .dd-10 { right: 13%;  top: 144px; width: 44px; height: 40px; opacity: .07; transform: rotate(6deg); }
+.home-doodle .dd-7  { left: 2%;    top: 96px;  width: 44px; height: 44px; opacity: .20; transform: rotate(8deg); }
+.home-doodle .dd-8  { right: 2%;   top: 90px;  width: 48px; height: 48px; opacity: .20; transform: rotate(-10deg); }
+.home-doodle .dd-9  { left: 12%;   top: 150px; width: 46px; height: 34px; opacity: .20; transform: rotate(-3deg); }
+.home-doodle .dd-10 { right: 13%;  top: 144px; width: 44px; height: 40px; opacity: .20; transform: rotate(6deg); }
 
 .home-hero { margin-bottom: 34px; }
 /* L'intestazione in fondo alla home: il margine si sposta sopra, cosi' non
@@ -467,8 +467,8 @@ body {
    solleva insieme all'emoji, cosi' la scheda sembra viva. */
 .home-card-doodle {
   position: absolute; top: 14px; right: 14px;
-  width: 46px; height: 46px; pointer-events: none;
-  color: var(--doodle-inchiostro); opacity: .14;
+  width: 50px; height: 50px; pointer-events: none;
+  color: var(--doodle-inchiostro); opacity: .40;
 }
 .home-card-doodle svg {
   width: 100%; height: 100%;
@@ -476,7 +476,7 @@ body {
   stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
   transition: transform .25s cubic-bezier(.2, .8, .25, 1);
 }
-.home-card:nth-child(1) .home-card-doodle { color: var(--doodle-corallo); opacity: .16; }
+.home-card:nth-child(1) .home-card-doodle { color: var(--doodle-corallo); opacity: .44; }
 .home-card:hover .home-card-doodle svg { transform: translateY(-3px) rotate(8deg); }
 
 .home-emoji { font-size: 30px; line-height: 1; }
