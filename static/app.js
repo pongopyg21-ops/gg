@@ -2591,6 +2591,24 @@ function mostraTvPanel(nome) {
 $$('#tab-intrattenimento .tv-nav-btn').forEach((b) =>
   b.addEventListener('click', () => mostraTvPanel(b.dataset.tvp)));
 
+/* La scelta del gioco, dentro la scheda Giochi: Snake o Memory. Si mostra un
+   gioco per volta. Il codice dei due giochi vive in `snake.js` e `memory.js`, e
+   `app.js` non li nomina: si agganciano da soli alla loro scheda. Qui si tocca
+   solo la visibilita' dei pannelli. */
+const GIOCHI = { snake: 'snake', memory: 'memory' };
+function mostraGioco(nome) {
+  if (!GIOCHI[nome]) return;
+  $$('#tab-intrattenimento .giochi-btn').forEach((b) => {
+    const attivo = b.dataset.gioco === nome;
+    b.classList.toggle('attivo', attivo);
+    b.setAttribute('aria-selected', attivo ? 'true' : 'false');
+  });
+  $$('#tab-intrattenimento [data-gioco-panel]').forEach((p) =>
+    p.classList.toggle('active', p.dataset.giocoPanel === nome));
+}
+$$('#tab-intrattenimento .giochi-btn').forEach((b) =>
+  b.addEventListener('click', () => mostraGioco(b.dataset.gioco)));
+
 /* --- azioni sulle attività --- */
 $('#ch-oggi').addEventListener('click', choreClick);
 $('#ch-routine').addEventListener('click', choreClick);
@@ -4081,7 +4099,7 @@ async function openOnboarding() {
 function mostraBenvenuto() {
   const punti = [
     { ico: '🍽', titolo: 'Cucina', testo: 'Piano dei pasti, ricette già pronte e una lista della spesa che si calcola da sola.' },
-    { ico: '🧹', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
+    { ico: '🫧', titolo: 'Pulizie', testo: 'La routine di casa distribuita sui giorni, col tempo stimato e un cronometro.' },
     { ico: '📋', titolo: 'Appunti', testo: 'Lavori in corso, calendario degli impegni e magazzino di quello che si tiene in casa.' },
     { ico: '📌', titolo: 'FAQ', testo: 'Wi-Fi, contatti, codici: le informazioni utili sempre a portata di mano.' },
     { ico: '📺', titolo: 'TV e GYM', testo: 'Playlist video e allenamento, con le notizie filtrate sui tuoi interessi.' },
@@ -6461,7 +6479,7 @@ async function renderHomeOggi() {
 
   const daFare = chores ? (chores.piano?.da_fare || 0) : 0;
   const choresHtml = daFare
-    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🧹</span>
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🫧</span>
          <span class="oggi-txt">${daFare === 1
            ? 'C\'è <strong>1 attività di casa</strong> da fare oggi'
            : `Ci sono <strong>${daFare} attività di casa</strong> da fare oggi`}</span></div>`

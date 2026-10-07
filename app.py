@@ -1398,7 +1398,7 @@ _versione_guardia = threading.Lock()
 # Gli asset della pagina a cui si aggiunge la versione. Non tutte le immagini:
 # quelle dei dati scelgono da sole la loro scadenza e non hanno bisogno di un
 # indirizzo che cambia.
-_ASSET_VERSIONATI = ("style.css", "app.js", "snake.js")
+_ASSET_VERSIONATI = ("style.css", "app.js", "snake.js", "memory.js")
 
 
 @app.route("/")

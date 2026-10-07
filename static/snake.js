@@ -275,12 +275,15 @@ document.addEventListener('touchend', (e) => {
    vari inneschi non possono divergere. */
 const snakePannello = document.querySelector('[data-tvp-panel="giochi"]');
 const snakeSezione = document.getElementById('tab-intrattenimento');
+const snakeGiocoPanel = document.querySelector('[data-gioco-panel="snake"]');
 
-/** Il gioco gira solo con la sua sotto-scheda aperta, dentro la TV, con la
-    pagina in primo piano. Fuori da li' e' fermo (ma la partita resta). */
+/** Il gioco gira solo con la sua sotto-scheda aperta, **e il gioco scelto e'
+    Snake** (dentro i Giochi ce ne sono due), con la pagina in primo piano.
+    Fuori da li' e' fermo (ma la partita resta). */
 function snakeSchedaAperta() {
   const app = document.getElementById('app');
   return !!(snakePannello && snakePannello.classList.contains('active')
+    && snakeGiocoPanel && snakeGiocoPanel.classList.contains('active')
     && snakeSezione && snakeSezione.classList.contains('active')
     && app && !app.classList.contains('hidden') && !document.hidden);
 }
@@ -294,7 +297,7 @@ function snakeSincronizza() {
   if (!snakeGioco.finito && !snakeRAF) snakeCiclo(0);
 }
 
-[snakePannello, snakeSezione].forEach((nodo) => {
+[snakePannello, snakeSezione, snakeGiocoPanel].forEach((nodo) => {
   if (nodo) new MutationObserver(snakeSincronizza)
     .observe(nodo, { attributes: true, attributeFilter: ['class'] });
 });

@@ -217,6 +217,31 @@ body {
   50%      { background-position: 3% -2%, -3% 3%, 2% -2%; }
 }
 
+/* Un velo che attraversa la home, lentissimo: un gradiente diagonale che scorre
+   da un bordo all'altro. E' lo stesso "fondo che vive" degli aloni, ma con un
+   movimento **di passaggio** invece che di respiro, cosi' l'occhio lo coglie
+   appena. Il gradiente si costruisce **solo** con le tinte del tema
+   (`--home-alone-*`), quindi non introduce nessun colore nuovo: cambia il
+   disegno, non la tavolozza. `inset` lo fa sporgere oltre il riquadro, cosi' le
+   punte del gradiente restano fuori schermo mentre scorre. */
+.home::after {
+  content: "";
+  position: absolute; inset: -30% -12%; z-index: -1; pointer-events: none;
+  background: linear-gradient(115deg,
+    transparent 0%,
+    var(--home-alone-1) 32%,
+    transparent 52%,
+    var(--home-alone-2) 72%,
+    transparent 100%);
+  background-size: 300% 300%;
+  animation: home-gradiente 46s linear infinite;
+}
+@keyframes home-gradiente {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 /* Lo sprite dei disegni non occupa spazio: e' solo un contenitore di
    `<symbol>`, richiamati con `<use>`. Senza, resterebbe un riquadro vuoto in
    cima alla pagina. */
@@ -2348,6 +2373,51 @@ button { transition: transform .12s ease; }
 .snake-freccia[data-dy="1"]  { grid-column: 2; grid-row: 2; }
 .snake-freccia[data-dx="1"]  { grid-column: 3; grid-row: 2; }
 .snake-punti { margin: 0; font-size: 14px; color: var(--muted); }
+
+/* La scelta fra i due giochi, dentro la scheda Giochi: stessa forma delle
+   schede (`.ch-nav`), ma con il nome del gioco. Un gioco per volta. */
+.giochi-scelta {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.giochi-btn {
+  padding: 8px 14px; min-height: 42px; font-size: 15px;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 999px; color: var(--muted); cursor: pointer;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
+}
+.giochi-btn.attivo {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--testo-su-accento); font-weight: 600;
+}
+.gioco-panel { display: none; }
+.gioco-panel.active { display: block; }
+
+/* Il Memory: una griglia di carte quadrate che si scoprono a due a due. Il
+   numero di colonne e' fisso e pari, cosi' le coppie restano leggibili; su
+   schermo stretto la griglia si allarga fino a riempire, senza mai sforare.
+   Le carte sono `<button>`: si toccano col dito come tutto il resto. */
+.memory-griglia {
+  display: grid; gap: 10px; margin-bottom: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 460px;
+}
+.memory-carta {
+  aspect-ratio: 1 / 1; min-height: 64px; font-size: 34px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .12s ease;
+}
+.memory-carta:hover { border-color: var(--accent); }
+.memory-carta.scoperta { background: var(--accent-soft); border-color: var(--accent); }
+.memory-carta.trovata {
+  background: var(--green-soft); border-color: var(--green);
+  cursor: default; opacity: .85;
+}
+@media (max-width: 560px) {
+  .memory-griglia { gap: 8px; }
+  .memory-carta { font-size: 28px; }
+}
 
 /* La playlist della casa si cambia da qui: un campo e un pulsante, sulla stessa
    riga. Sul telefono vanno a capo, perche' un indirizzo incollato e' lungo e un

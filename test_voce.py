@@ -1867,14 +1867,14 @@ def test_il_profilo_si_raggiunge_anche_dalle_faq(client):
     assert html.index('data-tab="faq" data-section="faq"') < html.index('data-tab="profile" data-section="faq"')
 
 def test_l_ordine_delle_categorie_in_home(client):
-    """L'ordine delle schede in home e' scelto: Cucina, Appunti, FAQ, TV, GYM,
-    Igiene. Si verifica sull'ordine nel documento, non sul testo."""
+    """L'ordine delle schede in home e' scelto: Cucina, Appunti, Igiene, GYM, TV,
+    FAQ. Si verifica sull'ordine nel documento, non sul testo."""
     html = client.get("/static/index.html").get_data(as_text=True)
     inizio = html.index('class="home-cards"')
     fine = html.index('id="home-oggi"')
     schede = html[inizio:fine]
     ordine = [m for m in re.findall(r'data-section="([^"]+)"', schede)]
-    assert ordine == ['cucina', 'progetti', 'faq', 'tv', 'gym', 'igiene'], ordine
+    assert ordine == ['cucina', 'progetti', 'igiene', 'gym', 'tv', 'faq'], ordine
 
 def test_gli_errori_del_microfono_portano_a_scrivere(client):
     """Se il browser non puo' ascoltare (rete bloccata, microfono negato), l'unica

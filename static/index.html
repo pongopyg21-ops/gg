@@ -202,20 +202,12 @@
         calendario degli impegni e il magazzino di casa.</span>
       <span class="home-go">Apri →</span>
     </button>
-    <button class="home-card" data-section="faq">
-      <span class="home-emoji">📌</span>
-      <span class="home-name">FAQ</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-3"/></svg></span>
-      <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
-        contatti e codici, senza doverli cercare ogni volta.</span>
-      <span class="home-go">Apri →</span>
-    </button>
-    <button class="home-card" data-section="tv">
-      <span class="home-emoji">📺</span>
-      <span class="home-name">TV</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-4"/></svg></span>
-      <span class="home-desc">Intrattenimento: la playlist di casa, le notizie
-        dall'Italia e dal mondo e le locandine dei film del momento.</span>
+    <button class="home-card" data-section="igiene">
+      <span class="home-emoji">🫧</span>
+      <span class="home-name">Igiene</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-6"/></svg></span>
+      <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
+        da ricordare.</span>
       <span class="home-go">Apri →</span>
     </button>
     <button class="home-card" data-section="gym">
@@ -226,12 +218,20 @@
         seguendo i video senza uscire dall'app.</span>
       <span class="home-go">Apri →</span>
     </button>
-    <button class="home-card" data-section="igiene">
-      <span class="home-emoji">🧹</span>
-      <span class="home-name">Igiene</span>
-      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-6"/></svg></span>
-      <span class="home-desc">Pulizie di casa e della cucina, con le scadenze
-        da ricordare.</span>
+    <button class="home-card" data-section="tv">
+      <span class="home-emoji">📺</span>
+      <span class="home-name">TV</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-4"/></svg></span>
+      <span class="home-desc">Intrattenimento: la playlist di casa, le notizie
+        dall'Italia e dal mondo e le locandine dei film del momento.</span>
+      <span class="home-go">Apri →</span>
+    </button>
+    <button class="home-card" data-section="faq">
+      <span class="home-emoji">📌</span>
+      <span class="home-name">FAQ</span>
+      <span class="home-card-doodle" aria-hidden="true"><svg viewBox="0 0 48 48"><use href="#doodle-aq-3"/></svg></span>
+      <span class="home-desc">Informazioni utili: password del Wi-Fi, indirizzi,
+        contatti e codici, senza doverli cercare ogni volta.</span>
       <span class="home-go">Apri →</span>
     </button>
   </div>
@@ -303,7 +303,7 @@
   <button data-tab="pantry" data-section="cucina">🧺 Dispensa</button>
   <button data-tab="shopping" data-section="cucina">🛒 Spesa</button>
   <button data-tab="profile" data-section="cucina">⚠️ Profilo</button>
-  <button data-tab="igiene" data-section="igiene">🧹 Pulizie</button>
+  <button data-tab="igiene" data-section="igiene">🫧 Pulizie</button>
   <button data-tab="progetti" data-section="progetti">📋 Appunti</button>
   <button data-tab="calendario" data-section="progetti">📆 Calendario</button>
   <button data-tab="magazzino" data-section="progetti">📦 Magazzino</button>
@@ -734,32 +734,55 @@
       </div>
     </div>
 
-    <!-- Giochi: l'arcade di casa. Un gioco solo (Snake), scritto in casa e senza
-         rete: si gioca anche senza connessione, come il resto della sezione.
-         Il ciclo si accende aprendo la scheda e si spegne uscendo, altrimenti
-         resterebbe a girare consumando batteria per un gioco che nessuno guarda. -->
+    <!-- Giochi: l'arcade di casa. Due giochi scritti in casa e senza rete:
+         Snake e il Memory. Si giocano anche senza connessione, come il resto
+         della sezione. Snake ha un ciclo che si accende aprendo la scheda e si
+         spegne uscendo, altrimenti resterebbe a girare consumando batteria per
+         un gioco che nessuno guarda; il Memory reagisce ai clic e non ha cicli. -->
     <div class="ch-panel" data-tvp-panel="giochi">
-      <div class="toolbar">
-        <strong>🕹️ Giochi</strong>
-        <span class="spacer"></span>
-        <span class="tv-aggiornato">Record: <span id="snake-record">0</span></span>
-        <button id="snake-avvia" type="button">Nuova partita</button>
+      <div class="giochi-scelta" role="tablist" aria-label="Quale gioco">
+        <button type="button" class="giochi-btn attivo" data-gioco="snake"
+                role="tab" aria-selected="true">🐍 Snake</button>
+        <button type="button" class="giochi-btn" data-gioco="memory"
+                role="tab" aria-selected="false">🃏 Memory</button>
       </div>
 
-      <h3 class="section-title">Snake</h3>
-      <p class="hint">Frecce (o WASD) sul computer, swipe o la croce sul telefono.
-        Mangia il pallino e non toccare il muro né la tua coda.</p>
-      <div class="snake-area">
-        <canvas id="snake-canvas" width="330" height="330"
-                aria-label="Campo di gioco di Snake"></canvas>
-        <p id="snake-esito" class="snake-esito hidden" role="status"></p>
-        <div class="snake-croce" aria-label="Comandi direzionali">
-          <button type="button" class="snake-freccia" data-dx="0" data-dy="-1" aria-label="Su">▲</button>
-          <button type="button" class="snake-freccia" data-dx="-1" data-dy="0" aria-label="Sinistra">◀</button>
-          <button type="button" class="snake-freccia" data-dx="0" data-dy="1" aria-label="Giù">▼</button>
-          <button type="button" class="snake-freccia" data-dx="1" data-dy="0" aria-label="Destra">▶</button>
+      <div class="gioco-panel active" data-gioco-panel="snake">
+        <div class="toolbar">
+          <strong>🐍 Snake</strong>
+          <span class="spacer"></span>
+          <span class="tv-aggiornato">Record: <span id="snake-record">0</span></span>
+          <button id="snake-avvia" type="button">Nuova partita</button>
         </div>
-        <p class="snake-punti">Punteggio: <strong id="snake-punteggio">0</strong></p>
+        <p class="hint">Frecce (o WASD) sul computer, swipe o la croce sul telefono.
+          Mangia il pallino e non toccare il muro né la tua coda.</p>
+        <div class="snake-area">
+          <canvas id="snake-canvas" width="330" height="330"
+                  aria-label="Campo di gioco di Snake"></canvas>
+          <p id="snake-esito" class="snake-esito hidden" role="status"></p>
+          <div class="snake-croce" aria-label="Comandi direzionali">
+            <button type="button" class="snake-freccia" data-dx="0" data-dy="-1" aria-label="Su">▲</button>
+            <button type="button" class="snake-freccia" data-dx="-1" data-dy="0" aria-label="Sinistra">◀</button>
+            <button type="button" class="snake-freccia" data-dx="0" data-dy="1" aria-label="Giù">▼</button>
+            <button type="button" class="snake-freccia" data-dx="1" data-dy="0" aria-label="Destra">▶</button>
+          </div>
+          <p class="snake-punti">Punteggio: <strong id="snake-punteggio">0</strong></p>
+        </div>
+      </div>
+
+      <div class="gioco-panel" data-gioco-panel="memory">
+        <div class="toolbar">
+          <strong>🃏 Memory</strong>
+          <span class="spacer"></span>
+          <span class="tv-aggiornato">Record: <span id="memory-record">—</span> mosse</span>
+          <button id="memory-avvia" type="button">Nuova partita</button>
+        </div>
+        <p class="hint">Trova le otto coppie di figure. Tocca due carte: se
+          combaciano restano scoperte, altrimenti si ricoprono. Vince chi
+          completa il mazzo col minor numero di mosse.</p>
+        <div id="memory-griglia" class="memory-griglia" aria-label="Carte del Memory"></div>
+        <p id="memory-esito" class="snake-esito hidden" role="status"></p>
+        <p class="snake-punti">Mosse: <strong id="memory-mosse">0</strong></p>
       </div>
     </div>
   </section>
@@ -939,6 +962,7 @@
 <!-- Il gioco sta in un file suo: si carica sempre (pesa poco), ma il ciclo
      parte solo aprendo la scheda «Giochi». -->
 <script src="/static/snake.js"></script>
+<script src="/static/memory.js"></script>
 <script>
 /* Il service worker si registra da qui e non dal codice dell'app: cosi' parte
    anche se `app.js` non e' stato ancora caricato. Non e' indispensabile — senza

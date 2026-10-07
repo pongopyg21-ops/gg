@@ -887,6 +887,17 @@ def test_lo_sfondo_della_home_e_dinamico_ma_discreto():
         assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
     # e la regola del movimento ridotto lo spegne (vale per ogni ::before)
     assert "animation: none !important" in css
+    # Il **velo** che attraversa la home (`.home::after`): un gradiente che
+    # scorre lentamente. Non introduce colori nuovi — si costruisce solo con le
+    # tinte del tema — quindi la tavolozza resta quella. E' dietro al contenuto
+    # come gli aloni.
+    assert ".home::after {" in css, "manca il gradiente animato della home"
+    velo = css[css.index(".home::after {"):css.index("@keyframes home-gradiente")]
+    assert "var(--home-alone-1)" in velo and "var(--home-alone-2)" in velo
+    assert not re.search(r"#[0-9a-fA-F]{3,6}", velo), "colore fisso fuori dalla palette"
+    assert "z-index: -1" in velo and "pointer-events: none" in velo
+    m2 = re.search(r"animation: home-gradiente (\d+)s", velo)
+    assert m2 and int(m2.group(1)) >= 30, "il gradiente deve scorrere lentamente"
 
 
 def test_le_illustrazioni_della_home_sono_acquerello(client):
@@ -945,18 +956,21 @@ def test_le_illustrazioni_della_home_sono_acquerello(client):
         assert f"{v}:" in scuro, f"{v} manca nel tema scuro"
 
 
-def test_l_icona_dell_igiene_e_la_scopa(client):
-    """La sezione Igiene si riconosce dalla scopa, non piu' dalla spugna: la
-    spugna era un oggetto della cucina e non diceva «pulizie di casa»."""
+def test_l_icona_dell_igiene_sono_le_bollicine(client):
+    """La sezione Igiene si riconosce dalle **bollicine** (fresco, pulito), non
+    piu' dalla scopa: la scopa diceva «sto spazzando», non «e' pulito». E' la
+    stessa emoji ovunque compaia, cosi' la sezione si riconosce a colpo d'occhio
+    in home, nella barra, nel menu di benvenuto e nel riepilogo «Oggi»."""
     html = client.get("/static/index.html").get_data(as_text=True)
     # nella scheda in home e nella scheda della barra
-    assert '<span class="home-emoji">🧹</span>' in html
-    assert 'data-section="igiene">🧹 Pulizie</button>' in html
-    assert '<span class="home-emoji">🧽</span>' not in html
+    assert '<span class="home-emoji">🫧</span>' in html
+    assert 'data-section="igiene">🫧 Pulizie</button>' in html
+    assert '🧹' not in html, "la scopa non deve restare da nessuna parte"
     js = client.get("/static/app.js").get_data(as_text=True)
-    # la scopa anche nel menu di benvenuto e nel riepilogo «Oggi»
-    assert "{ ico: '🧹', titolo: 'Pulizie'" in js
-    assert 'oggi-ico" aria-hidden="true">🧹' in js
+    # le bollicine anche nel menu di benvenuto e nel riepilogo «Oggi»
+    assert "{ ico: '🫧', titolo: 'Pulizie'" in js
+    assert 'oggi-ico" aria-hidden="true">🫧' in js
+    assert '🧹' not in js, "la scopa non deve restare nel codice"
     # l'icona della spugna resta dov'e' giusto: e' un ingrediente della dispensa
     assert "['spugna', '🧽']" in js
 

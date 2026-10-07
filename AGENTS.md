@@ -65,7 +65,7 @@ in **Igiene**; **Appunti** raccoglie lavori e idee da fare ed è anche la casa d
 informazioni utili da consultare (Wi-Fi, indirizzi, contatti, codici); **TV**
 raccoglie l'intrattenimento in **cinque schede** (Intrattenimento, Notizie, Quiz,
 Film, Giochi): i video della playlist di casa, le notizie dal mondo
-(vedi `tv.py`), il quiz e i giochi (Snake, vedi `static/snake.js`) e le locandine
+(vedi `tv.py`), il quiz e i giochi (Snake e Memory, vedi `static/snake.js` e `static/memory.js`) e le locandine
 dei film del momento sulle piattaforme di streaming, una alla volta (vedi
 `cinema.py`). Il **Cinema** non ha più una sezione sua:
 è intrattenimento come i video e le notizie, e sta dentro la TV. Il **GYM**
@@ -792,9 +792,14 @@ Conseguenze pratiche per chi mette mano al codice:
   scelto dall'utente, non un dettaglio di stile: prima le schede erano in fondo,
   ed era sbagliato. L'intestazione era invece in cima e spingeva giù le
   categorie: ora chiude la pagina (vedi `test_l_intestazione_chiude_la_home`).
-  **L'ordine delle schede è: Cucina, Appunti, FAQ, TV, GYM, Igiene**
-  (`test_l_ordine_delle_categorie_in_home` lo fissa). L'Igiene è in fondo perché
-  è la cosa che si guarda meno spesso; l'ordine è dell'utente, non alfabetico.
+  **L'ordine delle schede è: Cucina, Appunti, Igiene, GYM, TV, FAQ**
+  (`test_l_ordine_delle_categorie_in_home` lo fissa). L'ordine è dell'utente,
+  non alfabetico. La scheda **Igiene si riconosce dalle bollicine** 🫧, non più
+  dalla scopa 🧹: le bollicine dicono «pulito, fresco», mentre la scopa dice
+  «sto spazzando» e non è l'idea che deve passare. La stessa emoji compare in
+  home, nella barra, nel menu di benvenuto e nel riepilogo «Oggi», così la
+  sezione si riconosce a colpo d'occhio ovunque (vedi
+  `test_l_icona_dell_igiene_sono_le_bollicine`).
   La scheda **Cucina ha un'icona sua** (`static/icons/cucina.svg`, una pentola
   sul fuoco col vapore): prima usava il logo dell'app, quindi non si
   distingueva. Il disegno era un cappello da chef ed è stato cambiato su
@@ -1277,6 +1282,7 @@ Direzione: mare. Fondo schiuma, inchiostro blu profondo, un solo accento acqua. 
 - Il test `test_i_testi_colorati_restano_leggibili_nei_due_temi` calcola il contrasto WCAG vero (luminanza relativa) delle coppie testo/fondo **in entrambi i temi** e pretende ≥4,5:1: un colore fissato a mano fuori dalla palette non si vede leggendo il codice, e torna a ogni cambio di tema. Verificato che **fallisce** se si rimette il fondo chiaro sotto il testo chiaro (1,85:1), quindi non è un test vacuo.
 - Le cifre delle quantità usano `tabular-nums`.
 - **Lo sfondo della home respira, ma è discreto** (`.home::before`, `home-respira`): tre aloni del mare dietro le schede, in movimento lentissimo (30 s) e di pochi punti percentuali. È la sola pagina dove il fondo si muove — le aree sono di lavoro e restano piatte. Sta su un `::before` con `z-index: -1`, quindi i riquadri (opachi) restano leggibili e il testo non ci finisce mai sopra. I colori sono **trasparenze** del tema (`--home-alone-1/2/3`, ~10%): non coprono niente, e il tema scuro si schiarisce da solo invece di restare a macchie. Chi ha chiesto meno movimento non vede niente animarsi (la regola globale `prefers-reduced-motion` spegne anche questo). Il test `test_lo_sfondo_della_home_e_dinamico_ma_discreto` fissa trasparenze, lentezza, `z-index` e i colori in entrambi i temi.
+- **Un velo diagonale attraversa la home** (`.home::after`, `home-gradiente`, 46 s). È lo stesso «fondo che vive» degli aloni, ma con un movimento **di passaggio** invece che di respiro: un gradiente che scorre da un bordo all'altro, così l'occhio lo coglie appena. **Non introduce nessun colore nuovo** — si costruisce solo con `--home-alone-1/2` del tema, quindi cambia il disegno, non la tavolozza; `inset` negativo lo fa sporgere oltre il riquadro perché le punte restino fuori schermo. Il test estende `test_lo_sfondo_della_home_e_dinamico_ma_discreto`: pretende `.home::after`, le tinte del tema, nessun `#...` fisso, `z-index: -1`, `pointer-events: none` e un'animazione ≥ 30 s.
 - **L'acquerello della home** (`#doodle-aq-*` nello sprite `<svg class="sprite-doodle">`, `.home-doodle` per il fondo e `.home-card-doodle` per l'angolo di ogni scheda). Sono **macchie astratte pastello**, non disegni di oggetti: il tema è la casa e la sua gestione, quindi niente pesci né onde, solo campiture morbide. Il colore è `currentColor` con le sei tinte `--wc-1…--wc-6` (decise dal tema; di notte sono velature trasparenti), e un filtro `feGaussianBlur` (`#acquerello`) ammorbidisce i bordi: è quello che le fa sembrare pittura invece di forme piene. Stanno **dietro** al contenuto (`z-index: -1`) e con `pointer-events: none`: non coprono mai un testo né rubano un tocco. Le posizioni stanno solo nelle **fasce libere** della home — la fascia alta, ai lati del blocco vocale, e quella bassa dopo le schede — non in mezzo, dove «Oggi», il calendario e le notizie cambiano altezza e una macchia dietro un pannello opaco sarebbe invisibile. **Attenzione ai pastelli:** su fondo quasi bianco un tono troppo chiaro sparisce; al 50% di opacità i toni chiari davano contrasto 8-23/255 e non si vedevano. Le tinte sono quindi un pastello un po' più pieno (chiaro) e la filigrana è più alta.
 - **`position` non si applica ai figli di un SVG.** Il primo tentativo era un unico SVG con dentro delle `<use>` posizionate in assoluto: restavano **in flow**, tutte in una fascia, e i doodle non comparivano dove previsto. Un elemento `<use>` (o `<path>`, `<rect>`…) è un *graphics element*, non una scatola CSS: non è posizionabile. Ogni doodle è quindi un **`<svg>` a sé** che richiama il suo `<symbol>`: l'SVG esterno è un elemento rimpiazzato e accetta `position: absolute`. Il test `test_le_illustrazioni_della_home_sono_acquerello` pretende `<svg>` (non `<use>`) nel livello del fondo, il filtro acquerello, `<svg>`/campitura, decoratività, `z-index`, `pointer-events` e le tinte nei due temi.
 
@@ -2323,23 +2329,37 @@ aggancia **osservando le classi** (`MutationObserver`) del proprio pannello e
 della sezione TV, con una regola sola (`snakeSincronizza`, idempotente): gli
 inneschi sono più d'uno — l'osservatore, il pulsante Home, `visibilitychange` — e
 una funzione unica evita che divergano. Un test verifica che `app.js` **non**
-nomini le funzioni del gioco (vedi «I Giochi: Snake»).
+nomini le funzioni del gioco (vedi «I Giochi: Snake e Memory»).
 
-### I Giochi: Snake
+### I Giochi: Snake e Memory
 
 I **Giochi** sono una sotto-scheda della TV (`data-tvp="giochi"`, pannello
-`data-tvp-panel="giochi"`). Per ora c'è un gioco solo, **Snake**, in
-`static/snake.js`: un file a parte, non dentro `app.js`, perché è un pezzo a sé
-che si carica con la pagina ma vive di vita propria. Non usa librerie e non usa
-la rete: si disegna su un `<canvas>` e funziona **anche senza connessione**,
-come il resto della sezione (sta nella scocca del service worker).
+`data-tvp-panel="giochi"`). Ci sono **due** giochi, scelti da una riga di
+pulsanti (`data-gioco="snake"`/`"memory"`, pannelli `data-gioco-panel`):
+**Snake** in `static/snake.js` e **Memory** in `static/memory.js`, file a parte,
+non dentro `app.js`, perché sono pezzi a sé che si caricano con la pagina ma
+vivono di vita propria. Non usano librerie e non usano la rete: funzionano
+**anche senza connessione**, come il resto della sezione (stanno nella scocca
+del service worker).
 
 La scelta che conta: **la logica è pura e separata dal disegno**. `snakeNuovo`,
-`snakePasso` e `snakeDirezione` prendono lo stato e ne restituiscono uno nuovo,
-senza DOM e senza attese, e ricevono un `rand` iniettato. Così si eseguono
-**davvero** con node nei test — che è l'unico modo di verificare un gioco senza
-giocarlo — e il disegno (`snakeDisegna`) e i comandi restano l'unica parte che
-non si può provare con un test unitario.
+`snakePasso` e `snakeDirezione` (Snake) e `memoryNuovo`, `memoryGira`,
+`memoryNascondi`, `memoryAspetta` (Memory) prendono lo stato e ne restituiscono
+uno nuovo, senza DOM e senza attese, e il mescolamento riceve un `rand`
+iniettato. Così si eseguono **davvero** con node nei test — che è l'unico modo di
+verificare un gioco senza giocarlo — e disegno e comandi restano l'unica parte
+che non si può provare con un test unitario.
+
+Il **Memory** (otto coppie, `MEMORY_COPPIE`) ha una regola in più che nella
+logica di Snake non c'è: due carte girate vanno **tenute scoperte** finché
+l'utente le vede, poi ricoperte se sbagliate. La decisione (uguali o diverse) sta
+nella funzione pura `memoryGira`; il **quando** ricoprirle è un fatto di tempo,
+non di regola, quindi è `memoryNascondi` chiamata dall'interfaccia dopo
+`MEMORY_NASCONDI_MS`. Nel frattempo `memoryGira` **ignora una terza carta**: se
+non lo facesse si scoprirebbero tre carte e il Memory perderebbe il senso. Alla
+seconda carta uguale le due diventano `trovata` e la partita finisce quando
+**tutte** lo sono. Il record è il **minor** numero di mosse con cui si vince
+(`memoryRecord`, `localStorage`) — è un dato del dispositivo, come per Snake.
 
 Tre trappole, tutte nel cuore del gioco:
 
