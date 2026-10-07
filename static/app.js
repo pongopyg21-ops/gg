@@ -3411,6 +3411,88 @@ function faqRiga(v) {
     </div>`;
 }
 
+/* ---------- biometria (la chiave custodita dal dispositivo) ----------
+   L'impronta digitale non e' un segreto: e' un permesso. Il sensore non produce
+   nessuna chiave, dice soltanto "sei tu". Se la cassaforte si aprisse col solo
+   "sì", chi sblocca il telefono (o il volto di chi passa) leggerebbe i segreti:
+   sarebbe un accesso **senza** cassaforte, non con la cassaforte.
+
+   Quindi la biometria non sostituisce la password: custodisce una **chiave
+   casuale**, e il server la usa per cifrare la password della cassaforte. Il
+   sensore sblocca la chiave, la chiave apre la cassaforte. Se il sensore non
+   c'e' o non e' disponibile, si apre con la password come sempre.
+
+   Dove vive la chiave, detto onestamente: qui in `localStorage`, perche' l'app
+   e' una pagina web e non ha accesso al Portachiavi del sistema. `localStorage`
+   non e' una cassaforte di sistema, quindi sul web la biometria e' **piu'
+   comoda**, non piu' sicura di una password ricordata. Su un'app nativa la
+   chiave starebbe nel Portachiavi protetto da Face ID / impronta, e li' la
+   differenza sarebbe vera. */
+const BIO_STORE = 'cassBiometria';
+
+function bioDisponibile() {
+  return !!(window.isSecureContext && window.PublicKeyCredential
+    && navigator.credentials && navigator.credentials.create);
+}
+
+function bioChiave() {
+  try { return localStorage.getItem(BIO_STORE) || ''; } catch (_e) { return ''; }
+}
+
+/* Il sensore. Non e' il segreto (quello e' la chiave): e' la prova che davanti
+   al dispositivo c'e' una persona. Una credenziale di piattaforma fa comparire
+   Face ID / impronta; se l'utente la rifiuta, la promessa si rifiuta e non si
+   prosegue. */
+async function bioVerifica() {
+  const sfida = crypto.getRandomValues(new Uint8Array(32));
+  await navigator.credentials.create({ publicKey: {
+    challenge: sfida,
+    rp: { name: 'Il Maggiordomo' },
+    user: { id: sfida, name: 'cassaforte', displayName: 'Cassaforte' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+    timeout: 60000,
+  } });
+}
+
+function bioNuovaChiave() {
+  const byte = crypto.getRandomValues(new Uint8Array(32));
+  return [...byte].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function bioAttiva() {
+  if (!bioDisponibile()) { toast('Questo dispositivo non ha un sensore'); return; }
+  try {
+    await bioVerifica();
+    let chiave = bioChiave();
+    if (!chiave) { chiave = bioNuovaChiave(); localStorage.setItem(BIO_STORE, chiave); }
+    await api('/api/cassaforte/biometria', { method: 'PUT', body: { chiave } });
+    toast('Biometria attivata');
+    renderCassaforte();
+  } catch (err) {
+    toast(err.message || 'Biometria non riuscita');
+  }
+}
+
+async function bioApri() {
+  const chiave = bioChiave();
+  if (!chiave) { toast('Biometria non attivata su questo dispositivo'); return; }
+  try {
+    await bioVerifica();
+    await api('/api/cassaforte/apri-biometria', { method: 'POST', body: { chiave } });
+    renderCassaforte();
+  } catch (err) {
+    toast(err.message || 'Biometria non riconosciuta');
+  }
+}
+
+async function bioTogli() {
+  try { await api('/api/cassaforte/biometria', { method: 'DELETE' }); } catch (_e) { /* niente */ }
+  try { localStorage.removeItem(BIO_STORE); } catch (_e) { /* niente */ }
+  toast('Biometria disattivata');
+  renderCassaforte();
+}
+
 /* Aggiorna lo stato della cassaforte e disegna il riquadro giusto: l'invito a
    crearla, la richiesta della password, oppure l'apertura con la lista. */
 async function renderCassaforte() {
@@ -3453,6 +3535,12 @@ async function renderCassaforte() {
     return;
   }
   if (!cassStato.aperta) {
+    const conSensore = cassStato.biometria && bioChiave() && bioDisponibile();
+    // il pulsante del sensore si compone fuori dal template: una graffa con
+    // backtick dentro un altro template confonderebbe i lettori (e i controlli)
+    const bottoneBio = conSensore
+      ? '<div class="row"><button id="cass-bio-apri" class="primary" type="button">🔒 Apri con l\'impronta</button></div>'
+      : '';
     stato.innerHTML = '';
     blocco.innerHTML = `
       <div class="cass-chiusa">
@@ -3460,6 +3548,7 @@ async function renderCassaforte() {
         ${cassStato.promemoria ? `<p class="cass-promemoria">Promemoria: ${esc(cassStato.promemoria)}</p>` : ''}
         <p class="hint">Le informazioni sono al sicuro. Inserisci la password della
           cassaforte per consultarle o modificarle.</p>
+        ${bottoneBio}
         <div class="field"><label for="cass-pw">Password della cassaforte</label>
           <input id="cass-pw" type="password" autocomplete="current-password"></div>
         <div class="row">
@@ -3471,19 +3560,31 @@ async function renderCassaforte() {
       </div>`;
     $('#cass-apri').addEventListener('click', apriCassaforte);
     $('#cass-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') apriCassaforte(); });
+    if ($('#cass-bio-apri')) $('#cass-bio-apri').addEventListener('click', bioApri);
     $('#cass-pw').focus();
     $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
     return;
   }
   // aperta: si mostra l'apertura e si caricano le voci
+  const puoAttivare = bioDisponibile();
+  const bioAttiva = cassStato.biometria && bioChiave();
+  let bottoneBio = '';
+  if (puoAttivare) {
+    bottoneBio = bioAttiva
+      ? '<button id="cass-bio-togli" class="ghost" type="button">Togli l\'impronta</button>'
+      : '<button id="cass-bio-attiva" class="ghost" type="button">🔒 Apri con l\'impronta</button>';
+  }
   stato.innerHTML = `
     <div class="cass-aperta">
       <span>🔓 Cassaforte aperta</span>
       <button id="cass-chiudi" class="ghost" type="button">🔒 Chiudi</button>
       <a href="#" id="cass-frase-link">Promemoria e chiusura</a>
+      ${bottoneBio}
     </div>`;
   $('#cass-chiudi').addEventListener('click', chiudiCassaforte);
   $('#cass-frase-link').addEventListener('click', (e) => { e.preventDefault(); apriFraseCassaforte(); });
+  if ($('#cass-bio-attiva')) $('#cass-bio-attiva').addEventListener('click', bioAttiva);
+  if ($('#cass-bio-togli')) $('#cass-bio-togli').addEventListener('click', bioTogli);
   blocco.innerHTML = '';
   contenuto.hidden = false;
   await renderFaqElenco();

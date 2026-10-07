@@ -90,7 +90,11 @@ def test_backup_non_contiene_le_altre_case(client, tmp_path):
     # ne' come tabella dentro l'esportazione
     assert not any("houses.db" in n for n in nomi), nomi
     assert "CREATE TABLE houses" not in contenuto
-    assert "password" not in contenuto
+    # non si cerca la parola "password" nuda: e' anche nelle note dello schema
+    # (che finiscono in `sqlite_master`), quindi darebbe un falso allarme. Si
+    # cerca la forma vera dell'hash del registro, che e' quello che non deve
+    # uscire.
+    assert "pbkdf2_sha256" not in contenuto, "l'hash delle password non deve uscire"
 
     # controlla anche la struttura, non solo il testo: il database esportato non
     # deve avere una tabella che somigli al registro

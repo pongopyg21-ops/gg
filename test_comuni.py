@@ -737,7 +737,7 @@ def _nomi_chiamati_senza_definizione(js):
     # nomi forniti dal browser, non definiti nel file
     browser = set("""Array ArrayBuffer Audio Blob Boolean DataView Date Error
 File FileReader Float32Array Image JSON Map Math Number Object Promise RegExp Set
-String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN
+String Symbol SpeechSynthesisUtterance parseInt parseFloat isNaN Uint8Array
 encodeURIComponent decodeURIComponent fetch setTimeout clearTimeout setInterval
 clearInterval confirm alert console requestAnimationFrame cancelAnimationFrame
 AudioContext webkitAudioContext MediaRecorder URL URLSearchParams FormData btoa

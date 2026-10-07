@@ -302,3 +302,156 @@ def test_cassaforte_di_una_casa_non_si_vede_dall_altra(client):
         assert anon.get("/api/cassaforte/voci").status_code == 401
         # e non puo' nemmeno aprirla: non ha la sessione della casa
         assert anon.post("/api/cassaforte/apri", json={"password": "aprisicuro"}).status_code == 401
+
+
+# ------------------------------------------------------------- biometria
+# La biometria *non* e' un accesso senza cassaforte: il sensore sblocca una
+# **chiave** che il dispositivo custodisce, e la chiave apre la scatola
+# biometrica che contiene la password. La password da sola non apre quella
+# scatola, e la chiave da sola non e' la password: servono tutte e due le cose
+# nella stessa misura di prima, cambia solo **dove** sta la password.
+
+CHIAVE_TEST = "chiave-del-dispositivo-lunga-abbastanza"
+
+
+def _attiva_biometria(client, chiave=CHIAVE_TEST):
+    return client.put("/api/cassaforte/biometria", json={"chiave": chiave})
+
+
+def test_la_biometria_non_e_attiva_finche_non_la_si_attiva(client):
+    _crea(client, "aprisicuro")
+    assert client.get("/api/cassaforte/stato").get_json()["biometria"] is False
+    r = _attiva_biometria(client)
+    assert r.status_code == 200
+    assert r.get_json()["biometria"] is True
+
+
+def test_la_biometria_apre_la_cassaforte_senza_password(client):
+    """Il percorso che l'utente chiede: dito invece di password."""
+    _crea(client, "aprisicuro")
+    client.post("/api/cassaforte/voci", json={"question": "Banca", "answer": "PIN: 987654"})
+    _attiva_biometria(client)
+    client.post("/api/cassaforte/chiudi")
+    assert client.get("/api/cassaforte/stato").get_json()["aperta"] is False
+    # niente password: solo la chiave che il sensore custodisce
+    r = client.post("/api/cassaforte/apri-biometria", json={"chiave": CHIAVE_TEST})
+    assert r.status_code == 200
+    assert r.get_json()["aperta"] is True
+    voci = client.get("/api/cassaforte/voci").get_json()["voci"]
+    assert voci[0]["answer"] == "PIN: 987654"
+
+
+def test_una_chiave_sbagliata_non_apre(client):
+    _crea(client, "aprisicuro")
+    _attiva_biometria(client)
+    client.post("/api/cassaforte/chiudi")
+    r = client.post("/api/cassaforte/apri-biometria", json={"chiave": "un'altra-chiave"})
+    assert r.status_code == 401
+    assert client.get("/api/cassaforte/stato").get_json()["aperta"] is False
+
+
+def test_senza_biometria_il_pulsante_del_sensore_non_apre(client):
+    """Se la biometria non e' stata attivata, il percorso biometrico non esiste:
+    non deve aprire per il solo fatto di mandare una chiave qualsiasi."""
+    _crea(client, "aprisicuro")
+    client.post("/api/cassaforte/chiudi")
+    r = client.post("/api/cassaforte/apri-biometria", json={"chiave": CHIAVE_TEST})
+    assert r.status_code == 401
+
+
+def test_la_biometria_richiede_la_cassaforte_aperta_per_attivarsi(client):
+    """Attivarla custodisce la password: se la cassaforte e' chiusa non c'e' una
+    password da custodire, quindi si rifiuta invece di attivare qualcosa di rotto."""
+    _crea(client, "aprisicuro")
+    client.post("/api/cassaforte/chiudi")
+    r = _attiva_biometria(client)
+    assert r.status_code == 409
+
+
+def test_la_password_non_apre_la_scatola_biometrica(client):
+    """La scatola biometrica e' cifrata con la **chiave**, non con la password:
+    chi conosce la password ma non ha il dispositivo non deve poterla leggere.
+    Si guarda il file grezzo."""
+    _crea(client, "aprisicuro")
+    _attiva_biometria(client)
+    percorso = houses.db_path(CASA_TEST)
+    with sqlite3.connect(percorso) as db:
+        riga = db.execute("SELECT bio FROM cassaforte WHERE id = 1").fetchone()
+    assert riga is not None and riga[0], "la scatola biometrica deve esistere"
+    # la password non compare in chiaro, e la scatola non si apre con la password
+    assert "aprisicuro" not in riga[0]
+    assert cassaforte.password_giusta(riga[0], "aprisicuro") is False
+    # si apre solo con la chiave del dispositivo
+    assert cassaforte.decifra(riga[0], CHIAVE_TEST).decode() == "aprisicuro"
+
+
+def test_disattivare_la_biometria_torna_alla_sola_password(client):
+    _crea(client, "aprisicuro")
+    _attiva_biometria(client)
+    r = client.delete("/api/cassaforte/biometria")
+    assert r.status_code == 200
+    assert r.get_json()["biometria"] is False
+    client.post("/api/cassaforte/chiudi")
+    assert client.post("/api/cassaforte/apri-biometria",
+                       json={"chiave": CHIAVE_TEST}).status_code == 401
+    assert client.post("/api/cassaforte/apri", json={"password": "aprisicuro"}).status_code == 200
+
+
+def test_cambiare_password_fa_cadere_la_biometria(client):
+    """La scatola biometrica custodiva la vecchia password: con la nuova non
+    aprirebbe piu'. Va tolta, e l'utente avvisato, invece di lasciarla rotta."""
+    _crea(client, "aprisicuro")
+    _attiva_biometria(client)
+    r = client.put("/api/cassaforte/password",
+                   json={"attuale": "aprisicuro", "nuova": "altranuova"})
+    assert r.status_code == 200
+    assert r.get_json()["biometria_caduta"] is True
+    assert r.get_json()["biometria"] is False
+    client.post("/api/cassaforte/chiudi")
+    assert client.post("/api/cassaforte/apri-biometria",
+                       json={"chiave": CHIAVE_TEST}).status_code == 401
+
+
+def test_la_chiave_biometrica_non_finisce_nel_database_in_chiaro(client):
+    """La chiave e' un segreto del dispositivo: il server non deve conservarla in
+    chiaro, solo dentro la scatola che essa stessa apre (non c'e' altra copia)."""
+    _crea(client, "aprisicuro")
+    _attiva_biometria(client)
+    percorso = houses.db_path(CASA_TEST)
+    with sqlite3.connect(percorso) as db:
+        riga = db.execute("SELECT bio FROM cassaforte WHERE id = 1").fetchone()
+    assert CHIAVE_TEST not in riga[0]
+
+
+def test_il_client_sa_usare_la_biometria(client):
+    """Il percorso c'e' anche nel client: il pulsante del sensore chiama le rotte
+    giuste. Un backend senza il pezzo di interfaccia non e' una funzione."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    for pezzo in ("bioApri", "bioAttiva", "bioTogli", "bioDisponibile",
+                  "/api/cassaforte/apri-biometria", "bioVerifica",
+                  "navigator.credentials"):
+        assert pezzo in js, f"manca {pezzo} nel client"
+    # il sensore non e' il segreto: la chiave si genera a caso, non si ricava
+    assert "crypto.getRandomValues" in js
+
+
+def test_la_cassaforte_vecchia_riceve_la_colonna_bio(tmp_path):
+    """Una cassaforte creata prima della biometria non ha la colonna `bio`:
+    `CREATE TABLE IF NOT EXISTS` non la aggiunge, e la migrazione deve farlo a
+    mano, altrimenti ogni lettura della scatola fallirebbe con 'no such column'."""
+    import app as app_module
+    percorso = str(tmp_path / "vecchio.db")
+    app_module.init_db(percorso, con_ricettario=False)
+    with sqlite3.connect(percorso) as db:
+        db.row_factory = sqlite3.Row
+        db.execute("INSERT INTO cassaforte (id, dati) VALUES (1, 'blob')")
+        db.commit()
+        # la forma di prima della biometria
+        db.execute("ALTER TABLE cassaforte DROP COLUMN bio")
+        db.commit()
+        assert "bio" not in {r[1] for r in db.execute("PRAGMA table_info(cassaforte)")}
+        app_module.migrate(db)
+        colonne = {r[1] for r in db.execute("PRAGMA table_info(cassaforte)")}
+        dati = db.execute("SELECT dati FROM cassaforte WHERE id = 1").fetchone()[0]
+    assert "bio" in colonne, "la colonna della scatola biometrica non e' stata aggiunta"
+    assert dati == "blob", "la migrazione non deve toccare i dati"

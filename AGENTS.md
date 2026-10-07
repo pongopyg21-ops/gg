@@ -1275,6 +1275,29 @@ Conseguenze pratiche per chi mette mano al codice:
   - **Migrazione del registro.** Se un registro esistente non ha la colonna
     `impronta`, `init_registro()` la aggiunge con `ALTER TABLE`: `CREATE TABLE IF
     NOT EXISTS` non la tocca, e ogni lettura fallirebbe con "no such column".
+- **Biometria: il sensore sblocca una chiave, non sostituisce la password.**
+  L'impronta digitale **non è un segreto**: è un permesso. Il sensore dice "sei
+  tu", non produce nessuna chiave. Se la cassaforte si aprisse col solo "sì" del
+  sensore, chi sblocca il telefono (o il volto di chi passa) leggerebbe i segreti:
+  sarebbe un accesso **senza** cassaforte, non con la cassaforte. Quindi la
+  biometria custodisce una **chiave casuale**, e la chiave apre una **scatola
+  biometrica** (`cassaforte.bio`) che contiene la **password**, non le voci: il
+  contenuto resta uno solo (quello cifrato con la password), così le due copie
+  non possono divergere. Le rotte sono `POST /api/cassaforte/apri-biometria`
+  (apre senza password), `PUT`/`DELETE /api/cassaforte/biometria` (attiva /
+  disattiva; l'attivazione richiede la cassaforte aperta, perché custodisce la
+  password). `_cassaforte_stato` espone `biometria` per il pulsante. La chiave
+  la genera il **client** (`bioNuovaChiave`) e la custodisce: sul web in
+  `localStorage`, e va detto onestamente che **non è più sicura** di una password
+  ricordata — è più comoda; su un'app nativa starebbe nel Portachiavi dietro Face
+  ID e lì la differenza sarebbe vera. Cambiare la password **fa cadere** la
+  biometria (la scatola custodiva la vecchia): si toglie e si avvisa
+  (`biometria_caduta`). Il sensore si chiama con `navigator.credentials.create`
+  di una credenziale `platform` (`bioVerifica`); **`rp.id` è il nome host**, e
+  `localhost` è un RP ID valido mentre `127.0.0.1` no. Nel sandbox si prova con
+  l'**autenticatore virtuale** di Chromium (`WebAuthn.addVirtualAuthenticator` via
+  CDP) su `http://localhost:12000/`; la colonna `bio` va aggiunta a mano in
+  `migrate()` per i database esistenti.
 - Nelle sezioni la barra mostra solo le schede dell'area aperta (`data-section`
   sulle schede, `SEZIONI` in `app.js` come mappa area → prima scheda): le voci delle
   aree non vanno mescolate in un'unica barra. Il pulsante vocale è una funzione

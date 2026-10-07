@@ -172,6 +172,12 @@ CREATE INDEX IF NOT EXISTS idx_faq_cat ON faq(category);
 CREATE TABLE IF NOT EXISTS cassaforte (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     dati       TEXT NOT NULL,                 -- il blob cifrato (JSON)
+    -- La **scatola per la biometria**: le stesse voci, ma cifrate con la
+    -- chiave che il dispositivo custodisce dietro il sensore. Vuota = la
+    -- biometria non e' attiva. E' una seconda scatola, non un secondo
+    -- segnaposto: si apre senza la password, quindi la password da sola non
+    -- deve poterla leggere.
+    bio        TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

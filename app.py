@@ -342,6 +342,12 @@ def migrate(db):
     # tocca le righe gia' presenti, cosi' le modifiche dell'utente restano.
     _semina_pulizie(db)
 
+    # La cassaforte creata prima della biometria non ha la seconda scatola: la
+    # colonna va aggiunta a mano, come le altre.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(cassaforte)")}
+    if have and "bio" not in have:
+        db.execute("ALTER TABLE cassaforte ADD COLUMN bio TEXT NOT NULL DEFAULT ''")
+
     # Le ricette tolte dal ricettario vanno via anche dai database che esistono
     # gia'. `seed.semina()` gira solo quando il file nasce (e `windows\avvia.bat`
     # non lo chiama affatto), quindi senza questo passaggio una ricetta tolta
@@ -3813,7 +3819,7 @@ def _cassaforte_pw_aperta():
 
 
 def _cassaforte_voci_di(slug, password):
-    """Le voci in chiaro dal blob cifrato, con la password data."""
+    """Le voci in chiaro dalla scatola, con la password data."""
     riga = one(get_db().execute("SELECT dati FROM cassaforte WHERE id = 1"))
     if riga is None:
         raise cassaforte.CassaforteErrore("La cassaforte non è stata creata")
@@ -3821,6 +3827,24 @@ def _cassaforte_voci_di(slug, password):
         return json.loads(cassaforte.decifra(riga["dati"], password).decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         raise cassaforte.CassaforteErrore("Contenuto della cassaforte non leggibile")
+
+
+def _cassaforte_password_da_bio(chiave):
+    """La password della cassaforte, recuperata dalla scatola biometrica.
+
+    La scatola biometrica non contiene le voci: contiene la **password**, cifrata
+    con la chiave che il dispositivo custodisce dietro il sensore. Cosi' il
+    contenuto resta uno solo (quello cifrato con la password) e non ci sono due
+    copie che possano divergere. La password da sola non apre questa scatola:
+    e' cifrata con la chiave biometrica, non con la password.
+    """
+    riga = one(get_db().execute("SELECT bio FROM cassaforte WHERE id = 1"))
+    if not riga or not riga["bio"]:
+        raise cassaforte.CassaforteErrore("La biometria non è attiva")
+    try:
+        return cassaforte.decifra(riga["bio"], chiave).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        raise cassaforte.CassaforteErrore("La chiave biometrica non apre la cassaforte")
 
 
 def _cassaforte_voci():
@@ -3832,7 +3856,11 @@ def _cassaforte_voci():
 
 
 def _cassaforte_salva(slug, password, voci):
-    """Riscrive la scatola con le voci date, cifrandole con la password aperta."""
+    """Riscrive la scatola con le voci date, cifrandole con la password aperta.
+
+    La scatola biometrica non si tocca: contiene la password, non le voci, quindi
+    una modifica alle voci non la riguarda.
+    """
     blob = cassaforte.cifra(
         json.dumps(voci, ensure_ascii=False).encode("utf-8"), password)
     db = get_db()
@@ -3922,6 +3950,12 @@ def _faq_voce_pubblica(v):
             "secret": True, "ha_valore": bool((v.get("answer") or "").strip())}
 
 
+def _cassaforte_bio_attiva(db):
+    """True se la scatola biometrica esiste ed e' piena."""
+    riga = one(db.execute("SELECT bio FROM cassaforte WHERE id = 1"))
+    return bool(riga and riga["bio"])
+
+
 def _cassaforte_stato(db):
     """Lo stato della cassaforte: esiste? aperta? quando si richiude?"""
     esiste = _cassaforte_esiste(db)
@@ -3933,6 +3967,9 @@ def _cassaforte_stato(db):
         "promemoria": registro["promemoria"] if registro else "",
         "chiusura_minuti": registro["chiusura_minuti"] if registro else CASSAFORTE_MINUTI,
         "secondi_rimasti": _cassaforte_secondi_rimasti(casa_attiva()) if aperta else None,
+        # la biometria e' attiva se esiste la scatola biometrica: e' questo che
+        # il client guarda per mostrare o nascondere il pulsante del sensore
+        "biometria": esiste and _cassaforte_bio_attiva(db),
     }
 
 
@@ -4138,6 +4175,74 @@ def cassaforte_apri():
     return jsonify({"ok": True, **_cassaforte_stato(db)})
 
 
+@app.route("/api/cassaforte/apri-biometria", methods=["POST"])
+def cassaforte_apri_biometria():
+    """Apre la cassaforte con la chiave biometrica, senza password.
+
+    La biometria non sostituisce la password: sblocca una **chiave** che il
+    dispositivo custodisce (nel Portachiavi, dietro il sensore). Qui la chiave
+    apre la scatola biometrica, che contiene la password della cassaforte; e'
+    quella password a decifrare le voci. Senza la chiave giusta non si apre
+    niente, e la password da sola non basta ad aprire questa scatola.
+    """
+    db = get_db()
+    slug = casa_attiva()
+    if _cassaforte_aperta(slug):
+        return jsonify({"ok": True, **_cassaforte_stato(db)})
+    if not _cassaforte_esiste(db):
+        return bad_request("La cassaforte non è stata creata", 404)
+    data = request.get_json(force=True) or {}
+    chiave = (data.get("chiave") or "").strip()
+    try:
+        password = _cassaforte_password_da_bio(chiave)
+    except cassaforte.CassaforteErrore:
+        # chiave sbagliata o biometria non attiva: stesso messaggio, per non
+        # dire a chi prova se la scatola biometrica esiste
+        return bad_request("Biometria non riconosciuta", 401)
+    _cassaforte_apri(slug, password)
+    _cassaforte_importa_vecchie()
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
+@app.route("/api/cassaforte/biometria", methods=["PUT"])
+def cassaforte_biometria_attiva():
+    """Attiva la biometria: custodisce la password dietro la chiave del sensore.
+
+    Si fa a cassaforte **aperta**, perche' serve la password da custodire. La
+    chiave la genera il client (e' il dispositivo a custodirla, non il server):
+    qui si cifra la password con quella chiave e si tiene la scatola.
+    """
+    db = get_db()
+    slug = casa_attiva()
+    if not _cassaforte_esiste(db):
+        return bad_request("La cassaforte non è stata creata", 404)
+    if not _cassaforte_aperta(slug):
+        return bad_request("Apri la cassaforte prima di attivare la biometria", 409)
+    data = request.get_json(force=True) or {}
+    chiave = (data.get("chiave") or "").strip()
+    if len(chiave) < 16:
+        return bad_request("Chiave biometrica non valida")
+    password = _cassaforte_pw_aperta()
+    db.execute("UPDATE cassaforte SET bio = ? WHERE id = 1",
+               (cassaforte.cifra(password.encode("utf-8"), chiave),))
+    db.commit()
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
+@app.route("/api/cassaforte/biometria", methods=["DELETE"])
+def cassaforte_biometria_togli():
+    """Disattiva la biometria: la cassaforte torna ad aprirsi solo con la password.
+
+    Non serve essere aperti: chiudere un accesso si deve poter fare sempre.
+    """
+    db = get_db()
+    if not _cassaforte_esiste(db):
+        return bad_request("La cassaforte non è stata creata", 404)
+    db.execute("UPDATE cassaforte SET bio = '' WHERE id = 1")
+    db.commit()
+    return jsonify({"ok": True, **_cassaforte_stato(db)})
+
+
 @app.route("/api/cassaforte/chiudi", methods=["POST"])
 def cassaforte_chiudi():
     _cassaforte_dimentica(casa_attiva())
@@ -4173,8 +4278,17 @@ def cassaforte_cambia_password():
     voci = _cassaforte_voci_di(slug, vecchia)
     _cassaforte_salva(slug, nuova, voci)
     houses.cassaforte_registra(slug, impronta=cassaforte.impronta(nuova))
+    # La scatola biometrica custodiva la **vecchia** password: con la nuova non
+    # aprirebbe piu' niente. La si toglie invece di lasciarla rotta, e si dice
+    # all'utente di riattivare la biometria (cosa che richiede la nuova password,
+    # e quindi non si puo' fare da qui senza la chiave del dispositivo).
+    bio_caduta = _cassaforte_bio_attiva(db)
+    if bio_caduta:
+        db.execute("UPDATE cassaforte SET bio = '' WHERE id = 1")
+        db.commit()
     _cassaforte_apri(slug, nuova)
-    return jsonify({"ok": True, **_cassaforte_stato(db)})
+    return jsonify({"ok": True, "biometria_caduta": bio_caduta,
+                    **_cassaforte_stato(db)})
 
 
 @app.route("/api/cassaforte/frase", methods=["PUT"])
