@@ -155,7 +155,11 @@ C'e' un comando solo per questo, `./avvia.sh pubblica`: fa il push e confronta c
 2. il **token** dall'ambiente (`GITHUB_TOKEN`, o `GH_TOKEN`), come alternativa.
    Non entra nella URL ne' negli argomenti: passa da un `GIT_ASKPASS` temporaneo,
    che si cancella subito. Un errore di push puo' stampare la URL, e in un log di
-   conversazione il token resterebbe.
+   conversazione il token resterebbe. **Come per `AZURE_SPEECH_KEY`, il segreto
+   si inietta solo se il suo nome compare nel testo del comando**: `./avvia.sh
+   pubblica` da solo non basta, e `pubblica` dice "GitHub non ha accettato le
+   credenziali" mentre il token c'e' — e' quello che e' successo. Si scrive
+   `GITHUB_TOKEN="$GITHUB_TOKEN" ./avvia.sh pubblica`.
 
 **Attenzione al token "presente ma vuoto".** In questo ambiente `GITHUB_TOKEN` e'
 sempre *definita* (il sistema dei segreti la esporta quando la si nomina), ma se
