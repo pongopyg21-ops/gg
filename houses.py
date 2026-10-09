@@ -157,6 +157,19 @@ def init_registro(percorso=None):
                 impronta   TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            -- Il legame fra una casa e il dispositivo che l'ha creata: la chiave
+            -- che quel dispositivo custodisce dietro il sensore. Serve a
+            -- **indirizzare** chi arriva senza scrivere nome e password: il
+            -- sensore riconosce il dispositivo, la chiave trova la casa, e il
+            -- server apre la sessione giusta. La chiave e' un permesso, non un
+            -- segreto: da sola non basta, la custodisce il sensore del
+            -- dispositivo (vedi `case_biometria` e `/api/login-biometria`).
+            CREATE TABLE IF NOT EXISTS case_biometria (
+                slug    TEXT NOT NULL,
+                chiave  TEXT NOT NULL,
+                creato  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (slug, chiave)
+            );
         """)
         # `CREATE TABLE IF NOT EXISTS` non tocca una tabella che esiste gia':
         # un registro creato prima dell'impronta non la riceve da solo, e ogni
@@ -339,6 +352,65 @@ def autentica(slug, password, percorso=None):
     return verifica_password(password or "", riga["password"])
 
 
+# ------------------------------------------------- biometria della casa
+# La chiave del dispositivo che ha creato una casa. E' quello che permette di
+# **indirizzare** chi arriva: il sensore riconosce il dispositivo, la chiave
+# trova la casa, e non serve scrivere nome e password. E' un permesso, non un
+# segreto: se il sensore non c'e', non si apre — non c'e' una password di
+# riserva, perche' l'utente l'ha tolta apposta.
+
+def biometria_aggiungi(slug, chiave, percorso=None):
+    """Lega una chiave-dispositivo alla casa. Idempotente."""
+    chiave = (chiave or "").strip()
+    if not chiave:
+        raise ValueError("Serve la chiave del dispositivo")
+    if not esiste(slug, percorso):
+        raise ValueError(f"La casa \"{slug}\" non esiste")
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        db.execute("INSERT OR IGNORE INTO case_biometria (slug, chiave) VALUES (?, ?)",
+                   (slug, chiave))
+        db.commit()
+
+
+def biometria_casa(chiave, percorso=None):
+    """Lo slug della casa legata a questa chiave-dispositivo, o None.
+
+    Una chiave puo' essere legata a piu' case: si torna quella creata per prima
+    (l'ordine e' stabile), cosi' l'accesso senza nome e' prevedibile.
+    """
+    chiave = (chiave or "").strip()
+    if not chiave:
+        return None
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        riga = db.execute(
+            "SELECT slug FROM case_biometria WHERE chiave = ? ORDER BY creato, slug",
+            (chiave,)).fetchone()
+    return riga["slug"] if riga else None
+
+
+def biometria_chiavi(slug, percorso=None):
+    """Le chiavi-dispositivo legate alla casa (per il Profilo: mostrarle o
+    toglierle)."""
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        return [r["chiave"] for r in db.execute(
+            "SELECT chiave FROM case_biometria WHERE slug = ? ORDER BY creato", (slug,))]
+
+
+def biometria_togli(slug, chiave=None, percorso=None):
+    """Slega una chiave (o tutte quelle della casa) dalla casa."""
+    init_registro(percorso)
+    with closing(_connect_registro(percorso)) as db:
+        if chiave:
+            db.execute("DELETE FROM case_biometria WHERE slug = ? AND chiave = ?",
+                       (slug, (chiave or "").strip()))
+        else:
+            db.execute("DELETE FROM case_biometria WHERE slug = ?", (slug,))
+        db.commit()
+
+
 # ------------------------------------------------- tentativi di accesso
 # Le password sono protette bene (PBKDF2 con sale), ma nulla impediva di
 # provarne quante se ne vuole: il server ascolta su `0.0.0.0` per farsi
@@ -482,4 +554,5 @@ def elimina(slug, percorso=None):
     with closing(_connect_registro(percorso)) as db:
         db.execute("DELETE FROM houses WHERE slug = ?", (slug,))
         db.execute("DELETE FROM cassaforte_registro WHERE slug = ?", (slug,))
+        db.execute("DELETE FROM case_biometria WHERE slug = ?", (slug,))
         db.commit()

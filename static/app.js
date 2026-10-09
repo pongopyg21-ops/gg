@@ -203,9 +203,10 @@ function apreSezioneDella(nome) {
 $$('.home-card').forEach((card) => card.addEventListener('click', () => apriSezione(card.dataset.section)));
 $('#to-home').addEventListener('click', tornaAlleSezioni);
 $('#home-fab').addEventListener('click', tornaAlleSezioni);
-// Stesso pannello del microfono flottante, ma raggiungibile dalla home: qui il
-// pulsante flottante e' nascosto, perche' non c'e' ancora una sezione aperta.
-$('#home-mic').addEventListener('click', apriVoce);
+// Stesso push-to-talk del microfono flottante, ma raggiungibile dalla home: qui
+// il pulsante flottante e' nascosto, perche' non c'e' ancora una sezione aperta.
+// Si tiene premuto e si parla, si rilascia e il comando parte.
+collegaPushToTalk($('#home-mic'));
 
 /* ---------- tabs ---------- */
 $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => {
@@ -3803,7 +3804,58 @@ async function renderProfile() {
   favoritesPicker(favBox, recipesCache, profile.favorite_ids || [], (ids) => saveFavorites(ids));
 
   await mostraCopie();
+  await mostraBiometriaCasa();
 }
+
+/* Il legame col sensore di questo dispositivo: si mostra lo stato e si collega o
+   scollega. Serve al telefono che entra col nome e la password perche', dalla
+   volta dopo, basti il sensore. */
+async function mostraBiometriaCasa() {
+  const box = $('#pf-bio-stato');
+  if (!box) return;
+  const chiave = bioChiave();
+  if (!bioDisponibile()) {
+    box.textContent = 'Questo dispositivo non ha un sensore: si entra col nome e la password.';
+    $('#pf-bio-collega').disabled = true;
+    $('#pf-bio-togli').disabled = true;
+    return;
+  }
+  $('#pf-bio-collega').disabled = false;
+  let collegato = false;
+  if (chiave) {
+    try { collegato = (await api(`/api/biometria/casa?chiave=${encodeURIComponent(chiave)}`)).collegato; }
+    catch { /* lo stato e' un'informazione in piu' */ }
+  }
+  box.textContent = collegato
+    ? 'Il sensore di questo dispositivo è collegato a questa casa.'
+    : 'Il sensore di questo dispositivo non è ancora collegato.';
+  $('#pf-bio-togli').disabled = !collegato;
+}
+
+$('#pf-bio-collega').addEventListener('click', async () => {
+  if (!bioDisponibile()) { toast('Questo dispositivo non ha un sensore'); return; }
+  try {
+    await bioVerifica();
+    let chiave = bioChiave();
+    if (!chiave) { chiave = bioNuovaChiave(); localStorage.setItem(BIO_STORE, chiave); }
+    await api('/api/biometria/casa', { method: 'POST', body: { chiave } });
+    toast('Sensore collegato: la prossima volta entri senza password');
+    await mostraBiometriaCasa();
+  } catch (err) {
+    toast(err.message || 'Non riconosciuto');
+  }
+});
+
+$('#pf-bio-togli').addEventListener('click', async () => {
+  const chiave = bioChiave();
+  if (!chiave) return;
+  try {
+    await api('/api/biometria/casa', { method: 'DELETE', body: { chiave } });
+    localStorage.removeItem(BIO_STORE);
+    toast('Sensore scollegato da questa casa');
+    await mostraBiometriaCasa();
+  } catch (err) { toast(err.message); }
+});
 
 $('#pf-allergens').addEventListener('click', async (e) => {
   const key = e.target.dataset.allergen;
@@ -4763,14 +4815,17 @@ function verdettoMicrofono({ contesto, haApi, permesso, bloccato }) {
   return { esito: 'ok', testo: 'Microfono pronto.' };
 }
 
-/** Push-to-talk sul telefono, interruttore sul computer. Pura.
+/** Push-to-talk su ogni dispositivo. Pura.
 
-    Su un telefono non c'e' il passaggio "sospeso" di un puntatore: un tocco e'
-    un inizio e una fine insieme, e il toggle a due tocchi (primo apre, secondo
-    chiude) si sbaglia — chi tocca una volta aspetta, chi tocca due crede di aver
-    annullato. Quindi col dito si tiene premuto, e si invia al rilascio. */
-function modoParla(touch) {
-  return touch ? 'push' : 'toggle';
+    Su un telefono un tocco e' un inizio e una fine insieme, e il toggle a due
+    tocchi (primo apre, secondo chiude) si sbaglia — chi tocca una volta aspetta,
+    chi tocca due crede di aver annullato. Sul computer il toggle avrebbe il
+    secondo tocco per inviare, che a mani occupate non si da'. Quindi il gesto e'
+    uno solo ovunque: si tiene premuto, e si invia al rilascio. La parola di
+    sveglia ("Hey GG") resta un'opzione da accendere, non il comportamento
+    predefinito, perche' e' la parte piu' fragile del riconoscimento. */
+function modoParla() {
+  return 'push';
 }
 
 /** Rilascio del dito, con tolleranza. Pura.
@@ -4878,11 +4933,6 @@ let voce = { rec: null, attivo: false, ultimo: '', finale: '', registratore: nul
 let ascoltoContinuo = { continuo: false, sospeso: false, ciclo: 0, inAttesa: 0,
                         apertaIl: 0, avvioAuto: false, attesaGesto: false,
                         togliGesto: null, battito: 0, sorveglia: null };
-// Vero solo per l'accesso appena fatto: distingue "sono appena entrato" (c'e' il
-// gesto del click) da "ho ricaricato la pagina" (gesto assente). Senza questa
-// distinzione l'ascolto non partirebbe all'accesso, che e' il momento in cui
-// l'utente si aspetta di trovarlo acceso.
-let appenaEntrato = false;
 // Una casa appena creata: `init()` apre il menù di benvenuto al posto delle
 // domande del profilo, che sono gia' state chieste durante la creazione.
 let casaAppenaCreata = false;
@@ -5028,26 +5078,56 @@ async function eseguiComando(testo, { parla: parlaEsito = true } = {}) {
   }
 }
 
-/** Avvia l'ascolto: prima dal server, e solo se non c'e' dal browser.
+/** Sotto questa soglia un rilascio non e' una frase ma un tocco: apre il
+    pannello (per scrivere o per la sveglia) invece di mandare l'audio. */
+const PTT_TOCCO_MS = 300;
 
-    Il riconoscimento del browser manda l'audio ai server di Google, e in molte
-    case quel traffico e' bloccato (firewall, antivirus, VPN): Chrome risponde
-    "network" e il microfono resta muto senza rimedio. Il server invece esce,
-    quindi si registra qui e si fa trascrivere la'. Il browser si usa solo come
-    ripiego, quando il server non ha la chiave. */
-function ascolta() {
-  // già in ascolto (dal server o dal browser): il clic ferma e fa partire la frase
-  if (voce.attivo) { fermaAscolto(); return; }
-  avviaAscoltoSingolo();
-}
+/** Collega un pulsante al push-to-talk: si preme, si parla, si rilascia e la
+    frase parte. `pointerup`/`pointercancel` chiudono, e `pointerleave` con
+    tolleranza non perde la frase se il puntatore esce un po' dal pulsante.
 
-/** Avvia un ascolto singolo (non continuo). `tenuto` e' il push-to-talk: il
-    microfono resta aperto finche' il dito non si alza. */
-function avviaAscoltoSingolo({ tenuto = false } = {}) {
-  voce.provaMicrofono = false;
-  if (voce.senzaMicrofono) { mostraSenzaMicrofono(); return; }
-  if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto })) return;
-  ascoltaDalBrowser();
+    Un tocco **breve** (senza tenere) non e' un comando: se il pulsante ha un
+    `tocco` lo chiama, cosi' chi voleva solo aprire il pannello non resta con un
+    "non ho sentito nulla". */
+function collegaPushToTalk(btn, { tocco } = {}) {
+  if (!btn) return;
+  let giuIl = 0;
+  btn.addEventListener('pointerdown', (e) => {
+    if (voce.attivo || ascoltoContinuo.continuo) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;   // solo tasto sinistro
+    e.preventDefault();
+    giuIl = Date.now();
+    iniziaParla(e);
+  });
+  const su = () => {
+    const breve = giuIl > 0 && Date.now() - giuIl < PTT_TOCCO_MS;
+    giuIl = 0;
+    if (!voce.pushAttivo) {
+      if (breve && tocco && !voce.attivo && !ascoltoContinuo.continuo) tocco();
+      return;
+    }
+    if (breve && tocco) {
+      // tocco, non una frase: si annulla la registrazione e si apre il pannello
+      voce.pushAttivo = false;
+      try { voce.registratore && voce.registratore.annulla && voce.registratore.annulla(); }
+      catch (_e) { /* gia' chiuso */ }
+      aggiornaParla();
+      tocco();
+      return;
+    }
+    finisciParla();
+  };
+  btn.addEventListener('pointerup', su);
+  btn.addEventListener('pointercancel', su);
+  btn.addEventListener('pointerleave', (e) => {
+    // il puntatore che scorre un po' fuori non deve perdere la frase: si chiude
+    // solo se e' uscito **molto** dal pulsante (la cattura lo mantiene dentro)
+    if (!voce.pushAttivo) return;
+    const r = e.target.getBoundingClientRect();
+    const dentro = e.clientX >= r.left - 40 && e.clientX <= r.right + 40
+      && e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40;
+    if (guardaSeRilascia({ pushAttivo: true, dentro, tipo: 'leave' })) finisciParla();
+  });
 }
 
 /** Il push-to-talk: il dito si appoggia e si parla. */
@@ -5079,19 +5159,12 @@ function aggiornaParla() {
   const btn = $('#voice-parla');
   const hint = $('#voice-parla-hint');
   if (!btn) return;
-  const dito = typeof window !== 'undefined' && window.matchMedia
-    && window.matchMedia('(hover: none)').matches;
   if (voce.attivo && voce.pushAttivo) {
     btn.textContent = '🔴 Parla… (rilascia per inviare)';
     if (hint) hint.textContent = 'Rilascia quando hai finito.';
-  } else if (voce.attivo) {
-    btn.textContent = '⏹ Ferma';
-    if (hint) hint.textContent = 'Parla, poi premi di nuovo per inviare.';
   } else {
-    btn.textContent = modoParla(dito) === 'push' ? '🎙 Tieni premuto e parla' : '🎙 Parla';
-    if (hint) hint.textContent = modoParla(dito) === 'push'
-      ? 'Tieni premuto il pulsante mentre detti il comando.'
-      : 'Premi per parlare, premi di nuovo per inviare.';
+    btn.textContent = '🎙 Tieni premuto e parla';
+    if (hint) hint.textContent = 'Tieni premuto il pulsante mentre detti il comando.';
   }
 }
 
@@ -5610,8 +5683,12 @@ function apriVoce() {
       + 'indirizzo il browser non concede il microfono.';
     return;
   }
-  $('#voice-heard').textContent = "Parla ora: ad esempio «aggiungi due chili di farina in dispensa».";
-  ascolta();
+  // Il comando a voce e' push-to-talk: il pannello **non** apre il microfono da
+  // solo (sarebbe un ascolto senza rilascio, che non finisce mai). Dice solo
+  // cosa fare.
+  voceStato('Tieni premuto «🎙 Tieni premuto e parla» mentre detti il comando.');
+  $('#voice-heard').textContent = 'Tieni premuto il pulsante qui sotto e parla: '
+    + 'il comando parte quando rilasci.';
 }
 
 /* ---------- ascolto continuo: la parola di sveglia ----------
@@ -5702,24 +5779,6 @@ function deveAccendereDaSolo(preferenza, permesso, saAscoltare) {
   return preferenza === '1' && permesso === 'granted' && !!saAscoltare;
 }
 
-/** La regola dell'avvio **all'accesso**, dove il gesto c'e' gia'.
-
-    Chi ha appena premuto "Entra" ha gia' dato al browser il gesto che serve: il
-    microfono si puo' chiedere e l'audio e' sbloccato. Quindi qui l'ascolto parte
-    **appena si entra**, senza aspettare che qualcuno lo accenda a mano: e'
-    proprio il momento in cui l'utente se lo aspetta acceso.
-
-    Si rispetta solo uno spegnimento **esplicito** (`'0'`, dal pulsante nel
-    pannello): chi l'ha spento non se lo ritrova acceso. Un valore assente e' una
-    prima volta, e all'accesso la prima volta parte — l'accesso e' un gesto
-    dell'utente, non un avvio silenzioso.
-
-    Senza la chiave (`saAscoltare` falso) non si tenta: la trascrizione la
-    farebbe il browser, e li' l'avvio da solo non e' affidabile. */
-function deveAccendereDopoAccesso(preferenza, saAscoltare) {
-  return preferenza !== '0' && !!saAscoltare;
-}
-
 async function accendiAscoltoContinuoDaSolo() {
   if (ascoltoContinuo.continuo || ascoltoContinuo.avvioAuto) return;
   let permesso = '';
@@ -5731,21 +5790,6 @@ async function accendiAscoltoContinuoDaSolo() {
   if (!deveAccendereDaSolo(localStorage.getItem('ascoltoContinuo'),
                            permesso, voceCloud.ascolto)) return;
   ascoltoContinuo.avvioAuto = true;   // si prova una volta sola, non a ogni ciclo
-  avviaAscoltoContinuo();
-  voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
-}
-
-/** L'avvio subito dopo l'accesso: il gesto del click su "Entra" e' ancora
-    valido, quindi il microfono si puo' aprire davvero.
-
-    L'accensione si ricorda (`'1'`): al prossimo ricaricamento non c'e' nessun
-    gesto, e senza la memoria l'ascolto non ripartirebbe. */
-function accendiAscoltoDopoAccesso() {
-  if (ascoltoContinuo.continuo || ascoltoContinuo.avvioAuto) return;
-  if (!deveAccendereDopoAccesso(localStorage.getItem('ascoltoContinuo'),
-                                voceCloud.ascolto)) return;
-  localStorage.setItem('ascoltoContinuo', '1');
-  ascoltoContinuo.avvioAuto = true;
   avviaAscoltoContinuo();
   voceStato('Ascolto continuo acceso: di\' «Hey GG…»', 'ok');
 }
@@ -6288,7 +6332,10 @@ function chiudiVoce() {
   $('#voice').classList.add('hidden');
 }
 
-$('#mic').addEventListener('click', apriVoce);
+// Il microfono flottante e' push-to-talk: si tiene premuto e si parla. Un tocco
+// solo (senza tenere) non e' un comando: apre il pannello, per chi vuole scrivere
+// o accendere la sveglia.
+collegaPushToTalk($('#mic'), { tocco: apriVoce });
 $('#voice-sempre').addEventListener('click', () => {
   if (ascoltoContinuo.continuo) {
     // spento dall'utente: la scelta si ricorda, cosi' al prossimo avvio non se
@@ -6301,30 +6348,11 @@ $('#voice-sempre').addEventListener('click', () => {
   }
 });
 $('#voice-close').addEventListener('click', chiudiVoce);
-$('#voice-retry').addEventListener('click', ascolta);
+// «Ripeti» e' push-to-talk come gli altri: si tiene premuto e si parla di nuovo.
+collegaPushToTalk($('#voice-retry'));
 
-/* Push-to-talk: sul telefono si tiene premuto (pointerdown) e si invia al
-   rilascio (pointerup). Col mouse resta un interruttore: un clic apre, un altro
-   chiude. `setPointerCapture` fa arrivare il rilascio anche col dito fuori dal
-   pulsante. */
-$('#voice-parla').addEventListener('pointerdown', (e) => {
-  const dito = modoParla(window.matchMedia && window.matchMedia('(hover: none)').matches) === 'push';
-  if (dito) { e.preventDefault(); iniziaParla(e); return; }
-  // mouse: interruttore
-  if (voce.attivo) { fermaAscolto(); return; }
-  avviaAscoltoSingolo();
-});
-$('#voice-parla').addEventListener('pointerup', () => { if (voce.pushAttivo) finisciParla(); });
-$('#voice-parla').addEventListener('pointercancel', () => { if (voce.pushAttivo) finisciParla(); });
-$('#voice-parla').addEventListener('pointerleave', (e) => {
-  // il dito che scorre un po' fuori non deve perdere la frase: si chiude solo se
-  // il puntatore e' uscito **molto** dal pulsante (la cattura lo mantiene dentro)
-  if (!voce.pushAttivo) return;
-  const r = e.target.getBoundingClientRect();
-  const dentro = e.clientX >= r.left - 40 && e.clientX <= r.right + 40
-    && e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40;
-  if (guardaSeRilascia({ pushAttivo: true, dentro, tipo: 'leave' })) finisciParla();
-});
+// Push-to-talk: si tiene premuto e si parla, si rilascia e la frase parte.
+collegaPushToTalk($('#voice-parla'));
 $('#voice-prova').addEventListener('click', provaMicrofono);
 
 $('#voice-registro-pulisci').addEventListener('click', () => {
@@ -6379,10 +6407,21 @@ async function avviaAccesso() {
   await caricaCaseEsistenti();
   $('#accesso-form').addEventListener('submit', entra);
   $('#nuova-form').addEventListener('submit', creaCasa);
+  // Il sensore indirizza alla casa del dispositivo: c'e' se il dispositivo ha
+  // un sensore **e** custodisce gia' una chiave (cioe' ha creato una casa).
+  // Senza chiave non c'e' niente da riconoscere, e si entra con nome e password.
+  const puoBio = bioDisponibile() && !!bioChiave();
+  if (puoBio) $('#acc-bio').classList.remove('hidden');
+  $('#acc-bio').addEventListener('click', () => entraConSensore());
   $('#acc-crea').addEventListener('click', () => {
     $('#accesso-form').classList.add('hidden');
     $('#acc-crea').classList.add('hidden');
     $('#nuova-form').classList.remove('hidden');
+    // dirlo prima di creare: il dispositivo senza sensore entrera' col nome e
+    // la password, e saperlo evita di aspettarsi un accesso che non arrivera'
+    mostraNota('#new-bio-nota', bioDisponibile()
+      ? 'La casa sarà collegata al sensore di questo dispositivo.'
+      : 'Questo dispositivo non ha un sensore: entrerai con nome e password.');
     $('#new-nome').focus();
   });
   $('#new-annulla').addEventListener('click', () => {
@@ -6392,6 +6431,44 @@ async function avviaAccesso() {
     nascondiErrore('#new-errore');
   });
   $('#acc-nome').focus();
+  // All'avvio si prova **direttamente** il sensore, senza aspettare un click:
+  // e' l'utente a chiederlo. Se non riesce (nessuna casa per questo dispositivo,
+  // o il browser vuole un gesto) non si mostra nessun errore: resta il pulsante.
+  if (puoBio) entraConSensore({ auto: true });
+}
+
+function mostraNota(sel, messaggio) {
+  const el = $(sel);
+  if (!el) return;
+  el.textContent = messaggio;
+  el.hidden = !messaggio;
+}
+
+/* L'accesso col sensore: indirizza alla casa legata a questo dispositivo. Non
+   sostituisce la password — la chiave del dispositivo **e'** il permesso che il
+   sensore custodisce. Se il dispositivo non conosce case, si ripiega sull'accesso
+   normale. */
+async function entraConSensore(opts = {}) {
+  if (!bioDisponibile()) {
+    if (!opts.auto) toast('Questo dispositivo non ha un sensore');
+    return;
+  }
+  const chiave = bioChiave();
+  if (!chiave) {
+    if (!opts.auto) toast('Nessuna casa riconosciuta su questo dispositivo');
+    return;
+  }
+  nascondiErrore('#acc-errore');
+  try {
+    await bioVerifica();
+    await api('/api/login-biometria', { method: 'POST', body: { chiave } });
+    sessionStorage.removeItem('maggiordomo-errore');
+    await avviaApp();
+  } catch (e) {
+    // in automatico il guasto non si annuncia: il sensore potrebbe non essere
+    // ancora pronto, e un errore all'avvio confonderebbe. Resta il pulsante.
+    if (!opts.auto) mostraErrore('#acc-errore', e.message || 'Non riconosciuto');
+  }
 }
 
 function mostraAccesso() {
@@ -6461,10 +6538,6 @@ async function entra(evento) {
       },
     });
     sessionStorage.removeItem('maggiordomo-errore'); // la sessione e' nuova
-    // il click su "Entra" e' un gesto dell'utente: vale come il tocco che il
-    // browser pretende per dare il microfono, e permette all'ascolto di partire
-    // subito, senza un secondo tocco
-    appenaEntrato = true;
     await avviaApp();
   } catch (e) {
     mostraErrore('#acc-errore', e.message || 'Nome o password non corretti');
@@ -6488,12 +6561,28 @@ async function creaCasa(evento) {
   const bottone = $('#new-crea');
   bottone.disabled = true;
   try {
+    // Chiedi il sensore **prima** di creare: la chiave del dispositivo va al
+    // server, che la lega alla casa, cosi' la volta dopo il solo sensore
+    // indirizza qui. Se il dispositivo non ha un sensore si crea lo stesso e si
+    // entrera' col nome e la password.
+    let chiave = '';
+    if (bioDisponibile()) {
+      try {
+        await bioVerifica();
+        chiave = bioChiave();
+        if (!chiave) { chiave = bioNuovaChiave(); localStorage.setItem(BIO_STORE, chiave); }
+      } catch (_e) {
+        // sensore rifiutato: si crea comunque, senza legame biometrico
+        chiave = '';
+      }
+    }
     await api('/api/houses', {
       method: 'POST',
       body: {
         nome: $('#new-nome').value,
         password: $('#new-password').value,
         playlist: $('#new-playlist').value.trim(),
+        chiave,
       },
     });
     // La casa e' nuova: il menù di benvenuto la accoglie. `init()` lo apre da
@@ -6560,11 +6649,10 @@ async function init() {
   // la voce neurale si annuncia da sola se il server ce l'ha: è una richiesta
   // sola all'avvio, e serve a sapere se mostrare il blocco nel pannello
   caricaVoceCloud().then(() => {
-    // subito dopo l'accesso il gesto del click vale ancora: l'ascolto parte li',
-    // senza chiedere un secondo tocco. Al ricaricamento il gesto non c'e', e
-    // vale la regola piu' stretta (permesso gia' concesso)
-    if (appenaEntrato) { appenaEntrato = false; accendiAscoltoDopoAccesso(); }
-    else accendiAscoltoContinuoDaSolo();
+    // La sveglia ("Hey GG") non parte piu' da sola: il comando predefinito e' il
+    // push-to-talk. Riprende solo se l'utente l'aveva accesa **di proposito**
+    // (`'1'`) e il permesso del microfono c'e' gia'.
+    accendiAscoltoContinuoDaSolo();
   });
   await renderPlan();
   // il timer delle pulizie continua a contare anche dopo un ricaricamento: se

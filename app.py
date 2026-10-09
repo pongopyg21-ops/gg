@@ -498,7 +498,8 @@ def one(cur):
 # file statici e l'accesso. Tutto il resto richiede una sessione. La difesa sta
 # qui, in un punto solo, invece che su ogni rotta: dimenticarsene una
 # significherebbe esporre i dati di una casa, e sono cinquanta.
-ROTTE_PUBBLICHE = {"/", "/sw.js", "/api/houses", "/api/login", "/api/logout", "/api/session"}
+ROTTE_PUBBLICHE = {"/", "/sw.js", "/api/houses", "/api/login", "/api/login-biometria",
+                   "/api/logout", "/api/session"}
 
 
 @app.before_request
@@ -1118,6 +1119,63 @@ def api_login():
     return jsonify({"house": casa["slug"], "nome": casa["nome"]})
 
 
+@app.route("/api/login-biometria", methods=["POST"])
+def api_login_biometria():
+    """Indirizza alla casa del dispositivo, senza nome ne' password.
+
+    Il sensore ha riconosciuto chi e' davanti allo schermo; la chiave del
+    dispositivo (`chiave`) e' quella che il client custodisce dietro il sensore
+    e che era stata legata alla casa quando e' stata creata. Se la chiave non e'
+    legata a nessuna casa si risponde 404: non e' un guasto, e' "questo
+    dispositivo non conosce ancora nessuna casa", e il client ripiega sul nome e
+    sulla password.
+
+    La chiave e' un **permesso**, non un segreto: da sola non basta (la
+    custodisce il sensore), e non c'e' una password di riserva.
+    """
+    data = request.get_json(force=True) or {}
+    chiave = (data.get("chiave") or "").strip()
+    if not chiave:
+        return bad_request("Serve la chiave del dispositivo")
+    slug = houses.biometria_casa(chiave)
+    if not slug or not houses.nome_di(slug):
+        # nessuna casa (o casa eliminata): il client mostrera' l'accesso normale
+        return jsonify({"error": "Nessuna casa riconosciuta per questo dispositivo",
+                        "biometria": False}), 404
+    session.clear()
+    session["casa"] = slug
+    session.permanent = True
+    return jsonify({"house": slug, "nome": houses.nome_di(slug), "biometria": True})
+
+
+@app.route("/api/biometria/casa", methods=["GET"])
+def biometria_casa_stato():
+    """Questo dispositivo e' collegato alla casa attiva? Lo mostra il Profilo."""
+    slug = casa_attiva()
+    chiave = (request.args.get("chiave") or "").strip()
+    return jsonify({"collegato": bool(chiave) and chiave in houses.biometria_chiavi(slug)})
+
+
+@app.route("/api/biometria/casa", methods=["POST", "DELETE"])
+def biometria_casa_modifica():
+    """Collega o scollega il sensore di questo dispositivo alla casa attiva.
+
+    La chiave arriva dal client (la genera e la custodisce il sensore): qui si
+    salva o si toglie il legame. Serve a un dispositivo **nuovo** (un telefono
+    che entra col nome e la password) perche' la volta dopo il sensore basti.
+    """
+    slug = casa_attiva()
+    data = request.get_json(force=True) or {}
+    chiave = (data.get("chiave") or "").strip()
+    if not chiave:
+        return bad_request("Serve la chiave del dispositivo")
+    if request.method == "DELETE":
+        houses.biometria_togli(slug, chiave)
+        return jsonify({"collegato": False})
+    houses.biometria_aggiungi(slug, chiave)
+    return jsonify({"collegato": True})
+
+
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
     session.clear()
@@ -1140,10 +1198,17 @@ def api_house_create():
             playlist = tv.normalizza_playlist(playlist)
         except ValueError as err:
             return bad_request(str(err))
+    chiave = (data.get("chiave") or "").strip()
     try:
         slug = houses.crea(data.get("nome"), data.get("password"))
     except ValueError as err:
         return bad_request(str(err))
+    # Il dispositivo che crea la casa vi si lega col sensore: cosi' la volta
+    # dopo il solo sensore basta a indirizzarlo qui, senza nome ne' password.
+    # Se la chiave manca (creazione da un client senza sensore) la casa nasce lo
+    # stesso e si entra col nome e la password: non e' un errore.
+    if chiave:
+        houses.biometria_aggiungi(slug, chiave)
     init_db(houses.db_path(slug), con_ricettario=True)
     if playlist:
         with closing(sqlite3.connect(houses.db_path(slug))) as db:
@@ -1152,7 +1217,8 @@ def api_house_create():
     session.clear()
     session["casa"] = slug
     session.permanent = True
-    return jsonify({"house": slug, "nome": houses.nome_di(slug), "playlist": playlist}), 201
+    return jsonify({"house": slug, "nome": houses.nome_di(slug), "playlist": playlist,
+                    "biometria": bool(chiave)}), 201
 
 
 def bad_request(msg, code=400):

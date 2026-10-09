@@ -80,7 +80,6 @@ __all__ = [
     "_con_segreto_llm",
     "_costanti_snake",
     "_decisione_js",
-    "_deve_accendere_accesso_js",
     "_deve_accendere_js",
     "_esegui_node",
     "_estrai_funzione_js",
@@ -530,19 +529,6 @@ def _cenno_js(client, casi):
     con un microfono e una voce attorno."""
     js = client.get("/static/app.js").get_data(as_text=True)
     inizio = js.index("function cennoDiRicevuto")
-    fine = js.index("\n}\n", inizio) + 3
-    blocco = js[inizio:fine]
-    prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"
-    import subprocess
-    esito = subprocess.run(["node", "-e", prova], capture_output=True, text=True)
-    assert esito.returncode == 0, esito.stderr
-    return json.loads(esito.stdout)
-
-def _deve_accendere_accesso_js(client, casi):
-    """Esegue `deveAccendereDopoAccesso` sul codice vero. Stessa idea
-    dell'altra: la regola dell'avvio all'accesso si prova come regola."""
-    js = client.get("/static/app.js").get_data(as_text=True)
-    inizio = js.index("function deveAccendereDopoAccesso")
     fine = js.index("\n}\n", inizio) + 3
     blocco = js[inizio:fine]
     prova = blocco + "\nconsole.log(JSON.stringify(" + casi + "));"

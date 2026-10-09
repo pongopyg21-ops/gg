@@ -365,6 +365,15 @@ body {
   background: var(--errore-sfondo); border: 1px solid var(--errore-bordo); border-radius: 8px;
   color: var(--errore-testo); font-size: 13px; line-height: 1.4;
 }
+.accesso-bio {
+  display: block; width: 100%; margin-top: 10px; padding: 12px;
+  background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px;
+  color: var(--accent-deep); font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.accesso-bio:hover { background: var(--accent); color: #fff; }
+.accesso-nota {
+  margin: 10px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.4;
+}
 .accesso-link {
   display: block; width: 100%; margin-top: 18px; padding: 8px;
   background: none; border: none; color: var(--accent);

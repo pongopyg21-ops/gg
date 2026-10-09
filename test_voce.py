@@ -979,8 +979,9 @@ def test_il_microfono_prova_prima_il_server(client):
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "/api/voce/ascolta" in js
     assert "ascoltaSulServer" in js and "ascoltaDalBrowser" in js
-    # il dispatcher sceglie il server quando è disponibile
-    assert "if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto })) return;" in js
+    # il dispatcher sceglie il server quando è disponibile; il push-to-talk e'
+    # l'unica modalita', quindi `tenuto` e' sempre vero
+    assert "if (voceCloud.ascolto && ascoltaSulServer(esitoAscolto, { tenuto: true })) return;" in js
     # e il 503 non è un errore da mostrare: si ripiega sul browser
     assert "if (d && d.ripiega) { ascoltaDalBrowser(); return; }" in js
 
@@ -1098,9 +1099,10 @@ def test_il_verdetto_del_microfono_dice_quale_controllo_ha_fermato(client):
     assert "autorizzato" in d["negato"]["testo"].lower()
     assert "tocca" in d["bloccato"]["testo"].lower()
 
-def test_il_push_to_talk_si_adatta_al_dispositivo(client):
-    """Sul telefono il tocco e' un inizio e una fine insieme: il toggle a due
-    tocchi si sbaglia. Col dito si tiene premuto, col mouse e' un interruttore."""
+def test_il_push_to_talk_e_il_gesto_di_ogni_dispositivo(client):
+    """Il gesto e' uno solo ovunque: tieni premuto, parli, rilasci. Il toggle a
+    due tocchi (col mouse) e' stato tolto perche' chi ha le mani occupate il
+    secondo tocco non lo da'."""
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "modoParla" in js and "voice-parla" in js
     d = _modo_parla_js(client, """{
@@ -1113,11 +1115,23 @@ def test_il_push_to_talk_si_adatta_al_dispositivo(client):
       spento: guardaSeRilascia({ pushAttivo: false, dentro: false, tipo: 'up' }),
     }""")
     assert d["dito"] == "push"
-    assert d["mouse"] == "toggle"
+    assert d["mouse"] == "push", "anche col mouse si tiene premuto"
     assert d["rilascio"] is False, "un dito ancora dentro non chiude la frase"
     assert d["uscito"] is True
     assert d["su"] is True
     assert d["spento"] is False, "senza push attivo non c'e' niente da chiudere"
+
+def test_il_microfono_flottante_e_push_to_talk(client):
+    """Il pulsante del microfono (e quello della home) non apre piu' il pannello
+    con un clic: si tiene premuto e si parla. Un tocco breve apre il pannello,
+    per chi vuole scrivere o accendere la sveglia."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "collegaPushToTalk($('#mic')" in js
+    assert "collegaPushToTalk($('#home-mic'))" in js
+    assert "collegaPushToTalk($('#voice-parla'))" in js
+    assert "collegaPushToTalk($('#voice-retry'))" in js
+    # il vecchio interruttore (click -> apriVoce) non c'e' piu'
+    assert "addEventListener('click', apriVoce)" not in js
 
 def test_la_prova_del_microfono_esiste_e_non_esegue_il_comando(client):
     """La prova dice cosa non va, ma non deve scrivere in dispensa: chi prova
@@ -2054,24 +2068,19 @@ def test_la_chiamata_risponde_si(client):
     assert d == "Sì."
     assert "dimmi" not in d.lower()
 
-def test_hey_gg_ascolto_parte_all_accesso(client):
-    """Entrando, l'ascolto parte subito, senza doverlo accendere a mano: il click
-    su "Entra" e' il gesto che il browser pretende. Un valore assente e' una
-    prima volta, e all'accesso parte; solo uno spegnimento esplicito lo tiene
-    spento. Senza la chiave non parte, perche' la trascrizione la farebbe il
-    browser e li' l'avvio da solo non e' affidabile."""
-    d = _deve_accendere_accesso_js(client, """{
-      primaVolta: deveAccendereDopoAccesso(null, true),
-      giaAcceso: deveAccendereDopoAccesso('1', true),
-      spentoDallUtente: deveAccendereDopoAccesso('0', true),
-      senzaChiave: deveAccendereDopoAccesso('1', false),
-      senzaChiavePrimaVolta: deveAccendereDopoAccesso(null, false)
-    }""")
-    assert d["primaVolta"] is True, "all'accesso la prima volta deve partire"
-    assert d["giaAcceso"] is True
-    assert d["spentoDallUtente"] is False, "chi l'ha spento non se lo ritrova acceso"
-    assert d["senzaChiave"] is False
-    assert d["senzaChiavePrimaVolta"] is False
+def test_hey_gg_non_parte_piu_da_sola(client):
+    """La sveglia e' un'opzione, non il comportamento predefinito: il comando
+    normale e' il push-to-talk. Non c'e' piu' un avvio automatico all'accesso —
+    né la regola che lo decideva — e la sola ripresa automatica e' la regola
+    stretta (`deveAccendereDaSolo`): preferenza '1' e permesso gia' concesso."""
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "accendiAscoltoDopoAccesso" not in js
+    assert "deveAccendereDopoAccesso" not in js
+    assert "appenaEntrato" not in js
+    # l'unica ripresa automatica resta quella prudente, e c'e' gia' il suo test
+    assert "accendiAscoltoContinuoDaSolo()" in js
+    # il pulsante dell'ascolto continuo resta: l'utente puo' accenderlo a mano
+    assert "#voice-sempre" in js
 
 def test_hey_gg_sveglia_l_assistente():
     """Il secondo modo di chiamare, "Hey GG". Le forme accettate non sono

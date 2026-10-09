@@ -116,6 +116,10 @@
       </div>
       <p id="acc-errore" class="accesso-errore" hidden></p>
       <button id="acc-entra" class="primary" type="submit">Entra</button>
+      <button id="acc-bio" class="accesso-bio hidden" type="button">
+        🔒 Entra con Face ID / impronta
+      </button>
+      <p id="acc-bio-stato" class="accesso-nota" hidden></p>
     </form>
 
     <form id="nuova-form" class="accesso-form hidden">
@@ -135,6 +139,7 @@
       </div>
       <p class="home-lead">Senza playlist, la TV parte con quella predefinita:
         si può cambiare quando si vuole dalla sezione TV.</p>
+      <p id="new-bio-nota" class="accesso-nota hidden"></p>
       <p id="new-errore" class="accesso-errore" hidden></p>
       <div class="accesso-bottoni">
         <button id="new-crea" class="primary" type="submit">Crea la casa</button>
@@ -173,7 +178,7 @@
     <svg class="dd dd-10" viewBox="0 0 100 76"><use href="#doodle-aq-7"/></svg>
   </div>
   <div class="home-voice">
-    <button id="home-mic" class="home-mic" type="button" title="Parla al maggiordomo" aria-label="Parla al maggiordomo">
+    <button id="home-mic" class="home-mic" type="button" title="Tieni premuto e parla al maggiordomo" aria-label="Tieni premuto e parla al maggiordomo">
       <span class="mic-icon">🎙</span>
       <span>Parla al maggiordomo</span>
     </button>
@@ -481,6 +486,22 @@
         <button id="tema-scuro" class="tema-scelta" type="button">
           <span class="tema-pallino tema-pallino-scuro" aria-hidden="true">◑</span> Scuro
         </button>
+      </div>
+    </div>
+
+    <!-- L'accesso col sensore: il dispositivo che ha creato la casa vi si collega
+         col sensore, e da allora il solo sensore indirizza qui senza nome ne'
+         password. E' un permesso del dispositivo, non un segreto. -->
+    <h3 class="section-title">Accesso con il sensore</h3>
+    <div class="panel">
+      <p class="hint">Collega questa casa al sensore di <strong>questo</strong>
+        dispositivo: la volta dopo, all'avvio, basta Face ID o l'impronta e si
+        entra senza scrivere nome e password. È un permesso del dispositivo, non
+        una password da ricordare.</p>
+      <p id="pf-bio-stato" class="hint"></p>
+      <div class="row">
+        <button id="pf-bio-collega" type="button">🔒 Collega il sensore</button>
+        <button id="pf-bio-togli" type="button">Scollega questo dispositivo</button>
       </div>
     </div>
   </section>
@@ -879,7 +900,7 @@
 
 <!-- Comandi vocali: il pulsante resta raggiungibile da ogni scheda, perché serve
      proprio quando non si possono usare le mani (es. mentre si cucina). -->
-<button id="mic" class="mic hidden" type="button" title="Comandi vocali" aria-label="Comandi vocali">
+<button id="mic" class="mic hidden" type="button" title="Tieni premuto e parla (un tocco apre il pannello)" aria-label="Tieni premuto e parla">
   <span class="mic-icon">🎙</span>
 </button>
 
@@ -902,11 +923,11 @@
       <button id="voice-close" class="icon">✕</button>
     </div>
     <p id="voice-heard" class="voice-heard">Parla ora: ad esempio «aggiungi due chili di farina in dispensa».</p>
-    <!-- Push-to-talk: su un telefono si tiene premuto e si rilascia per inviare.
-         Su un computer il pulsante e' un interruttore. Il livello dice che il
-         microfono sta mandando audio davvero, invece di lasciarlo intuire. -->
+    <!-- Push-to-talk, su ogni dispositivo: si tiene premuto e si rilascia per
+         inviare. Il livello dice che il microfono sta mandando audio davvero,
+         invece di lasciarlo intuire. -->
     <div id="voice-parla-blocco" class="voice-parla">
-      <button id="voice-parla" class="primary" type="button">🎙 Parla</button>
+      <button id="voice-parla" class="primary" type="button">🎙 Tieni premuto e parla</button>
       <div id="voice-livello" class="voice-livello" hidden><div id="voice-livello-barra"></div></div>
       <p id="voice-parla-hint" class="hint"></p>
     </div>
