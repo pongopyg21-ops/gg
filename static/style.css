@@ -161,7 +161,10 @@ html[data-tema="scuro"] {
   --sh-ink: rgba(238, 238, 228, .5);   --sh-ochre: rgba(224, 173, 96, .5);
   --sh-clay: rgba(226, 148, 120, .5);  --sh-beige: rgba(222, 213, 194, .32);
   --surface-velo: rgba(20, 28, 36, .8);
-  --emoji-lum: 1.65;
+  /* Le emoji di notte schiariscono rispetto al giorno (0.7), ma non troppo: a
+     0.85 restano sopra 4.5:1 sul fondo notte, mentre 1.65 le faceva quasi
+     bianche, tutte uguali. Misurato in Chromium. */
+  --emoji-lum: 0.85;
 
   color-scheme: dark;
 }
@@ -546,15 +549,24 @@ body {
    una silhouette scura sparirebbe sul fondo profondo. */
 .home-emoji { font-size: 30px; line-height: 1; }
 .home-emoji {
-  filter: grayscale(1) brightness(var(--emoji-lum, 1.5)) sepia(1)
-          saturate(var(--emoji-sat, 2.8)) hue-rotate(var(--tinta, 0deg));
+  filter: grayscale(1) brightness(var(--emoji-lum, 0.7)) sepia(1)
+          saturate(var(--emoji-sat, 3.5)) hue-rotate(var(--tinta, 0deg));
 }
-.home-card[data-section="cucina"] .home-emoji  { --tinta: -6deg; }
-.home-card[data-section="progetti"] .home-emoji { --tinta: -4deg; }
-.home-card[data-section="igiene"] .home-emoji  { --tinta: -24deg; }
-.home-card[data-section="gym"] .home-emoji     { --tinta: -8deg; }
-.home-card[data-section="tv"] .home-emoji      { --tinta: -22deg; }
-.home-card[data-section="faq"] .home-emoji     { --tinta: -2deg; }
+/* Ogni scheda ha la **sua** tinta, non tutte lo stesso ocra. La base del filtro
+   e' il marrone caldo del `sepia` (~38°): la rotazione porta ogni emoji sulla
+   tinta della sua area, pescata dalla palette che l'app usa gia' altrove —
+   l'acqua dell'accento (Cucina), il verde delle pulizie (Igiene), l'ocra della
+   sabbia (Appunti), l'argilla delle figure (FAQ), il blu notte (TV) e il viola
+   della categoria «salute» (GYM). Sei tinte distanti fra loro, cosi' le schede
+   si riconoscono a colpo d'occhio senza leggere. I gradi sono **misurati** in
+   Chromium sui pixel veri: la rotazione non e' lineare e la saturazione sposta
+   le tinte, quindi vanno scelti guardando il colore che esce, non la ruota. */
+.home-card[data-section="cucina"] .home-emoji  { --tinta: 135deg; } /* acqua #128d95 */
+.home-card[data-section="igiene"] .home-emoji  { --tinta: 90deg; }  /* verde #1ebe5b */
+.home-card[data-section="progetti"] .home-emoji { --tinta: 0deg; }  /* ocra #a17017 */
+.home-card[data-section="faq"] .home-emoji     { --tinta: 315deg; } /* argilla #d55b53 */
+.home-card[data-section="tv"] .home-emoji      { --tinta: 180deg; } /* blu #4778d0 */
+.home-card[data-section="gym"] .home-emoji     { --tinta: 240deg; } /* viola #ad5ac9 */
 .home-name {
   font-family: var(--font-display); font-size: 21px; font-weight: 700;
   letter-spacing: -.02em;

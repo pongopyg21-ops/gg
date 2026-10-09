@@ -181,6 +181,17 @@
   dal vecchio, cosГ¬ un ritorno alla pentola non passa inosservato
   (`test_la_cucina_ha_la_sua_icona`, che verifica anche l'assenza del riquadro di
   fondo). Le altre schede tengono la loro emoji.
+  **Le emoji non sono a colori pieni: ognuna ha la tinta della sua scheda.** Il
+  colore di un'emoji non si cambia con `color` (non ГЁ testo): la si porta a
+  silhouette e la si tinge coi filtri CSS (`grayscale`+`brightness`, `sepia`+
+  `saturate`, `hue-rotate`). Le sei tinte sono **diverse** вЂ” acqua (Cucina),
+  verde (Igiene), ocra (Appunti), argilla (FAQ), blu (TV), viola (GYM) вЂ” cosГ¬
+  le schede si riconoscono a colpo d'occhio. I gradi non si leggono dalla ruota:
+  la rotazione non ГЁ lineare e la saturazione sposta le tinte, quindi vanno
+  scelti **misurando i pixel veri** in Chromium (come i parametri di luminanza,
+  0.7 di giorno e 0.85 di notte). Con rotazioni quasi uguali le emoji sembravano
+  tutte dello stesso ocra: era il difetto da correggere.
+  (`test_le_emoji_delle_schede_hanno_ognuna_la_sua_tinta`.)
 - **Le notizie del giorno in home** (`renderHomeNotizie`). In fondo, sotto il
   calendario: solo i titoli con fonte e data, e В«Apri в†’В» che porta alla TV, dove
   stanno il sommario e l'elenco completo. Si riempie da `/api/notizie`, un
