@@ -34,17 +34,14 @@ async function api(url) {
     assert "Pasta" in d["html"]
 
 def test_le_notizie_in_home_stanno_sotto_il_calendario(client):
-    """La home finisce con le notizie del giorno e poi «Domani»: prima le
-    categorie, poi il riepilogo «Oggi», il calendario, le notizie e infine cosa
-    c'e' in programma domani. Le notizie sono da leggere, e domani e' la cosa da
-    preparare, quindi in fondo; l'elenco completo resta nella sezione TV."""
+    """La home finisce con le notizie del giorno: prima le categorie, poi il
+    riepilogo «Oggi», il calendario e infine le notizie, che sono da leggere.
+    L'elenco completo resta nella sezione TV."""
     html = client.get("/").get_data(as_text=True)
     assert 'id="home-notizie"' in html
     assert html.index('id="home-cal"') < html.index('id="home-notizie"')
-    # domani viene dopo le notizie del giorno
-    assert html.index('id="home-notizie"') < html.index('id="home-domani"')
-    # il riquadro rimanda alla TV, non duplica l'elenco con i sommari
-    sezione = html[html.index('id="home-notizie"'):html.index('id="home-domani"')]
+    # le notizie chiudono i riquadri: subito dopo c'e' l'intestazione della home
+    sezione = html[html.index('id="home-notizie"'):html.index("home-hero-basso")]
     assert "home-notizie-apri" in sezione
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "$('#home-notizie-apri')" in js and "apriSezione('tv')" in js

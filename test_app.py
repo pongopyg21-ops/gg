@@ -527,75 +527,17 @@ async function api() { return []; }
     assert d["nascosto"] is True
     assert d["html"] == ""
 
-def test_il_riquadro_domani_mette_impegni_e_pasti(client):
-    """Domani ha un riquadro suo, dopo le notizie: gli impegni non ancora chiusi
-    e i pasti gia' scelti. Solo quelli da fare: un impegno gia' fatto non e' un
-    impegno, e mostrarlo farebbe credere che domani ci sia qualcosa."""
+def test_la_home_non_ha_il_riquadro_domani(client):
+    """La sezione «Domani» e' stata tolta dalla home: cosa c'e' in programma e
+    cosa si mangia domani non ha piu' un riquadro suo. Gli impegni di domani
+    restano suggeriti dalla riga «Domani: …» dentro «Oggi», che e' un'altra
+    cosa. La funzione `renderHomeDomani` non deve esistere piu', altrimenti
+    resterebbe codice morto (e una chiamata senza il pannello nel DOM)."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="home-domani"' not in html, "il pannello Domani e' stato rimosso"
+    assert "domani-titolo" not in html
     js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "renderHomeDomani")
-    preludio = """
-const stato = { html: '', nascosto: true };
-function $(sel) {
-  if (sel === '#home-domani') return {
-    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
-  };
-  if (sel === '#home-domani-corpo') return {
-    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
-  };
-  return { innerHTML: '', classList: { add() {}, remove() {} } };
-}
-function esc(s) { return String(s); }
-const VERO_DATE = Date;
-const OGGI_TS = new VERO_DATE(2026, 9, 2).getTime();
-class DataFinta extends VERO_DATE {
-  constructor(...a) { if (a.length === 0) super(OGGI_TS); else super(...a); }
-  static now() { return OGGI_TS; }
-}
-globalThis.Date = DataFinta;
-function pad(n) { return String(n).padStart(2, '0'); }
-function iso(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-const risposte = {
-  '/api/appointments?giorno=2026-10-03':
-    { appointments: [{ title: 'Dentista', done: false }, { title: 'Vecchio', done: true }] },
-  '/api/plan?start=2026-10-03&end=2026-10-03':
-    [{ recipe_name: 'Lasagne', meal: 'pranzo' }],
-};
-async function api(url) { return risposte[url]; }
-"""
-    coda = "\nrenderHomeDomani().then(() => console.log(JSON.stringify(stato)));"
-    d = _esegui_node(preludio + blocco + coda)
-    assert d["nascosto"] is False, "con qualcosa in programma il riquadro si vede"
-    assert "Dentista" in d["html"]
-    assert "Vecchio" not in d["html"], "un impegno gia' fatto non si suggerisce"
-    assert "Lasagne" in d["html"] and "pranzo" in d["html"]
-
-def test_il_riquadro_domani_tace_se_non_c_e_niente(client):
-    """Senza impegni ne' pasti di domani il riquadro resta nascosto: una home con
-    un riquadro vuoto e' peggio di una home senza riquadro."""
-    js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "renderHomeDomani")
-    preludio = """
-const stato = { html: 'vecchio', nascosto: false };
-function $(sel) {
-  if (sel === '#home-domani') return {
-    classList: { add() { stato.nascosto = true; }, remove() { stato.nascosto = false; } },
-  };
-  if (sel === '#home-domani-corpo') return {
-    set innerHTML(v) { stato.html = v; }, get innerHTML() { return stato.html; },
-  };
-  return { innerHTML: '', classList: { add() {}, remove() {} } };
-}
-function esc(s) { return String(s); }
-function iso() { return '2026-10-03'; }
-async function api(url) {
-  if (url.startsWith('/api/appointments')) return { appointments: [] };
-  return [];
-}
-"""
-    coda = "\nrenderHomeDomani().then(() => console.log(JSON.stringify(stato)));"
-    d = _esegui_node(preludio + blocco + coda)
-    assert d["nascosto"] is True
-    assert d["html"] == ""
+    assert "renderHomeDomani" not in js, "la funzione non deve restare in app.js"
 
 def test_il_calendario_in_home_mostra_il_mese_col_puntino(client):
     """La home ripropone il calendario dei Progetti in fondo, in sola lettura. Si
@@ -682,7 +624,7 @@ def test_il_calendario_in_home_non_sfoglia_quello_dei_progetti(client):
 
 def test_l_intestazione_chiude_la_home(client):
     """L'intestazione «Il Maggiordomo» sta in fondo alla home, dopo «Oggi», il
-    calendario, le notizie e «Domani».
+    calendario e le notizie.
 
     In alto era la prima cosa che si incontrava e spingeva giu' le categorie,
     che sono il motivo per cui si arriva in home. Ora chiude la pagina."""
@@ -692,7 +634,6 @@ def test_l_intestazione_chiude_la_home(client):
     assert "home-hero-basso" in home
     assert home.index('class="home-cards"') < home.index("home-hero-basso")
     assert home.index('id="home-notizie"') < home.index("home-hero-basso")
-    assert home.index('id="home-domani"') < home.index("home-hero-basso")
 
 def test_l_intestazione_della_home_e_centrata(client):
     """Il testo «Il Maggiordomo» in home e' centrato: l'intestazione chiude la

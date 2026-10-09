@@ -186,7 +186,6 @@ function tornaAlleSezioni() {
   // cambiate, si vedono subito.
   renderHomeCalendario();
   renderHomeNotizie();
-  renderHomeDomani();
 }
 
 /* Apre l'area a cui appartiene una scheda, se non e' gia' quella aperta.
@@ -6529,7 +6528,6 @@ async function init() {
   renderHomeOggi();
   renderHomeCalendario();
   renderHomeNotizie();
-  renderHomeDomani();
   // i promemoria del sistema: se il permesso c'e' gia' si parte, altrimenti il
   // pulsante nel calendario lo chiede da un tocco (mai da soli: un browser
   // blocca la richiesta senza gesto, e il permesso negato non si riprende)
@@ -6539,7 +6537,8 @@ async function init() {
 /* Riepilogo della giornata in home: i pasti di oggi, le pulizie di oggi, gli
    impegni che avvisano adesso e cosa sta per scadere in dispensa. Non e' una
    nuova sezione, e' la home che dice qualcosa invece di essere solo un menu.
-   Domani ha un riquadro suo, piu' sotto (vedi `renderHomeDomani`).
+   Gli impegni di domani entrano qui come una riga «Domani: …»: la sezione
+   «Domani» a parte e' stata tolta dalla home su richiesta dell'utente.
 
    Le fonti si chiedono in parallelo e ognuna fallisce per conto suo: un errore
    sul calendario non deve far sparire i pasti. Se non c'e' niente da dire il
@@ -6718,45 +6717,6 @@ async function renderHomeNotizie() {
           n.data ? ` · ${esc(n.data.slice(0, 10))}` : ''} · apri la fonte ↗</span>
       </a>
     </article>`).join('');
-  box.classList.remove('hidden');
-}
-
-/* Domani, dopo le notizie: cosa c'e' in programma e cosa si mangia. Sono due
-   cose diverse da «Oggi» — un impegno di domani non e' ancora scattato, e i
-   pasti di domani non sono ancora cucinati — quindi hanno un riquadro loro.
-   Solo gli impegni non chiusi (uno gia' fatto non e' un impegno) e i pasti gia'
-   scelti; se non c'e' niente il riquadro resta nascosto, come «Oggi». */
-async function renderHomeDomani() {
-  const box = $('#home-domani');
-  if (!box) return;
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  const domani = iso(d);
-  const esiti = await Promise.all([
-    api(`/api/appointments?giorno=${domani}`).catch(() => null),
-    api(`/api/plan?start=${domani}&end=${domani}`).catch(() => []),
-  ]);
-  const [appuntamenti, pasti] = esiti;
-  const impegni = (appuntamenti?.appointments || []).filter((a) => !a.done);
-  const righe = [];
-  if (impegni.length) {
-    righe.push(`<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">📆</span>
-      <span class="oggi-txt">${impegni.slice(0, 4).map((a) =>
-        `<strong>${esc(a.title)}</strong>${a.quando_detto ? ` — ${esc(a.quando_detto)}` : ''}`
-      ).join('<br>')}${impegni.length > 4 ? `<br>e altri ${impegni.length - 4}` : ''}</span></div>`);
-  }
-  if (pasti.length) {
-    righe.push(`<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
-      <span class="oggi-txt">Si mangia: <strong>${pasti.map((p) =>
-        `${esc(p.recipe_name)} <span class="oggi-meal">(${esc(p.meal)})</span>`
-      ).join(', ')}</strong></span></div>`);
-  }
-  if (!righe.length) {
-    box.classList.add('hidden');
-    $('#home-domani-corpo').innerHTML = '';
-    return;
-  }
-  $('#home-domani-corpo').innerHTML = righe.join('');
   box.classList.remove('hidden');
 }
 

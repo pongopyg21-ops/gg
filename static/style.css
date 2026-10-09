@@ -492,20 +492,6 @@ body {
    sembrerebbe una riga di troppo */
 .home-notizie .tv-notizia:last-child a { border-bottom-color: transparent; }
 
-/* Domani, sotto le notizie: cosa c'e' in programma e cosa si mangia. Stessa
-   veste degli altri riquadri della home, con le righe del riepilogo «Oggi». */
-.home-domani {
-  margin: 0 0 24px; padding: 16px 18px;
-  background: var(--surface); border: 1px solid var(--line);
-  border-left: 3px solid var(--accent); border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.domani-titolo {
-  margin: 0 0 10px; font-family: var(--font-display);
-  font-size: 15px; font-weight: 600; letter-spacing: .02em;
-  text-transform: uppercase; color: var(--accent-deep);
-}
-
 /* La scheda e' un bottone: stesso reset dei bottoni, ma layout a colonna. */
 .home-card {
   position: relative; overflow: hidden;

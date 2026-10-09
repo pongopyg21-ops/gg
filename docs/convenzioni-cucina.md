@@ -153,7 +153,7 @@
   lasciarlo intuire dall'ordine. `suggerimenti()` prende un `oggi` opzionale, che
   ГЁ anche l'unico posto in cui il modulo guarda la data vera вЂ” i test lo passano.
 - **L'ordine della home**: categorie (le schede), poi il riepilogo В«OggiВ», il
-  calendario, le notizie del giorno, il riquadro В«DomaniВ» e in fondo
+  calendario, le notizie del giorno e in fondo
   l'intestazione В«Il MaggiordomoВ» (`home-hero-basso`, **centrata**:
   `text-align: center` sul blocco, con `.con-icona` a `justify-content: center`).
   Le categorie stanno subito sotto l'invito a parlare: si
@@ -204,13 +204,15 @@
   massimo dieci** (`slice(0, 10)`): ГЁ un assaggio, e il taglio ГЁ della home, non
   del feed вЂ” la sezione TV resta con tutte quelle della cache (`MAX_NOTIZIE`, 20,
   `test_la_home_mostra_dieci_notizie_non_tutte`).
-- **Il riquadro В«DomaniВ» in home** (`renderHomeDomani`). Dopo le notizie: gli
-  impegni di domani non ancora chiusi e i pasti giГ  scelti. Г€ una sezione a sГ©
-  (non una riga dentro В«OggiВ»), perchГ© un impegno di domani non ГЁ ancora scattato
-  e i pasti di domani non sono ancora cucinati. Le fonti si chiedono **in
-  parallelo** con `.catch` e, se non c'ГЁ niente, il riquadro resta nascosto вЂ”
-  stessa regola di В«OggiВ». Si ridisegna all'avvio e al ritorno in home
-  (`tornaAlleSezioni`).
+- **La sezione «Domani» e' stata tolta dalla home** (richiesta dell'utente).
+  Cosa c'e' in programma e cosa si mangia domani non ha piu' un riquadro suo.
+  Gli impegni di domani restano suggeriti dalla riga «Domani: ...» dentro
+  «Oggi», che e' un'altra cosa. Tolti insieme: il pannello `#home-domani` in
+  `index.html`, la funzione `renderHomeDomani` in `app.js` (con le sue due
+  chiamate: all'avvio e in `tornaAlleSezioni`) e le regole
+  `.home-domani`/`.domani-titolo` in `style.css`. Una funzione senza il
+  pannello non e' solo codice morto: la `$('#home-domani')` mancherebbe e al
+  primo `box.classList` andrebbe in errore.
 - **Il riepilogo В«OggiВ» in home** (`renderHomeOggi`). La home non ГЁ solo un menu:
   mostra i pasti di oggi, le attivitГ  di casa da fare, gli impegni che avvisano
   adesso, **gli impegni di domani** e cosa sta per scadere in dispensa. Gli
@@ -218,8 +220,7 @@
   ritardo); quelli di domani si chiedono a parte con `?giorno=<domani>` e si
   mostrano come riga «Domani: …», solo quelli **non ancora chiusi** — quelli che
   non avvisano ancora non stanno in `prossimi`, e sapere stasera che domani c'è il
-  dentista è utile. È una riga dentro «Oggi», non il riquadro «Domani» più sotto:
-  quello resta la vista d'insieme (impegni **e** pasti di domani). Le fonti si
+  dentista è utile. È una riga dentro «Oggi». Le fonti si
   chiedono **in parallelo** e ognuna fallisce per conto suo (`.catch`): un errore
   sul calendario non deve far sparire i pasti. Se non c'ГЁ niente da dire il
   riquadro resta nascosto вЂ” una home con un riquadro vuoto ГЁ peggio di una home
