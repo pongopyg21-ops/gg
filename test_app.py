@@ -1005,12 +1005,13 @@ def test_le_illustrazioni_della_home_sono_forme_geometriche(client):
 
 
 
-def test_le_emoji_delle_schede_hanno_ognuna_la_sua_tinta(client):
-    """Le emoji non sono a colori pieni: sono tinte con la tavolozza dell'app.
+def test_le_emoji_delle_schede_restano_nella_palette(client):
+    """Le emoji non sono a colori pieni ne' a tinte neon: ognuna prende un colore
+    **della palette «mare»** — acqua, verde, sabbia, argilla, ardesia, magenta.
     Il colore di un'emoji non si cambia con `color` (non e' testo): la si porta
-    a silhouette e la si tinge coi filtri CSS. E ogni scheda ha una tinta
-    **diversa**, non tutte lo stesso ocra: sei tinte distanti si riconoscono a
-    colpo d'occhio, che e' tutto il motivo della tinta."""
+    a silhouette e la si tinge coi filtri CSS. Le tinte sono smorzate
+    (`--emoji-sat` bassa), come i colori del resto dell'app: un arcobaleno
+    saturo stonerebbe con un'interfaccia dai toni d'acqua e di terra."""
     import re
     css = client.get("/static/style.css").get_data(as_text=True)
     blocco = css[css.index(".home-emoji {"):css.index(".home-card:hover .home-emoji")]
@@ -1018,20 +1019,22 @@ def test_le_emoji_delle_schede_hanno_ognuna_la_sua_tinta(client):
     assert "sepia(1)" in blocco, "la tinta si costruisce con sepia"
     assert "hue-rotate(var(--tinta" in blocco, "la tinta deve venire da una variabile"
     assert "brightness(var(--emoji-lum" in blocco
-    # ogni scheda ha la sua tinta, e sono distanti fra loro (non tutte ocra)
-    tinte = {}
+    # ogni scheda ha la sua tinta e la sua saturazione (non tutte uguali)
+    tinte, sat = {}, {}
     for sezione in ("cucina", "progetti", "igiene", "gym", "tv", "faq"):
-        m = re.search(rf'\[data-section="{sezione}"\] \.home-emoji\s*'
-                      r'\{\s*--tinta:\s*(-?\d+)deg', css)
-        assert m, f"manca la tinta della scheda {sezione}"
-        tinte[sezione] = int(m.group(1))
-    # sullo stesso cerchio di colori: due tinte a meno di 40° si confondono
-    valori = list(tinte.values())
-    for i in range(len(valori)):
-        for j in range(i + 1, len(valori)):
-            diff = abs(valori[i] - valori[j]) % 360
-            diff = min(diff, 360 - diff)
-            assert diff >= 40, f"tinte troppo vicine: {tinte}"
+        blocco_sez = css[css.index(f'[data-section="{sezione}"] .home-emoji'):]
+        blocco_sez = blocco_sez[:blocco_sez.index("}")]
+        mt = re.search(r"--tinta:\s*(-?\d+)deg", blocco_sez)
+        ms = re.search(r"--emoji-sat:\s*([\d.]+)", blocco_sez)
+        assert mt, f"manca la tinta della scheda {sezione}"
+        assert ms, f"manca la saturazione della scheda {sezione}"
+        tinte[sezione] = int(mt.group(1))
+        sat[sezione] = float(ms.group(1))
+    assert len(set(tinte.values())) == 6, f"tinte non distinte: {tinte}"
+    # saturazione smorzata (non neon) e almeno tre livelli diversi, altrimenti
+    # tornerebbero tutte dello stesso tono
+    assert all(1.0 <= v <= 5.0 for v in sat.values()), f"troppo saturo: {sat}"
+    assert len(set(sat.values())) >= 3, f"saturazioni troppo simili: {sat}"
     # di notte la luminanza sale: una silhouette scura sparirebbe sul fondo scuro
     chiaro = css.split('html[data-tema="scuro"]')[0]
     scuro = css.split('html[data-tema="scuro"]', 1)[1]
