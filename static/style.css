@@ -1040,10 +1040,20 @@ tr:last-child td { border-bottom: none; }
 .errore-app button.icon { border: none; font-size: 15px; padding: 6px 8px; }
 
 /* ---------- comandi vocali ----------
-   Il pulsante è un cerchio in basso a destra: resta sotto il pollice su telefono
-   e non copre i contenuti. Durante l'ascolto pulsa, così si vede che è attivo. */
+   Il pulsante è un cerchio in **basso al centro**, affiancato al pulsante Home
+   (🏠, subito a sinistra: vedi `.home-fab`). Prima stavano agli angoli opposti e
+   sembravano due cose scollegate; ora formano un gruppetto centrato sopra le
+   liste, senza coprirne il testo. Durante l'ascolto pulsa, così si vede che è
+   attivo.
+   Il centro della **coppia** cade a metà schermo quando la distanza dal bordo
+   destro (questa `right`) è uguale a quella dal bordo sinistro (`left` di
+   `.home-fab`): i due raggi si annullano e il punto medio dei due centri è
+   esattamente il centro. `calc(50% - 66px)` tiene la coppia in mezzo a
+   **qualsiasi larghezza** con lo stesso distacco fra i due pulsanti (16px): un
+   offset fisso in pixel la centrerebbe ma la lascerebbe larga come lo schermo.
+   Va tenuta la **simmetria**: cambiando un lato va cambiato anche l'altro. */
 .mic {
-  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  position: fixed; right: calc(50% - 66px); bottom: 20px; z-index: 40;
   width: 58px; height: 58px; border-radius: 50%; padding: 0;
   border: 1px solid var(--line-strong); background: var(--surface);
   color: var(--accent); font-size: 24px; line-height: 1;
@@ -1121,9 +1131,11 @@ tr:last-child td { border-bottom: none; }
 .voice-sempre .hint { margin: 0; }
 .voice-sempre .voice-avviso { margin: 0; }
 
-/* Ritorno alle sezioni: stesso stile del microfono, angolo opposto. */
+/* Ritorno alle sezioni: stesso stile del microfono, affiancato a sinistra del
+   gruppo centrato. La distanza dal bordo (`left`) deve restare uguale al `right`
+   del microfono, altrimenti la coppia scivola di lato (vedi `.mic`). */
 .home-fab {
-  position: fixed; left: 20px; bottom: 20px; z-index: 40;
+  position: fixed; left: calc(50% - 66px); bottom: 20px; z-index: 40;
   width: 58px; height: 58px; border-radius: 50%; padding: 0;
   border: 1px solid var(--line-strong); background: var(--surface);
   color: var(--accent); font-size: 24px; line-height: 1;
@@ -1991,9 +2003,11 @@ button { transition: transform .12s ease; }
   /* il toast sta sopra il pulsante vocale, altrimenti lo coprirebbe */
   .toast { bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)); width: max-content; max-width: calc(100% - 28px); }
 
-  /* il microfono resta sotto il pollice, staccato dal bordo */
-  .mic { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
-  .home-fab { left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
+  /* la coppia Home+micro resta centrata; i pulsanti sono un po' piu' piccoli
+     (54 invece di 58), quindi l'offset scende a 62px per lasciare lo stesso
+     distacco di 16px fra i due e restare in mezzo. */
+  .mic { right: calc(50% - 62px); bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
+  .home-fab { left: calc(50% - 62px); bottom: max(16px, env(safe-area-inset-bottom)); width: 54px; height: 54px; font-size: 22px; }
   /* spazio in fondo, altrimenti il pulsante copre l'ultima voce delle liste */
   main { padding-bottom: 88px; }
   /* il pannello vocale sale dal basso come il modale */

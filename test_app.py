@@ -1039,6 +1039,36 @@ def test_le_emoji_delle_schede_hanno_ognuna_la_sua_tinta(client):
     assert "--emoji-lum:" in scuro, "il tema scuro deve schiarire le emoji"
 
 
+def test_i_pulsanti_fluttanti_sono_al_centro(client):
+    """I due pulsanti fluttuanti — Parla al maggiordomo (🎙) e Home (🏠) — stanno
+    **al centro** e affiancati, non agli angoli opposti. Il centro della coppia
+    cade a meta' schermo quando i due offset sono uguali: l'offset e' `50% - k`
+    da entrambi i lati, cosi' resta in mezzo a qualsiasi larghezza con lo stesso
+    distacco fra i due. Un offset fisso in pixel centrerebbe la coppia ma la
+    lascerebbe larga come lo schermo, con i pulsanti agli angoli."""
+    import re
+    css = client.get("/static/style.css").get_data(as_text=True)
+
+    def offset(selettore, lato):
+        blocco = css[css.index(f"{selettore} {{"):]
+        blocco = blocco[:blocco.index("}")]
+        m = re.search(rf"{lato}:\s*calc\(50%\s*-\s*(\d+)px\)", blocco)
+        assert m, f"{selettore} non ha {lato}: calc(50% - k)"
+        return int(m.group(1))
+
+    k_mic = offset(".mic", "right")
+    k_fab = offset(".home-fab", "left")
+    assert k_mic == k_fab, (
+        f"offset diversi ({k_mic} vs {k_fab}): la coppia non resta centrata")
+
+    # anche sul telefono la coppia resta centrata (stessa forma simmetrica)
+    mobile = css[css.index("max-width: 560px"):]
+    assert re.search(r"\.mic\s*\{[^}]*right:\s*calc\(50%", mobile), \
+        "sul telefono il microfono deve restare nella coppia centrata"
+    assert re.search(r"\.home-fab\s*\{[^}]*left:\s*calc\(50%", mobile), \
+        "sul telefono la Home deve restare nella coppia centrata"
+
+
 def test_l_icona_dell_igiene_sono_le_bollicine(client):
     """La sezione Igiene si riconosce dalle **bollicine** (fresco, pulito), non
     piu' dalla scopa: la scopa diceva «sto spazzando», non «e' pulito». E' la
