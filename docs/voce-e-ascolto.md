@@ -344,17 +344,11 @@ un round-trip sintesi→trascrizione, «aggiungi due chili di farina in dispensa
 torna identico). Era tutto intorno: **contesto sicuro**, **ripiego silenzioso** e
 **interfaccia del pulsante**. Tre rimedi, scelti dall'utente.
 
-1. **La riga di stato (`statoAscoltoTesto`, `#voice-stato-ascolto`).** Dice in
-   una riga **chi** ascolta: «Ascolto: server (Azure)…» oppure «Ascolto: browser
-   (ripiego). La chiave della voce non e' configurata…». Prima il ripiego era
-   silenzioso, e l'utente credeva che l'app fosse rotta invece di sapere che
-   mancava una cosa da accendere. Il contesto non sicuro **vince su tutto**: da
-   `http://IP` la riga dice subito che serve HTTPS o `localhost`.
-2. **`voce.senzaMicrofono` (`apriVoce`).** Da un indirizzo non sicuro
+1. **`voce.senzaMicrofono` (`apriVoce`).** Da un indirizzo non sicuro
    `getUserMedia` non arriva: l'app **non tenta a vuoto**, dice cosa manca e porta
    il cursore al campo di testo (`mostraSenzaMicrofono`). Prima apriva un
    microfono che non avrebbe mai sentito.
-3. **Push-to-talk (`modoParla`, `collegaPushToTalk`, `#voice-parla`).** Si
+2. **Push-to-talk (`modoParla`, `collegaPushToTalk`, `#voice-parla`).** Si
    **tiene premuto** e si invia al rilascio, su **ogni** dispositivo: il vecchio
    interruttore col mouse è stato tolto, perché il secondo tocco per inviare a
    mani occupate non si dà. `modoParla()` restituisce sempre `'push'`.
@@ -373,18 +367,29 @@ torna identico). Era tutto intorno: **contesto sicuro**, **ripiego silenzioso** 
    il rilascio): il tetto `ASCOLTO_MAX_MS` resta come rete di sicurezza. E
    `apriVoce()` **non** apre più il microfono da solo: mostrerebbe un ascolto
    senza rilascio, che non finisce mai.
-4. **«Prova il microfono» (`provaMicrofono`, `#voice-prova`).** Un pulsante che
+3. **«Prova il microfono» (`provaMicrofono`, `#voice-prova`).** Un pulsante che
    verifica in fila contesto sicuro, API, permesso, stato dell'`AudioContext` e
    chi trascrive, poi registra una frase e **mostra cosa ha sentito**. Il ramo
    `voce.provaMicrofono` intercetta l'esito **prima** di `eseguiComando`: chi prova
    vuole sapere se il microfono funziona, non scrivere in dispensa. `audioSbloccato`
    mette un tetto a `resume()` perche' senza gesto puo' non risolversi mai.
 
-Le tre funzioni di regola (`statoAscoltoTesto`, `verdettoMicrofono`,
-`modoParla`/`guardaSeRilascia`) sono **pure**, quindi si provano con node senza
-browser. Il test `_ascolta_senza_campioni_js` esegue `ascoltaSulServer` **vera**:
-il suo finto DOM deve conoscere i nuovi helper (`aggiornaParla`, `mostraLivello`,
-`$` con `focus`), altrimenti il test fallisce per un motivo che non c'entra.
+Le funzioni di regola (`verdettoMicrofono`, `modoParla`/`guardaSeRilascia`) sono
+**pure**, quindi si provano con node senza browser. Il test
+`_ascolta_senza_campioni_js` esegue `ascoltaSulServer` **vera**: il suo finto DOM
+deve conoscere i nuovi helper (`aggiornaParla`, `mostraLivello`, `$` con `focus`),
+altrimenti il test fallisce per un motivo che non c'entra.
+
+**Le informazioni tecniche passive sono state tolte** su richiesta dell'utente:
+la riga «chi ascolta» (`voice-stato-ascolto`), l'avviso «voce robotica / dove
+mettere la chiave» (`voice-chiave-manca`), l'avviso sul contesto non sicuro
+(`voice-avviso-sicurezza`) e il **registro dell'assistente** (`voice-registro` e
+`registra()`). Erano diagnostica dello sviluppatore in faccia a chi usa l'app: chi
+parla vuole parlare, non sapere se trascrive Azure o il browser. Restano solo i
+messaggi *attivi* — cosa fare quando il microfono non c'e' (il campo di testo) e
+la conferma del comando. Il test
+`test_il_pannello_non_riporta_informazioni_tecniche_su_ascolto_e_voce` li tiene
+fuori.
 
 Resta il limite che **nessuna di queste modifiche risolve**: il telefono ha bisogno
 di HTTPS per il microfono, e questo si ottiene solo con il Funnel Tailscale sul PC
@@ -523,9 +528,8 @@ macchina sempre accesa, non nell'app.
   **Due reti chiudono quel buco.** (1) `erroreNonGestito` e' legato a
   `window.onerror` e `unhandledrejection` in cima ad `app.js` (l'ascolto e' a
   livello di modulo, quindi copre anche `avviaApp()` in fondo): un errore a
-  runtime produce un avviso breve (`toast`) e una riga nel registro, con la
-  raffica limitata a un avviso per volta e senza nome dell'eccezione ne' traccia a
-  schermo. (2) `avviaApp()` distingue i due guasti: se la **sessione** non
+  runtime produce un avviso breve (`toast`), con la raffica limitata a un avviso
+  per volta e senza nome dell'eccezione ne' traccia a schermo. (2) `avviaApp()` distingue i due guasti: se la **sessione** non
   risponde si mostra l'accesso (non si sa chi e' collegato), ma se la sessione
   c'e' e `init()` fallisce l'utente **resta dentro** con l'avviso `#errore-app` e
   "Ricarica" — rimandarlo all'accesso gli farebbe credere di aver sbagliato la

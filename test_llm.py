@@ -338,17 +338,16 @@ def test_app_js_non_chiama_funzioni_che_non_esiste(client):
     assert not orfane, (
         "app.js chiama funzioni che non esistono: " + ", ".join(orfane))
 
-def test_gli_errori_non_gestiti_avvisano_e_finiscono_nel_registro(client):
+def test_gli_errori_non_gestiti_avvisano(client):
     """Il gestore non ripara, ma **dice**: un errore non gestito produce un
-    avviso breve a schermo e una riga nel registro, e una raffica non ripete
-    l'avviso. E' la rete che mancava: senza, un errore a runtime spariva in
-    silenzio e l'app sembrava bloccarsi."""
+    avviso breve a schermo, e una raffica non ripete l'avviso. E' la rete che
+    mancava: senza, un errore a runtime spariva in silenzio e l'app sembrava
+    bloccarsi."""
     js = client.get("/static/app.js").get_data(as_text=True)
     corpo = _estrai_funzione_js(js, "erroreNonGestito")
     prova = """
 const log = [];
 let erroreInCorso = false;
-function registra(m, t) { log.push('registra:' + m + ':' + t); }
 function toast(m) { log.push('toast:' + m); }
 const timer = [];
 function setTimeout(fn) { timer.push(fn); return timer.length; }
@@ -361,11 +360,9 @@ console.log(JSON.stringify(log));
 """
     log = _esegui_node(prova)
     avvisi = [v for v in log if v.startswith('toast:')]
-    registri = [v for v in log if v.startswith('registra:')]
     assert len(avvisi) == 2, log           # primo e terzo, non il secondo
-    assert len(registri) == 3, log         # nel registro ci vanno tutti
     # il testo a schermo non porta il nome dell'eccezione ne' la traccia
-    assert all('Error' not in v and 'at ' not in v for v in registri), registri
+    assert all('Error' not in v and 'at ' not in v for v in avvisi), avvisi
 
 def test_gli_errori_non_gestiti_sono_ascoltati(client):
     """La registrazione degli eventi e' il legame che rende utile il gestore:
@@ -412,7 +409,6 @@ async function init() {
 function mostraAccesso() { log.push('mostraAccesso'); }
 function mostraErrore() { log.push('mostraErrore'); }
 function mostraErroreApp() { log.push('mostraErroreApp'); }
-function registra() { log.push('registra'); }
 async function avviaAccesso() { log.push('avviaAccesso'); }
 """ + corpo + """
 (async () => {
@@ -428,7 +424,7 @@ async function avviaAccesso() { log.push('avviaAccesso'); }
     e = _esegui_node(prova)
     assert e["sessione-giu"] == ["mostraAccesso", "mostraErrore"], e
     assert e["anonimo"] == ["avviaAccesso"], e
-    assert e["init-giu"] == ["registra", "mostraErroreApp"], e
+    assert e["init-giu"] == ["mostraErroreApp"], e
     assert e["collegato"] == ["init-ok"], e
 
 
@@ -456,3 +452,48 @@ def test_l_impegno_del_modello_con_data_inventata_non_parte(client, monkeypatch)
     cmd = comprensione._ripulisci({"intent": "event_add", "name": "dentista",
                                    "when_date": "non-una-data"})
     assert cmd["intent"] == "unknown"
+
+def test_il_prompt_del_modello_conosce_la_data_di_oggi(monkeypatch):
+    """Il modello non sa che giorno e': senza l'ancora risolve "domani" contro il
+    suo senso interno del tempo e la data cade nel passato remoto. Si verifica
+    che oggi compaia nelle istruzioni e che venga mandato nel messaggio di
+    sistema."""
+    oggetto = comprensione.istruzioni("2026-10-09")
+    assert "2026-10-09" in oggetto
+    assert "Oggi" in oggetto
+
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    oggi = date.today().isoformat()
+    catturato = {}
+
+    def finta(richiesta, timeout=None):
+        catturato["corpo"] = json.loads(richiesta.data.decode())
+        return _RispostaLlm('{"intent": "unknown"}')
+
+    monkeypatch.setattr(comprensione.urllib.request, "urlopen", finta)
+    comprensione.chiama("ricordami il dentista domani")
+    sistema = catturato["corpo"]["messages"][0]["content"]
+    assert oggi in sistema, "il modello deve sapere che oggi e' " + oggi
+
+def test_la_data_di_un_impegno_detta_a_voce_e_quella_di_oggi(client, monkeypatch):
+    """Il bug vero: col modello attivo "promemoria per domani" finiva a 1095
+    giorni fa (~3 anni), perche' il modello vinceva sulla data del parser e non
+    sapeva che giorno fosse. La data del parser (che conosce oggi) deve vincere
+    su quella del modello per `event_add`."""
+    domani = (date.today() + timedelta(days=1)).isoformat()
+    monkeypatch.setenv("LLM_API_KEY", "chiave-llm-di-prova")
+    # il modello risponde con una data sbagliata (il suo senso del tempo interno)
+    monkeypatch.setattr(comprensione, "chiama", lambda t: {
+        "intent": "event_add", "name": "promemoria", "when_date": "2023-10-10",
+        "time": "", "category": "altro", "reminder_days": 0})
+    cmd = app_module._comprendi("imposta promemoria per domani", None)
+    assert cmd["intent"] == "event_add"
+    assert cmd["when_date"] == domani, cmd
+
+    # e la stessa frase, eseguita, crea l'impegno **domani**, non nel 2023
+    r = client.post("/api/voice", json={"text": "imposta un promemoria per domani"})
+    assert r.status_code == 200
+    assert r.get_json()["intent"] == "event_add"
+    giorno = client.get(f"/api/appointments?giorno={domani}").get_json()
+    assert any("promemoria" in a["title"].lower() for a in giorno["appointments"]), \
+        giorno

@@ -100,7 +100,6 @@ __all__ = [
     "_snake_puro",
     "_sorvegliante_js",
     "_spesa_su_giorni",
-    "_stato_ascolto_js",
     "_suggerimento_finto",
     "_traduzione_che_rispetta_le_righe",
     "_url_playlist",
@@ -459,11 +458,6 @@ def _fine_registrazione_js(client, casi):
                 "const ASCOLTO_MAX_MS = 15000;\n")
     return _esegui_node(costanti + blocco
                         + "\nconsole.log(JSON.stringify(" + casi + "));")
-
-def _stato_ascolto_js(client, casi):
-    js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "statoAscoltoTesto")
-    return _esegui_node(blocco + "\nconsole.log(JSON.stringify(" + casi + "));")
 
 def _verdetto_microfono_js(client, casi):
     js = client.get("/static/app.js").get_data(as_text=True)

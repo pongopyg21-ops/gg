@@ -29,17 +29,14 @@ function toast(msg) {
    invisibile il difetto di `caricaVoci`: `init()` sollevava un ReferenceError,
    il `catch` di `avviaApp` rimostrava l'accesso e all'utente sembrava che l'app
    si bloccasse. Il gestore non ripara niente, ma **dice** cosa e' successo
-   (breve, a schermo) e lascia la traccia nel registro dell'assistente, dove si
-   legge il passo esatto invece di dedurlo dal silenzio.
+   (breve, a schermo), invece di lasciare l'utente davanti a una pagina muta.
 
    Sta qui in alto perche' l'ascolto degli eventi e' a livello di modulo: gli
    errori dell'avvio (compreso `avviaApp()`, in fondo al file) sono gia' coperti.
-   Non mostra mai il nome dell'eccezione ne' la traccia: quelli restano nel
-   registro, a schermo confonderebbero e basta. */
+   Non mostra mai il nome dell'eccezione ne' la traccia: a schermo confonderebbero
+   e basta. */
 let erroreInCorso = false;
-function erroreNonGestito(errore) {
-  const testo = String((errore && (errore.message || errore.reason)) || errore || '');
-  registra('errore non gestito: ' + testo, 'err');
+function erroreNonGestito() {
   // un solo avviso per volta: una raffica di errori non deve coprire l'app
   if (erroreInCorso) return;
   erroreInCorso = true;
@@ -4660,9 +4657,6 @@ async function caricaVoceCloud() {
     voceCloud.llmPronto = !!d.llm_pronto;
     voceCloud.llmManca = d.llm_manca || '';
     voceCloud.llmAbilitato = !!d.llm_abilitato;
-    mostraAvvisoRobotica();
-    // la riga "chi ascolta" dipende dal cloud: si aggiorna appena si sa
-    mostraStatoAscolto();
     // la conversazione usa sempre le stesse due frasi brevi: prepararle ora
     // significa non farle aspettare dopo, quando servono davvero
     preriscaldaFrasiFisse();
@@ -4769,27 +4763,6 @@ function fineRegistrazione({ inizio, ultimoSuono, parlatoDa, adesso }) {
   if (parlatoDa && adesso - ultimoSuono > ASCOLTO_FINE_MS) return true;
   if (!parlatoDa && adesso - inizio > ASCOLTO_ATTESA_MS) return true;
   return adesso - inizio > ASCOLTO_MAX_MS;
-}
-
-/** Come funzionera' l'ascolto, in una riga. Pura: si prova senza browser.
-
-    Il guasto che risolve: quando il server non ha la chiave, l'ascolto ripiega
-    in silenzio sul browser, e l'utente crede che l'app sia rotta. Dicendo **chi**
-    ascolta e **cosa manca**, la stessa situazione diventa una cosa da accendere,
-    non un guasto da cercare. */
-function statoAscoltoTesto({ ascoltoServer, contesto }) {
-  if (!contesto) {
-    // corta apposta: il rimedio (HTTPS o localhost, e il rimando a Tailscale)
-    // sta gia' nell'avviso qui sotto (`mostraAvvisoSicurezza`), e ripeterlo in
-    // due paragrafi adiacenti confonderebbe invece di aiutare
-    return 'Ascolto: non disponibile da questo indirizzo.';
-  }
-  if (ascoltoServer) {
-    return 'Ascolto: server (Azure). Funziona anche se il browser non raggiunge '
-      + 'il servizio di Google.';
-  }
-  return 'Ascolto: browser (ripiego). La chiave della voce non e\' configurata, '
-    + 'quindi l\'ascolto dipende dal browser e puo\' non essere disponibile.';
 }
 
 /** Cosa dire dei controlli del microfono, in fila. Pura: si prova senza browser.
@@ -4974,45 +4947,6 @@ function voceStato(msg, tipo = '') {
   const el = $('#voice-status');
   el.textContent = msg;
   el.dataset.tipo = tipo;
-  registra(msg, tipo);
-}
-
-/* ---------- registro dell'assistente ----------
-   Ogni passo dell'assistente finisce qui, con l'ora e i millisecondi dall'avvio
-   della pagina. Serve a **vedere** cosa fa la voce, invece di dedurlo dal
-   silenzio: quale frase ha sentito, cosa ha deciso, quando ha parlato e quando
-   ha ripreso ad ascoltare. E' uno strumento di riscontro, non una decorazione:
-   senza, un "non risponde" resta un'indagine a tentoni.
-
-   Tiene le ultime `REGISTRO_MAX` righe: e' una finestra su quello che sta
-   succedendo ora, non uno storico da conservare. Tutto qui dentro e' locale: non
-   parte nessuna richiesta per scrivere il registro. */
-const REGISTRO_MAX = 60;
-let registroInizio = Date.now();
-
-function registra(passo, tipo = '') {
-  // `typeof document`: la pagina di accesso non ha il pannello, e `registra`
-  // viene chiamata anche da li' (l'ascolto si accende dopo l'accesso, e un
-  // errore di registrazione non deve diventare un errore vero)
-  if (typeof document === 'undefined' || !document.createElement) return;
-  const lista = $('#voice-registro');
-  if (!lista) return;
-  const ora = new Date();
-  const orario = ora.toTimeString().slice(0, 8);
-  const daInizio = ((Date.now() - registroInizio) / 1000).toFixed(1);
-  const li = document.createElement('li');
-  if (tipo) li.className = tipo;
-  const quando = document.createElement('span');
-  quando.className = 't';
-  quando.textContent = `${orario} · ${daInizio}s`;
-  li.appendChild(quando);
-  li.appendChild(document.createTextNode(passo));
-  lista.appendChild(li);
-  // scorre in fondo e non cresce all'infinito
-  while (lista.children.length > REGISTRO_MAX) lista.removeChild(lista.firstChild);
-  lista.scrollTop = lista.scrollHeight;
-  const n = $('#voice-registro-n');
-  if (n) n.textContent = `(${lista.children.length})`;
 }
 
 /** Esegue il comando dettato e ricarica le schede che il server indica.
@@ -5183,21 +5117,6 @@ function mostraLivello(on) {
   if (!on) aggiornaLivello(0);
 }
 
-/** Aggiorna la riga che dice **chi** ascolta (server o browser). */
-function mostraStatoAscolto() {
-  const el = $('#voice-stato-ascolto');
-  if (!el) return;
-  // il contesto si legge qui e non dallo stato di `voce`: questa riga si aggiorna
-  // anche prima che il pannello sia stato aperto
-  const contesto = typeof window === 'undefined' ? true : !!window.isSecureContext;
-  const testo = statoAscoltoTesto({
-    ascoltoServer: !!voceCloud.ascolto,
-    contesto,
-  });
-  el.textContent = testo;
-  el.className = 'voice-avviso' + (voceCloud.ascolto ? ' ok' : '');
-}
-
 /** L'indirizzo non e' sicuro: si spiega e si porta il cursore al campo di testo,
     invece di lasciare il pulsante muto. */
 function mostraSenzaMicrofono() {
@@ -5362,7 +5281,6 @@ function ascoltaSulServer(alTesto, opts = {}) {
   const scadenza = setTimeout(() => {
     if (risolto) return;
     risolto = true;
-    registra('il microfono non risponde: riprovo', 'err');
     // si ritenta: non e' un guasto del permesso, e' la promessa che non arriva.
     // Fermare l'ascolto lo spegnerebbe per un ritardo che si risolve da solo.
     if (alTesto) alTesto({ ritenta: true });
@@ -5663,12 +5581,10 @@ function apriVoce() {
   // rete il browser non da' il microfono, e senza questo controllo il pulsante
   // resterebbe muto senza spiegare perche'
   voce.senzaMicrofono = !window.isSecureContext;
-  mostraAvvisoSicurezza();
   $('#voice').classList.remove('hidden');
   nascondiFuori();   // il pannello aperto mostra gia' #voice-heard
   $('#voice-result').hidden = true;
   aggiornaSpiaAscolto();
-  mostraStatoAscolto();
   aggiornaParla();
   // con l'ascolto continuo acceso il microfono sta gia' girando: avviarne uno
   // singolo lo sovrapporrebbe, e due registrazioni insieme non si capiscono
@@ -5747,7 +5663,6 @@ function sorvegliaIlCiclo() {
     if (!cicloDaRiavviare(ascoltoContinuo.battito, Date.now(),
                           ascoltoContinuo.sospeso, ascoltoContinuo.attesaGesto)) return;
     ascoltoContinuo.battito = Date.now();   // si riprova fra un altro giro
-    registra('il ciclo era fermo: lo riavvio', 'err');
     voceStato('Ti riascolto…');
     cicloAscoltoContinuo();
   }, 5000);
@@ -5859,7 +5774,6 @@ function riprendiDopoLaVoce(poi) {
     voce.aFineParlato = null;
     ascoltoContinuo.sospeso = false;
     aggiornaSpiaAscolto();
-    registra('voce finita: riprendo ad ascoltare');
     setTimeout(poi, SVEGLIA_RIPRESA_MS);
   };
   voce.aFineParlato = riprendi;
@@ -5869,7 +5783,6 @@ function riprendiDopoLaVoce(poi) {
 /** Dice una frase e riprende ad ascoltare solo quando ha finito. */
 function parlaPoi(testo, poi) {
   const riprendi = riprendiDopoLaVoce(poi);
-  registra(`parlo: «${testo}»`);
   speak(testo);
   if (!confermaVoce()) { riprendi(); return; }
   // il tetto segue la lunghezza della frase: se la sintesi non annuncia la fine,
@@ -6012,7 +5925,6 @@ function decisioneContinuo(testo, sveglia, resto, inAttesa) {
     la regola che decide se un comando parte. */
 function valutaFrase(testo, sveglia, resto, riparti) {
   const d = decisioneContinuo(testo, sveglia, resto, inAttesaComando());
-  registra(`deciso: ${d.azione}${d.comando ? ' → «' + d.comando + '»' : ''}`);
   if (d.azione === 'esegui') {
     // il comando parte, ma la finestra **resta aperta** (rinnovata): "Hey GG"
     // seguito da piu' ordini di fila non deve richiedere la sveglia a ogni
@@ -6077,12 +5989,10 @@ function nascondiFuori() {
 function cicloAscoltoContinuo() {
   if (!ascoltoContinuo.continuo) return;
   if (ascoltoContinuo.sospeso) {
-    registra('giro saltato: in pausa (sto parlando)');
     return;
   }
   ascoltoContinuo.battito = Date.now();   // segno di vita: il sorvegliante lo legge
   const mio = ++ascoltoContinuo.ciclo;
-  registra('microfono aperto: ti ascolto');
 
   const ancora = () => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
@@ -6092,7 +6002,6 @@ function cicloAscoltoContinuo() {
   const esito = (d) => {
     if (mio !== ascoltoContinuo.ciclo || !ascoltoContinuo.continuo) return;
     if (d && d.bloccato) {
-      registra('audio bloccato dal browser: serve un tocco', 'err');
       // l'audio e' sospeso: si chiede il gesto che lo sblocca, e al prossimo
       // tocco il ciclo riparte. Fermare qui l'ascolto lo spegnerebbe proprio
       // all'avvio automatico, che e' il caso appena acceso.
@@ -6100,7 +6009,6 @@ function cicloAscoltoContinuo() {
       return;
     }
     if (!d || d.errore) {
-      registra('errore di ascolto: ciclo fermato', 'err');
       ascoltoContinuo.continuo = false; aggiornaSpiaAscolto(); return;
     }
     if (d.ritenta) {
@@ -6124,8 +6032,9 @@ function cicloAscoltoContinuo() {
       return;
     }
     const testo = (d.testo || '').trim();
-    if (!testo) { registra('trascrizione vuota: riprovo'); ancora(); return; }
-    registra(`trascritto: «${testo}»` + (d.sveglia ? ' (sveglia riconosciuta)' : ''));
+    // una trascrizione vuota non e' un comando: si riprova fra poco, senza
+    // spegnere l'ascolto
+    if (!testo) { ancora(); return; }
     valutaFrase(testo, !!d.sveglia, d.resto, ancora);
   };
 
@@ -6133,7 +6042,7 @@ function cicloAscoltoContinuo() {
   cicloAscoltoDalBrowser(mio);
 }
 
-/** Registra un giro col riconoscimento del browser (server senza chiave).
+/** Un giro col riconoscimento del browser (server senza chiave).
 
     La sveglia la riconosce il server anche qui, con `/api/voce/sveglia`:
     eseguire il comando in locale significherebbe una seconda copia della
@@ -6270,51 +6179,6 @@ function aggiornaSpiaAscolto() {
   }
 }
 
-/** Avvisa quando il microfono non puo' funzionare, invece di lasciare che il
-    pulsante non faccia nulla.
-
-    Il riconoscimento vocale del browser pretende un contesto sicuro: HTTPS, o
-    `localhost`. Da `http://192.168.1.x:12000` il browser non lo concede, e il
-    pulsante resta muto senza dire perche'. Su Windows `localhost` va bene, dal
-    telefono serve HTTPS — vedi la guida, sezione Tailscale.
-*/
-function mostraAvvisoSicurezza() {
-  const el = $('#voice-avviso-sicurezza');
-  if (!el) return;
-  if (window.isSecureContext) { el.hidden = true; return; }
-  el.hidden = false;
-  el.textContent = 'Il microfono non funziona da questo indirizzo: il browser lo '
-    + 'concede solo con HTTPS o da localhost. Sul computer usa '
-    + 'http://localhost:12000. Dal telefono serve HTTPS (guarda la guida, '
-    + 'sezione Tailscale). La voce in ascolto resta comunque disponibile dal '
-    + 'pulsante, e puoi scrivere il comando qui sotto.';
-}
-
-/** Spiega perche' la voce e' quella meccanica del browser.
-
-    Senza la chiave Azure l'app ripiega sulla voce di sistema, che e' la voce
-    robotica che si sente: dirlo qui evita di cercare un guasto che non c'e',
-    perche' l'app funziona — le manca solo la voce naturale.
-*/
-function mostraAvvisoRobotica() {
-  // La scheda Voce e' stata rimossa: l'avviso "voce robotica" che stava li' non
-  // ha piu' un posto. Resta il rimando nel pannello del microfono, dove l'utente
-  // la voce la sente davvero, e dove deve sapere come avere quella naturale.
-  const rimando = $('#voice-chiave-manca');
-  if (rimando) rimando.hidden = voceCloud.disponibile;
-  const dove = $('#voice-chiave-dove');
-  if (dove) {
-    // La via del file va benissimo su una macchina propria, ma in un ambiente
-    // ricreato a ogni sessione il file sparisce: chi legge deve sapere che li'
-    // la chiave va registrata fra i segreti, non riscritta in segreto.txt.
-    dove.textContent = ' Dove si mette dipende dall\'ambiente: su una macchina '
-      + 'tua va bene il file accanto al programma (segreto.txt, segreto.sh, o le '
-      + 'variabili AZURE_SPEECH_KEY e AZURE_SPEECH_REGION); in un ambiente '
-      + 'ricreato a ogni avvio la chiave va registrata fra i segreti, col nome '
-      + 'AZURE_SPEECH_KEY, perché un file lì non sopravvive.';
-  }
-}
-
 function chiudiVoce() {
   // Con l'ascolto continuo acceso, chiudere il pannello non lo spegne: e' anzi
   // il modo d'uso normale (si cucina e si parla da un'altra stanza), e fermare
@@ -6355,14 +6219,6 @@ collegaPushToTalk($('#voice-retry'));
 collegaPushToTalk($('#voice-parla'));
 $('#voice-prova').addEventListener('click', provaMicrofono);
 
-$('#voice-registro-pulisci').addEventListener('click', () => {
-  const lista = $('#voice-registro');
-  if (lista) lista.innerHTML = '';
-  const n = $('#voice-registro-n');
-  if (n) n.textContent = '';
-  registraInizio = Date.now();   // i millisecondi ripartono da qui
-  registra('registro pulito');
-});
 $('#voice').addEventListener('click', (e) => { if (e.target.id === 'voice') chiudiVoce(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') chiudiVoce(); });
 $('#voice-examples').addEventListener('click', (e) => {
@@ -6627,9 +6483,8 @@ async function avviaApp() {
   try {
     await init();
   } catch (e) {
-    registra('avvio fallito dopo l\'accesso: ' + (e.message || e), 'err');
     mostraErroreApp("Si è verificato un errore nell'avvio dell'app. "
-      + 'Ricarica la pagina; se persiste, il guasto è nel registro qui sotto.');
+      + 'Ricarica la pagina; se il problema resta, segnalalo.');
   }
 }
 
@@ -6693,13 +6548,17 @@ async function renderHomeOggi() {
   const box = $('#home-oggi');
   if (!box) return;
   const oggi = iso(new Date());
+  const domani = iso(new Date(Date.now() + 86400000));
   const esiti = await Promise.all([
     api(`/api/plan?start=${oggi}&end=${oggi}`).catch(() => []),
     api('/api/chores').catch(() => null),
     api(`/api/appointments?giorno=${oggi}`).catch(() => null),
     api('/api/pantry').catch(() => []),
+    // gli impegni di domani si chiedono a parte: `prossimi` copre i promemoria
+    // scattati e gli arretrati, non le cose di domani che non avvisano ancora
+    api(`/api/appointments?giorno=${domani}`).catch(() => null),
   ]);
-  const [pasti, chores, appuntamenti, dispensa] = esiti;
+  const [pasti, chores, appuntamenti, dispensa, domaniApp] = esiti;
 
   const pastiHtml = pasti.length
     ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🍽</span>
@@ -6729,6 +6588,17 @@ async function renderHomeOggi() {
            avvisi.length > 3 ? `<br>e altri ${avvisi.length - 3}` : ''}</span></div>`
     : '';
 
+  // Domani: gli impegni non ancora chiusi. Sapere stasera che domani c'e' il
+  // dentista e' utile — quelli che non avvisano ancora non stanno in `prossimi`.
+  // Una riga sola, per non raddoppiare il riquadro «Domani» piu' sotto.
+  const impegniDomani = (domaniApp?.appointments || []).filter((a) => !a.done);
+  const domaniHtml = impegniDomani.length
+    ? `<div class="oggi-riga"><span class="oggi-ico" aria-hidden="true">🔜</span>
+         <span class="oggi-txt">Domani: ${impegniDomani.slice(0, 3).map((a) =>
+           `<strong>${esc(a.title)}</strong>${a.time ? ` alle ${esc(a.time)}` : ''}`
+         ).join(', ')}${impegniDomani.length > 3 ? ` e altri ${impegniDomani.length - 3}` : ''}</span></div>`
+    : '';
+
   // quello che scade entro pochi giorni: e' l'informazione che si perde piu'
   // facilmente restando in dispensa
   const inScadenza = (dispensa || []).filter((v) => {
@@ -6742,7 +6612,7 @@ async function renderHomeOggi() {
          }</strong>${inScadenza.length > 4 ? ` e altri ${inScadenza.length - 4}` : ''}</span></div>`
     : '';
 
-  const contenuto = pastiHtml + choresHtml + appHtml + scadHtml;
+  const contenuto = pastiHtml + choresHtml + appHtml + domaniHtml + scadHtml;
   if (!contenuto) {
     box.classList.add('hidden');
     box.innerHTML = '';

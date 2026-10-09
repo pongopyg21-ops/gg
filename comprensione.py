@@ -123,6 +123,24 @@ Rispondi esattamente in questa forma (solo le chiavi che servono, ma sempre "int
 {"intent": "shopping_add", "name": "latte", "quantity": 1, "unit": "pz"}
 """
 
+
+def istruzioni(oggi: str | None = None) -> str:
+    """Le istruzioni per il modello, con la data di **oggi** in testa.
+
+    Il modello non sa che giorno e': senza l'ancora risolve "domani" contro il
+    suo senso interno del tempo, e un promemoria per domani finisce nel passato
+    remoto (2023, tre anni fa), non nel giorno dopo. Il parser a regole lo sa
+    (`_data_detta`), e per `event_add` la sua data vince comunque; ma l'ancora
+    evita l'errore anche sugli altri campi e rende la risposta coerente.
+    """
+    giorno = oggi or date.today().isoformat()
+    return ISTRUZIONI + (
+        f"\nOggi è {giorno}. Risolvi ogni data relativa (domani, dopodomani, "
+        "lunedì prossimo, fra una settimana) a partire da oggi, in formato "
+        "YYYY-MM-DD."
+    )
+
+
 # Da dove si prende la chiave: l'ambiente, o uno di questi file accanto all'app.
 # E' la stessa regola e gli stessi nomi della chiave Azure, piu' `segreto.txt`
 # per chi non vuole esportare nulla.
@@ -462,7 +480,7 @@ def chiama(testo: str) -> dict | None:
     corpo = json.dumps({
         "model": modello(),
         "messages": [
-            {"role": "system", "content": ISTRUZIONI},
+            {"role": "system", "content": istruzioni()},
             {"role": "user", "content": frase},
         ],
         "temperature": 0,

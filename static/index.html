@@ -931,17 +931,6 @@
       <div id="voice-livello" class="voice-livello" hidden><div id="voice-livello-barra"></div></div>
       <p id="voice-parla-hint" class="hint"></p>
     </div>
-    <!-- Come funzionera' l'ascolto, in una riga: server (Azure) o browser.
-         Senza, l'utente crede che l'app sia rotta quando sta solo usando il
-         ripiego. -->
-    <p id="voice-stato-ascolto" class="voice-avviso"></p>
-    <p id="voice-chiave-manca" class="voice-avviso" hidden>
-      La voce che senti è quella meccanica del sistema: la voce naturale non è
-      configurata. La chiave si imposta <strong>prima di avviare l'app</strong>,
-      accanto al programma, e non da qui.
-      <span id="voice-chiave-dove"></span>
-    </p>
-    <p id="voice-avviso-sicurezza" class="voice-avviso" hidden></p>
     <div id="voice-examples" class="voice-examples">
       <button type="button" class="voice-ex" data-say="aggiungi due chili di farina in dispensa">«aggiungi due chili di farina in dispensa»</button>
       <button type="button" class="voice-ex" data-say="metti mezzo litro di latte nella spesa">«metti mezzo litro di latte nella spesa»</button>
@@ -965,14 +954,6 @@
       <p id="voice-sempre-spia" class="voice-avviso"></p>
     </div>
     <p id="voice-result" class="voice-result" hidden></p>
-    <!-- Registro trasparente: ogni passo dell'assistente, con l'ora e i
-         millisecondi dall'inizio. Serve a capire **dove** si perde tempo o dove
-         si ferma, senza indovinare dal solo silenzio. -->
-    <details id="voice-registro-blocco" class="voice-registro">
-      <summary>Registro dell'assistente <span id="voice-registro-n"></span></summary>
-      <ul id="voice-registro"></ul>
-      <button id="voice-registro-pulisci" type="button">Pulisci</button>
-    </details>
     <div class="row">
       <input id="voice-text" placeholder="Oppure scrivi il comando…">
       <button id="voice-send">Invia</button>

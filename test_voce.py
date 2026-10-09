@@ -1057,26 +1057,20 @@ def test_il_ciclo_ha_un_battito_e_un_sorvegliante(client):
     assert d["sospeso"] is False
     assert d["gesto"] is False
 
-def test_lo_stato_dell_ascolto_dice_chi_ascolta(client):
-    """Il guasto che risolve: senza chiave l'ascolto ripiega in silenzio sul
-    browser, e l'utente crede che l'app sia rotta. La riga dice **chi** ascolta e
-    **cosa manca**, cosi' la stessa situazione e' una cosa da accendere."""
+def test_il_pannello_non_riporta_informazioni_tecniche_su_ascolto_e_voce(client):
+    """All'utente finale non interessano chi trascrive (Azure o browser) ne' il
+    registro dei passi dell'assistente: sono diagnostica dello sviluppatore, non
+    una funzione. Il pannello parla solo di cosa fare, non di come e' fatto."""
+    html = client.get("/static/index.html").get_data(as_text=True)
     js = client.get("/static/app.js").get_data(as_text=True)
-    assert "statoAscoltoTesto" in js
-    assert "voice-stato-ascolto" in js
-    d = _stato_ascolto_js(client, """{
-      server: statoAscoltoTesto({ ascoltoServer: true, contesto: true }),
-      browser: statoAscoltoTesto({ ascoltoServer: false, contesto: true }),
-      insicuro: statoAscoltoTesto({ ascoltoServer: true, contesto: false }),
-    }""")
-    assert "server" in d["server"].lower() and "azure" in d["server"].lower()
-    assert "browser" in d["browser"].lower()
-    assert "chiave" in d["browser"].lower(), "senza server deve dire cosa manca"
-    # il contesto non sicuro vince su tutto: e' quello che impedisce il microfono.
-    # Il rimedio (HTTPS/localhost) sta nell'avviso dedicato, non qui: la riga dice
-    # solo che l'ascolto non e' disponibile, senza promettere Azure.
-    assert "non disponibile" in d["insicuro"].lower()
-    assert "azure" not in d["insicuro"].lower()
+    for rimosso in ['id="voice-stato-ascolto"', 'id="voice-chiave-manca"',
+                    'id="voice-chiave-dove"', 'id="voice-avviso-sicurezza"',
+                    'id="voice-registro', 'statoAscoltoTesto',
+                    'mostraAvvisoSicurezza', 'mostraAvvisoRobotica',
+                    'voice-stato-ascolto']:
+        assert rimosso not in html, rimosso
+        assert rimosso not in js, rimosso
+    assert "registra(" not in js, "il registro dell'assistente non c'e' piu'"
 
 def test_il_verdetto_del_microfono_dice_quale_controllo_ha_fermato(client):
     """La prova del microfono deve dire **quale** controllo ha fermato cosa,
@@ -1160,21 +1154,17 @@ def test_l_ascolto_non_tenta_a_vuoto_da_un_indirizzo_non_sicuro(client):
     # tenta la registrazione quando il contesto non e' sicuro
     assert "if (voce.senzaMicrofono) {" in js
 
-def test_la_pagina_spiega_perche_la_voce_e_robotica(client):
-    """Senza chiave la voce e' quella del sistema: il pannello del microfono, dove
-    la voce si sente, deve dirlo e indicare come avere quella naturale. (La scheda
-    "Voce" delle FAQ, che lo ripeteva, e' stata rimossa su richiesta.)"""
+def test_la_pagina_non_avvisa_piu_sui_limiti_della_voce_o_del_microfono(client):
+    """La voce robotica e il microfono negato non hanno piu' un avviso nel
+    pannello: sono spiegazioni tecniche che all'utente non servono. Quando il
+    microfono non c'e' resta l'unica cosa utile — il campo per scrivere."""
     js = client.get("/static/app.js").get_data(as_text=True)
-    assert "mostraAvvisoRobotica" in js
-    assert "voice-chiave-manca" in js
-    html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'id="voice-chiave-manca"' in html
-    assert "voce naturale" in html
-
-def test_la_pagina_avvisa_se_il_microfono_non_puo_funzionare(client):
-    """Da http:// su rete locale il riconoscimento vocale e' negato dal browser."""
-    js = client.get("/static/app.js").get_data(as_text=True)
-    assert "isSecureContext" in js and "mostraAvvisoSicurezza" in js
+    assert "mostraAvvisoRobotica" not in js
+    assert "mostraAvvisoSicurezza" not in js
+    assert "voice-chiave-manca" not in js
+    assert "voice-avviso-sicurezza" not in js
+    # il microfono non tentato a vuoto resta: e' comportamento, non informazione
+    assert "mostraSenzaMicrofono" in js and "isSecureContext" in js
 
 def test_la_pagina_non_gestisce_la_chiave(client):
     """La chiave si configura **prima** di avviare l'app, non dall'utente in FAQ.
@@ -1196,19 +1186,6 @@ def test_l_endpoint_che_salvava_la_chiave_non_esiste_piu(client):
     entra solo dal file o dall'ambiente, prima dell'avvio."""
     r = client.post("/api/voce/configura", json={"chiave": "x", "regione": "italynorth"})
     assert r.status_code in (404, 405), r.status_code
-
-def test_il_pannello_del_microfono_dice_di_configurare_prima(client):
-    """Senza la chiave la voce e' meccanica, e il pannello del microfono e' dove
-    l'utente la sente: deve dire **dove** si mette, e non mandarlo in una pagina
-    che non la chiede piu'."""
-    html = client.get("/static/index.html").get_data(as_text=True)
-    assert 'id="voice-chiave-manca"' in html
-    inizio = html.index('id="voice-chiave-manca"')
-    avviso = html[inizio:inizio + 400]
-    assert "prima di avviare" in avviso
-    assert "FAQ" not in avviso
-    js = client.get("/static/app.js").get_data(as_text=True)
-    assert "voice-chiave-manca" in js
 
 def test_gli_spazi_ai_bordi_della_password_non_contano(casa_test):
     """Uno spazio incollato per sbaglio non si vede, e l'errore non lo dice."""
@@ -2488,48 +2465,6 @@ setTimeout(() => { console.log(JSON.stringify({ esito: null })); process.exit(0)
     assert d["esito"] and d["esito"].get("ritenta") is True, d
     assert d["ms"] < 8000, f"ha aspettato troppo: {d['ms']} ms"
 
-def test_il_registro_dice_cosa_fa_l_assistente(client):
-    """Il riscontro chiesto: l'assistente deve dire in trasparenza cosa fa. Si
-    esegue `registra` **vera**: ogni passo finisce in una riga con l'ora e i
-    millisecondi, le righe vecchie si buttano (non cresce all'infinito) e il
-    pannello ha il contenitore dove scriverle."""
-    js = client.get("/static/app.js").get_data(as_text=True)
-    blocco = _estrai_funzione_js(js, "registra")
-    preludio = """
-const REGISTRO_MAX = 60;
-let registroInizio = Date.now();
-const figli = [];
-const lista = {
-  children: figli,
-  get firstChild() { return figli[0]; },
-  appendChild(li) { figli.push(li); },
-  removeChild(li) { figli.splice(figli.indexOf(li), 1); },
-  set scrollTop(v) {}, get scrollTop() { return 0; },
-  get scrollHeight() { return 0; },
-};
-let conteggio = null;
-const nodi = { 'voice-registro': lista,
-               'voice-registro-n': { set textContent(v) { conteggio = v; } } };
-function $(sel) { return nodi[sel.replace(/^#/, '')]; }
-global.document = {
-  createElement: () => ({
-    className: '', children: [],
-    appendChild(c) { this.children.push(c); },
-  }),
-  createTextNode: (t) => ({ testo: t }),
-};
-"""
-    prova = preludio + blocco + """
-for (let i = 0; i < 70; i++) registra('passo ' + i);
-const righe = lista.children.length;
-const testo = lista.children[lista.children.length - 1].children
-  .map((c) => c.testo || '').join('');
-console.log(JSON.stringify({ righe, conteggio, testo, orario: /\\d\\d:\\d\\d:\\d\\d/.test(lista.children[0].children[0].textContent || '') }));
-"""
-    d = _esegui_node(prova)
-    assert d["righe"] == 60, "il registro non deve crescere all'infinito"
-    assert d["conteggio"] == "(60)"
-    assert "passo 69" in d["testo"]
 
 
 # ---------------------------------------------------------------- impegni

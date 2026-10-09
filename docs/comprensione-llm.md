@@ -35,6 +35,15 @@ promessa. Il modello si preferisce **anche** quando il parser crede di aver
 capito, perche' proprio li' stanno gli errori da correggere («metti via il vino
 in cantina» diventava un articolo in magazzino chiamato «via il vino»).
 
+- **La data di un impegno la decide il parser, non il modello.** Il modello non sa
+  che giorno e' — senza ancora risolve "domani" contro il suo senso interno del
+  tempo, e un promemoria per domani finisce a ~1095 giorni fa (2023, tre anni
+  prima). Il parser a regole invece lo sa (`_data_detta`). Per `event_add` la
+  `when_date` del parser **vince** su quella del modello (`_comprendi` in
+  `app.py`); il resto dei campi resta del modello. In piu' `comprensione.istruzioni()`
+  mette la data di oggi nel prompt, per gli altri campi. Il test
+  `test_la_data_di_un_impegno_detta_a_voce_e_quella_di_oggi` fissa entrambi i lati.
+
 **Perche' sempre attivo e non un interruttore.** Un interruttore acceso a `0`
 di partenza significa che la funzione *esiste* ma non fa niente finche' qualcuno
 non sa che c'e'. Il costo (nessuna chiamata quando il modello non c'e') e' gia'

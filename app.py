@@ -2853,6 +2853,13 @@ def _comprendi(testo, db):
     cmd = comprensione.chiama(testo)
     if not cmd or cmd.get("intent") == "unknown":
         return a_regole
+    # La data di un impegno ha bisogno di sapere **che giorno e' oggi**: il
+    # parser a regole lo sa (`_data_detta`), il modello no — "domani" risolto
+    # col suo senso interno del tempo cadrebbe nel 2023, tre anni fa. Quindi per
+    # `event_add` la data del parser vince su quella del modello. Il resto dei
+    # campi li decide il modello, che capisce le frasi che le regole non coprono.
+    if cmd.get("intent") == "event_add" and a_regole.get("when_date"):
+        return {**a_regole, **cmd, "when_date": a_regole["when_date"]}
     # il parser porta il testo originale (`text`), che il modello non ripete:
     # si tiene quello, cosi' la risposta dice sempre la frase sentita
     return {**a_regole, **cmd}

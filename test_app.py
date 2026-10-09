@@ -484,6 +484,9 @@ const risposte = {
   '/api/chores': { piano: { da_fare: 2 } },
   '/api/appointments?giorno=2026-10-02':
     { prossimi: [{ title: 'Dentista', quando_detto: 'oggi' }] },
+  '/api/appointments?giorno=2026-10-03':
+    { appointments: [{ title: 'Riunione', done: false, time: '09:00' },
+                     { title: 'Fatto ieri', done: true }] },
   '/api/pantry': [{ name: 'Latte', expires_at: '2026-10-03' }],
 };
 async function api(url) { return risposte[url]; }
@@ -495,8 +498,10 @@ async function api(url) { return risposte[url]; }
     assert "2 attività di casa" in d["html"]
     assert "Dentista" in d["html"]
     assert "Latte" in d["html"]
-    # domani ha il suo riquadro, piu' sotto: qui non deve comparire
-    assert "Domani" not in d["html"]
+    # domani entra in «Oggi»: una riga con gli impegni non ancora chiusi
+    assert "Domani:" in d["html"]
+    assert "Riunione" in d["html"] and "09:00" in d["html"]
+    assert "Fatto ieri" not in d["html"], "un impegno chiuso non si suggerisce"
 
 def test_il_riepilogo_di_oggi_tace_se_non_c_e_niente(client):
     """Senza pasti, pulizie, impegni o scadenze il riquadro resta nascosto: una
