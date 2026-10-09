@@ -158,29 +158,23 @@ L'ancora all'**inizio** è ciò che separa un richiamo dal discorso: "il nonno G
 arriva alle otto" non fa partire niente. Il prezzo onesto è che "I giorni scorsi
 ho comprato il pane" farebbe partire un "Sì." una volta, senza eseguire nulla.
 
-### L'accensione automatica: all'accesso parte subito, al ricaricamento solo se il permesso c'è già
+### La sveglia non parte più da sola
 
-"Hey GG" senza pulsante: l'ascolto si apre da solo, e ci sono **due strade**, con
-regole diverse perché diverso è ciò che si può dare per scontato.
+Il comando predefinito è il **push-to-talk**; "Hey GG" è un'opzione che si
+accende a mano dal pannello. Non c'è dunque più un avvio automatico **all'accesso**
+(con la coppia `accendiAscoltoDopoAccesso`/`deveAccendereDopoAccesso` e la
+variabile `appenaEntrato`, rimosse): quello era il modo in cui la sveglia si
+apriva da sola appena si entrava, senza chiedere niente.
 
-1. **All'accesso** (`accendiAscoltoDopoAccesso`, chiamata da `init` quando
-   `appenaEntrato` è vero). Il click su "Entra" **è** il gesto che il browser
-   pretende: il microfono si può chiedere e l'audio è sbloccato. Quindi qui non
-   serve il permesso già concesso — serve solo che l'utente non l'abbia spento
-   **esplicitamente** (`'0'`): un valore assente è una prima volta, e all'accesso
-   la prima volta parte. Chi l'ha spento dal pannello non se lo ritrova acceso.
-   La regola sta in `deveAccendereDopoAccesso`, pura apposta.
-2. **Al ricaricamento** (`accendiAscoltoContinuoDaSolo`). Non c'è nessun gesto
-   attorno, quindi vale la regola più stretta: `deveAccendereDaSolo` richiede
-   preferenza `'1'`, permesso già `granted` **e** il server che sa trascrivere.
-
-La preferenza si scrive al click del pulsante (`'1'`/`'0'`) e anche quando
-l'ascolto parte all'accesso (`'1'`): senza, al ricaricamento successivo non
-ripartirebbe, perché il gesto non c'è più.
+Resta una sola strada di ripresa automatica, ed è quella prudente —
+`accendiAscoltoContinuoDaSolo`, al ricaricamento. Non c'è nessun gesto attorno,
+quindi vale la regola stretta: `deveAccendereDaSolo` richiede preferenza `'1'`,
+permesso già `granted` **e** il server che sa trascrivere. La preferenza si
+scrive al click del pulsante (`'1'`/`'0'`), così chi l'ha accesa se la ritrova.
 
 Tre trappole:
 
-- **Il permesso non si chiede senza un tocco.** Al ricaricamento, con `prompt` o
+- **Il permesso non si chiede senza un tocco.** Con `prompt` o
   `denied` il browser non lo dà: si aprirebbe solo un avviso bloccato. Per questo
   si legge `permissions.query` e non si tenta a fondo.
 - **Un `AudioContext` nasce "suspended" finché la pagina non riceve un gesto**,
@@ -190,10 +184,8 @@ Tre trappole:
   il suo stato, e sbloccarne uno non sblocca l'altro. Se resta bloccato, la
   frase `{bloccato: true}` porta ad `attendeUnGesto`, che chiede un tocco sulla
   pagina e poi riparte.
-- **`appenaEntrato` distingue i due casi.** È una variabile di modulo che vale
-  `true` solo nel giro di `avviaApp` subito dopo il login: senza, `init`
-  tratterebbe l'accesso come un ricaricamento e l'ascolto non partirebbe proprio
-  quando l'utente se lo aspetta.
+- **La preferenza va scritta al click.** Senza, al ricaricamento successivo non
+  ripartirebbe: `deveAccendereDaSolo` la rilegge da `localStorage`.
 
 `resume()` può non risolversi **mai** senza gesto: va sempre atteso con un tetto
 (`Promise.race`), altrimenti l'avvio dell'app resta appeso per sempre.
@@ -362,16 +354,25 @@ torna identico). Era tutto intorno: **contesto sicuro**, **ripiego silenzioso** 
    `getUserMedia` non arriva: l'app **non tenta a vuoto**, dice cosa manca e porta
    il cursore al campo di testo (`mostraSenzaMicrofono`). Prima apriva un
    microfono che non avrebbe mai sentito.
-3. **Push-to-talk (`modoParla`, `#voice-parla`, `#voice-livello`).** Col dito si
-   **tiene premuto** e si invia al rilascio; col mouse resta l'interruttore. Il
-   toggle a due tocchi si sbaglia (chi tocca una volta aspetta, chi tocca due crede
-   di aver annullato). La barra del livello dice che il microfono manda audio
-   davvero. `guardaSeRilascia` tollera il dito che scorre fuori dal pulsante
+3. **Push-to-talk (`modoParla`, `collegaPushToTalk`, `#voice-parla`).** Si
+   **tiene premuto** e si invia al rilascio, su **ogni** dispositivo: il vecchio
+   interruttore col mouse è stato tolto, perché il secondo tocco per inviare a
+   mani occupate non si dà. `modoParla()` restituisce sempre `'push'`.
+   `collegaPushToTalk(btn, { tocco })` è l'unico punto che lega un pulsante al
+   gesto (`pointerdown`/`up`/`cancel`/`leave`) e lo usano `#mic`, `#home-mic`,
+   `#voice-parla` e `#voice-retry`: prima il wiring era duplicato e il microfono
+   flottante apriva solo il pannello. Un tocco **breve** (`PTT_TOCCO_MS`, 300 ms)
+   non è una frase: se il pulsante ha un `tocco` lo chiama (il microfono flottante
+   apre il pannello), così chi voleva solo aprire non resta con un "non ho sentito
+   nulla". La barra del livello dice che il microfono manda audio davvero.
+   `guardaSeRilascia` tollera il dito che scorre fuori dal pulsante
    (`setPointerCapture` piu' 40 px di margine): senza, la frase si perderebbe
    proprio mentre si parla. La corsa «dito alzato prima che il microfono si apra»
    si chiude con `voce.rilasciato`, altrimenti un tocco brevissimo aprirebbe il
    microfono per 12 s. In push-to-talk **il silenzio non chiude la frase** (chiude
-   il rilascio): il tetto `ASCOLTO_MAX_MS` resta come rete di sicurezza.
+   il rilascio): il tetto `ASCOLTO_MAX_MS` resta come rete di sicurezza. E
+   `apriVoce()` **non** apre più il microfono da solo: mostrerebbe un ascolto
+   senza rilascio, che non finisce mai.
 4. **«Prova il microfono» (`provaMicrofono`, `#voice-prova`).** Un pulsante che
    verifica in fila contesto sicuro, API, permesso, stato dell'`AudioContext` e
    chi trascrive, poi registra una frase e **mostra cosa ha sentito**. Il ramo

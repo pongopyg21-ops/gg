@@ -654,7 +654,7 @@ Il layout sotto i 560px è una sola colonna. Tre vincoli da non rompere quando s
 - La dispensa è una tabella che diventa elenco di schede. Le etichette di colonna arrivano da `data-label` sulle celle, generato in `renderPantry`, e sono mostrate via `::before`: aggiungendo una colonna va aggiunto anche il `data-label`.
 - I bersagli toccabili hanno `min-height: 42px`.
 - Il pulsante vocale è `position: fixed` in basso a destra, quindi `main` ha `padding-bottom` generoso: senza, il pulsante coprirebbe l'ultima voce delle liste. Lo `z-index` (40) è sotto i modali, così non galleggia sopra le finestre aperte. Il pulsante Home flottante (`.home-fab`) sta nello stesso punto ma a sinistra: se un domani si aggiunge un terzo pulsante, va tenuto conto che gli angoli bassi sono occupati.
-- **Il pulsante vocale flottante è nascosto in home** (`tornaAlleSezioni` lo rimette `hidden`), perché lì non c'è una sezione da cui parlare. Al suo posto c'è `.home-mic`, dentro l'hero: chiama lo stesso `apriVoce()`. Il pannello `#voice` sta **fuori** da `#app`, quindi funziona anche a sezioni chiuse — ma i comandi che ricaricano una scheda chiamano `apreSezioneDella()`, che apre prima l'area giusta. Senza, la scheda si attiverebbe sotto un'intestazione che non le appartiene.
+- **Il pulsante vocale flottante è nascosto in home** (`tornaAlleSezioni` lo rimette `hidden`), perché lì non c'è una sezione da cui parlare. Al suo posto c'è `.home-mic`, dentro l'hero: è push-to-talk come il flottante (si tiene premuto e si parla), e un tocco breve apre il pannello. Il pannello `#voice` sta **fuori** da `#app`, quindi funziona anche a sezioni chiuse — ma i comandi che ricaricano una scheda chiamano `apreSezioneDella()`, che apre prima l'area giusta. Senza, la scheda si attiverebbe sotto un'intestazione che non le appartiene.
 - `.voice-box` ha `max-height: 100%; overflow-y: auto`: su schermi bassi (telefono piccolo, tastiera aperta) scorre dentro di sé invece di spingere la ✕ fuori dallo schermo. Senza, il pannello diventa impossibile da chiudere.
 
 ## Stile
@@ -806,7 +806,7 @@ si porta dietro ~50k token di contesto a ogni turno.
 
 | Quando ti serve… | Apri |
 | --- | --- |
-| Voce neurale, ascolto continuo, "Hey GG", sveglia, microfono, comandi vocali | `docs/voce-e-ascolto.md` |
+| Voce: comandi, push-to-talk (il default), "Hey GG"/sveglia, microfono, voce neurale | `docs/voce-e-ascolto.md` |
 | Capire i comandi col modello (LLM/Ollama) | `docs/comprensione-llm.md` |
 | TV, notizie, quiz, arte, Giochi, GYM, Cinema | `docs/tv-cinema-giochi.md` |
 | Calendario degli impegni e promemoria | `docs/calendario.md` |
